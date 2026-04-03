@@ -19,15 +19,18 @@ def compute_zscores(feature_vector: Dict[str, Any], baseline_stats: Dict[str, An
 
 def calculate_anomaly_score(z_scores: Dict[str, float]) -> float:
     """
-    Aggegrates z-scores into a single anomaly score with specific weights.
+    Aggregates z-scores into a single baseline-deviation score.
     """
     # Specific weights for Phase 1
     weights = {
         "state_count": 0.2,
+        "trigger_count": 0.1,
+        "event_count": 0.1,
         "isolation_signal": 0.3,
         "behavior_count": 0.1,
         "protective_ratio": -0.3,  # negative because drop is anomaly
-        "event_avg_duration": 0.1
+        "event_avg_duration": 0.1,
+        "event_transition_signal": 0.1,
     }
     
     score = 0.0

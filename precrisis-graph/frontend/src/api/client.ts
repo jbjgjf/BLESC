@@ -1,4 +1,4 @@
-import { Entry, AnomalyResult, ExplanationPayload, DailyFeatureAggregation } from './models';
+import { Entry, AnomalyResult, ExplanationPayload, DailyFeatureAggregation, EntrySubmissionResponse } from './models';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
@@ -21,8 +21,8 @@ export class ApiClient {
     return this.fetch<Entry[]>(`/entries?user_id=${userId}`);
   }
 
-  static createEntry(userId: string, text: string): Promise<Entry> {
-    return this.fetch<Entry>(`/entries?user_id=${userId}&text=${encodeURIComponent(text)}`, {
+  static createEntry(userId: string, text: string): Promise<EntrySubmissionResponse> {
+    return this.fetch<EntrySubmissionResponse>(`/entries?user_id=${userId}&text=${encodeURIComponent(text)}`, {
       method: 'POST',
     });
   }

@@ -9,6 +9,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.database import engine, create_db_and_tables
 from app.schemas.entry import Entry
 from app.schemas.extraction import Extraction
+from app.schemas.structured import GraphSnapshot
+from app.analytics.graph_features import build_graph_summary, build_temporal_graph_diff, summarize_temporal_diff
+from app.ontology.validator import validate_extraction
 from app.services.inference_orchestrator import InferenceOrchestrator
 
 def seed_data():
@@ -46,6 +49,32 @@ def seed_data():
             )
             session.add(extraction)
             session.commit()
+            validated = validate_extraction(
+                {
+                    "nodes": extraction.nodes_json,
+                    "relations": extraction.relations_json,
+                    "temporal": {"recency": "recent"},
+                }
+            )
+            graph_summary = build_graph_summary(validated["nodes"], validated["relations"])
+            graph_diff = summarize_temporal_diff(
+                build_temporal_graph_diff(validated["nodes"], validated["relations"], [], []),
+                graph_summary,
+                None,
+            )
+            session.add(
+                GraphSnapshot(
+                    entry_id=entry.id,
+                    user_id=user_id,
+                    day=current_date,
+                    nodes_json=validated["nodes"],
+                    relations_json=validated["relations"],
+                    graph_summary_json=graph_summary,
+                    temporal_diff_json=graph_diff,
+                    created_at=dt,
+                )
+            )
+            session.commit()
             orchestrator.process_day(user_id, current_date)
 
         # Scenario 2: Drift (Days 8-11)
@@ -71,6 +100,32 @@ def seed_data():
             )
             session.add(extraction)
             session.commit()
+            validated = validate_extraction(
+                {
+                    "nodes": extraction.nodes_json,
+                    "relations": extraction.relations_json,
+                    "temporal": {"recency": "ongoing"},
+                }
+            )
+            graph_summary = build_graph_summary(validated["nodes"], validated["relations"])
+            graph_diff = summarize_temporal_diff(
+                build_temporal_graph_diff(validated["nodes"], validated["relations"], [], []),
+                graph_summary,
+                None,
+            )
+            session.add(
+                GraphSnapshot(
+                    entry_id=entry.id,
+                    user_id=user_id,
+                    day=current_date,
+                    nodes_json=validated["nodes"],
+                    relations_json=validated["relations"],
+                    graph_summary_json=graph_summary,
+                    temporal_diff_json=graph_diff,
+                    created_at=dt,
+                )
+            )
+            session.commit()
             orchestrator.process_day(user_id, current_date)
 
         # Scenario 3: Anomaly (Day 12-13)
@@ -95,6 +150,32 @@ def seed_data():
                 created_at=dt
             )
             session.add(extraction)
+            session.commit()
+            validated = validate_extraction(
+                {
+                    "nodes": extraction.nodes_json,
+                    "relations": extraction.relations_json,
+                    "temporal": {"recency": "past"},
+                }
+            )
+            graph_summary = build_graph_summary(validated["nodes"], validated["relations"])
+            graph_diff = summarize_temporal_diff(
+                build_temporal_graph_diff(validated["nodes"], validated["relations"], [], []),
+                graph_summary,
+                None,
+            )
+            session.add(
+                GraphSnapshot(
+                    entry_id=entry.id,
+                    user_id=user_id,
+                    day=current_date,
+                    nodes_json=validated["nodes"],
+                    relations_json=validated["relations"],
+                    graph_summary_json=graph_summary,
+                    temporal_diff_json=graph_diff,
+                    created_at=dt,
+                )
+            )
             session.commit()
             orchestrator.process_day(user_id, current_date)
 

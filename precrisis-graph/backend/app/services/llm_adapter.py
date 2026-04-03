@@ -51,6 +51,7 @@ class LLMAdapter:
         """
         # Simple keyword-based mock
         nodes = []
+        relations = []
         low_text = text.lower()
         if "sleep" in low_text:
             nodes.append({"node_id": "sleep_1", "category": "State", "label": "sleep_issue", "intensity": 0.8})
@@ -58,11 +59,14 @@ class LLMAdapter:
             nodes.append({"node_id": "friend_1", "category": "Protective", "label": "support_person", "intensity": 0.7})
         if "meeting" in low_text:
             nodes.append({"node_id": "meeting_1", "category": "Event", "label": "evaluation_event", "intensity": 0.5})
+        if "deadline" in low_text and nodes:
+            nodes.append({"node_id": "deadline_1", "category": "Trigger", "label": "deadline", "intensity": 0.6})
+            relations.append({"source_node_id": "deadline_1", "target_node_id": "sleep_1", "type": "escalates", "confidence": 0.7})
             
         return {
             "nodes": nodes,
-            "relations": [],
-            "temporal": {"recency": "recent"}
+            "relations": relations,
+            "temporal": {"recency": "recent", "event_density": 1 if any(n.get("category") == "Event" for n in nodes) else 0},
         }
 
     def _get_prompt(self, text: str) -> str:
@@ -76,6 +80,12 @@ class LLMAdapter:
         - Behavior: Isolation, meals, etc.
         - Event: Discrete occurrences (meeting, exercise, shift) with optional start/end/duration.
         
+        Structural expectations:
+        - Treat abstract structural features as the primary output.
+        - Include Event nodes when a discrete occurrence is present.
+        - Capture relations that change support, escalation, avoidance, or temporal order.
+        - Return a local graph summary with a compact node and relation inventory.
+        
         Relations:
         - causes, escalates, buffers, avoids, co_occurs, precedes.
         
@@ -85,12 +95,12 @@ class LLMAdapter:
         Format as JSON:
         {{
           "nodes": [
-            {{ "node_id": "string", "category": "State|Trigger|Protective|Behavior|Event", "label": "string", "intensity": 0.0-1.0, "duration": float_minutes }}
+            {{ "node_id": "string", "category": "State|Trigger|Protective|Behavior|Event", "label": "string", "intensity": 0.0-1.0, "confidence": 0.0-1.0, "start_time": "ISO-8601", "end_time": "ISO-8601", "duration": float_minutes }}
           ],
           "relations": [
-            {{ "source_node_id": "string", "target_node_id": "string", "type": "string" }}
+            {{ "source_node_id": "string", "target_node_id": "string", "type": "causes|escalates|buffers|avoids|co_occurs|precedes", "confidence": 0.0-1.0 }}
           ],
-          "temporal": {{ "recency": "recent|ongoing|past|future|unknown" }}
+          "temporal": {{ "recency": "recent|ongoing|past|future|unknown", "event_density": 0, "sequence_shift": 0.0 }}
         }}
         """
 

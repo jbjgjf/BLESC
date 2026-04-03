@@ -14,6 +14,7 @@ class Entry(SQLModel, table=True):
     # Relationship to extractions
     extractions: list["Extraction"] = Relationship(back_populates="entry")
     embeddings: list["Embedding"] = Relationship(back_populates="entry")
+    graph_snapshots: list["GraphSnapshot"] = Relationship(back_populates="entry")
 
 # Default TTL: 30 days if raw_text is present
 def get_default_expires_at():

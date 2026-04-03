@@ -11,7 +11,7 @@ def create_db_and_tables():
     from .schemas.entry import Entry
     from .schemas.extraction import Extraction
     from .schemas.analytics import DailyFeatureAggregation, BaselineStats, AnomalyResult, Embedding
-    from .schemas.explanation import ExplanationPayload
+    from .schemas.structured import GraphSnapshot, HybridExplanation
     SQLModel.metadata.create_all(engine)
 
 def get_session():

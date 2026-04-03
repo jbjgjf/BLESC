@@ -1,5 +1,7 @@
 from typing import List, Dict, Any, Optional
 
+from ..analytics.graph_features import build_graph_summary
+
 VALID_CATEGORIES = {"State", "Trigger", "Protective", "Behavior", "Event"}
 VALID_RELATIONS = {"causes", "escalates", "buffers", "avoids", "co_occurs", "precedes"}
 
@@ -57,9 +59,14 @@ def validate_extraction(data: Dict[str, Any]) -> Dict[str, Any]:
                 "confidence": float(rel.get("confidence", 1.0))
             })
             
+    graph_summary = build_graph_summary(clean_nodes, clean_relations)
+
     return {
         "nodes": clean_nodes,
         "relations": clean_relations,
         "temporal_summary": data.get("temporal", {}).get("recency", "unknown")
+        if isinstance(data.get("temporal", {}), dict)
+        else "unknown",
+        "graph_summary": graph_summary,
+        "temporal": data.get("temporal", {}),
     }
-

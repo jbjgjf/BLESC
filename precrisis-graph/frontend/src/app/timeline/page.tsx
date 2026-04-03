@@ -54,7 +54,7 @@ export default function Timeline() {
           <Calendar className="w-8 h-8 text-indigo-600" />
           <span>Anomaly Timeline</span>
         </h1>
-        <p className="text-slate-500">Visualization of structural deviations measured against a 7-day baseline.</p>
+        <p className="text-slate-500">Visualization of hybrid structural deviations measured against the rolling baseline.</p>
       </header>
 
       {data.length === 0 ? (
@@ -91,19 +91,19 @@ export default function Timeline() {
             <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
               <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Status</div>
               <div className="text-2xl font-bold text-indigo-600">Stable</div>
-              <div className="text-sm text-slate-500 mt-2">Current score is within normal variance range.</div>
+              <div className="text-sm text-slate-500 mt-2">Current score is within the usual structural range.</div>
             </div>
             <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
               <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Baseline</div>
               <div className="text-2xl font-bold text-slate-700">7 Days</div>
-              <div className="text-sm text-slate-500 mt-2">Computed from stable historical routine.</div>
+              <div className="text-sm text-slate-500 mt-2">Computed from stable historical structure.</div>
             </div>
             <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 shadow-sm border-indigo-100">
               <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Next Step</div>
                <Link href="/insights" className="text-lg font-bold text-indigo-600 block hover:underline">
                  View Insight Details →
                </Link>
-              <div className="text-sm text-slate-500 mt-2">Deep-dive into structural evidence.</div>
+              <div className="text-sm text-slate-500 mt-2">Deep-dive into graph evidence.</div>
             </div>
           </div>
         </section>
@@ -111,4 +111,3 @@ export default function Timeline() {
     </div>
   );
 }
-

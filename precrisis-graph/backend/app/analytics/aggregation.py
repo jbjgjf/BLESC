@@ -5,7 +5,7 @@ from ..schemas.analytics import DailyFeatureAggregation
 
 def aggregate_daily_features(user_id: str, day: date, extractions: List[Extraction]) -> DailyFeatureAggregation:
     """
-    Combines all extracted nodes from multiple entries on a single day into a feature vector.
+    Combines all extracted structural nodes from multiple entries on a single day into a feature vector.
     """
     state_count = 0
     trigger_count = 0
@@ -13,8 +13,10 @@ def aggregate_daily_features(user_id: str, day: date, extractions: List[Extracti
     behavior_count = 0
     event_count = 0
     total_duration = 0.0
+    event_transition_count = 0
+    relation_count = 0
+    protective_relation_count = 0
     
-    # Simple keyword-based isolation/avoidance detection in nodes
     isolation_score = 0.0
     
     for ext in extractions:
@@ -33,11 +35,20 @@ def aggregate_daily_features(user_id: str, day: date, extractions: List[Extracti
             elif cat == "Event":
                 event_count += 1
                 total_duration += float(node.get("duration", 0.0))
-                
+        for relation in ext.relations_json:
+            relation_count += 1
+            if relation.get("type") == "buffers":
+                protective_relation_count += 1
+            if relation.get("type") == "precedes":
+                event_transition_count += 1
+
     total_risk_nodes = state_count + trigger_count + behavior_count
     protective_ratio = protective_count / max(1, total_risk_nodes)
     
     avg_duration = total_duration / max(1, event_count)
+    event_transition_signal = event_transition_count / max(1, event_count)
+    relation_density = relation_count / max(1, state_count + trigger_count + protective_count + behavior_count + event_count)
+    protective_buffer_ratio = protective_relation_count / max(1, relation_count)
     
     feature_vector = {
         "state_count": state_count,
@@ -46,8 +57,11 @@ def aggregate_daily_features(user_id: str, day: date, extractions: List[Extracti
         "behavior_count": behavior_count,
         "event_count": event_count,
         "event_avg_duration": avg_duration,
+        "event_transition_signal": event_transition_signal,
         "protective_ratio": protective_ratio,
-        "isolation_signal": isolation_score
+        "protective_buffer_ratio": protective_buffer_ratio,
+        "relation_density": relation_density,
+        "isolation_signal": isolation_score,
     }
     
     return DailyFeatureAggregation(

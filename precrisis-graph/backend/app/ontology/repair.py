@@ -32,5 +32,14 @@ def get_fallback_extraction() -> Dict[str, Any]:
         "nodes": [],
         "relations": [],
         "temporal": {"recency": "unknown"},
+        "graph_summary": {
+            "node_count": 0,
+            "relation_count": 0,
+            "event_count": 0,
+            "category_counts": {},
+            "key_nodes": [],
+            "key_relations": [],
+            "summary": "empty graph",
+        },
         "error_flag": True
     }
