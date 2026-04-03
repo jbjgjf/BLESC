@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ApiClient } from "@/api/client";
-import { Entry, EntrySubmissionResponse, ExtractionNode, ExtractionRelation } from "@/api/models";
+import { Entry, EntrySubmissionResponse, ExtractionNode, ExtractionRelation, GraphSnapshot } from "@/api/models";
 import { AlertCircle, ArrowRight, GitBranch, History, Loader2, Send, Sparkles, Network, TriangleAlert } from "lucide-react";
+import { GraphViewer3D } from "@/components/graph/GraphViewer3D";
 
 const USER_ID = "research_user_01";
 
@@ -19,6 +20,7 @@ function relationLabel(relation: ExtractionRelation): string {
 export default function Home() {
   const [text, setText] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [graphSnapshots, setGraphSnapshots] = useState<GraphSnapshot[]>([]);
   const [lastSubmission, setLastSubmission] = useState<EntrySubmissionResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -26,6 +28,7 @@ export default function Home() {
 
   useEffect(() => {
     loadEntries();
+    loadGraphSnapshots();
   }, []);
 
   const loadEntries = async () => {
@@ -36,6 +39,15 @@ export default function Home() {
       setError("Failed to load entries.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadGraphSnapshots = async () => {
+    try {
+      const data = await ApiClient.getGraphSnapshots(USER_ID);
+      setGraphSnapshots(data);
+    } catch {
+      // Keep the page functional even if graph history cannot load.
     }
   };
 
@@ -50,6 +62,7 @@ export default function Home() {
       setLastSubmission(response);
       setText("");
       loadEntries();
+      loadGraphSnapshots();
     } catch {
       setError("Submission failed. Check backend connection.");
     } finally {
@@ -58,13 +71,14 @@ export default function Home() {
   };
 
   const groupedNodes = useMemo(() => {
-    const nodes = [...(lastSubmission?.graph_snapshot.nodes_json ?? [])];
+    const nodes = [...(lastSubmission?.graph_snapshot?.nodes_json ?? [])];
     return nodes.sort((a, b) => categoryRank(a.category) - categoryRank(b.category));
   }, [lastSubmission]);
 
-  const keyRelations = lastSubmission?.graph_snapshot.graph_summary_json.key_relations ?? [];
-  const graphSummary = lastSubmission?.graph_snapshot.graph_summary_json;
-  const temporalDiff = lastSubmission?.graph_snapshot.temporal_diff_json;
+  const submittedGraph = lastSubmission?.graph_snapshot;
+  const graphSummary = lastSubmission?.explanation?.graph_summary_json ?? submittedGraph?.graph_summary_json;
+  const keyRelations = lastSubmission?.explanation?.key_relations ?? graphSummary?.key_relations ?? [];
+  const temporalDiff = submittedGraph?.temporal_diff_json;
 
   return (
     <div className="space-y-10">
@@ -136,7 +150,7 @@ export default function Home() {
         </div>
       </section>
 
-      {lastSubmission && (
+      {(lastSubmission || graphSnapshots.length > 0) && (
         <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
           <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -222,6 +236,13 @@ export default function Home() {
         </section>
       )}
 
+      <GraphViewer3D
+        snapshots={graphSnapshots}
+        currentSnapshot={lastSubmission?.graph_snapshot ?? graphSnapshots.at(-1) ?? null}
+        explanation={lastSubmission?.explanation ?? null}
+        title="Baseline and temporal graph viewer"
+      />
+
       <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-2 text-lg font-semibold text-slate-950">
           <History className="h-5 w-5 text-cyan-600" />
@@ -237,7 +258,7 @@ export default function Home() {
           </div>
         ) : (
           <div className="mt-4 space-y-3">
-            {entries.map((entry) => (
+                {entries.map((entry) => (
               <div key={entry.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <div className="flex items-center justify-between gap-4">
                   <div className="text-sm font-medium text-slate-950">{new Date(entry.created_at).toLocaleString()}</div>

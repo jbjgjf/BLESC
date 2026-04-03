@@ -94,6 +94,7 @@ export interface ExplanationPayload {
   evidence_summaries: string[];
   graph_summary_json: GraphLayerSummary;
   score_breakdown_json: Record<string, any>;
+  key_relations: ExtractionRelation[];
   created_at: string;
 }
 
@@ -104,6 +105,8 @@ export interface EntrySubmissionResponse {
   anomaly_result?: AnomalyResult | null;
   explanation?: ExplanationPayload | null;
 }
+
+export interface GraphSnapshotResponse extends GraphSnapshot {}
 
 export interface DailyFeatureAggregation {
   id: number;

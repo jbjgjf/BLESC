@@ -1,9 +1,15 @@
+import logging
 import os
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 import httpx
 from openai import OpenAI
+
+from ..ontology.repair import get_fallback_extraction, repair_json_string
 from ..ontology.validator import validate_extraction
-from ..ontology.repair import repair_json_string, get_fallback_extraction
+
+logger = logging.getLogger(__name__)
+
 
 class LLMAdapter:
     def __init__(self, use_mock: bool = False):
@@ -11,17 +17,27 @@ class LLMAdapter:
         self.openai_url = os.getenv("LLM_OPENAI_BASE_URL", "http://localhost:11434/v1")
         self.api_key = os.getenv("LLM_API_KEY", "ollama")
         self.model_name = os.getenv("LLM_MODEL_NAME", "qwen2.5:7b-instruct-q4_K_M")
-        
+
         self.client = OpenAI(base_url=self.openai_url, api_key=self.api_key)
 
     def extract_structure(self, text: str) -> Dict[str, Any]:
         """
         Main entry point for extraction.
+        Always returns a valid dict — never raises.
         """
-        if self.use_mock:
-            return self._mock_extract(text)
-            
-        return self._real_extract(text)
+        try:
+            if self.use_mock:
+                result = self._mock_extract(text)
+            else:
+                result = self._real_extract(text)
+            # Guard: validate the return value is actually a dict
+            if not isinstance(result, dict):
+                logger.warning("[llm_adapter] extraction returned non-dict type=%s; using fallback", type(result))
+                return get_fallback_extraction()
+            return result
+        except Exception:
+            logger.exception("[llm_adapter] extract_structure raised; using fallback")
+            return get_fallback_extraction()
 
     def _real_extract(self, text: str) -> Dict[str, Any]:
         prompt = self._get_prompt(text)
@@ -41,8 +57,8 @@ class LLMAdapter:
                 return validate_extraction(parsed)
             else:
                 return get_fallback_extraction()
-        except Exception as e:
-            print(f"Error in LLM extract: {e}")
+        except Exception:
+            logger.exception("[llm_adapter] Qwen inference failed; using fallback extraction")
             return get_fallback_extraction()
 
     def _mock_extract(self, text: str) -> Dict[str, Any]:

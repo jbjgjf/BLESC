@@ -1,4 +1,4 @@
-import { Entry, AnomalyResult, ExplanationPayload, DailyFeatureAggregation, EntrySubmissionResponse } from './models';
+import { Entry, AnomalyResult, ExplanationPayload, DailyFeatureAggregation, EntrySubmissionResponse, GraphSnapshotResponse } from './models';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
@@ -41,5 +41,9 @@ export class ApiClient {
 
   static getAnomaly(userId: string): Promise<AnomalyResult> {
     return this.fetch<AnomalyResult>(`/anomaly?user_id=${userId}`);
+  }
+
+  static getGraphSnapshots(userId: string, limit = 12): Promise<GraphSnapshotResponse[]> {
+    return this.fetch<GraphSnapshotResponse[]>(`/graph-snapshots?user_id=${userId}&limit=${limit}`);
   }
 }

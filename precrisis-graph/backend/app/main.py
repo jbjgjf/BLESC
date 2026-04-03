@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from datetime import datetime
 from typing import List, Optional
 
@@ -16,6 +17,8 @@ from .schemas.extraction import Extraction
 from .schemas.structured import EntrySubmissionResponse, GraphSnapshot, HybridExplanation
 from .services.inference_orchestrator import InferenceOrchestrator
 from .services.llm_adapter import llm_adapter
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="precrisis-graph API")
 
@@ -87,10 +90,36 @@ def _persist_graph_snapshot(
     return snapshot
 
 
+def _empty_explanation(user_id: str, day: datetime, graph_snapshot: Optional[GraphSnapshot] = None) -> HybridExplanation:
+    graph_summary = graph_snapshot.graph_summary_json if graph_snapshot else {
+        "node_count": 0,
+        "relation_count": 0,
+        "event_count": 0,
+        "key_nodes": [],
+        "key_relations": [],
+        "summary": "empty graph",
+    }
+    return HybridExplanation(
+        user_id=user_id,
+        day=day,
+        triggered_rules_json=[],
+        baseline_deviation_json={"baseline_available": False, "feature_zscores": {}, "top_features": [], "score": 0.0},
+        changed_relations_json=[],
+        protective_decline_json={},
+        uncertainty_json={"level": "high", "reasons": ["No explanation available"], "missing_signals": ["baseline", "graph"]},
+        evidence_summaries=[],
+        graph_summary_json=graph_summary,
+        score_breakdown_json={"rule_score": 0.0, "deviation_score": 0.0, "temporal_shift_score": 0.0, "final_score": 0.0},
+        key_relations=graph_summary.get("key_relations", []),
+    )
+
+
 @app.post("/api/entries", response_model=EntrySubmissionResponse)
 def create_entry(user_id: str, text: str, session: Session = Depends(get_session)):
     _clear_expired_raw_text(session)
+    logger.info("[submit] start user=%s text_len=%d", user_id, len(text))
 
+    # ── 1. Persist raw entry ─────────────────────────────────────────────────
     entry = Entry(
         user_id=user_id,
         raw_text=text,
@@ -100,33 +129,95 @@ def create_entry(user_id: str, text: str, session: Session = Depends(get_session
     session.add(entry)
     session.commit()
     session.refresh(entry)
+    logger.info("[submit] entry persisted id=%s", entry.id)
 
-    extracted = llm_adapter.extract_structure(text)
-    cleaned = validate_extraction(extracted) if extracted else get_fallback_extraction()
-    extraction = Extraction(
-        entry_id=entry.id,
-        nodes_json=cleaned.get("nodes", []),
-        relations_json=cleaned.get("relations", []),
-        temporal_summary=cleaned.get("temporal_summary", cleaned.get("temporal", {}).get("recency", "unknown")),
-    )
-    session.add(extraction)
-    session.commit()
-    session.refresh(extraction)
+    # ── 2. Extract structure (LLM or mock) ───────────────────────────────────
+    try:
+        extracted = llm_adapter.extract_structure(text)
+        logger.info(
+            "[submit] extraction result nodes=%d relations=%d error_flag=%s",
+            len(extracted.get("nodes", [])),
+            len(extracted.get("relations", [])),
+            extracted.get("error_flag", False),
+        )
+        cleaned = validate_extraction(extracted) if extracted else get_fallback_extraction()
+    except Exception:
+        logger.exception("[submit] extraction step raised; using fallback")
+        cleaned = get_fallback_extraction()
 
-    graph_snapshot = _persist_graph_snapshot(session, entry, cleaned)
+    # ── 3. Normalize temporal_summary ────────────────────────────────────────
+    try:
+        temporal_raw = cleaned.get("temporal") or {}
+        temporal_summary: str = (
+            cleaned.get("temporal_summary")
+            or (temporal_raw.get("recency") if isinstance(temporal_raw, dict) else None)
+            or "unknown"
+        )
+    except Exception:
+        logger.exception("[submit] temporal_summary normalization failed; using 'unknown'")
+        temporal_summary = "unknown"
 
-    entry.raw_text = None
-    entry.is_masked = True
-    session.add(entry)
-    session.commit()
-    session.refresh(entry)
+    # ── 4. Persist extraction ────────────────────────────────────────────────
+    try:
+        extraction = Extraction(
+            entry_id=entry.id,
+            nodes_json=cleaned.get("nodes", []),
+            relations_json=cleaned.get("relations", []),
+            temporal_summary=temporal_summary,
+        )
+        session.add(extraction)
+        session.commit()
+        session.refresh(extraction)
+        logger.info("[submit] extraction persisted id=%s", extraction.id)
+    except Exception:
+        logger.exception("[submit] extraction DB write failed; using in-memory fallback")
+        extraction = Extraction(
+            entry_id=entry.id,
+            nodes_json=[],
+            relations_json=[],
+            temporal_summary="unknown",
+        )
 
-    orchestrator = InferenceOrchestrator(session)
-    anomaly_result = orchestrator.process_day(user_id, entry.created_at.date())
-    explanation: Optional[HybridExplanation] = None
-    if anomaly_result and anomaly_result.explanation_id:
-        explanation = session.get(HybridExplanation, anomaly_result.explanation_id)
+    # ── 5. Persist graph snapshot ────────────────────────────────────────────
+    graph_snapshot: Optional[GraphSnapshot] = None
+    try:
+        graph_snapshot = _persist_graph_snapshot(session, entry, cleaned)
+        logger.info("[submit] graph snapshot persisted id=%s", graph_snapshot.id)
+    except Exception:
+        logger.exception("[submit] graph snapshot failed; continuing without snapshot")
 
+    # ── 6. Mask raw text ─────────────────────────────────────────────────────
+    try:
+        entry.raw_text = None
+        entry.is_masked = True
+        session.add(entry)
+        session.commit()
+        session.refresh(entry)
+    except Exception:
+        logger.exception("[submit] failed to mask raw_text; non-critical, continuing")
+
+    # ── 7. Run hybrid inference pipeline ────────────────────────────────────
+    anomaly_result = None
+    try:
+        orchestrator = InferenceOrchestrator(session)
+        anomaly_result = orchestrator.process_day(user_id, entry.created_at.date())
+        logger.info("[submit] anomaly_result id=%s", anomaly_result.id if anomaly_result else None)
+    except Exception:
+        logger.exception("[submit] inference orchestrator raised; returning empty anomaly")
+
+    # ── 8. Resolve explanation ───────────────────────────────────────────────
+    try:
+        explanation: Optional[HybridExplanation] = _empty_explanation(user_id, entry.created_at, graph_snapshot)
+        if anomaly_result and anomaly_result.explanation_id:
+            fetched = session.get(HybridExplanation, anomaly_result.explanation_id)
+            explanation = fetched or explanation
+        logger.info("[submit] explanation id=%s", explanation.id if explanation and explanation.id else None)
+    except Exception:
+        logger.exception("[submit] explanation resolution failed; using empty explanation")
+        explanation = _empty_explanation(user_id, entry.created_at, graph_snapshot)
+
+    # ── 9. Serialize response ───────────────────────────────────────────────
+    logger.info("[submit] returning EntrySubmissionResponse for entry id=%s", entry.id)
     return EntrySubmissionResponse(
         entry=entry,
         extraction=extraction,
@@ -165,7 +256,8 @@ def get_entry_structure(entry_id: int, session: Session = Depends(get_session)):
 
     anomaly_query = select(AnomalyResult).where(AnomalyResult.user_id == entry.user_id, AnomalyResult.day == entry.created_at.date()).order_by(AnomalyResult.created_at.desc()).limit(1)
     anomaly_result = session.exec(anomaly_query).first()
-    explanation = session.get(HybridExplanation, anomaly_result.explanation_id) if anomaly_result and anomaly_result.explanation_id else None
+    explanation = session.get(HybridExplanation, anomaly_result.explanation_id) if anomaly_result and anomaly_result.explanation_id else _empty_explanation(entry.user_id, entry.created_at, graph_snapshot)
+    explanation = explanation or _empty_explanation(entry.user_id, entry.created_at, graph_snapshot)
 
     return EntrySubmissionResponse(
         entry=entry,
@@ -174,6 +266,17 @@ def get_entry_structure(entry_id: int, session: Session = Depends(get_session)):
         anomaly_result=anomaly_result,
         explanation=explanation,
     )
+
+
+@app.get("/api/graph-snapshots", response_model=List[GraphSnapshot])
+def list_graph_snapshots(user_id: str, limit: int = 12, session: Session = Depends(get_session)):
+    query = (
+        select(GraphSnapshot)
+        .where(GraphSnapshot.user_id == user_id)
+        .order_by(GraphSnapshot.day.asc(), GraphSnapshot.created_at.asc())
+        .limit(limit)
+    )
+    return session.exec(query).all()
 
 
 @app.get("/api/timeline", response_model=List[AnomalyResult])

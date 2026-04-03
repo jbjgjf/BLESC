@@ -74,12 +74,13 @@ class HybridExplanation(SQLModel, table=True):
     evidence_summaries: List[str] = Field(sa_column=Column(JSON))
     graph_summary_json: Dict[str, Any] = Field(sa_column=Column(JSON))
     score_breakdown_json: Dict[str, Any] = Field(sa_column=Column(JSON))
+    key_relations: List[Dict[str, Any]] = Field(sa_column=Column(JSON), default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class EntrySubmissionResponse(SQLModel):
     entry: Entry
     extraction: Extraction
-    graph_snapshot: GraphSnapshot
+    graph_snapshot: Optional[GraphSnapshot] = None
     anomaly_result: Optional[AnomalyResult] = None
     explanation: Optional[HybridExplanation] = None

@@ -129,4 +129,5 @@ def generate_explanation(
         evidence_summaries=evidence_summaries,
         graph_summary_json=graph_summary,
         score_breakdown_json=score_breakdown,
+        key_relations=graph_summary.get("key_relations", []),
     )
