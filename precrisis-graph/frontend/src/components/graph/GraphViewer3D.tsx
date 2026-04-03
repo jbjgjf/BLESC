@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { GraphSnapshot, ExplanationPayload } from "@/api/models";
 import { ArrowLeftRight, Info, Orbit, RotateCw, ZoomIn } from "lucide-react";
 import type { GraphMode, GraphViewerNode } from "./graphTypes";
-import { buildGraphViewerData, buildNodeSelection } from "./graphAdapter";
+import { buildGraphViewerData, buildNodeSelection, getDebugFallbackData } from "./graphAdapter";
 
 const ForceGraph3D = dynamic(() => import("react-force-graph-3d"), { ssr: false }) as any;
 
@@ -24,6 +24,12 @@ export function GraphViewer3D({
 }: GraphViewer3DProps) {
   const [mode, setMode] = useState<GraphMode>("current");
   const [selectedNode, setSelectedNode] = useState<GraphViewerNode | null>(null);
+  const [showFallback, setShowFallback] = useState(false);
+
+  // Step 1: Log raw snapshots from /api/graph-snapshots
+  useEffect(() => {
+    console.log("[GraphViewer3D] snapshots raw:", snapshots);
+  }, [snapshots]);
 
   const orderedSnapshots = useMemo(
     () => [...snapshots].sort((a, b) => `${a.day}`.localeCompare(`${b.day}`)),
@@ -31,10 +37,17 @@ export function GraphViewer3D({
   );
 
   const activeSnapshot = currentSnapshot ?? orderedSnapshots.at(-1) ?? null;
-  const graphData = useMemo(
-    () => buildGraphViewerData(orderedSnapshots, mode, activeSnapshot),
-    [orderedSnapshots, mode, activeSnapshot],
-  );
+  const graphData = useMemo(() => {
+    if (showFallback) {
+      return getDebugFallbackData();
+    }
+    return buildGraphViewerData(orderedSnapshots, mode, activeSnapshot);
+  }, [orderedSnapshots, mode, activeSnapshot, showFallback]);
+
+  // Step 2: Log final adapter output
+  useEffect(() => {
+    console.log("[GraphViewer3D] transformed graphData:", graphData);
+  }, [graphData]);
 
   useEffect(() => {
     if (!selectedNode) return;
@@ -77,6 +90,16 @@ export function GraphViewer3D({
         </div>
 
         <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+          <button
+            type="button"
+            onClick={() => setShowFallback(!showFallback)}
+            className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+              showFallback ? "bg-rose-500 text-white" : "text-slate-600 hover:bg-white"
+            }`}
+          >
+            {showFallback ? "Hide Fallback" : "Debug Fallback"}
+          </button>
+
           <button
             type="button"
             onClick={() => setMode("current")}

@@ -52,6 +52,7 @@ export function buildGraphViewerData(
 
     safeArray(snapshot.nodes_json).forEach((node) => {
       const color = CATEGORY_COLORS[node.category] ?? "#94a3b8";
+      const intensity = typeof node.intensity === "number" ? node.intensity : 0.5;
       const viewerNode: GraphViewerNode = {
         ...node,
         originalId: node.id,
@@ -60,7 +61,7 @@ export function buildGraphViewerData(
         layerIndex,
         z,
         color,
-        radius: Math.max(4, 4 + Math.min(8, node.intensity * 6)),
+        radius: Math.max(4, 4 + Math.min(8, intensity * 6)),
         sourceKind: mode === "temporal" && layerIndex < visibleSnapshots.length - 1 ? "historical" : "current",
       };
       nodeMap.set(node.id, viewerNode);
@@ -166,3 +167,58 @@ export function buildNodeSelection(
   };
 }
 
+
+export function getDebugFallbackData(): GraphViewerData {
+  const node1: GraphViewerNode = {
+    id: "fallback-1",
+    originalId: "fallback-1",
+    label: "Mental State (Stable)",
+    category: "State",
+    intensity: 0.8,
+    confidence: 1.0,
+    snapshotId: 999,
+    snapshotDay: "2026-04-03",
+    layerIndex: 0,
+    z: 0,
+    color: CATEGORY_COLORS.State,
+    radius: 8.8,
+    sourceKind: "current",
+  };
+
+  const node2: GraphViewerNode = {
+    id: "fallback-2",
+    originalId: "fallback-2",
+    label: "Evening Walk",
+    category: "Event",
+    intensity: 0.6,
+    confidence: 1.0,
+    snapshotId: 999,
+    snapshotDay: "2026-04-03",
+    layerIndex: 0,
+    z: 0,
+    color: CATEGORY_COLORS.Event,
+    radius: 7.6,
+    sourceKind: "current",
+  };
+
+  const link: GraphViewerLink = {
+    source: node1,
+    target: node2,
+    source_id: "fallback-1",
+    target_id: "fallback-2",
+    type: "co_occurs",
+    confidence: 1.0,
+    color: RELATION_STYLES.co_occurs.color,
+    width: RELATION_STYLES.co_occurs.width,
+    opacity: RELATION_STYLES.co_occurs.opacity,
+    dashed: RELATION_STYLES.co_occurs.dashed,
+    layerIndex: 0,
+    snapshotId: 999,
+    snapshotDay: "2026-04-03",
+  };
+
+  return {
+    nodes: [node1, node2],
+    links: [link],
+  };
+}

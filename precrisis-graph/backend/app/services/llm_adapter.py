@@ -79,6 +79,9 @@ class LLMAdapter:
             nodes.append({"node_id": "deadline_1", "category": "Trigger", "label": "deadline", "intensity": 0.6})
             relations.append({"source_node_id": "deadline_1", "target_node_id": "sleep_1", "type": "escalates", "confidence": 0.7})
             
+        if not nodes:
+            nodes.append({"node_id": "self_1", "category": "Protective", "label": "Self / Baseline", "intensity": 0.5})
+
         return {
             "nodes": nodes,
             "relations": relations,
