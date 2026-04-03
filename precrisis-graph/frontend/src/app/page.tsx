@@ -45,6 +45,7 @@ export default function Home() {
   const loadGraphSnapshots = async () => {
     try {
       const data = await ApiClient.getGraphSnapshots(USER_ID);
+      console.log("[graph-snapshots] raw response", data);
       setGraphSnapshots(data);
     } catch {
       // Keep the page functional even if graph history cannot load.

@@ -37,12 +37,17 @@ export function GraphViewer3D({
   );
 
   const activeSnapshot = currentSnapshot ?? orderedSnapshots.at(-1) ?? null;
+  const realGraphData = useMemo(() => buildGraphViewerData(orderedSnapshots, mode, activeSnapshot), [orderedSnapshots, mode, activeSnapshot]);
   const graphData = useMemo(() => {
     if (showFallback) {
       return getDebugFallbackData();
     }
-    return buildGraphViewerData(orderedSnapshots, mode, activeSnapshot);
-  }, [orderedSnapshots, mode, activeSnapshot, showFallback]);
+    if (realGraphData.nodes.length === 0) {
+      return getDebugFallbackData();
+    }
+    return realGraphData;
+  }, [realGraphData, showFallback]);
+  const usingFallback = showFallback || realGraphData.nodes.length === 0;
 
   // Step 2: Log final adapter output
   useEffect(() => {
@@ -156,7 +161,7 @@ export function GraphViewer3D({
               />
             ) : (
               <div className="flex h-full items-center justify-center p-8 text-center text-sm text-slate-300">
-                No graph snapshot available yet.
+                No real graph data found.
               </div>
             )}
           </div>
@@ -219,6 +224,7 @@ export function GraphViewer3D({
               <p>Relation styling encodes relation type.</p>
               <p>Temporal mode stacks snapshots on the z-axis so shifts across time are visible.</p>
               <p>Use the graph to inspect structural change points, not to decide the anomaly itself.</p>
+              {usingFallback && <p className="text-rose-600">Debug fallback is active because the real graph is empty.</p>}
             </div>
           </div>
         </aside>
@@ -226,4 +232,3 @@ export function GraphViewer3D({
     </section>
   );
 }
-

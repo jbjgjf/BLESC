@@ -38,7 +38,7 @@ export function buildGraphViewerData(
   const orderedSnapshots = [...snapshots].sort((a, b) => `${a.day}`.localeCompare(`${b.day}`));
   const visibleSnapshots =
     mode === "temporal"
-      ? orderedSnapshots
+      ? (orderedSnapshots.length > 0 ? orderedSnapshots : currentSnapshot ? [currentSnapshot] : [])
       : currentSnapshot
         ? [currentSnapshot]
         : orderedSnapshots.slice(-1);

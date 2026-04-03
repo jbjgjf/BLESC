@@ -276,7 +276,15 @@ def list_graph_snapshots(user_id: str, limit: int = 12, session: Session = Depen
         .order_by(GraphSnapshot.day.asc(), GraphSnapshot.created_at.asc())
         .limit(limit)
     )
-    return session.exec(query).all()
+    snapshots = session.exec(query).all()
+    logger.info(
+        "[graph-snapshots] user=%s limit=%s returned=%s empty=%s",
+        user_id,
+        limit,
+        len(snapshots),
+        all(len(snapshot.nodes_json or []) == 0 for snapshot in snapshots) if snapshots else True,
+    )
+    return snapshots
 
 
 @app.get("/api/timeline", response_model=List[AnomalyResult])
