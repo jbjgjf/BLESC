@@ -60,6 +60,11 @@ export default function Home() {
     setError(null);
     try {
       const response = await ApiClient.createEntry(USER_ID, text);
+      console.log("[submit-response] raw response", response);
+      console.log("[submit-response] extraction counts", {
+        nodes: response.extraction?.nodes_json?.length ?? 0,
+        relations: response.extraction?.relations_json?.length ?? 0,
+      });
       setLastSubmission(response);
       setText("");
       loadEntries();
@@ -76,7 +81,9 @@ export default function Home() {
     return nodes.sort((a, b) => categoryRank(a.category) - categoryRank(b.category));
   }, [lastSubmission]);
 
-  const submittedGraph = lastSubmission?.graph_snapshot;
+  const submitGraphSnapshot = lastSubmission?.graph_snapshot ?? null;
+  const historyGraphSnapshots = graphSnapshots;
+  const submittedGraph = submitGraphSnapshot;
   const graphSummary = lastSubmission?.explanation?.graph_summary_json ?? submittedGraph?.graph_summary_json;
   const keyRelations = lastSubmission?.explanation?.key_relations ?? graphSummary?.key_relations ?? [];
   const temporalDiff = submittedGraph?.temporal_diff_json;
@@ -137,6 +144,14 @@ export default function Home() {
             <p>1. Extract nodes and relations.</p>
             <p>2. Persist graph snapshot, then remove raw text.</p>
             <p>3. Run deterministic hybrid inference against baseline and local graph drift.</p>
+          </div>
+          <div className="mt-6 grid gap-2 text-xs text-slate-300">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <span className="font-semibold text-cyan-300">Live snapshot source:</span> submit response
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <span className="font-semibold text-cyan-300">History source:</span> /api/graph-snapshots
+            </div>
           </div>
           <div className="mt-8 grid grid-cols-2 gap-3 text-xs">
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -238,8 +253,8 @@ export default function Home() {
       )}
 
       <GraphViewer3D
-        snapshots={graphSnapshots}
-        currentSnapshot={lastSubmission?.graph_snapshot ?? graphSnapshots.at(-1) ?? null}
+        snapshots={historyGraphSnapshots}
+        currentSnapshot={submitGraphSnapshot ?? historyGraphSnapshots.at(-1) ?? null}
         explanation={lastSubmission?.explanation ?? null}
         title="Baseline and temporal graph viewer"
       />

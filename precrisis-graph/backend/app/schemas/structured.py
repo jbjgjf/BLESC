@@ -28,6 +28,16 @@ class GraphRelation(SQLModel):
     confidence: float = 1.0
 
 
+class ExtractionResponse(SQLModel):
+    id: Optional[int] = None
+    entry_id: int
+    nodes_json: List[Dict[str, Any]] = Field(default_factory=list)
+    relations_json: List[Dict[str, Any]] = Field(default_factory=list)
+    temporal_summary: Optional[str] = None
+    extractor_version: str = ""
+    created_at: datetime
+
+
 class GraphLayerSummary(SQLModel):
     node_count: int = 0
     relation_count: int = 0
@@ -80,7 +90,7 @@ class HybridExplanation(SQLModel, table=True):
 
 class EntrySubmissionResponse(SQLModel):
     entry: Entry
-    extraction: Extraction
+    extraction: ExtractionResponse
     graph_snapshot: Optional[GraphSnapshot] = None
     anomaly_result: Optional[AnomalyResult] = None
     explanation: Optional[HybridExplanation] = None

@@ -34,6 +34,10 @@ export interface Extraction {
   created_at: string;
 }
 
+export interface ExtractionResponse extends Extraction {
+  extractor_version: string;
+}
+
 export interface GraphLayerSummary {
   node_count: number;
   relation_count: number;
@@ -100,7 +104,7 @@ export interface ExplanationPayload {
 
 export interface EntrySubmissionResponse {
   entry: Entry;
-  extraction: Extraction;
+  extraction: ExtractionResponse;
   graph_snapshot: GraphSnapshot;
   anomaly_result?: AnomalyResult | null;
   explanation?: ExplanationPayload | null;

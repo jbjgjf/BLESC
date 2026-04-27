@@ -1,9 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { GraphSnapshot, ExplanationPayload } from "@/api/models";
 import { ArrowLeftRight, Info, Orbit, RotateCw, ZoomIn } from "lucide-react";
+import * as THREE from "three";
 import type { GraphMode, GraphViewerNode } from "./graphTypes";
 import { buildGraphViewerData, buildNodeSelection, getDebugFallbackData } from "./graphAdapter";
 
@@ -25,6 +26,7 @@ export function GraphViewer3D({
   const [mode, setMode] = useState<GraphMode>("current");
   const [selectedNode, setSelectedNode] = useState<GraphViewerNode | null>(null);
   const [showFallback, setShowFallback] = useState(false);
+  const fgRef = useRef<any>(null);
 
   // Step 1: Log raw snapshots from /api/graph-snapshots
   useEffect(() => {
@@ -137,27 +139,45 @@ export function GraphViewer3D({
           <div className="h-[620px] w-full">
             {graphData.nodes.length > 0 ? (
               <ForceGraph3D
+                ref={fgRef}
                 graphData={graphData}
                 backgroundColor="#020617"
                 nodeLabel={(node: GraphViewerNode) =>
                   `${node.label} · ${node.category} · ${node.snapshotDay}${node.layerIndex >= 0 ? ` · layer ${node.layerIndex + 1}` : ""}`
                 }
                 nodeColor={(node: GraphViewerNode) => node.color}
-                nodeVal={(node: GraphViewerNode) => node.radius}
+                nodeVal={(node: GraphViewerNode) => node.radius * 2.2}
+                nodeThreeObject={(node: GraphViewerNode) => {
+                  const material = new THREE.MeshStandardMaterial({
+                    color: node.color,
+                    emissive: node.color,
+                    emissiveIntensity: 0.22,
+                    roughness: 0.25,
+                    metalness: 0.08,
+                    transparent: true,
+                    opacity: 0.98,
+                  });
+                  return new THREE.Mesh(new THREE.SphereGeometry(Math.max(2.8, node.radius * 0.95), 24, 24), material);
+                }}
                 linkColor={(link: any) => link.color}
                 linkWidth={(link: any) => link.width}
                 linkOpacity={(link: any) => link.opacity}
                 linkDirectionalArrowLength={(link: any) => (link.type === "buffers" ? 0 : 3)}
                 linkDirectionalArrowRelPos={0.92}
-                nodeRelSize={5}
+                nodeRelSize={9}
                 enableNodeDrag={true}
                 onNodeClick={(node: GraphViewerNode) => setSelectedNode(node)}
                 onBackgroundClick={() => setSelectedNode(null)}
                 controlType="orbit"
-                warmupTicks={80}
-                cooldownTicks={80}
+                warmupTicks={120}
+                cooldownTicks={120}
                 showNavInfo={false}
                 height={620}
+                onEngineStop={() => {
+                  if (!fgRef.current) return;
+                  const distance = Math.max(220, graphData.nodes.length * 130);
+                  fgRef.current.cameraPosition({ x: 0, y: 0, z: distance }, { x: 0, y: 0, z: 0 }, 1200);
+                }}
               />
             ) : (
               <div className="flex h-full items-center justify-center p-8 text-center text-sm text-slate-300">
@@ -224,6 +244,7 @@ export function GraphViewer3D({
               <p>Relation styling encodes relation type.</p>
               <p>Temporal mode stacks snapshots on the z-axis so shifts across time are visible.</p>
               <p>Use the graph to inspect structural change points, not to decide the anomaly itself.</p>
+              <p>Node-only snapshots still render as bright spheres with camera framing tuned to keep them visible.</p>
               {usingFallback && <p className="text-rose-600">Debug fallback is active because the real graph is empty.</p>}
             </div>
           </div>

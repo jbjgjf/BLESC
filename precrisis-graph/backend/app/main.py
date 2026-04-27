@@ -14,7 +14,7 @@ from .ontology.validator import validate_extraction
 from .schemas.analytics import AnomalyResult, BaselineStats, DailyFeatureAggregation, Embedding
 from .schemas.entry import Entry, get_default_expires_at
 from .schemas.extraction import Extraction
-from .schemas.structured import EntrySubmissionResponse, GraphSnapshot, HybridExplanation
+from .schemas.structured import EntrySubmissionResponse, ExtractionResponse, GraphSnapshot, HybridExplanation
 from .services.inference_orchestrator import InferenceOrchestrator
 from .services.llm_adapter import llm_adapter
 
@@ -111,6 +111,18 @@ def _empty_explanation(user_id: str, day: datetime, graph_snapshot: Optional[Gra
         graph_summary_json=graph_summary,
         score_breakdown_json={"rule_score": 0.0, "deviation_score": 0.0, "temporal_shift_score": 0.0, "final_score": 0.0},
         key_relations=graph_summary.get("key_relations", []),
+    )
+
+
+def _to_extraction_response(extraction: Extraction) -> ExtractionResponse:
+    return ExtractionResponse(
+        id=extraction.id,
+        entry_id=extraction.entry_id,
+        nodes_json=extraction.nodes_json or [],
+        relations_json=extraction.relations_json or [],
+        temporal_summary=extraction.temporal_summary,
+        extractor_version=extraction.extractor_version,
+        created_at=extraction.created_at,
     )
 
 
@@ -220,7 +232,7 @@ def create_entry(user_id: str, text: str, session: Session = Depends(get_session
     logger.info("[submit] returning EntrySubmissionResponse for entry id=%s", entry.id)
     return EntrySubmissionResponse(
         entry=entry,
-        extraction=extraction,
+        extraction=_to_extraction_response(extraction),
         graph_snapshot=graph_snapshot,
         anomaly_result=anomaly_result,
         explanation=explanation,
@@ -261,7 +273,7 @@ def get_entry_structure(entry_id: int, session: Session = Depends(get_session)):
 
     return EntrySubmissionResponse(
         entry=entry,
-        extraction=extraction,
+        extraction=_to_extraction_response(extraction),
         graph_snapshot=graph_snapshot,
         anomaly_result=anomaly_result,
         explanation=explanation,
