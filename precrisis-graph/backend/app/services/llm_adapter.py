@@ -4,6 +4,10 @@ from typing import Any, Dict, Optional
 
 import httpx
 from openai import OpenAI
+from dotenv import load_dotenv
+
+# Load .env file if it exists
+load_dotenv()
 
 from ..ontology.repair import get_fallback_extraction, repair_json_string
 from ..ontology.validator import validate_extraction
@@ -14,9 +18,20 @@ logger = logging.getLogger(__name__)
 class LLMAdapter:
     def __init__(self, use_mock: bool = False):
         self.use_mock = use_mock
-        self.openai_url = os.getenv("LLM_OPENAI_BASE_URL", "http://localhost:11434/v1")
-        self.api_key = os.getenv("LLM_API_KEY", "ollama")
-        self.model_name = os.getenv("LLM_MODEL_NAME", "qwen2.5:7b-instruct-q4_K_M")
+        
+        # Priority 1: Check for standard OpenAI API Key
+        openai_key = os.getenv("OPENAI_API_KEY")
+        
+        if openai_key:
+            # If OpenAI key is provided, default to OpenAI official endpoint and a light model
+            self.openai_url = os.getenv("LLM_OPENAI_BASE_URL", "https://api.openai.com/v1")
+            self.api_key = openai_key
+            self.model_name = os.getenv("LLM_MODEL_NAME", "gpt-4o-mini")
+        else:
+            # Default to Ollama/Local setup
+            self.openai_url = os.getenv("LLM_OPENAI_BASE_URL", "http://localhost:11434/v1")
+            self.api_key = os.getenv("LLM_API_KEY", "ollama")
+            self.model_name = os.getenv("LLM_MODEL_NAME", "qwen2.5:7b-instruct-q4_K_M")
 
         self.client = OpenAI(base_url=self.openai_url, api_key=self.api_key)
 
