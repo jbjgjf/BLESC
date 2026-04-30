@@ -22,10 +22,6 @@ function safeArray<T>(value: T[] | undefined | null): T[] {
   return Array.isArray(value) ? value : [];
 }
 
-function keyForSnapshot(snapshot: GraphSnapshot, nodeId: string): string {
-  return `${snapshot.id}:${nodeId}`;
-}
-
 function resolveRelationStyle(type: string) {
   return RELATION_STYLES[type] ?? RELATION_STYLES.co_occurs;
 }

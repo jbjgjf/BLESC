@@ -1,10 +1,12 @@
 import hashlib
 import logging
+import os
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Body, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from sqlmodel import Session, select, func
 
 from .analytics.graph_features import build_graph_summary, build_temporal_graph_diff, summarize_temporal_diff
@@ -22,13 +24,23 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="precrisis-graph API")
 
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOW_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class EntryCreateRequest(BaseModel):
+    text: str
 
 
 @app.on_event("startup")
@@ -127,16 +139,25 @@ def _to_extraction_response(extraction: Extraction) -> ExtractionResponse:
 
 
 @app.post("/api/entries", response_model=EntrySubmissionResponse)
-def create_entry(user_id: str, text: str, session: Session = Depends(get_session)):
+def create_entry(
+    user_id: str,
+    payload: Optional[EntryCreateRequest] = Body(default=None),
+    text: Optional[str] = None,
+    session: Session = Depends(get_session),
+):
+    entry_text = payload.text if payload else text
+    if not entry_text or not entry_text.strip():
+        raise HTTPException(status_code=422, detail="Entry text is required")
+
     _clear_expired_raw_text(session)
-    logger.info("[submit] start user=%s text_len=%d", user_id, len(text))
+    logger.info("[submit] start user=%s text_len=%d", user_id, len(entry_text))
 
     # ── 1. Persist raw entry ─────────────────────────────────────────────────
     entry = Entry(
         user_id=user_id,
-        raw_text=text,
+        raw_text=entry_text,
         expires_at=get_default_expires_at(),
-        provenance_hash=hashlib.sha256(f"{user_id}:{text}".encode("utf-8")).hexdigest()[:16],
+        provenance_hash=hashlib.sha256(f"{user_id}:{entry_text}".encode("utf-8")).hexdigest()[:16],
     )
     session.add(entry)
     session.commit()
@@ -145,7 +166,7 @@ def create_entry(user_id: str, text: str, session: Session = Depends(get_session
 
     # ── 2. Extract structure (LLM or mock) ───────────────────────────────────
     try:
-        extracted = llm_adapter.extract_structure(text)
+        extracted = llm_adapter.extract_structure(entry_text)
         logger.info(
             "[submit] extraction result nodes=%d relations=%d error_flag=%s",
             len(extracted.get("nodes", [])),

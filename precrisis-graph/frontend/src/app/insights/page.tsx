@@ -1,25 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { ApiClient } from "@/api/client";
 import { AnomalyResult, ExplanationPayload } from "@/api/models";
 import { AlertCircle, Loader2, Network, PieChart, ShieldAlert, Shuffle, TriangleAlert } from "lucide-react";
-
-const USER_ID = "research_user_01";
+import { useStoredUserId } from "@/lib/user";
 
 export default function Insights() {
+  const { userId } = useStoredUserId();
   const [anomaly, setAnomaly] = useState<AnomalyResult | null>(null);
   const [explanation, setExplanation] = useState<ExplanationPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadInsights();
-  }, []);
-
-  const loadInsights = async () => {
+  const loadInsights = useCallback(async () => {
     try {
-      const currentAnomaly = await ApiClient.getAnomaly(USER_ID);
+      const currentAnomaly = await ApiClient.getAnomaly(userId);
       setAnomaly(currentAnomaly);
       if (currentAnomaly.explanation_id) {
         const detail = await ApiClient.getExplanation(currentAnomaly.explanation_id);
@@ -30,7 +26,11 @@ export default function Insights() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    loadInsights();
+  }, [loadInsights]);
 
   if (isLoading) {
     return (
@@ -160,4 +160,3 @@ export default function Insights() {
     </div>
   );
 }
-

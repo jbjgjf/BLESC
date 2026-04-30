@@ -13,8 +13,8 @@ cd backend
 source venv/bin/activate
 # 依存関係のインストール (初回のみ)
 pip install -r requirements.txt
-# サーバー起動 (ポート 8001)
-USE_MOCK_LLM=false uvicorn app.main:app --reload --port 8001
+# サーバー起動 (ポート 8000)
+USE_MOCK_LLM=false python -m uvicorn app.main:app --reload --port 8000
 ```
 
 > [!TIP]
@@ -39,5 +39,5 @@ npm run dev
 ---
 
 ## 開発ツール
-- **APIドキュメント**: [http://localhost:8001/docs](http://localhost:8001/docs)
+- **APIドキュメント**: [http://localhost:8000/docs](http://localhost:8000/docs)
 - **テストスクリプト**: `backend/reproduce_issue.py` を実行して API の動作確認ができます。

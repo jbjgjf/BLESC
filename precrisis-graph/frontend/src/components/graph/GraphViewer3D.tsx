@@ -1,14 +1,21 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentType, MutableRefObject } from "react";
+import { useMemo, useRef, useState } from "react";
 import { GraphSnapshot, ExplanationPayload } from "@/api/models";
-import { ArrowLeftRight, Info, Orbit, RotateCw, ZoomIn } from "lucide-react";
+import { ArrowLeftRight, Info, Orbit, RotateCw } from "lucide-react";
 import * as THREE from "three";
-import type { GraphMode, GraphViewerNode } from "./graphTypes";
+import type { ForceGraphMethods } from "react-force-graph-3d";
+import type { GraphMode, GraphViewerLink, GraphViewerNode } from "./graphTypes";
 import { buildGraphViewerData, buildNodeSelection, getDebugFallbackData } from "./graphAdapter";
 
-const ForceGraph3D = dynamic(() => import("react-force-graph-3d"), { ssr: false }) as any;
+type ForceGraphBoundaryProps = Record<string, unknown> & {
+  ref?: MutableRefObject<ForceGraphMethods | null>;
+};
+
+const ForceGraph3D = dynamic(() => import("react-force-graph-3d"), { ssr: false }) as unknown as ComponentType<ForceGraphBoundaryProps>;
+const ENABLE_GRAPH_DEBUG = process.env.NEXT_PUBLIC_ENABLE_GRAPH_DEBUG === "true";
 
 interface GraphViewer3DProps {
   snapshots: GraphSnapshot[];
@@ -26,12 +33,7 @@ export function GraphViewer3D({
   const [mode, setMode] = useState<GraphMode>("current");
   const [selectedNode, setSelectedNode] = useState<GraphViewerNode | null>(null);
   const [showFallback, setShowFallback] = useState(false);
-  const fgRef = useRef<any>(null);
-
-  // Step 1: Log raw snapshots from /api/graph-snapshots
-  useEffect(() => {
-    console.log("[GraphViewer3D] snapshots raw:", snapshots);
-  }, [snapshots]);
+  const fgRef = useRef<ForceGraphMethods | null>(null);
 
   const orderedSnapshots = useMemo(
     () => [...snapshots].sort((a, b) => `${a.day}`.localeCompare(`${b.day}`)),
@@ -41,35 +43,21 @@ export function GraphViewer3D({
   const activeSnapshot = currentSnapshot ?? orderedSnapshots.at(-1) ?? null;
   const realGraphData = useMemo(() => buildGraphViewerData(orderedSnapshots, mode, activeSnapshot), [orderedSnapshots, mode, activeSnapshot]);
   const graphData = useMemo(() => {
-    if (showFallback) {
-      return getDebugFallbackData();
-    }
-    if (realGraphData.nodes.length === 0) {
+    if (ENABLE_GRAPH_DEBUG && showFallback) {
       return getDebugFallbackData();
     }
     return realGraphData;
   }, [realGraphData, showFallback]);
-  const usingFallback = showFallback || realGraphData.nodes.length === 0;
+  const usingFallback = ENABLE_GRAPH_DEBUG && showFallback;
 
-  // Step 2: Log final adapter output
-  useEffect(() => {
-    console.log("[GraphViewer3D] transformed graphData:", graphData);
-  }, [graphData]);
+  const visibleSelectedNode = selectedNode && graphData.nodes.some(
+    (node) => node.snapshotId === selectedNode.snapshotId && node.originalId === selectedNode.originalId,
+  ) ? selectedNode : null;
 
-  useEffect(() => {
-    if (!selectedNode) return;
-    const stillVisible = graphData.nodes.some(
-      (node) => node.snapshotId === selectedNode.snapshotId && node.originalId === selectedNode.originalId,
-    );
-    if (!stillVisible) {
-      setSelectedNode(null);
-    }
-  }, [graphData.nodes, selectedNode]);
-
-  const selection = selectedNode
+  const selection = visibleSelectedNode
     ? buildNodeSelection(
-        selectedNode,
-        orderedSnapshots.find((snapshot) => snapshot.id === selectedNode.snapshotId),
+        visibleSelectedNode,
+        orderedSnapshots.find((snapshot) => snapshot.id === visibleSelectedNode.snapshotId),
         explanation,
       )
     : null;
@@ -97,16 +85,17 @@ export function GraphViewer3D({
         </div>
 
         <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1">
-          <button
-            type="button"
-            onClick={() => setShowFallback(!showFallback)}
-            className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
-              showFallback ? "bg-rose-500 text-white" : "text-slate-600 hover:bg-white"
-            }`}
-          >
-            {showFallback ? "Hide Fallback" : "Debug Fallback"}
-          </button>
-
+          {ENABLE_GRAPH_DEBUG && (
+            <button
+              type="button"
+              onClick={() => setShowFallback(!showFallback)}
+              className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+                showFallback ? "bg-rose-500 text-white" : "text-slate-600 hover:bg-white"
+              }`}
+            >
+              {showFallback ? "Hide Fallback" : "Debug Fallback"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setMode("current")}
@@ -159,10 +148,10 @@ export function GraphViewer3D({
                   });
                   return new THREE.Mesh(new THREE.SphereGeometry(Math.max(2.8, node.radius * 0.95), 24, 24), material);
                 }}
-                linkColor={(link: any) => link.color}
-                linkWidth={(link: any) => link.width}
-                linkOpacity={(link: any) => link.opacity}
-                linkDirectionalArrowLength={(link: any) => (link.type === "buffers" ? 0 : 3)}
+                linkColor={(link: GraphViewerLink) => link.color}
+                linkWidth={(link: GraphViewerLink) => link.width}
+                linkOpacity={0.88}
+                linkDirectionalArrowLength={(link: GraphViewerLink) => (link.type === "buffers" ? 0 : 3)}
                 linkDirectionalArrowRelPos={0.92}
                 nodeRelSize={9}
                 enableNodeDrag={true}
@@ -181,7 +170,7 @@ export function GraphViewer3D({
               />
             ) : (
               <div className="flex h-full items-center justify-center p-8 text-center text-sm text-slate-300">
-                No real graph data found.
+                No graph data yet. Submit a journal entry with events, supports, stressors, or changes to render the structural graph.
               </div>
             )}
           </div>
@@ -245,7 +234,7 @@ export function GraphViewer3D({
               <p>Temporal mode stacks snapshots on the z-axis so shifts across time are visible.</p>
               <p>Use the graph to inspect structural change points, not to decide the anomaly itself.</p>
               <p>Node-only snapshots still render as bright spheres with camera framing tuned to keep them visible.</p>
-              {usingFallback && <p className="text-rose-600">Debug fallback is active because the real graph is empty.</p>}
+              {usingFallback && <p className="text-rose-600">Debug fallback is active.</p>}
             </div>
           </div>
         </aside>

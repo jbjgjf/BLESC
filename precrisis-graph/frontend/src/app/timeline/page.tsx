@@ -1,33 +1,33 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { ApiClient } from "@/api/client";
 import { AnomalyResult } from "@/api/models";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
-import { Loader2, Calendar, AlertCircle, Info } from "lucide-react";
+import { Loader2, Calendar, AlertCircle } from "lucide-react";
 import Link from 'next/link';
+import { useStoredUserId } from "@/lib/user";
 
 export default function Timeline() {
+  const { userId } = useStoredUserId();
   const [data, setData] = useState<AnomalyResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const USER_ID = "research_user_01";
-
-  useEffect(() => {
-    loadTimeline();
-  }, []);
-
-  const loadTimeline = async () => {
+  const loadTimeline = useCallback(async () => {
     try {
-      const timeline = await ApiClient.getTimeline(USER_ID);
+      const timeline = await ApiClient.getTimeline(userId);
       setData(timeline);
-    } catch (err) {
+    } catch {
       setError("Failed to load timeline data.");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    loadTimeline();
+  }, [loadTimeline]);
 
   if (isLoading) {
     return (

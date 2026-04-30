@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiClient } from "@/api/client";
-import { Entry, EntrySubmissionResponse, ExtractionNode, ExtractionRelation, GraphSnapshot } from "@/api/models";
+import { Entry, EntrySubmissionResponse, ExtractionRelation, GraphSnapshot } from "@/api/models";
 import { AlertCircle, ArrowRight, GitBranch, History, Loader2, Send, Sparkles, Network, TriangleAlert } from "lucide-react";
 import { GraphViewer3D } from "@/components/graph/GraphViewer3D";
-
-const USER_ID = "research_user_01";
+import { useStoredUserId } from "@/lib/user";
 
 function categoryRank(category: string): number {
   const order = ["Protective", "Event", "Behavior", "Trigger", "State"];
@@ -18,6 +17,7 @@ function relationLabel(relation: ExtractionRelation): string {
 }
 
 export default function Home() {
+  const { userId } = useStoredUserId();
   const [text, setText] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
   const [graphSnapshots, setGraphSnapshots] = useState<GraphSnapshot[]>([]);
@@ -26,31 +26,30 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadEntries();
-    loadGraphSnapshots();
-  }, []);
-
-  const loadEntries = async () => {
+  const loadEntries = useCallback(async () => {
     try {
-      const data = await ApiClient.getEntries(USER_ID);
+      const data = await ApiClient.getEntries(userId);
       setEntries(data);
     } catch {
       setError("Failed to load entries.");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [userId]);
 
-  const loadGraphSnapshots = async () => {
+  const loadGraphSnapshots = useCallback(async () => {
     try {
-      const data = await ApiClient.getGraphSnapshots(USER_ID);
-      console.log("[graph-snapshots] raw response", data);
+      const data = await ApiClient.getGraphSnapshots(userId);
       setGraphSnapshots(data);
     } catch {
       // Keep the page functional even if graph history cannot load.
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    loadEntries();
+    loadGraphSnapshots();
+  }, [loadEntries, loadGraphSnapshots]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,12 +58,7 @@ export default function Home() {
     setIsSubmitting(true);
     setError(null);
     try {
-      const response = await ApiClient.createEntry(USER_ID, text);
-      console.log("[submit-response] raw response", response);
-      console.log("[submit-response] extraction counts", {
-        nodes: response.extraction?.nodes_json?.length ?? 0,
-        relations: response.extraction?.relations_json?.length ?? 0,
-      });
+      const response = await ApiClient.createEntry(userId, text);
       setLastSubmission(response);
       setText("");
       loadEntries();
@@ -153,16 +147,16 @@ export default function Home() {
               <span className="font-semibold text-cyan-300">History source:</span> /api/graph-snapshots
             </div>
           </div>
-          <div className="mt-8 grid grid-cols-2 gap-3 text-xs">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-slate-400">Primary record</div>
-              <div className="mt-1 font-semibold">Structural graph</div>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-slate-400">Text retention</div>
-              <div className="mt-1 font-semibold">Optional / TTL-bound</div>
-            </div>
-          </div>
+              <div className="mt-8 grid grid-cols-2 gap-3 text-xs">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="text-slate-400">Primary record</div>
+                  <div className="mt-1 font-semibold">Structural graph</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="text-slate-400">Participant entries</div>
+                  <div className="mt-1 font-semibold">{isLoading ? "Loading" : entries.length}</div>
+                </div>
+              </div>
         </div>
       </section>
 

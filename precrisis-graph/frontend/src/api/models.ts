@@ -1,3 +1,5 @@
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
 export interface Entry {
   id: number;
   user_id: string;
@@ -52,10 +54,10 @@ export interface TemporalGraphDiff {
   removed_nodes: ExtractionNode[];
   added_relations: ExtractionRelation[];
   removed_relations: ExtractionRelation[];
-  changed_relations: Array<Record<string, any>>;
+  changed_relations: Array<Record<string, JsonValue>>;
   relation_shift_summary: string;
-  protective_decline: Record<string, any>;
-  uncertainty: Record<string, any>;
+  protective_decline: Record<string, JsonValue>;
+  uncertainty: Record<string, JsonValue>;
 }
 
 export interface GraphSnapshot {
@@ -83,7 +85,7 @@ export interface ExplanationContribution {
   rule: string;
   evidence: string;
   weight: number;
-  signal?: Record<string, any>;
+  signal?: Record<string, JsonValue>;
 }
 
 export interface ExplanationPayload {
@@ -91,13 +93,13 @@ export interface ExplanationPayload {
   user_id: string;
   day: string;
   triggered_rules_json: ExplanationContribution[];
-  baseline_deviation_json: Record<string, any>;
-  changed_relations_json: Array<Record<string, any>>;
-  protective_decline_json: Record<string, any>;
-  uncertainty_json: Record<string, any>;
+  baseline_deviation_json: Record<string, JsonValue>;
+  changed_relations_json: Array<Record<string, JsonValue>>;
+  protective_decline_json: Record<string, JsonValue>;
+  uncertainty_json: Record<string, JsonValue>;
   evidence_summaries: string[];
   graph_summary_json: GraphLayerSummary;
-  score_breakdown_json: Record<string, any>;
+  score_breakdown_json: Record<string, JsonValue>;
   key_relations: ExtractionRelation[];
   created_at: string;
 }
@@ -110,7 +112,7 @@ export interface EntrySubmissionResponse {
   explanation?: ExplanationPayload | null;
 }
 
-export interface GraphSnapshotResponse extends GraphSnapshot {}
+export type GraphSnapshotResponse = GraphSnapshot;
 
 export interface DailyFeatureAggregation {
   id: number;
@@ -124,5 +126,5 @@ export interface DailyFeatureAggregation {
   event_avg_duration: number;
   protective_ratio: number;
   isolation_signal: number;
-  feature_vector_json: Record<string, any>;
+  feature_vector_json: Record<string, JsonValue>;
 }

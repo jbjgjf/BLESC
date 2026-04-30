@@ -18,17 +18,18 @@ export class ApiClient {
   }
 
   static getEntries(userId: string): Promise<Entry[]> {
-    return this.fetch<Entry[]>(`/entries?user_id=${userId}`);
+    return this.fetch<Entry[]>(`/entries?user_id=${encodeURIComponent(userId)}`);
   }
 
   static createEntry(userId: string, text: string): Promise<EntrySubmissionResponse> {
-    return this.fetch<EntrySubmissionResponse>(`/entries?user_id=${userId}&text=${encodeURIComponent(text)}`, {
+    return this.fetch<EntrySubmissionResponse>(`/entries?user_id=${encodeURIComponent(userId)}`, {
       method: 'POST',
+      body: JSON.stringify({ text }),
     });
   }
 
   static getTimeline(userId: string): Promise<AnomalyResult[]> {
-    return this.fetch<AnomalyResult[]>(`/timeline?user_id=${userId}`);
+    return this.fetch<AnomalyResult[]>(`/timeline?user_id=${encodeURIComponent(userId)}`);
   }
 
   static getExplanation(explanationId: number): Promise<ExplanationPayload> {
@@ -36,14 +37,14 @@ export class ApiClient {
   }
 
   static getFeatures(userId: string): Promise<DailyFeatureAggregation[]> {
-    return this.fetch<DailyFeatureAggregation[]>(`/features?user_id=${userId}`);
+    return this.fetch<DailyFeatureAggregation[]>(`/features?user_id=${encodeURIComponent(userId)}`);
   }
 
   static getAnomaly(userId: string): Promise<AnomalyResult> {
-    return this.fetch<AnomalyResult>(`/anomaly?user_id=${userId}`);
+    return this.fetch<AnomalyResult>(`/anomaly?user_id=${encodeURIComponent(userId)}`);
   }
 
   static getGraphSnapshots(userId: string, limit = 12): Promise<GraphSnapshotResponse[]> {
-    return this.fetch<GraphSnapshotResponse[]>(`/graph-snapshots?user_id=${userId}&limit=${limit}`);
+    return this.fetch<GraphSnapshotResponse[]>(`/graph-snapshots?user_id=${encodeURIComponent(userId)}&limit=${limit}`);
   }
 }
