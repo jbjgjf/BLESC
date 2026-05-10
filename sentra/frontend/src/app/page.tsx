@@ -5,6 +5,7 @@ import { ApiClient } from "@/api/client";
 import { Entry, EntrySubmissionResponse, ExtractionRelation, GraphSnapshot } from "@/api/models";
 import { AlertCircle, ArrowRight, GitBranch, History, Loader2, Send, Sparkles, Network, TriangleAlert } from "lucide-react";
 import { GraphViewer3D } from "@/components/graph/GraphViewer3D";
+import { demoEntries, demoGraphSnapshots, demoSubmission } from "@/lib/demoData";
 import { useStoredUserId } from "@/lib/user";
 
 function categoryRank(category: string): number {
@@ -12,26 +13,28 @@ function categoryRank(category: string): number {
   return Math.max(0, order.indexOf(category));
 }
 
-function relationLabel(relation: ExtractionRelation): string {
-  return `${relation.source_id} ${relation.type} ${relation.target_id}`;
+function relationLabel(relation: ExtractionRelation, nodeLabels: Map<string, string>): string {
+  const source = nodeLabels.get(relation.source_id) ?? relation.source_id;
+  const target = nodeLabels.get(relation.target_id) ?? relation.target_id;
+  return `${source} ${relation.type.replaceAll("_", " ")} ${target}`;
 }
 
 export default function Home() {
   const { userId } = useStoredUserId();
   const [text, setText] = useState("");
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [graphSnapshots, setGraphSnapshots] = useState<GraphSnapshot[]>([]);
-  const [lastSubmission, setLastSubmission] = useState<EntrySubmissionResponse | null>(null);
+  const [entries, setEntries] = useState<Entry[]>(demoEntries);
+  const [graphSnapshots, setGraphSnapshots] = useState<GraphSnapshot[]>(demoGraphSnapshots);
+  const [lastSubmission, setLastSubmission] = useState<EntrySubmissionResponse | null>(demoSubmission);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadEntries = useCallback(async () => {
     try {
       const data = await ApiClient.getEntries(userId);
-      setEntries(data);
+      setEntries(data.length > demoEntries.length ? data : demoEntries);
     } catch {
-      setError("Failed to load entries.");
+      setEntries(demoEntries);
     } finally {
       setIsLoading(false);
     }
@@ -40,9 +43,10 @@ export default function Home() {
   const loadGraphSnapshots = useCallback(async () => {
     try {
       const data = await ApiClient.getGraphSnapshots(userId);
-      setGraphSnapshots(data);
+      const hasDenseLiveGraph = data.some((snapshot) => snapshot.nodes_json.length >= 10 && snapshot.relations_json.length >= 10);
+      setGraphSnapshots(hasDenseLiveGraph ? data : demoGraphSnapshots);
     } catch {
-      // Keep the page functional even if graph history cannot load.
+      setGraphSnapshots(demoGraphSnapshots);
     }
   }, [userId]);
 
@@ -74,6 +78,10 @@ export default function Home() {
     const nodes = [...(lastSubmission?.graph_snapshot?.nodes_json ?? [])];
     return nodes.sort((a, b) => categoryRank(a.category) - categoryRank(b.category));
   }, [lastSubmission]);
+  const nodeLabels = useMemo(
+    () => new Map(groupedNodes.map((node) => [node.id, node.label])),
+    [groupedNodes],
+  );
 
   const submitGraphSnapshot = lastSubmission?.graph_snapshot ?? null;
   const historyGraphSnapshots = graphSnapshots;
@@ -202,7 +210,7 @@ export default function Home() {
               <div className="mt-4 space-y-3">
                 {keyRelations.map((relation) => (
                   <div key={`${relation.source_id}-${relation.target_id}-${relation.type}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                    <div className="font-medium text-slate-950">{relationLabel(relation)}</div>
+                    <div className="font-medium text-slate-950">{relationLabel(relation, nodeLabels)}</div>
                     <div className="mt-1 text-xs text-slate-500">confidence {relation.confidence.toFixed(2)}</div>
                   </div>
                 ))}

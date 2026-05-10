@@ -164,7 +164,7 @@ export function GraphViewer3D({
                 height={620}
                 onEngineStop={() => {
                   if (!fgRef.current) return;
-                  const distance = Math.max(220, graphData.nodes.length * 130);
+                  const distance = Math.min(480, Math.max(210, graphData.nodes.length * 18));
                   fgRef.current.cameraPosition({ x: 0, y: 0, z: distance }, { x: 0, y: 0, z: 0 }, 1200);
                 }}
               />
