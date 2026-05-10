@@ -22,7 +22,7 @@ from .services.llm_adapter import llm_adapter
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="precrisis-graph API")
+app = FastAPI(title="Sentra API")
 
 allowed_origins = [
     origin.strip()

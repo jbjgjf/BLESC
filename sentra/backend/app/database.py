@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./precrisis_graph.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sentra.db")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 

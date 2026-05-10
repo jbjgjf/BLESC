@@ -6,8 +6,8 @@ import { AppHeader } from "@/components/AppHeader";
 const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-space-grotesk" });
 
 export const metadata: Metadata = {
-  title: "precrisis-graph",
-  description: "Research-oriented journaling and structural change detection",
+  title: "Sentra",
+  description: "Journaling structure and analysis",
 };
 
 export default function RootLayout({

@@ -1,4 +1,4 @@
-# Precrisis-Graph Frontend
+# Sentra Frontend
 
 Next.js で構築されたフロントエンドです。
 起動方法はプロジェクトルートの [README.md](../README.md) を参照してください。

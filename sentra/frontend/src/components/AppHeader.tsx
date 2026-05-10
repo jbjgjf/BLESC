@@ -12,7 +12,7 @@ export function AppHeader() {
       <div className="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 text-white">
         <Link href="/" className="flex items-center gap-2 text-xl font-bold text-cyan-100">
           <Activity className="h-6 w-6 text-cyan-300" />
-          <span>precrisis-graph</span>
+          <span>Sentra</span>
         </Link>
 
         <nav className="flex items-center gap-5 text-sm text-slate-300 sm:gap-8">
