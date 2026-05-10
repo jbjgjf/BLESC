@@ -11,6 +11,7 @@ from sqlmodel import Session, select, func
 
 from .analytics.graph_features import build_graph_summary, build_temporal_graph_diff, summarize_temporal_diff
 from .database import create_db_and_tables, get_session
+from .seed import seed_data
 from .ontology.repair import get_fallback_extraction
 from .ontology.validator import validate_extraction
 from .schemas.analytics import AnomalyResult, BaselineStats, DailyFeatureAggregation, Embedding
@@ -46,6 +47,7 @@ class EntryCreateRequest(BaseModel):
 @app.on_event("startup")
 def on_startup():
     create_db_and_tables()
+    seed_data()
 
 
 @app.get("/api/health")

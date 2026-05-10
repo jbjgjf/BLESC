@@ -28,10 +28,12 @@ class LLMAdapter:
             self.api_key = openai_key
             self.model_name = os.getenv("LLM_MODEL_NAME", "gpt-4o-mini")
         else:
-            # Default to Ollama/Local setup
-            self.openai_url = os.getenv("LLM_OPENAI_BASE_URL", "http://localhost:11434/v1")
-            self.api_key = os.getenv("LLM_API_KEY", "ollama")
-            self.model_name = os.getenv("LLM_MODEL_NAME", "qwen2.5:7b-instruct-q4_K_M")
+            # Disable Ollama/Local setup by default to avoid system strain
+            logger.warning("OPENAI_API_KEY not found. Defaulting to MOCK mode.")
+            self.use_mock = True
+            self.openai_url = "http://localhost:11434/v1"
+            self.api_key = "dummy"
+            self.model_name = "dummy"
 
         self.client = OpenAI(base_url=self.openai_url, api_key=self.api_key)
 
