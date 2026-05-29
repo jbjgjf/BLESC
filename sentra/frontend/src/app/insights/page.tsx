@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiClient } from "@/api/client";
 import { AnomalyResult, ExplanationPayload } from "@/api/models";
 import { AlertCircle, Activity, GitBranch, Loader2, Network, ShieldAlert, Shuffle, TriangleAlert } from "lucide-react";
-import { useStoredUserId } from "@/lib/user";
+import { useAuth } from "@/lib/auth";
 import { demoExplanation, demoSubmission } from "@/lib/demoData";
 
 function formatRecord(value: unknown): string {
@@ -12,7 +12,7 @@ function formatRecord(value: unknown): string {
 }
 
 export default function Insights() {
-  const { userId } = useStoredUserId();
+  const { userId } = useAuth();
   const [anomaly, setAnomaly] = useState<AnomalyResult | null>(null);
   const [explanation, setExplanation] = useState<ExplanationPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);

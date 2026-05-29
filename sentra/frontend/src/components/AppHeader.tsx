@@ -1,9 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, BarChart3, Database, FileText, GitBranch, Search, Settings2 } from "lucide-react";
-import { useStoredUserId } from "@/lib/user";
+import { Activity, BarChart3, Database, FileText, GitBranch, LogOut, Search, Settings2 } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 
 const primaryNav = [
   { href: "/", label: "Today", icon: FileText },
@@ -14,7 +15,18 @@ const primaryNav = [
 
 export function AppHeader() {
   const pathname = usePathname();
-  const { userId, setUserId } = useStoredUserId();
+  const { userId, setUserId, signOut, user } = useAuth();
+  const [draftUserId, setDraftUserId] = useState(userId);
+
+  useEffect(() => {
+    setDraftUserId(userId);
+  }, [userId]);
+
+  const saveParticipantCode = () => {
+    if (draftUserId.trim() !== userId) {
+      setUserId(draftUserId).catch(() => setDraftUserId(userId));
+    }
+  };
 
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
@@ -67,10 +79,17 @@ export function AppHeader() {
               </label>
               <input
                 className="mt-2 h-10 w-full rounded-md border border-slate-200 bg-slate-50 px-3 text-sm text-slate-900 outline-none transition focus:border-sky-500 focus:bg-white"
-                value={userId}
-                onChange={(event) => setUserId(event.target.value)}
+                value={draftUserId}
+                onChange={(event) => setDraftUserId(event.target.value)}
+                onBlur={saveParticipantCode}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  }
+                }}
                 aria-label="Participant ID"
               />
+              <div className="mt-3 truncate text-xs text-slate-500">{user?.email}</div>
               <Link
                 href="/"
                 className="mt-3 flex items-center gap-2 rounded-md px-2 py-2 text-sm text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
@@ -78,6 +97,16 @@ export function AppHeader() {
                 <Database className="h-4 w-4" />
                 Advanced records stay contextual
               </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  signOut().catch(() => undefined);
+                }}
+                className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </button>
             </div>
           </details>
         </div>

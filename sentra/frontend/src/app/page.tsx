@@ -19,7 +19,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { demoEntries, demoGraphSnapshots, demoSubmission } from "@/lib/demoData";
-import { useStoredUserId } from "@/lib/user";
+import { useAuth } from "@/lib/auth";
 
 function categoryRank(category: string): number {
   const order = ["Protective", "Event", "Behavior", "Trigger", "State"];
@@ -33,7 +33,7 @@ function relationLabel(relation: ExtractionRelation, nodeLabels: Map<string, str
 }
 
 export default function Home() {
-  const { userId } = useStoredUserId();
+  const { userId } = useAuth();
   const [text, setText] = useState("");
   const [entries, setEntries] = useState<Entry[]>(demoEntries);
   const [graphSnapshots, setGraphSnapshots] = useState<GraphSnapshot[]>(demoGraphSnapshots);

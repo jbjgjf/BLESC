@@ -6,7 +6,7 @@ import { ApiClient } from "@/api/client";
 import { AnomalyResult } from "@/api/models";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { AlertCircle, ArrowRight, BarChart3, Loader2 } from "lucide-react";
-import { useStoredUserId } from "@/lib/user";
+import { useAuth } from "@/lib/auth";
 import { demoGraphSnapshots } from "@/lib/demoData";
 
 const demoTimeline: AnomalyResult[] = demoGraphSnapshots.map((snapshot, index) => ({
@@ -20,7 +20,7 @@ const demoTimeline: AnomalyResult[] = demoGraphSnapshots.map((snapshot, index) =
 }));
 
 export default function Timeline() {
-  const { userId } = useStoredUserId();
+  const { userId } = useAuth();
   const [data, setData] = useState<AnomalyResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

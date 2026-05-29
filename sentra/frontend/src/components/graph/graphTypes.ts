@@ -1,10 +1,10 @@
-import type { ExtractionNode, ExtractionRelation, GraphSnapshot, ExplanationPayload } from "@/api/models";
+import type { ExtractionNode, ExtractionRelation, GraphSnapshot, ExplanationPayload, RecordId } from "@/api/models";
 
 export type GraphMode = "current" | "temporal";
 
 export interface GraphViewerNode extends ExtractionNode {
   originalId: string;
-  snapshotId: number;
+  snapshotId: RecordId;
   snapshotDay: string;
   layerIndex: number;
   z: number;
@@ -21,7 +21,7 @@ export interface GraphViewerLink extends ExtractionRelation {
   opacity: number;
   dashed: boolean;
   layerIndex: number;
-  snapshotId: number;
+  snapshotId: RecordId;
   snapshotDay: string;
 }
 

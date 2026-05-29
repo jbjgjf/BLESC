@@ -6,10 +6,10 @@ import { ApiClient } from "@/api/client";
 import { GraphSnapshot } from "@/api/models";
 import { GraphViewer3D } from "@/components/graph/GraphViewer3D";
 import { demoGraphSnapshots, demoSubmission } from "@/lib/demoData";
-import { useStoredUserId } from "@/lib/user";
+import { useAuth } from "@/lib/auth";
 
 export default function GraphPage() {
-  const { userId } = useStoredUserId();
+  const { userId } = useAuth();
   const [snapshots, setSnapshots] = useState<GraphSnapshot[]>(demoGraphSnapshots);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

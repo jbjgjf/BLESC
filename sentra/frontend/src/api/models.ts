@@ -1,7 +1,8 @@
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+export type RecordId = string | number;
 
 export interface Entry {
-  id: number;
+  id: RecordId;
   user_id: string;
   raw_text?: string;
   is_masked: boolean;
@@ -28,8 +29,8 @@ export interface ExtractionRelation {
 }
 
 export interface Extraction {
-  id: number;
-  entry_id: number;
+  id: RecordId;
+  entry_id: RecordId;
   nodes_json: ExtractionNode[];
   relations_json: ExtractionRelation[];
   temporal_summary: string;
@@ -61,8 +62,8 @@ export interface TemporalGraphDiff {
 }
 
 export interface GraphSnapshot {
-  id: number;
-  entry_id: number;
+  id: RecordId;
+  entry_id: RecordId;
   user_id: string;
   day: string;
   nodes_json: ExtractionNode[];
@@ -73,12 +74,12 @@ export interface GraphSnapshot {
 }
 
 export interface AnomalyResult {
-  id: number;
+  id: RecordId;
   user_id: string;
   day: string;
   anomaly_score: number;
   z_scores_json: Record<string, number>;
-  explanation_id?: number;
+  explanation_id?: RecordId;
 }
 
 export interface ExplanationContribution {
@@ -89,7 +90,7 @@ export interface ExplanationContribution {
 }
 
 export interface ExplanationPayload {
-  id: number;
+  id: RecordId;
   user_id: string;
   day: string;
   triggered_rules_json: ExplanationContribution[];

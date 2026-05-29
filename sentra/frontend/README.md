@@ -8,3 +8,18 @@ Next.js で構築されたフロントエンドです。
 npm run dev
 ```
 ブラウザで [http://localhost:3000](http://localhost:3000) を開きます。
+
+## Supabase configuration
+
+1. Create a Supabase project.
+2. Apply the SQL migration in `../supabase/migrations/20260529000100_initial_sentra_backend.sql` with the Supabase CLI or the Dashboard SQL editor.
+3. Enable Email provider auth in Supabase Authentication. Email/password is used; SSO is not required.
+4. Copy `.env.example` to `.env.local` and fill in:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
+NEXT_PUBLIC_API_URL=http://localhost:8000/api
+```
+
+Use a publishable key, or the legacy anon key during transition. Do not expose the service role key in the frontend.
