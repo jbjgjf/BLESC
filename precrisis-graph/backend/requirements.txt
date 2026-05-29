@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+sqlmodel
+pydantic
+sqlalchemy
+aiosqlite
+numpy
+pandas
+scikit-learn
+umap-learn
+hdbscan
+plotly
+sentence-transformers
+httpx
+openai
+python-dotenv
+pyyaml
