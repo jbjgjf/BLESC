@@ -5,7 +5,6 @@ import type { ComponentType, MutableRefObject } from "react";
 import { useMemo, useRef, useState } from "react";
 import { GraphSnapshot, ExplanationPayload } from "@/api/models";
 import { ArrowLeftRight, Info, Orbit, RotateCw } from "lucide-react";
-import * as THREE from "three";
 import type { ForceGraphMethods } from "react-force-graph-3d";
 import type { GraphMode, GraphViewerLink, GraphViewerNode } from "./graphTypes";
 import { buildGraphViewerData, buildNodeSelection, getDebugFallbackData } from "./graphAdapter";
@@ -62,6 +61,26 @@ export function GraphViewer3D({
       )
     : null;
 
+  const overlayNodes = useMemo(() => {
+    const centerX = 50;
+    const centerY = 50;
+    const radius = mode === "temporal" ? 34 : 30;
+    return graphData.nodes.map((node, index) => {
+      const angle = (index / Math.max(1, graphData.nodes.length)) * Math.PI * 2 - Math.PI / 2;
+      const layerOffset = mode === "temporal" ? node.layerIndex * 3 : 0;
+      return {
+        node,
+        x: centerX + Math.cos(angle) * (radius - layerOffset),
+        y: centerY + Math.sin(angle) * (radius - layerOffset),
+      };
+    });
+  }, [graphData.nodes, mode]);
+
+  const overlayNodeMap = useMemo(
+    () => new Map(overlayNodes.map((item) => [`${item.node.snapshotId}:${item.node.originalId}`, item])),
+    [overlayNodes],
+  );
+
   const baselineSnapshot = orderedSnapshots.length > 1 ? orderedSnapshots[0] : null;
   const temporalLabel =
     mode === "temporal" && baselineSnapshot && activeSnapshot
@@ -71,7 +90,7 @@ export function GraphViewer3D({
         : "No snapshots available";
 
   return (
-    <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+    <section className="rounded-lg border border-slate-200 bg-white p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -84,12 +103,12 @@ export function GraphViewer3D({
           </p>
         </div>
 
-        <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+        <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-1">
           {ENABLE_GRAPH_DEBUG && (
             <button
               type="button"
               onClick={() => setShowFallback(!showFallback)}
-              className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+              className={`rounded px-3 py-2 text-sm font-medium transition ${
                 showFallback ? "bg-rose-500 text-white" : "text-slate-600 hover:bg-white"
               }`}
             >
@@ -99,7 +118,7 @@ export function GraphViewer3D({
           <button
             type="button"
             onClick={() => setMode("current")}
-            className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+            className={`rounded px-3 py-2 text-sm font-medium transition ${
               mode === "current" ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"
             }`}
           >
@@ -108,7 +127,7 @@ export function GraphViewer3D({
           <button
             type="button"
             onClick={() => setMode("temporal")}
-            className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+            className={`rounded px-3 py-2 text-sm font-medium transition ${
               mode === "temporal" ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"
             }`}
           >
@@ -118,13 +137,13 @@ export function GraphViewer3D({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500">
-        <span className="rounded-full bg-slate-100 px-3 py-1">Mode: {mode}</span>
-        <span className="rounded-full bg-slate-100 px-3 py-1">Layer view: {temporalLabel}</span>
-        <span className="rounded-full bg-slate-100 px-3 py-1">Drag / rotate / zoom enabled</span>
+        <span className="rounded bg-slate-100 px-3 py-1">Mode: {mode}</span>
+        <span className="rounded bg-slate-100 px-3 py-1">Layer view: {temporalLabel}</span>
+        <span className="rounded bg-slate-100 px-3 py-1">Drag / rotate / zoom enabled</span>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="min-h-[620px] overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-950">
+        <div className="relative min-h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-950">
           <div className="h-[620px] w-full">
             {graphData.nodes.length > 0 ? (
               <ForceGraph3D
@@ -135,19 +154,7 @@ export function GraphViewer3D({
                   `${node.label} · ${node.category} · ${node.snapshotDay}${node.layerIndex >= 0 ? ` · layer ${node.layerIndex + 1}` : ""}`
                 }
                 nodeColor={(node: GraphViewerNode) => node.color}
-                nodeVal={(node: GraphViewerNode) => node.radius * 2.2}
-                nodeThreeObject={(node: GraphViewerNode) => {
-                  const material = new THREE.MeshStandardMaterial({
-                    color: node.color,
-                    emissive: node.color,
-                    emissiveIntensity: 0.22,
-                    roughness: 0.25,
-                    metalness: 0.08,
-                    transparent: true,
-                    opacity: 0.98,
-                  });
-                  return new THREE.Mesh(new THREE.SphereGeometry(Math.max(2.8, node.radius * 0.95), 24, 24), material);
-                }}
+                nodeVal={(node: GraphViewerNode) => node.radius * 8}
                 linkColor={(link: GraphViewerLink) => link.color}
                 linkWidth={(link: GraphViewerLink) => link.width}
                 linkOpacity={0.88}
@@ -164,7 +171,7 @@ export function GraphViewer3D({
                 height={620}
                 onEngineStop={() => {
                   if (!fgRef.current) return;
-                  const distance = Math.min(480, Math.max(210, graphData.nodes.length * 18));
+                  const distance = Math.min(240, Math.max(120, graphData.nodes.length * 9));
                   fgRef.current.cameraPosition({ x: 0, y: 0, z: distance }, { x: 0, y: 0, z: 0 }, 1200);
                 }}
               />
@@ -174,10 +181,49 @@ export function GraphViewer3D({
               </div>
             )}
           </div>
+          {graphData.nodes.length > 0 && (
+            <svg
+              className="pointer-events-none absolute inset-0 h-full w-full"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <defs>
+                <radialGradient id="graphGlow" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor="#ffffff" stopOpacity="0.28" />
+                  <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+                </radialGradient>
+              </defs>
+              <circle cx="50" cy="50" r="39" fill="url(#graphGlow)" />
+              {graphData.links.map((link, index) => {
+                const source = typeof link.source === "string" ? null : overlayNodeMap.get(`${link.source.snapshotId}:${link.source.originalId}`);
+                const target = typeof link.target === "string" ? null : overlayNodeMap.get(`${link.target.snapshotId}:${link.target.originalId}`);
+                if (!source || !target) return null;
+                return (
+                  <line
+                    key={`${link.snapshotId}-${link.source_id}-${link.target_id}-${link.type}-${index}`}
+                    x1={source.x}
+                    y1={source.y}
+                    x2={target.x}
+                    y2={target.y}
+                    stroke={link.color}
+                    strokeWidth={0.24}
+                    strokeOpacity={0.7}
+                  />
+                );
+              })}
+              {overlayNodes.map(({ node, x, y }) => (
+                <g key={`${node.snapshotId}-${node.originalId}`}>
+                  <circle cx={x} cy={y} r={1.45 + node.radius * 0.08} fill={node.color} opacity={0.96} />
+                  <circle cx={x} cy={y} r={2.3 + node.radius * 0.08} fill="none" stroke={node.color} strokeOpacity={0.28} strokeWidth={0.32} />
+                </g>
+              ))}
+            </svg>
+          )}
         </div>
 
         <aside className="space-y-4">
-          <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-5">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
               <ArrowLeftRight className="h-4 w-4 text-cyan-600" />
               Baseline vs current
@@ -189,7 +235,7 @@ export function GraphViewer3D({
             </div>
           </div>
 
-          <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5">
+          <div className="rounded-lg border border-slate-200 bg-white p-5">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
               <Info className="h-4 w-4 text-cyan-600" />
               Selected node
@@ -200,7 +246,7 @@ export function GraphViewer3D({
                   <div className="font-medium text-slate-950">{selection.node.label}</div>
                   <div className="text-xs text-slate-500">{selection.roleSummary}</div>
                 </div>
-                <div className="rounded-2xl bg-slate-50 p-3 text-xs text-slate-600">
+                <div className="rounded-md bg-slate-50 p-3 text-xs text-slate-600">
                   <div>Category: {selection.node.category}</div>
                   <div>Intensity: {selection.node.intensity.toFixed(2)}</div>
                   <div>Confidence: {selection.node.confidence.toFixed(2)}</div>
@@ -223,7 +269,7 @@ export function GraphViewer3D({
             )}
           </div>
 
-          <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-5">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
               <RotateCw className="h-4 w-4 text-cyan-600" />
               How to read this
