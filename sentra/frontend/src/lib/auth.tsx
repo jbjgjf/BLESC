@@ -81,21 +81,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isMounted = true;
 
+    console.info("[supabase-auth] initialization started");
+
     supabase.auth.getSession().then(async ({ data }) => {
       if (!isMounted) return;
       setSession(data.session);
+      console.info("[supabase-auth] initial session", {
+        hasSession: Boolean(data.session),
+        userId: data.session?.user.id ?? null,
+      });
       if (data.session?.user) {
         setParticipant(await ensureParticipant(data.session.user));
       }
       setIsLoading(false);
     }).catch(() => {
       if (!isMounted) return;
+      console.info("[supabase-auth] initial session failed");
       setSession(null);
       setParticipant(null);
       setIsLoading(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      console.info("[supabase-auth] state change", {
+        event: _event,
+        hasSession: Boolean(nextSession),
+        userId: nextSession?.user.id ?? null,
+      });
       setSession(nextSession);
       if (!nextSession?.user) {
         setParticipant(null);

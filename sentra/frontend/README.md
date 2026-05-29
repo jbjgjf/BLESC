@@ -18,7 +18,7 @@ npm run dev
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_or_publishable_key
 NEXT_PUBLIC_API_URL=http://localhost:8000/api
 ```
 
