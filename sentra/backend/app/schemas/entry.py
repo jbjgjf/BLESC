@@ -10,6 +10,7 @@ class Entry(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     expires_at: Optional[datetime] = Field(default=None)
     provenance_hash: Optional[str] = Field(default=None)
+    observation_type: str = Field(default="daily")
 
     # Relationship to extractions
     extractions: list["Extraction"] = Relationship(back_populates="entry")

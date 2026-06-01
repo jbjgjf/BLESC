@@ -145,6 +145,7 @@ def create_entry(
     user_id: str,
     payload: Optional[EntryCreateRequest] = Body(default=None),
     text: Optional[str] = None,
+    observation_type: str = "daily",
     session: Session = Depends(get_session),
 ):
     entry_text = payload.text if payload else text
@@ -152,7 +153,7 @@ def create_entry(
         raise HTTPException(status_code=422, detail="Entry text is required")
 
     _clear_expired_raw_text(session)
-    logger.info("[submit] start user=%s text_len=%d", user_id, len(entry_text))
+    logger.info("[submit] start user=%s text_len=%d observation_type=%s", user_id, len(entry_text), observation_type)
 
     # ── 1. Persist raw entry ─────────────────────────────────────────────────
     entry = Entry(
@@ -160,6 +161,7 @@ def create_entry(
         raw_text=entry_text,
         expires_at=get_default_expires_at(),
         provenance_hash=hashlib.sha256(f"{user_id}:{entry_text}".encode("utf-8")).hexdigest()[:16],
+        observation_type=observation_type,
     )
     session.add(entry)
     session.commit()

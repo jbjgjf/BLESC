@@ -27,6 +27,7 @@ type EntryRow = {
   created_at: string;
   participant_id: string;
   participants?: { code: string } | { code: string }[] | null;
+  observation_type?: string;
 };
 
 type GraphSnapshotRow = {
@@ -80,6 +81,7 @@ function toEntry(row: EntryRow, userId: string): Entry {
     is_masked: row.is_masked,
     created_at: row.created_at,
     expires_at: row.expires_at ?? undefined,
+    observation_type: row.observation_type,
   };
 }
 
@@ -189,7 +191,7 @@ export class ApiClient {
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("entries")
-      .select("id, raw_text, is_masked, extraction_json, expires_at, created_at, participant_id, participants(code)")
+      .select("id, raw_text, is_masked, extraction_json, expires_at, created_at, participant_id, observation_type, participants(code)")
       .eq("participant_id", participant.id)
       .order("created_at", { ascending: false });
 
@@ -197,10 +199,10 @@ export class ApiClient {
     return (data ?? []).map((row) => toEntry(row as unknown as EntryRow, userId));
   }
 
-  static async createEntry(userId: string, text: string): Promise<EntrySubmissionResponse> {
+  static async createEntry(userId: string, text: string, observationType: string = "daily"): Promise<EntrySubmissionResponse> {
     const ownerUserId = await this.requireOwnerId();
     const participant = await this.getParticipant(userId);
-    const computed = await this.fetch<EntrySubmissionResponse>(`/entries?user_id=${encodeURIComponent(userId)}`, {
+    const computed = await this.fetch<EntrySubmissionResponse>(`/entries?user_id=${encodeURIComponent(userId)}&observation_type=${encodeURIComponent(observationType)}`, {
       method: "POST",
       body: JSON.stringify({ text }),
     });
@@ -214,8 +216,9 @@ export class ApiClient {
         is_masked: true,
         extraction_json: computed.extraction as unknown as Record<string, JsonValue>,
         expires_at: computed.entry.expires_at ?? null,
+        observation_type: observationType,
       })
-      .select("id, raw_text, is_masked, extraction_json, expires_at, created_at, participant_id, participants(code)")
+      .select("id, raw_text, is_masked, extraction_json, expires_at, created_at, participant_id, observation_type, participants(code)")
       .single();
 
     if (entryInsert.error) throw entryInsert.error;

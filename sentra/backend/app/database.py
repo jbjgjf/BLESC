@@ -17,6 +17,7 @@ def _apply_migrations() -> None:
     migrations = [
         # (table_name, column_name, column_ddl)
         ("hybridexplanation", "key_relations", "JSON DEFAULT '[]'"),
+        ("entry", "observation_type", "TEXT DEFAULT 'daily'"),
     ]
     with engine.connect() as conn:
         for table, column, ddl in migrations:

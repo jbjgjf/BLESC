@@ -8,6 +8,7 @@ export interface Entry {
   is_masked: boolean;
   created_at: string;
   expires_at?: string;
+  observation_type?: string;
 }
 
 export interface ExtractionNode {
