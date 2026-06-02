@@ -68,6 +68,44 @@ export default function Home() {
   const [isRallySubmitting, setIsRallySubmitting] = useState(false);
   const [rallyResult, setRallyResult] = useState<EntrySubmissionResponse | null>(null);
 
+  // Dragging states for Rally Chat Widget
+  const [chatPos, setChatPos] = useState({ x: 0, y: 0 });
+  const [isDraggingChat, setIsDraggingChat] = useState(false);
+  const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
+
+  const handleChatMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest(".drag-handle")) {
+      setIsDraggingChat(true);
+      setDragStartPos({
+        x: e.clientX - chatPos.x,
+        y: e.clientY - chatPos.y,
+      });
+      e.preventDefault();
+    }
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingChat) return;
+      setChatPos({
+        x: e.clientX - dragStartPos.x,
+        y: e.clientY - dragStartPos.y,
+      });
+    };
+    const handleMouseUp = () => {
+      setIsDraggingChat(false);
+    };
+
+    if (isDraggingChat) {
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    }
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDraggingChat, dragStartPos]);
+
   const loadEntries = useCallback(async () => {
     try {
       const data = await ApiClient.getEntries(userId);
@@ -451,7 +489,7 @@ export default function Home() {
         </aside>
       </div>
 
-      {/* Floating Black Circle Button (N-Circle with blue ring) */}
+      {/* Floating Black Circle Button (C-Circle with blue ring) */}
       <div className="fixed bottom-6 right-6 z-50">
         <button
           onClick={() => setIsChatOpen(!isChatOpen)}
@@ -459,7 +497,7 @@ export default function Home() {
           title="Rally Diagnostic Chat"
           id="rally-chat-launcher"
         >
-          <span>N</span>
+          <span>C</span>
           {rallyCount > 0 && rallyCount < 30 && (
             <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-[10px] font-bold text-white ring-2 ring-white animate-bounce">
               {rallyCount}
@@ -470,15 +508,21 @@ export default function Home() {
 
       {/* Floating Notion-style Chat Popup */}
       {isChatOpen && (
-        <div className="fixed bottom-24 right-6 w-96 max-w-[calc(100vw-2rem)] h-[500px] bg-white border border-slate-200 rounded-xl shadow-2xl flex flex-col z-50 overflow-hidden font-sans">
+        <div 
+          style={{ transform: `translate(${chatPos.x}px, ${chatPos.y}px)` }}
+          className="fixed bottom-24 right-6 w-96 max-w-[calc(100vw-2rem)] h-[500px] bg-white border border-slate-200 rounded-xl shadow-2xl flex flex-col z-50 overflow-hidden font-sans"
+        >
           
           {/* Header */}
-          <div className="bg-slate-950 text-white p-3.5 flex items-center justify-between select-none">
-            <div className="flex items-center gap-2">
+          <div 
+            onMouseDown={handleChatMouseDown}
+            className="drag-handle bg-slate-950 text-white p-3.5 flex items-center justify-between select-none cursor-grab active:cursor-grabbing"
+          >
+            <div className="flex items-center gap-2 pointer-events-none">
               <div className="h-2 w-2 rounded-full bg-sky-400 animate-pulse" />
               <span className="text-xs font-bold tracking-wide uppercase">Rally Interview Helper</span>
             </div>
-            <div className="text-[10px] text-slate-400 font-semibold bg-slate-900 px-2 py-0.5 rounded">
+            <div className="text-[10px] text-slate-400 font-semibold bg-slate-900 px-2 py-0.5 rounded pointer-events-none">
               Round {rallyCount} / 30
             </div>
           </div>
