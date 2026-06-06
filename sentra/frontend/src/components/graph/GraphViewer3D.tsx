@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import type { ComponentType, MutableRefObject } from "react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { GraphSnapshot, ExplanationPayload } from "@/api/models";
 import { ArrowLeftRight, Box, Info, Orbit, RotateCw } from "lucide-react";
@@ -40,7 +40,9 @@ export function GraphViewer3D({
   const [mode, setMode] = useState<GraphMode>("current");
   const [selectedNode, setSelectedNode] = useState<GraphViewerNode | null>(null);
   const [showFallback, setShowFallback] = useState(false);
+  const [graphWidth, setGraphWidth] = useState(900);
   const fgRef = useRef<ForceGraphMethods | null>(null);
+  const graphFrameRef = useRef<HTMLDivElement | null>(null);
 
   const orderedSnapshots = useMemo(
     () => [...snapshots].sort((a, b) => `${a.day}`.localeCompare(`${b.day}`)),
@@ -48,6 +50,21 @@ export function GraphViewer3D({
   );
 
   const activeSnapshot = currentSnapshot ?? orderedSnapshots.at(-1) ?? null;
+
+  useEffect(() => {
+    const frame = graphFrameRef.current;
+    if (!frame) return;
+
+    const updateWidth = () => {
+      setGraphWidth(Math.max(320, Math.floor(frame.getBoundingClientRect().width)));
+    };
+    updateWidth();
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, []);
+
   const realGraphData = useMemo(() => buildGraphViewerData(orderedSnapshots, mode, activeSnapshot), [orderedSnapshots, mode, activeSnapshot]);
   const graphData = useMemo(() => {
     if (ENABLE_GRAPH_DEBUG && showFallback) {
@@ -216,7 +233,7 @@ export function GraphViewer3D({
           <div className="pointer-events-none absolute left-5 top-5 z-10 rounded border border-slate-200 bg-white/88 px-3 py-2 text-xs font-medium text-slate-600 shadow-sm backdrop-blur">
             Graph3D projection · orbit / zoom / click nodes
           </div>
-          <div className="h-[680px] w-full">
+          <div ref={graphFrameRef} className="h-[680px] w-full">
             {graphData.nodes.length > 0 ? (
               <ForceGraph3D
                 ref={fgRef}
@@ -246,6 +263,7 @@ export function GraphViewer3D({
                 warmupTicks={80}
                 cooldownTicks={100}
                 showNavInfo={false}
+                width={graphWidth}
                 height={680}
                 onEngineStop={() => {
                   if (!fgRef.current) return;
