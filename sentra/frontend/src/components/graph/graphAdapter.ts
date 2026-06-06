@@ -11,13 +11,14 @@ export const CATEGORY_COLORS: Record<string, string> = {
 
 const CATEGORY_ORDER = ["State", "Trigger", "Behavior", "Event", "Protective"];
 
+// Obsidian-style: thin bright edges with low opacity for depth
 export const RELATION_STYLES: Record<string, { color: string; width: number; opacity: number; dashed: boolean }> = {
-  causes: { color: "#f97316", width: 2.8, opacity: 0.95, dashed: false },
-  escalates: { color: "#ef4444", width: 3.2, opacity: 0.95, dashed: false },
-  buffers: { color: "#22c55e", width: 2.6, opacity: 0.9, dashed: false },
-  avoids: { color: "#a855f7", width: 2.2, opacity: 0.8, dashed: true },
-  co_occurs: { color: "#0ea5e9", width: 1.8, opacity: 0.72, dashed: false },
-  precedes: { color: "#64748b", width: 2.0, opacity: 0.78, dashed: true },
+  causes: { color: "#ff6b35", width: 1.0, opacity: 0.75, dashed: false },
+  escalates: { color: "#ff4455", width: 1.2, opacity: 0.75, dashed: false },
+  buffers: { color: "#44ff88", width: 0.9, opacity: 0.7, dashed: false },
+  avoids: { color: "#cc66ff", width: 0.8, opacity: 0.6, dashed: true },
+  co_occurs: { color: "#44bbff", width: 0.7, opacity: 0.55, dashed: false },
+  precedes: { color: "#88aacc", width: 0.7, opacity: 0.5, dashed: true },
 };
 
 function safeArray<T>(value: T[] | undefined | null): T[] {
