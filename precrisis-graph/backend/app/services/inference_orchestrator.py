@@ -7,7 +7,7 @@ from typing import Optional
 from sqlmodel import Session, func, select
 
 from ..analytics.aggregation import aggregate_daily_features
-from ..analytics.baseline import estimate_baseline
+from ..analytics.baseline import get_effective_baseline
 from ..analytics.explanation_gen import RuleEngine, generate_explanation
 from ..analytics.graph_features import build_graph_summary
 from ..analytics.hybrid_inference import combine_hybrid_score, score_baseline_deviation, score_temporal_shift
@@ -103,6 +103,7 @@ class InferenceOrchestrator:
 
         # ── 3. Baseline estimation ───────────────────────────────────────────
         baseline = None
+        baseline_type = "population"
         try:
             historical_query = (
                 select(DailyFeatureAggregation)
@@ -111,14 +112,17 @@ class InferenceOrchestrator:
                     DailyFeatureAggregation.day < day,
                 )
                 .order_by(DailyFeatureAggregation.day.desc())
-                .limit(7)
+                .limit(14)
             )
             history = self.session.exec(historical_query).all()
-            if len(history) >= 2:
-                baseline = estimate_baseline(user_id, list(history))
-                self.session.add(baseline)
-                self.session.commit()
-                logger.info("[orchestrator] baseline estimated stats_keys=%s", list(baseline.stats_json.keys()) if baseline else [])
+            baseline, baseline_type = get_effective_baseline(user_id, list(history))
+            self.session.add(baseline)
+            self.session.commit()
+            logger.info(
+                "[orchestrator] baseline type=%s stats_keys=%s",
+                baseline_type,
+                list(baseline.stats_json.keys()),
+            )
         except Exception:
             logger.exception("[orchestrator] baseline estimation failed; continuing without baseline")
 
@@ -135,6 +139,7 @@ class InferenceOrchestrator:
         baseline_deviation = {
             "feature_zscores": z_scores,
             "baseline_available": baseline is not None,
+            "baseline_type": baseline_type,  # "population" | "blended" | "user"
             "top_features": [
                 name
                 for name, _ in sorted(z_scores.items(), key=lambda kv: abs(kv[1]), reverse=True)[:4]
