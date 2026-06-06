@@ -150,47 +150,107 @@ class LLMAdapter:
         nodes = []
         relations = []
         low_text = text.lower()
-        if "sleep" in low_text:
-            nodes.append({"node_id": "sleep_1", "category": "State", "label": "sleep_issue", "intensity": 0.8})
-        if "friend" in low_text:
-            nodes.append({"node_id": "friend_1", "category": "Protective", "label": "support_person", "intensity": 0.7})
-        if "meeting" in low_text:
-            nodes.append({"node_id": "meeting_1", "category": "Event", "label": "evaluation_event", "intensity": 0.5})
-        if "deadline" in low_text and nodes:
-            nodes.append({"node_id": "deadline_1", "category": "Trigger", "label": "deadline", "intensity": 0.6})
-            relations.append({"source_node_id": "deadline_1", "target_node_id": "sleep_1", "type": "escalates", "confidence": 0.7})
 
-        if not nodes:
-            nodes.append({"node_id": "self_1", "category": "Protective", "label": "Self / Baseline", "intensity": 0.5})
+        # Richer mock — always produces at least 5 nodes for a meaningful graph
+        base_nodes = [
+            {"node_id": "baseline_state", "category": "State", "label": "Baseline mental state", "intensity": 0.45, "confidence": 0.85},
+            {"node_id": "daily_routine", "category": "Protective", "label": "Daily routine", "intensity": 0.5, "confidence": 0.9},
+        ]
 
+        if "sleep" in low_text or "tired" in low_text or "fatigue" in low_text:
+            nodes.append({"node_id": "sleep_issue", "category": "State", "label": "Sleep disruption", "intensity": 0.78, "confidence": 0.9})
+            nodes.append({"node_id": "fatigue", "category": "State", "label": "Fatigue", "intensity": 0.65, "confidence": 0.8})
+        if "anxious" in low_text or "anxiety" in low_text or "worry" in low_text or "stress" in low_text:
+            nodes.append({"node_id": "anxiety", "category": "State", "label": "Anxiety", "intensity": 0.72, "confidence": 0.88})
+        if "sad" in low_text or "depress" in low_text or "down" in low_text or "low" in low_text:
+            nodes.append({"node_id": "low_mood", "category": "State", "label": "Low mood", "intensity": 0.68, "confidence": 0.82})
+        if "friend" in low_text or "talk" in low_text or "call" in low_text or "social" in low_text:
+            nodes.append({"node_id": "social_support", "category": "Protective", "label": "Social support", "intensity": 0.74, "confidence": 0.85})
+        if "family" in low_text or "parent" in low_text or "partner" in low_text:
+            nodes.append({"node_id": "family_connection", "category": "Protective", "label": "Family connection", "intensity": 0.7, "confidence": 0.8})
+        if "work" in low_text or "job" in low_text or "office" in low_text or "project" in low_text:
+            nodes.append({"node_id": "work_demand", "category": "Trigger", "label": "Work demands", "intensity": 0.62, "confidence": 0.85})
+        if "deadline" in low_text or "due" in low_text or "urgent" in low_text:
+            nodes.append({"node_id": "deadline_pressure", "category": "Trigger", "label": "Deadline pressure", "intensity": 0.78, "confidence": 0.9})
+        if "meeting" in low_text or "presentation" in low_text or "interview" in low_text:
+            nodes.append({"node_id": "work_event", "category": "Event", "label": "Work meeting / presentation", "intensity": 0.55, "confidence": 0.88})
+        if "exercise" in low_text or "walk" in low_text or "run" in low_text or "gym" in low_text:
+            nodes.append({"node_id": "exercise", "category": "Protective", "label": "Physical exercise", "intensity": 0.65, "confidence": 0.9})
+            nodes.append({"node_id": "exercise_event", "category": "Event", "label": "Exercise session", "intensity": 0.5, "confidence": 0.85})
+        if "eat" in low_text or "meal" in low_text or "food" in low_text or "cook" in low_text:
+            nodes.append({"node_id": "meal_behavior", "category": "Behavior", "label": "Eating pattern", "intensity": 0.4, "confidence": 0.75})
+        if "isolat" in low_text or "alone" in low_text or "withdraw" in low_text:
+            nodes.append({"node_id": "isolation", "category": "Behavior", "label": "Social withdrawal", "intensity": 0.7, "confidence": 0.82})
+
+        nodes = base_nodes + nodes
+
+        # Auto-generate relations between detected nodes
+        node_ids = {n["node_id"] for n in nodes}
+        if "deadline_pressure" in node_ids and "anxiety" in node_ids:
+            relations.append({"source_node_id": "deadline_pressure", "target_node_id": "anxiety", "type": "escalates", "confidence": 0.85})
+        if "anxiety" in node_ids and "sleep_issue" in node_ids:
+            relations.append({"source_node_id": "anxiety", "target_node_id": "sleep_issue", "type": "causes", "confidence": 0.78})
+        if "sleep_issue" in node_ids and "fatigue" in node_ids:
+            relations.append({"source_node_id": "sleep_issue", "target_node_id": "fatigue", "type": "causes", "confidence": 0.88})
+        if "social_support" in node_ids and "anxiety" in node_ids:
+            relations.append({"source_node_id": "social_support", "target_node_id": "anxiety", "type": "buffers", "confidence": 0.8})
+        if "exercise" in node_ids and "low_mood" in node_ids:
+            relations.append({"source_node_id": "exercise", "target_node_id": "low_mood", "type": "buffers", "confidence": 0.82})
+        if "exercise" in node_ids and "anxiety" in node_ids:
+            relations.append({"source_node_id": "exercise", "target_node_id": "anxiety", "type": "buffers", "confidence": 0.75})
+        if "work_demand" in node_ids and "deadline_pressure" in node_ids:
+            relations.append({"source_node_id": "work_demand", "target_node_id": "deadline_pressure", "type": "causes", "confidence": 0.8})
+        if "isolation" in node_ids and "low_mood" in node_ids:
+            relations.append({"source_node_id": "isolation", "target_node_id": "low_mood", "type": "escalates", "confidence": 0.76})
+        if "daily_routine" in node_ids and "baseline_state" in node_ids:
+            relations.append({"source_node_id": "daily_routine", "target_node_id": "baseline_state", "type": "buffers", "confidence": 0.7})
+        if "family_connection" in node_ids and "baseline_state" in node_ids:
+            relations.append({"source_node_id": "family_connection", "target_node_id": "baseline_state", "type": "buffers", "confidence": 0.72})
+
+        event_count = sum(1 for n in nodes if n.get("category") == "Event")
         return {
             "nodes": nodes,
             "relations": relations,
-            "temporal": {"recency": "recent", "event_density": 1 if any(n.get("category") == "Event" for n in nodes) else 0},
+            "temporal": {"recency": "recent", "event_density": event_count},
         }
 
     def _get_prompt(self, text: str) -> str:
-        return f"""Extract a structured representation of the following journal entry using the specified ontology categories.
+        return f"""You are a specialist ontology extractor for psychological and behavioral research journals. Extract a RICH, DETAILED structural representation. Aim for 8–20 distinct nodes per entry — more nodes create a denser, more informative knowledge graph.
 
-Ontology Categories:
-- State: Sleep issues, rumination, etc.
-- Trigger: Deadlines, conflicts, etc.
-- Protective: Routine, support, etc.
-- Behavior: Isolation, meals, etc.
-- Event: Discrete occurrences (meeting, exercise, shift) with optional start/end/duration.
+ONTOLOGY CATEGORIES:
+- State: Internal psychological/physical states (anxiety, depression, calm, rumination, loneliness, fatigue, irritability, confidence, overwhelm, pain, numbness, hopelessness, contentment, etc.)
+- Trigger: External stressors or stimuli that influence states (deadlines, conflicts, criticism, financial pressure, uncertainty, isolation, demanding interactions, bad news, environmental factors, etc.)
+- Protective: Resources, coping mechanisms, and supports that buffer against negative states (specific people, routines, hobbies, exercise, therapy, self-compassion, community, medication, pets, creative outlets, etc.)
+- Behavior: Observable actions, habits, or patterns (social withdrawal, substance use, compulsive checking, skipping meals, overworking, self-harm, avoidance, sleep hygiene behaviors, etc.)
+- Event: Discrete time-bounded occurrences (meetings, conversations, activities, incidents, appointments, social events, travel, etc.) — include start_time/end_time/duration when mentioned
 
-Relations: causes, escalates, buffers, avoids, co_occurs, precedes.
+RELATIONS:
+- causes: A directly produces or induces B
+- escalates: A intensifies or worsens B
+- buffers: A reduces, protects against, or relieves B
+- avoids: A prevents engagement with B or substitutes for B
+- co_occurs: A and B happen together without clear causal direction
+- precedes: A temporally comes before B (sequence without clear causality)
 
-Input text:
+EXTRACTION RULES:
+1. Extract EVERY distinct entity — do not merge different concepts into one node
+2. Use specific, descriptive labels (e.g. "work deadline anxiety" not just "stress"; "call with friend Sarah" not just "social contact")
+3. Capture IMPLICIT states: if someone says they "couldn't stop thinking about X", extract "rumination about X" as a State
+4. One concept per node — if a sentence has multiple states, create one node per state
+5. Create nodes for protective factors even if mentioned briefly ("I went for a walk" → Protective: walking; Event: outdoor walk)
+6. Intensity 0.0=absent/minimal to 1.0=maximal/crisis; confidence 0.0=uncertain to 1.0=explicitly stated
+7. Create relations between all clearly related nodes — a rich relation set is as important as rich nodes
+
+INPUT TEXT:
 "{text}"
 
-Return ONLY valid JSON in this exact format:
+Return ONLY valid JSON (no markdown, no explanation):
 {{
   "nodes": [
-    {{ "node_id": "string", "category": "State|Trigger|Protective|Behavior|Event", "label": "string", "intensity": 0.0, "confidence": 0.0 }}
+    {{ "node_id": "unique_snake_case_id", "category": "State|Trigger|Protective|Behavior|Event", "label": "descriptive label", "intensity": 0.0, "confidence": 0.0, "start_time": null, "end_time": null, "duration": null }}
   ],
   "relations": [
-    {{ "source_node_id": "string", "target_node_id": "string", "type": "causes|escalates|buffers|avoids|co_occurs|precedes", "confidence": 0.0 }}
+    {{ "source_node_id": "id", "target_node_id": "id", "type": "causes|escalates|buffers|avoids|co_occurs|precedes", "confidence": 0.0 }}
   ],
   "temporal": {{ "recency": "recent|ongoing|past|future|unknown", "event_density": 0, "sequence_shift": 0.0 }}
 }}"""

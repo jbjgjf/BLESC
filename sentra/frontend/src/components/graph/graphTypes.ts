@@ -1,6 +1,6 @@
 import type { ExtractionNode, ExtractionRelation, GraphSnapshot, ExplanationPayload, RecordId } from "@/api/models";
 
-export type GraphMode = "current" | "temporal";
+export type GraphMode = "current" | "temporal" | "concept";
 
 export interface GraphViewerNode extends ExtractionNode {
   originalId: string;
@@ -10,12 +10,16 @@ export interface GraphViewerNode extends ExtractionNode {
   x: number;
   y: number;
   z: number;
-  fx: number;
-  fy: number;
-  fz: number;
+  // undefined = let force simulation position freely; number = pin to that coordinate
+  fx?: number;
+  fy?: number;
+  fz?: number;
   color: string;
   radius: number;
   sourceKind: "current" | "historical";
+  // concept graph extras
+  frequency?: number;
+  allDays?: string[];
 }
 
 export interface GraphViewerLink extends ExtractionRelation {
@@ -28,6 +32,7 @@ export interface GraphViewerLink extends ExtractionRelation {
   layerIndex: number;
   snapshotId: RecordId;
   snapshotDay: string;
+  frequency?: number;
 }
 
 export interface GraphViewerData {
