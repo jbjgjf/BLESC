@@ -2,12 +2,14 @@ import type { ExplanationPayload, GraphSnapshot } from "@/api/models";
 import type { GraphMode, GraphViewerData, GraphViewerLink, GraphViewerNode, GraphNodeSelection } from "./graphTypes";
 
 const CATEGORY_COLORS: Record<string, string> = {
-  State: "#ef4444",
-  Trigger: "#f59e0b",
-  Event: "#06b6d4",
-  Protective: "#22c55e",
-  Behavior: "#8b5cf6",
+  State: "#c92a2a",
+  Trigger: "#d97706",
+  Event: "#0072b2",
+  Protective: "#2f9e44",
+  Behavior: "#6f42c1",
 };
+
+const CATEGORY_ORDER = ["State", "Trigger", "Behavior", "Event", "Protective"];
 
 const RELATION_STYLES: Record<string, { color: string; width: number; opacity: number; dashed: boolean }> = {
   causes: { color: "#f97316", width: 2.8, opacity: 0.95, dashed: false },
@@ -43,21 +45,33 @@ export function buildGraphViewerData(
   const links: GraphViewerLink[] = [];
 
   visibleSnapshots.forEach((snapshot, layerIndex) => {
-    const z = mode === "temporal" ? layerIndex * 90 : 0;
+    const z = mode === "temporal" ? (layerIndex - Math.max(0, visibleSnapshots.length - 1) / 2) * 90 : 0;
     const nodeMap = new Map<string, GraphViewerNode>();
+    const categoryCounts = new Map<string, number>();
 
-    safeArray(snapshot.nodes_json).forEach((node) => {
+    safeArray(snapshot.nodes_json).forEach((node, index) => {
       const color = CATEGORY_COLORS[node.category] ?? "#94a3b8";
       const intensity = typeof node.intensity === "number" ? node.intensity : 0.5;
+      const categoryIndex = Math.max(0, CATEGORY_ORDER.indexOf(node.category));
+      const categorySeen = categoryCounts.get(node.category) ?? 0;
+      categoryCounts.set(node.category, categorySeen + 1);
+      const angle = (categoryIndex / CATEGORY_ORDER.length) * Math.PI * 2 - Math.PI / 2;
+      const localOffset = (categorySeen - 1) * 14;
+      const orbitRadius = 58 + Math.min(24, index * 3);
       const viewerNode: GraphViewerNode = {
         ...node,
         originalId: node.id,
         snapshotId: snapshot.id,
         snapshotDay: snapshot.day,
         layerIndex,
+        x: Math.cos(angle) * orbitRadius + Math.cos(angle + Math.PI / 2) * localOffset,
+        y: Math.sin(angle) * orbitRadius + Math.sin(angle + Math.PI / 2) * localOffset,
         z,
+        fx: 0,
+        fy: 0,
+        fz: 0,
         color,
-        radius: Math.max(4, 4 + Math.min(8, intensity * 6)),
+        radius: Math.max(5.2, 5.2 + Math.min(8, intensity * 7)),
         sourceKind: mode === "temporal" && layerIndex < visibleSnapshots.length - 1 ? "historical" : "current",
       };
       nodeMap.set(node.id, viewerNode);
@@ -83,6 +97,29 @@ export function buildGraphViewerData(
       });
     });
   });
+
+  if (nodes.length > 0) {
+    const center = nodes.reduce(
+      (acc, node) => ({
+        x: acc.x + node.x,
+        y: acc.y + node.y,
+        z: acc.z + node.z,
+      }),
+      { x: 0, y: 0, z: 0 },
+    );
+    center.x /= nodes.length;
+    center.y /= nodes.length;
+    center.z /= nodes.length;
+
+    nodes.forEach((node) => {
+      node.x -= center.x;
+      node.y -= center.y;
+      node.z -= center.z;
+      node.fx = node.x;
+      node.fy = node.y;
+      node.fz = node.z;
+    });
+  }
 
   return { nodes, links };
 }
@@ -175,7 +212,12 @@ export function getDebugFallbackData(): GraphViewerData {
     snapshotId: 999,
     snapshotDay: "2026-04-03",
     layerIndex: 0,
+    x: -36,
+    y: 0,
     z: 0,
+    fx: -36,
+    fy: 0,
+    fz: 0,
     color: CATEGORY_COLORS.State,
     radius: 8.8,
     sourceKind: "current",
@@ -191,7 +233,12 @@ export function getDebugFallbackData(): GraphViewerData {
     snapshotId: 999,
     snapshotDay: "2026-04-03",
     layerIndex: 0,
+    x: 36,
+    y: 0,
     z: 0,
+    fx: 36,
+    fy: 0,
+    fz: 0,
     color: CATEGORY_COLORS.Event,
     radius: 7.6,
     sourceKind: "current",

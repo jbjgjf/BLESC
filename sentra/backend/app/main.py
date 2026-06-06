@@ -81,6 +81,8 @@ def _persist_graph_snapshot(
     session: Session,
     entry: Entry,
     cleaned: dict,
+    extraction_provider: str,
+    extraction_model: str,
 ) -> GraphSnapshot:
     previous = _latest_graph_snapshot(session, entry.user_id, entry.created_at.date())
     previous_nodes = previous.nodes_json if previous else []
@@ -97,6 +99,8 @@ def _persist_graph_snapshot(
         relations_json=cleaned.get("relations", []),
         graph_summary_json=graph_summary,
         temporal_diff_json=temporal_diff,
+        extraction_provider=extraction_provider,
+        extraction_model=extraction_model,
     )
     session.add(snapshot)
     session.commit()
@@ -136,6 +140,8 @@ def _to_extraction_response(extraction: Extraction) -> ExtractionResponse:
         relations_json=extraction.relations_json or [],
         temporal_summary=extraction.temporal_summary,
         extractor_version=extraction.extractor_version,
+        extraction_provider=extraction.extraction_provider,
+        extraction_model=extraction.extraction_model,
         created_at=extraction.created_at,
     )
 
@@ -154,6 +160,7 @@ def create_entry(
 
     _clear_expired_raw_text(session)
     logger.info("[submit] start user=%s text_len=%d observation_type=%s", user_id, len(entry_text), observation_type)
+    model_metadata = llm_adapter.metadata()
 
     # ── 1. Persist raw entry ─────────────────────────────────────────────────
     entry = Entry(
@@ -201,6 +208,9 @@ def create_entry(
             nodes_json=cleaned.get("nodes", []),
             relations_json=cleaned.get("relations", []),
             temporal_summary=temporal_summary,
+            extractor_version=model_metadata["extractor_version"],
+            extraction_provider=model_metadata["provider"],
+            extraction_model=model_metadata["model"],
         )
         session.add(extraction)
         session.commit()
@@ -213,12 +223,21 @@ def create_entry(
             nodes_json=[],
             relations_json=[],
             temporal_summary="unknown",
+            extractor_version=model_metadata["extractor_version"],
+            extraction_provider=model_metadata["provider"],
+            extraction_model=model_metadata["model"],
         )
 
     # ── 5. Persist graph snapshot ────────────────────────────────────────────
     graph_snapshot: Optional[GraphSnapshot] = None
     try:
-        graph_snapshot = _persist_graph_snapshot(session, entry, cleaned)
+        graph_snapshot = _persist_graph_snapshot(
+            session,
+            entry,
+            cleaned,
+            model_metadata["provider"],
+            model_metadata["model"],
+        )
         logger.info("[submit] graph snapshot persisted id=%s", graph_snapshot.id)
     except Exception:
         logger.exception("[submit] graph snapshot failed; continuing without snapshot")

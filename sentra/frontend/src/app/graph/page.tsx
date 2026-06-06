@@ -19,8 +19,7 @@ export default function GraphPage() {
     setError(null);
     try {
       const data = await ApiClient.getGraphSnapshots(userId);
-      const hasDenseLiveGraph = data.some((snapshot) => snapshot.nodes_json.length >= 10 && snapshot.relations_json.length >= 10);
-      setSnapshots(hasDenseLiveGraph ? data : demoGraphSnapshots);
+      setSnapshots(data.length > 0 ? data : demoGraphSnapshots);
     } catch {
       setSnapshots(demoGraphSnapshots);
       setError("Live graph snapshots unavailable. Showing seeded monitoring data.");

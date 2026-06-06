@@ -202,6 +202,8 @@ export const demoSubmission: EntrySubmissionResponse = {
     temporal_summary: demoTemporalDiff.relation_shift_summary,
     created_at: "2026-05-10T21:36:00",
     extractor_version: "demo-heavy-user-v1",
+    extraction_provider: "demo",
+    extraction_model: "demo-heavy-user-v1",
   },
   graph_snapshot: demoGraphSnapshots.at(-1)!,
   anomaly_result: {

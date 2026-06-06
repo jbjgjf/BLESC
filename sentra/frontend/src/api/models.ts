@@ -40,6 +40,8 @@ export interface Extraction {
 
 export interface ExtractionResponse extends Extraction {
   extractor_version: string;
+  extraction_provider: string;
+  extraction_model: string;
 }
 
 export interface GraphLayerSummary {
@@ -71,6 +73,8 @@ export interface GraphSnapshot {
   relations_json: ExtractionRelation[];
   graph_summary_json: GraphLayerSummary;
   temporal_diff_json: TemporalGraphDiff;
+  extraction_provider?: string;
+  extraction_model?: string;
   created_at: string;
 }
 

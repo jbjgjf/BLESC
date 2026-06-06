@@ -3,8 +3,9 @@
 import dynamic from "next/dynamic";
 import type { ComponentType, MutableRefObject } from "react";
 import { useMemo, useRef, useState } from "react";
+import * as THREE from "three";
 import { GraphSnapshot, ExplanationPayload } from "@/api/models";
-import { ArrowLeftRight, Info, Orbit, RotateCw } from "lucide-react";
+import { ArrowLeftRight, Box, Info, Orbit, RotateCw } from "lucide-react";
 import type { ForceGraphMethods } from "react-force-graph-3d";
 import type { GraphMode, GraphViewerLink, GraphViewerNode } from "./graphTypes";
 import { buildGraphViewerData, buildNodeSelection, getDebugFallbackData } from "./graphAdapter";
@@ -15,6 +16,13 @@ type ForceGraphBoundaryProps = Record<string, unknown> & {
 
 const ForceGraph3D = dynamic(() => import("react-force-graph-3d"), { ssr: false }) as unknown as ComponentType<ForceGraphBoundaryProps>;
 const ENABLE_GRAPH_DEBUG = process.env.NEXT_PUBLIC_ENABLE_GRAPH_DEBUG === "true";
+const CATEGORY_LEGEND = [
+  { label: "State", color: "#c92a2a" },
+  { label: "Trigger", color: "#d97706" },
+  { label: "Behavior", color: "#6f42c1" },
+  { label: "Event", color: "#0072b2" },
+  { label: "Protective", color: "#2f9e44" },
+];
 
 interface GraphViewer3DProps {
   snapshots: GraphSnapshot[];
@@ -62,19 +70,14 @@ export function GraphViewer3D({
     : null;
 
   const overlayNodes = useMemo(() => {
-    const centerX = 50;
-    const centerY = 50;
-    const radius = mode === "temporal" ? 34 : 30;
     return graphData.nodes.map((node, index) => {
-      const angle = (index / Math.max(1, graphData.nodes.length)) * Math.PI * 2 - Math.PI / 2;
-      const layerOffset = mode === "temporal" ? node.layerIndex * 3 : 0;
       return {
         node,
-        x: centerX + Math.cos(angle) * (radius - layerOffset),
-        y: centerY + Math.sin(angle) * (radius - layerOffset),
+        x: 50 + node.x * 0.38 + (index % 2) * 0.8,
+        y: 50 + node.y * 0.38,
       };
     });
-  }, [graphData.nodes, mode]);
+  }, [graphData.nodes]);
 
   const overlayNodeMap = useMemo(
     () => new Map(overlayNodes.map((item) => [`${item.node.snapshotId}:${item.node.originalId}`, item])),
@@ -82,6 +85,16 @@ export function GraphViewer3D({
   );
 
   const baselineSnapshot = orderedSnapshots.length > 1 ? orderedSnapshots[0] : null;
+  const categoryCounts = useMemo(
+    () => CATEGORY_LEGEND.map((category) => ({
+      ...category,
+      count: graphData.nodes.filter((node) => node.category === category.label).length,
+    })),
+    [graphData.nodes],
+  );
+  const modelLabel = activeSnapshot?.extraction_model && activeSnapshot.extraction_model !== "unknown"
+    ? `${activeSnapshot.extraction_provider ?? "unknown"} / ${activeSnapshot.extraction_model}`
+    : "model unknown";
   const temporalLabel =
     mode === "temporal" && baselineSnapshot && activeSnapshot
       ? `${baselineSnapshot.day} → ${activeSnapshot.day}`
@@ -89,8 +102,61 @@ export function GraphViewer3D({
         ? `${activeSnapshot.day}`
         : "No snapshots available";
 
+  const createNodeObject = (node: GraphViewerNode) => {
+    const group = new THREE.Group();
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(node.radius, 32, 24),
+      new THREE.MeshPhysicalMaterial({
+        color: node.color,
+        roughness: 0.38,
+        metalness: 0.12,
+        clearcoat: 0.6,
+        clearcoatRoughness: 0.24,
+      }),
+    );
+    const outline = new THREE.Mesh(
+      new THREE.SphereGeometry(node.radius * 1.18, 24, 18),
+      new THREE.MeshBasicMaterial({
+        color: node.color,
+        transparent: true,
+        opacity: node.sourceKind === "historical" ? 0.12 : 0.18,
+        side: THREE.BackSide,
+      }),
+    );
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 128;
+    const context = canvas.getContext("2d");
+    if (context) {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.font = "600 34px Arial";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillStyle = "rgba(255,255,255,0.94)";
+      context.strokeStyle = "rgba(15,23,42,0.18)";
+      context.lineWidth = 2;
+      context.roundRect(18, 26, 476, 72, 16);
+      context.fill();
+      context.stroke();
+      context.fillStyle = "#0f172a";
+      const label = node.label.length > 24 ? `${node.label.slice(0, 23)}…` : node.label;
+      context.fillText(label, 256, 62);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+    label.position.set(0, node.radius + 10, 0);
+    label.scale.set(46, 12, 1);
+
+    group.add(outline);
+    group.add(sphere);
+    group.add(label);
+    return group;
+  };
+
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5">
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="border-b border-slate-200 bg-slate-50/80 p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -99,7 +165,7 @@ export function GraphViewer3D({
           </div>
           <h2 className="mt-2 text-2xl font-semibold text-slate-950">Interactive 3D structural graph</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            This is a visualization layer only. The anomaly decision still comes from graph-native inference; the viewer is for inspection, baseline comparison, and temporal shifts.
+            Live extracted nodes are plotted as a labeled 3D structure. Color encodes ontology class, arrowed edges encode relation type, and temporal mode stacks real snapshots by date.
           </p>
         </div>
 
@@ -136,43 +202,55 @@ export function GraphViewer3D({
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500">
-        <span className="rounded bg-slate-100 px-3 py-1">Mode: {mode}</span>
-        <span className="rounded bg-slate-100 px-3 py-1">Layer view: {temporalLabel}</span>
-        <span className="rounded bg-slate-100 px-3 py-1">Drag / rotate / zoom enabled</span>
+      <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600">
+        <span className="rounded border border-slate-200 bg-white px-3 py-1">Mode: {mode}</span>
+        <span className="rounded border border-slate-200 bg-white px-3 py-1">Layer view: {temporalLabel}</span>
+        <span className="rounded border border-slate-200 bg-white px-3 py-1">{graphData.nodes.length} nodes / {graphData.links.length} relations</span>
+        <span className="rounded border border-slate-200 bg-white px-3 py-1">{modelLabel}</span>
+      </div>
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="relative min-h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-950">
-          <div className="h-[620px] w-full">
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1.35fr)_360px]">
+        <div className="relative min-h-[680px] overflow-hidden bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]">
+          <div className="pointer-events-none absolute inset-0 opacity-[0.58] [background-image:linear-gradient(#dbe3ed_1px,transparent_1px),linear-gradient(90deg,#dbe3ed_1px,transparent_1px)] [background-size:42px_42px]" />
+          <div className="pointer-events-none absolute left-5 top-5 z-10 rounded border border-slate-200 bg-white/88 px-3 py-2 text-xs font-medium text-slate-600 shadow-sm backdrop-blur">
+            Graph3D projection · orbit / zoom / click nodes
+          </div>
+          <div className="h-[680px] w-full">
             {graphData.nodes.length > 0 ? (
               <ForceGraph3D
                 ref={fgRef}
                 graphData={graphData}
-                backgroundColor="#020617"
+                backgroundColor="rgba(255,255,255,0)"
                 nodeLabel={(node: GraphViewerNode) =>
                   `${node.label} · ${node.category} · ${node.snapshotDay}${node.layerIndex >= 0 ? ` · layer ${node.layerIndex + 1}` : ""}`
                 }
+                nodeThreeObject={createNodeObject}
+                nodeThreeObjectExtend={false}
                 nodeColor={(node: GraphViewerNode) => node.color}
-                nodeVal={(node: GraphViewerNode) => node.radius * 8}
+                nodeVal={(node: GraphViewerNode) => node.radius * 10}
                 linkColor={(link: GraphViewerLink) => link.color}
-                linkWidth={(link: GraphViewerLink) => link.width}
-                linkOpacity={0.88}
-                linkDirectionalArrowLength={(link: GraphViewerLink) => (link.type === "buffers" ? 0 : 3)}
+                linkWidth={(link: GraphViewerLink) => link.width * 0.9}
+                linkOpacity={0.72}
+                linkDirectionalArrowLength={(link: GraphViewerLink) => (link.type === "buffers" ? 2 : 5)}
                 linkDirectionalArrowRelPos={0.92}
+                linkDirectionalParticles={2}
+                linkDirectionalParticleWidth={(link: GraphViewerLink) => Math.max(1.4, link.width * 0.7)}
+                linkDirectionalParticleSpeed={0.006}
+                linkCurvature={(link: GraphViewerLink) => (link.dashed ? 0.16 : 0.06)}
                 nodeRelSize={9}
                 enableNodeDrag={true}
                 onNodeClick={(node: GraphViewerNode) => setSelectedNode(node)}
                 onBackgroundClick={() => setSelectedNode(null)}
                 controlType="orbit"
-                warmupTicks={120}
-                cooldownTicks={120}
+                warmupTicks={80}
+                cooldownTicks={100}
                 showNavInfo={false}
-                height={620}
+                height={680}
                 onEngineStop={() => {
                   if (!fgRef.current) return;
-                  const distance = Math.min(240, Math.max(120, graphData.nodes.length * 9));
-                  fgRef.current.cameraPosition({ x: 0, y: 0, z: distance }, { x: 0, y: 0, z: 0 }, 1200);
+                  fgRef.current.cameraPosition({ x: 0, y: 0, z: 240 }, { x: 0, y: 0, z: 0 }, 600);
+                  fgRef.current.zoomToFit(900, 96);
                 }}
               />
             ) : (
@@ -183,18 +261,18 @@ export function GraphViewer3D({
           </div>
           {graphData.nodes.length > 0 && (
             <svg
-              className="pointer-events-none absolute inset-0 h-full w-full"
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-40 w-full"
               viewBox="0 0 100 100"
               preserveAspectRatio="none"
               aria-hidden="true"
             >
               <defs>
-                <radialGradient id="graphGlow" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stopColor="#ffffff" stopOpacity="0.28" />
-                  <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-                </radialGradient>
+                <linearGradient id="graphBasisFade" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor="#f8fafc" stopOpacity="0" />
+                  <stop offset="100%" stopColor="#f8fafc" stopOpacity="0.9" />
+                </linearGradient>
               </defs>
-              <circle cx="50" cy="50" r="39" fill="url(#graphGlow)" />
+              <rect x="0" y="0" width="100" height="100" fill="url(#graphBasisFade)" />
               {graphData.links.map((link, index) => {
                 const source = typeof link.source === "string" ? null : overlayNodeMap.get(`${link.source.snapshotId}:${link.source.originalId}`);
                 const target = typeof link.target === "string" ? null : overlayNodeMap.get(`${link.target.snapshotId}:${link.target.originalId}`);
@@ -207,23 +285,22 @@ export function GraphViewer3D({
                     x2={target.x}
                     y2={target.y}
                     stroke={link.color}
-                    strokeWidth={0.24}
-                    strokeOpacity={0.7}
+                    strokeWidth={0.18}
+                    strokeOpacity={0.32}
                   />
                 );
               })}
               {overlayNodes.map(({ node, x, y }) => (
                 <g key={`${node.snapshotId}-${node.originalId}`}>
-                  <circle cx={x} cy={y} r={1.45 + node.radius * 0.08} fill={node.color} opacity={0.96} />
-                  <circle cx={x} cy={y} r={2.3 + node.radius * 0.08} fill="none" stroke={node.color} strokeOpacity={0.28} strokeWidth={0.32} />
+                  <circle cx={x} cy={y} r={1.1 + node.radius * 0.06} fill={node.color} opacity={0.7} />
                 </g>
               ))}
             </svg>
           )}
         </div>
 
-        <aside className="space-y-4">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-5">
+        <aside className="space-y-4 border-l border-slate-200 bg-slate-50 p-5">
+          <div className="rounded-lg border border-slate-200 bg-white p-5">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
               <ArrowLeftRight className="h-4 w-4 text-cyan-600" />
               Baseline vs current
@@ -232,6 +309,34 @@ export function GraphViewer3D({
               <div>Snapshots: {orderedSnapshots.length}</div>
               <div>Baseline layer: {baselineSnapshot?.day ?? "n/a"}</div>
               <div>Current layer: {activeSnapshot?.day ?? "n/a"}</div>
+              <div>Source: {usingFallback ? "debug fallback" : "live snapshots"}</div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white p-5">
+            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+              <Box className="h-4 w-4 text-cyan-600" />
+              Ontology basis
+            </div>
+            <div className="mt-4 space-y-3">
+              {categoryCounts.map((item) => (
+                <div key={item.label} className="grid grid-cols-[96px_1fr_24px] items-center gap-3 text-xs text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                    {item.label}
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${graphData.nodes.length ? Math.max(8, (item.count / graphData.nodes.length) * 100) : 0}%`,
+                        backgroundColor: item.color,
+                      }}
+                    />
+                  </div>
+                  <div className="text-right tabular-nums text-slate-500">{item.count}</div>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -269,7 +374,7 @@ export function GraphViewer3D({
             )}
           </div>
 
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-5">
+          <div className="rounded-lg border border-slate-200 bg-white p-5">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
               <RotateCw className="h-4 w-4 text-cyan-600" />
               How to read this
@@ -278,8 +383,7 @@ export function GraphViewer3D({
               <p>Node color encodes ontology class.</p>
               <p>Relation styling encodes relation type.</p>
               <p>Temporal mode stacks snapshots on the z-axis so shifts across time are visible.</p>
-              <p>Use the graph to inspect structural change points, not to decide the anomaly itself.</p>
-              <p>Node-only snapshots still render as bright spheres with camera framing tuned to keep them visible.</p>
+              <p>White canvas, labels, arrows, and basis markers are tuned for inspection rather than presentation-only decoration.</p>
               {usingFallback && <p className="text-rose-600">Debug fallback is active.</p>}
             </div>
           </div>

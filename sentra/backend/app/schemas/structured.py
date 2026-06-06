@@ -35,6 +35,8 @@ class ExtractionResponse(SQLModel):
     relations_json: List[Dict[str, Any]] = Field(default_factory=list)
     temporal_summary: Optional[str] = None
     extractor_version: str = ""
+    extraction_provider: str = "unknown"
+    extraction_model: str = "unknown"
     created_at: datetime
 
 
@@ -67,6 +69,8 @@ class GraphSnapshot(SQLModel, table=True):
     relations_json: List[Dict[str, Any]] = Field(sa_column=Column(JSON))
     graph_summary_json: Dict[str, Any] = Field(sa_column=Column(JSON))
     temporal_diff_json: Dict[str, Any] = Field(sa_column=Column(JSON))
+    extraction_provider: str = "unknown"
+    extraction_model: str = "unknown"
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     entry: Entry = Relationship(back_populates="graph_snapshots")

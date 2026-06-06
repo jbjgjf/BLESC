@@ -28,6 +28,8 @@ type EntryRow = {
   participant_id: string;
   participants?: { code: string } | { code: string }[] | null;
   observation_type?: string;
+  extraction_provider?: string;
+  extraction_model?: string;
 };
 
 type GraphSnapshotRow = {
@@ -38,6 +40,8 @@ type GraphSnapshotRow = {
   relations_json: JsonValue;
   graph_summary_json: JsonValue;
   temporal_diff_json: JsonValue;
+  extraction_provider?: string;
+  extraction_model?: string;
   created_at: string;
   participants?: { code: string } | { code: string }[] | null;
 };
@@ -56,6 +60,8 @@ type InsightRow = {
   graph_summary_json: JsonValue;
   score_breakdown_json: Record<string, JsonValue> | null;
   key_relations: JsonValue;
+  extraction_provider?: string;
+  extraction_model?: string;
   created_at: string;
   participants?: { code: string } | { code: string }[] | null;
 };
@@ -71,6 +77,18 @@ function asRecord<T extends Record<string, unknown>>(value: JsonValue | null | u
 function participantCode(row: { participants?: { code: string } | { code: string }[] | null }, fallback: string): string {
   const participant = Array.isArray(row.participants) ? row.participants[0] : row.participants;
   return participant?.code ?? fallback;
+}
+
+function throwSupabaseError(context: string, error: unknown): never {
+  if (error instanceof Error) {
+    throw new Error(`${context}: ${error.message}`);
+  }
+  if (error && typeof error === "object") {
+    const details = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+    const parts = [details.message, details.details, details.hint, details.code].filter(Boolean).map(String);
+    throw new Error(`${context}: ${parts.join(" | ") || JSON.stringify(error)}`);
+  }
+  throw new Error(`${context}: ${String(error)}`);
 }
 
 function toEntry(row: EntryRow, userId: string): Entry {
@@ -111,6 +129,8 @@ function toGraphSnapshot(row: GraphSnapshotRow, userId: string): GraphSnapshot {
       protective_decline: {},
       uncertainty: {},
     }),
+    extraction_provider: row.extraction_provider ?? "unknown",
+    extraction_model: row.extraction_model ?? "unknown",
     created_at: row.created_at,
   };
 }
@@ -183,7 +203,7 @@ export class ApiClient {
       .eq("code", userId)
       .single();
 
-    if (error) throw error;
+    if (error) throwSupabaseError("Load participant failed", error);
     return data;
   }
 
@@ -191,11 +211,11 @@ export class ApiClient {
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("entries")
-      .select("id, raw_text, is_masked, extraction_json, expires_at, created_at, participant_id, observation_type, participants(code)")
+      .select("id, raw_text, is_masked, extraction_json, expires_at, created_at, participant_id, observation_type, extraction_provider, extraction_model, participants!entries_participant_id_fkey(code)")
       .eq("participant_id", participant.id)
       .order("created_at", { ascending: false });
 
-    if (error) throw error;
+    if (error) throwSupabaseError("Load entries failed", error);
     return (data ?? []).map((row) => toEntry(row as unknown as EntryRow, userId));
   }
 
@@ -215,13 +235,15 @@ export class ApiClient {
         raw_text: null,
         is_masked: true,
         extraction_json: computed.extraction as unknown as Record<string, JsonValue>,
+        extraction_provider: computed.extraction.extraction_provider,
+        extraction_model: computed.extraction.extraction_model,
         expires_at: computed.entry.expires_at ?? null,
         observation_type: observationType,
       })
-      .select("id, raw_text, is_masked, extraction_json, expires_at, created_at, participant_id, observation_type, participants(code)")
+      .select("id, raw_text, is_masked, extraction_json, expires_at, created_at, participant_id, observation_type, extraction_provider, extraction_model, participants!entries_participant_id_fkey(code)")
       .single();
 
-    if (entryInsert.error) throw entryInsert.error;
+    if (entryInsert.error) throwSupabaseError("Save entry failed", entryInsert.error);
     const entry = toEntry(entryInsert.data as unknown as EntryRow, userId);
 
     let graphSnapshot: GraphSnapshot | null = null;
@@ -238,11 +260,13 @@ export class ApiClient {
           relations_json: computed.graph_snapshot.relations_json as unknown as JsonValue,
           graph_summary_json: computed.graph_snapshot.graph_summary_json as unknown as JsonValue,
           temporal_diff_json: computed.graph_snapshot.temporal_diff_json as unknown as JsonValue,
+          extraction_provider: computed.extraction.extraction_provider,
+          extraction_model: computed.extraction.extraction_model,
         })
-        .select("id, entry_id, day, nodes_json, relations_json, graph_summary_json, temporal_diff_json, created_at, participants(code)")
+        .select("id, entry_id, day, nodes_json, relations_json, graph_summary_json, temporal_diff_json, extraction_provider, extraction_model, created_at, participants!graph_snapshots_participant_id_fkey(code)")
         .single();
 
-      if (graphInsert.error) throw graphInsert.error;
+      if (graphInsert.error) throwSupabaseError("Save graph snapshot failed", graphInsert.error);
       graphSnapshotId = graphInsert.data.id;
       graphSnapshot = toGraphSnapshot(graphInsert.data as unknown as GraphSnapshotRow, userId);
     }
@@ -270,11 +294,13 @@ export class ApiClient {
           graph_summary_json: computed.explanation?.graph_summary_json ?? graphSnapshot?.graph_summary_json ?? {},
           score_breakdown_json: computed.explanation?.score_breakdown_json ?? {},
           key_relations: computed.explanation?.key_relations ?? [],
+          extraction_provider: computed.extraction.extraction_provider,
+          extraction_model: computed.extraction.extraction_model,
         })
-        .select("id, day, anomaly_score, z_scores_json, triggered_rules_json, baseline_deviation_json, changed_relations_json, protective_decline_json, uncertainty_json, evidence_summaries, graph_summary_json, score_breakdown_json, key_relations, created_at, participants(code)")
+        .select("id, day, anomaly_score, z_scores_json, triggered_rules_json, baseline_deviation_json, changed_relations_json, protective_decline_json, uncertainty_json, evidence_summaries, graph_summary_json, score_breakdown_json, key_relations, extraction_provider, extraction_model, created_at, participants!insights_participant_id_fkey(code)")
         .single();
 
-      if (insightInsert.error) throw insightInsert.error;
+      if (insightInsert.error) throwSupabaseError("Save insight failed", insightInsert.error);
       anomalyResult = toAnomaly(insightInsert.data as unknown as InsightRow, userId);
       explanation = toExplanation(insightInsert.data as unknown as InsightRow, userId);
     }
@@ -295,22 +321,22 @@ export class ApiClient {
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("insights")
-      .select("id, day, anomaly_score, z_scores_json, triggered_rules_json, baseline_deviation_json, changed_relations_json, protective_decline_json, uncertainty_json, evidence_summaries, graph_summary_json, score_breakdown_json, key_relations, created_at, participants(code)")
+      .select("id, day, anomaly_score, z_scores_json, triggered_rules_json, baseline_deviation_json, changed_relations_json, protective_decline_json, uncertainty_json, evidence_summaries, graph_summary_json, score_breakdown_json, key_relations, extraction_provider, extraction_model, created_at, participants!insights_participant_id_fkey(code)")
       .eq("participant_id", participant.id)
       .order("day", { ascending: true });
 
-    if (error) throw error;
+    if (error) throwSupabaseError("Load timeline failed", error);
     return (data ?? []).map((row) => toAnomaly(row as unknown as InsightRow, userId));
   }
 
   static async getExplanation(explanationId: RecordId): Promise<ExplanationPayload> {
     const { data, error } = await supabase
       .from("insights")
-      .select("id, day, anomaly_score, z_scores_json, triggered_rules_json, baseline_deviation_json, changed_relations_json, protective_decline_json, uncertainty_json, evidence_summaries, graph_summary_json, score_breakdown_json, key_relations, created_at, participants(code)")
+      .select("id, day, anomaly_score, z_scores_json, triggered_rules_json, baseline_deviation_json, changed_relations_json, protective_decline_json, uncertainty_json, evidence_summaries, graph_summary_json, score_breakdown_json, key_relations, extraction_provider, extraction_model, created_at, participants!insights_participant_id_fkey(code)")
       .eq("id", String(explanationId))
       .single();
 
-    if (error) throw error;
+    if (error) throwSupabaseError("Load explanation failed", error);
     return toExplanation(data as unknown as InsightRow, participantCode(data, ""));
   }
 
@@ -322,14 +348,14 @@ export class ApiClient {
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("insights")
-      .select("id, day, anomaly_score, z_scores_json, triggered_rules_json, baseline_deviation_json, changed_relations_json, protective_decline_json, uncertainty_json, evidence_summaries, graph_summary_json, score_breakdown_json, key_relations, created_at, participants(code)")
+      .select("id, day, anomaly_score, z_scores_json, triggered_rules_json, baseline_deviation_json, changed_relations_json, protective_decline_json, uncertainty_json, evidence_summaries, graph_summary_json, score_breakdown_json, key_relations, extraction_provider, extraction_model, created_at, participants!insights_participant_id_fkey(code)")
       .eq("participant_id", participant.id)
       .order("day", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(1)
       .single();
 
-    if (error) throw error;
+    if (error) throwSupabaseError("Load anomaly failed", error);
     return toAnomaly(data as unknown as InsightRow, userId);
   }
 
@@ -337,13 +363,13 @@ export class ApiClient {
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("graph_snapshots")
-      .select("id, entry_id, day, nodes_json, relations_json, graph_summary_json, temporal_diff_json, created_at, participants(code)")
+      .select("id, entry_id, day, nodes_json, relations_json, graph_summary_json, temporal_diff_json, extraction_provider, extraction_model, created_at, participants!graph_snapshots_participant_id_fkey(code)")
       .eq("participant_id", participant.id)
       .order("day", { ascending: true })
       .order("created_at", { ascending: true })
       .limit(limit);
 
-    if (error) throw error;
+    if (error) throwSupabaseError("Load graph snapshots failed", error);
     return (data ?? []).map((row) => toGraphSnapshot(row as unknown as GraphSnapshotRow, userId));
   }
 }

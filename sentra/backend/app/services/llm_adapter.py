@@ -29,6 +29,21 @@ def _check_ollama_running() -> bool:
         return False
 
 
+def _list_ollama_models(host: str) -> list[str]:
+    try:
+        r = httpx.get(f"{host}/api/tags", timeout=2.0)
+        r.raise_for_status()
+        payload = r.json()
+        return [
+            model.get("name")
+            for model in payload.get("models", [])
+            if isinstance(model, dict) and model.get("name")
+        ]
+    except Exception:
+        logger.exception("[llm] failed to list Ollama models")
+        return []
+
+
 class LLMAdapter:
     def __init__(self):
         openai_key = os.getenv("OPENAI_API_KEY")
@@ -40,6 +55,7 @@ class LLMAdapter:
         elif openai_key:
             # Priority 1: OpenAI — works in all environments including Vercel
             self.use_mock = False
+            self.provider = "openai"
             self.api_key = openai_key
             self.openai_url = os.getenv("LLM_OPENAI_BASE_URL", "https://api.openai.com/v1")
             self.model_name = os.getenv("LLM_MODEL_NAME", "gpt-4o-mini")
@@ -50,9 +66,20 @@ class LLMAdapter:
             # Priority 2: Ollama local — only when NOT on Vercel
             host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
             self.use_mock = False
+            self.provider = "ollama"
             self.api_key = "ollama"
             self.openai_url = f"{host}/v1"
-            self.model_name = os.getenv("OLLAMA_MODEL", "qwen2.5:14b")
+            configured_model = os.getenv("OLLAMA_MODEL", "qwen2.5:14b")
+            available_models = _list_ollama_models(host)
+            if configured_model in available_models or not available_models:
+                self.model_name = configured_model
+            else:
+                self.model_name = available_models[0]
+                logger.warning(
+                    "[llm] configured Ollama model=%s unavailable; using installed model=%s",
+                    configured_model,
+                    self.model_name,
+                )
             self.use_json_format = False  # rely on prompt + repair_json_string
             logger.info("[llm] mode=ollama model=%s", self.model_name)
 
@@ -68,11 +95,23 @@ class LLMAdapter:
 
     def _init_mock(self, reason: str) -> None:
         self.use_mock = True
+        self.provider = "mock"
         self.api_key = "dummy"
         self.openai_url = "http://localhost:11434/v1"
         self.model_name = "dummy"
         self.use_json_format = False
         logger.warning("[llm] mode=mock reason=%s", reason)
+
+    @property
+    def extractor_version(self) -> str:
+        return f"{self.provider}:{self.model_name}"
+
+    def metadata(self) -> Dict[str, str]:
+        return {
+            "provider": self.provider,
+            "model": self.model_name,
+            "extractor_version": self.extractor_version,
+        }
 
     def extract_structure(self, text: str) -> Dict[str, Any]:
         """Always returns a valid dict — never raises."""

@@ -27,6 +27,8 @@ class Extraction(SQLModel, table=True):
     relations_json: List[Dict[str, Any]] = Field(sa_column=Column(JSON))
     temporal_summary: Optional[str] = None
     extractor_version: str = "qwen-2.5-7b-v1"
+    extraction_provider: str = "unknown"
+    extraction_model: str = "unknown"
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     # Relationship to entries

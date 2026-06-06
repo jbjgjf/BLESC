@@ -18,6 +18,10 @@ def _apply_migrations() -> None:
         # (table_name, column_name, column_ddl)
         ("hybridexplanation", "key_relations", "JSON DEFAULT '[]'"),
         ("entry", "observation_type", "TEXT DEFAULT 'daily'"),
+        ("extraction", "extraction_provider", "TEXT DEFAULT 'unknown'"),
+        ("extraction", "extraction_model", "TEXT DEFAULT 'unknown'"),
+        ("graphsnapshot", "extraction_provider", "TEXT DEFAULT 'unknown'"),
+        ("graphsnapshot", "extraction_model", "TEXT DEFAULT 'unknown'"),
     ]
     with engine.connect() as conn:
         for table, column, ddl in migrations:

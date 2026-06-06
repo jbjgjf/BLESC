@@ -7,7 +7,12 @@ export interface GraphViewerNode extends ExtractionNode {
   snapshotId: RecordId;
   snapshotDay: string;
   layerIndex: number;
+  x: number;
+  y: number;
   z: number;
+  fx: number;
+  fy: number;
+  fz: number;
   color: string;
   radius: number;
   sourceKind: "current" | "historical";

@@ -147,8 +147,10 @@ export default function Home() {
       loadEntries();
       loadGraphSnapshots();
       return response;
-    } catch {
-      setError("Submission failed. Check backend connection.");
+    } catch (submitError) {
+      console.error("[entry-submit] failed", submitError);
+      const message = submitError instanceof Error ? submitError.message : "Unknown error";
+      setError(`Submission failed: ${message}`);
     } finally {
       setIsSubmitting(false);
     }
