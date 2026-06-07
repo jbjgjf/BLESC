@@ -6,8 +6,8 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 
 const primaryNav = [
-  { href: "/",      label: "Record",  sub: "Εἰσαγωγή" },
-  { href: "/graph", label: "Graph",   sub: "Ὀντολογία" },
+  { href: "/",      label: "Record" },
+  { href: "/graph", label: "Graph" },
 ];
 
 export function AppHeader() {
@@ -30,7 +30,7 @@ export function AppHeader() {
       style={{
         backgroundColor: "var(--ivory-warm)",
         borderBottom: "1px solid var(--limestone)",
-        boxShadow: "0 2px 16px rgba(42, 32, 24, 0.09)",
+        boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
       }}
     >
       <div className="meander w-full" aria-hidden="true" />
@@ -48,16 +48,16 @@ export function AppHeader() {
             style={{
               border: "2px solid var(--gold)",
               color: "var(--gold)",
-              fontFamily: "var(--font-cinzel), serif",
+              fontFamily: "var(--font-sans), sans-serif",
               fontSize: "1rem",
               fontWeight: "700",
             }}
           >
-            Σ
+            B
           </div>
           <span
             style={{
-              fontFamily: "var(--font-cinzel), serif",
+              fontFamily: "var(--font-sans), sans-serif",
               fontSize: "0.8rem",
               fontWeight: "700",
               letterSpacing: "0.22em",
@@ -65,7 +65,7 @@ export function AppHeader() {
               color: "var(--ink)",
             }}
           >
-            SENTRA
+            BLESC
           </span>
         </Link>
 
@@ -79,37 +79,24 @@ export function AppHeader() {
                 href={item.href}
                 className="flex flex-col items-center justify-center px-6 py-2 transition-all"
                 style={{
-                  fontFamily: "var(--font-cinzel), serif",
+                  fontFamily: "var(--font-sans), sans-serif",
                   fontSize: "0.65rem",
                   fontWeight: "600",
                   letterSpacing: "0.18em",
                   textTransform: "uppercase",
                   color: isActive ? "var(--gold)" : "var(--ink-mid)",
-                  backgroundColor: isActive ? "rgba(196, 150, 42, 0.07)" : "transparent",
+                  backgroundColor: isActive ? "rgba(9, 9, 11, 0.04)" : "transparent",
                   borderRight: "1px solid var(--limestone)",
                   borderBottom: isActive ? "2px solid var(--gold)" : "2px solid transparent",
                   textDecoration: "none",
                 }}
               >
                 <span>{item.label}</span>
-                <span
-                  style={{
-                    fontFamily: "var(--font-garamond), serif",
-                    fontSize: "0.58rem",
-                    fontStyle: "italic",
-                    color: isActive ? "var(--gold-deep)" : "var(--ink-faint)",
-                    letterSpacing: "0.02em",
-                    marginTop: "2px",
-                    fontWeight: "400",
-                    textTransform: "none",
-                  }}
-                >
-                  {item.sub}
-                </span>
               </Link>
             );
           })}
         </nav>
+
 
         {/* Cohort */}
         <div className="relative flex items-center px-4" style={{ borderLeft: "1px solid var(--limestone)" }}>
@@ -117,7 +104,7 @@ export function AppHeader() {
             onClick={() => setCohortOpen(!cohortOpen)}
             className="flex items-center gap-2 px-3 py-1.5 transition-all"
             style={{
-              fontFamily: "var(--font-cinzel), serif",
+              fontFamily: "var(--font-sans), sans-serif",
               fontSize: "0.6rem",
               letterSpacing: "0.15em",
               textTransform: "uppercase",
@@ -137,7 +124,7 @@ export function AppHeader() {
                 backgroundColor: "var(--ivory)",
                 border: "1px solid var(--limestone)",
                 borderTop: "none",
-                boxShadow: "0 8px 40px rgba(42, 32, 24, 0.14)",
+                boxShadow: "0 4px 12px rgba(0, 0, 0, 0.05)",
               }}
             >
               <div className="meander w-full" aria-hidden="true" />
@@ -149,7 +136,7 @@ export function AppHeader() {
                     border: "1px solid var(--limestone)",
                     backgroundColor: "var(--ivory-warm)",
                     color: "var(--ink)",
-                    fontFamily: "var(--font-garamond), serif",
+                    fontFamily: "var(--font-sans), sans-serif",
                     fontSize: "0.9rem",
                   }}
                   value={draftUserId}
@@ -158,7 +145,7 @@ export function AppHeader() {
                   onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                 />
                 {user?.email && (
-                  <div className="mt-2 truncate text-xs" style={{ color: "var(--ink-faint)", fontFamily: "var(--font-garamond), serif" }}>
+                  <div className="mt-2 truncate text-xs" style={{ color: "var(--ink-faint)", fontFamily: "var(--font-sans), sans-serif" }}>
                     {user.email}
                   </div>
                 )}
@@ -167,12 +154,11 @@ export function AppHeader() {
                   className="mt-3 w-full text-left py-1.5 text-sm"
                   style={{
                     color: "var(--ink-mid)",
-                    fontFamily: "var(--font-garamond), serif",
+                    fontFamily: "var(--font-sans), sans-serif",
                     borderTop: "1px solid var(--limestone)",
                     paddingTop: "10px",
                     background: "none",
                     border: "none",
-                    borderTop: "1px solid var(--limestone)",
                     cursor: "pointer",
                   }}
                 >

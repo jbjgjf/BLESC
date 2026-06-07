@@ -28,8 +28,8 @@ const S = {
     border: "1px solid var(--limestone)",
     boxShadow: "0 1px 3px rgba(42,32,24,0.09), 0 6px 24px rgba(42,32,24,0.05), inset 0 1px 0 rgba(252,244,228,0.85)",
   } as React.CSSProperties,
-  displayFont: { fontFamily: "var(--font-cinzel), serif" } as React.CSSProperties,
-  bodyFont:    { fontFamily: "var(--font-garamond), serif" } as React.CSSProperties,
+  displayFont: { fontFamily: "var(--font-sans), sans-serif" } as React.CSSProperties,
+  bodyFont:    { fontFamily: "var(--font-sans), sans-serif" } as React.CSSProperties,
 };
 
 export default function Timeline() {
@@ -74,21 +74,15 @@ export default function Timeline() {
         className="relative px-8 py-7"
         style={{
           ...S.panel,
-          backgroundImage: [
-            "radial-gradient(ellipse at 4% 50%, rgba(160,72,48,0.07) 0%, transparent 45%)",
-            "radial-gradient(ellipse at 96% 50%, rgba(43,89,133,0.06) 0%, transparent 45%)",
-            "radial-gradient(ellipse at 50% -10%, rgba(196,150,42,0.09) 0%, transparent 55%)",
-            "linear-gradient(180deg, var(--ivory-warm) 0%, var(--ivory) 100%)",
-          ].join(","),
+          backgroundColor: "var(--ivory-warm)",
         }}
       >
-        <div className="meander absolute top-0 left-0 w-full" aria-hidden="true" />
         <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
           <div>
             <div
               className="mb-3"
               style={{
-                fontFamily: "var(--font-cinzel), serif",
+                fontFamily: "var(--font-sans), sans-serif",
                 fontSize: "0.6rem",
                 fontWeight: 600,
                 letterSpacing: "0.28em",
@@ -171,7 +165,7 @@ export default function Timeline() {
               <div
                 className="mb-2"
                 style={{
-                  fontFamily: "var(--font-cinzel), serif",
+                  fontFamily: "var(--font-sans), sans-serif",
                   fontSize: "0.55rem",
                   fontWeight: 600,
                   letterSpacing: "0.22em",
@@ -200,7 +194,7 @@ export default function Timeline() {
               <div
                 className="mb-2"
                 style={{
-                  fontFamily: "var(--font-cinzel), serif",
+                  fontFamily: "var(--font-sans), sans-serif",
                   fontSize: "0.55rem",
                   fontWeight: 600,
                   letterSpacing: "0.22em",
@@ -226,7 +220,7 @@ export default function Timeline() {
               <div
                 className="mb-2"
                 style={{
-                  fontFamily: "var(--font-cinzel), serif",
+                  fontFamily: "var(--font-sans), sans-serif",
                   fontSize: "0.55rem",
                   fontWeight: 600,
                   letterSpacing: "0.22em",
@@ -261,26 +255,26 @@ export default function Timeline() {
                   dataKey="day"
                   stroke="var(--ink-faint)"
                   tickLine={false}
-                  tick={{ fontFamily: "var(--font-cinzel), serif", fontSize: 10, letterSpacing: 1 }}
+                  tick={{ fontFamily: "var(--font-sans), sans-serif", fontSize: 10, letterSpacing: 1 }}
                 />
                 <YAxis
                   stroke="var(--ink-faint)"
                   tickLine={false}
                   axisLine={false}
-                  tick={{ fontFamily: "var(--font-cinzel), serif", fontSize: 10 }}
+                  tick={{ fontFamily: "var(--font-sans), sans-serif", fontSize: 10 }}
                 />
                 <Tooltip
                   contentStyle={{
                     border: "1px solid var(--limestone)",
                     backgroundColor: "var(--ivory)",
-                    boxShadow: "0 8px 32px rgba(42,32,24,0.12)",
-                    fontFamily: "var(--font-garamond), serif",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+                    fontFamily: "var(--font-sans), sans-serif",
                     fontSize: "13px",
                     color: "var(--ink)",
                     borderRadius: 0,
                   }}
                   labelStyle={{
-                    fontFamily: "var(--font-cinzel), serif",
+                    fontFamily: "var(--font-sans), sans-serif",
                     fontSize: "11px",
                     letterSpacing: "0.1em",
                     textTransform: "uppercase",
@@ -294,7 +288,7 @@ export default function Timeline() {
                     value: "Review Threshold",
                     fill: "var(--terracotta)",
                     fontSize: 10,
-                    fontFamily: "var(--font-cinzel), serif",
+                    fontFamily: "var(--font-sans), sans-serif",
                     letterSpacing: 1,
                   }}
                   stroke="var(--terracotta)"

@@ -1,25 +1,17 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { Cinzel, EB_Garamond } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { AuthShell } from "@/components/AuthShell";
 
-const cinzel = Cinzel({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-cinzel",
-  weight: ["400", "600", "700"],
-});
-
-const ebGaramond = EB_Garamond({
-  subsets: ["latin"],
-  variable: "--font-garamond",
-  style: ["normal", "italic"],
-  weight: ["400", "500", "600", "700"],
+  variable: "--font-sans",
 });
 
 export const metadata: Metadata = {
-  title: "Sentra",
+  title: "BLESC",
   description: "Education risk monitoring",
 };
 
@@ -30,7 +22,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${cinzel.variable} ${ebGaramond.variable}`}>
+      <body className={`${inter.variable}`}>
         <AuthProvider>
           <Suspense fallback={null}>
             <AuthShell>{children}</AuthShell>
@@ -40,3 +32,4 @@ export default function RootLayout({
     </html>
   );
 }
+

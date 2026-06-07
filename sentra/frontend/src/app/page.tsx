@@ -21,10 +21,10 @@ const categoryColor: Record<string, { bg: string; text: string; border: string }
 const panel: React.CSSProperties = {
   backgroundColor: "var(--ivory)",
   border: "1px solid var(--limestone)",
-  boxShadow: "0 1px 3px rgba(42,32,24,0.09), 0 6px 24px rgba(42,32,24,0.05), inset 0 1px 0 rgba(252,244,228,0.85)",
+  boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.04)",
 };
-const displayFont: React.CSSProperties = { fontFamily: "var(--font-cinzel), serif" };
-const bodyFont: React.CSSProperties    = { fontFamily: "var(--font-garamond), serif" };
+const displayFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
+const bodyFont: React.CSSProperties    = { fontFamily: "var(--font-sans), sans-serif" };
 
 /* ================================================================
    Page
@@ -107,12 +107,7 @@ export default function Home() {
         <div
           className="relative px-7 py-6"
           style={{
-            backgroundImage: [
-              "radial-gradient(ellipse at 0% 50%, rgba(160,72,48,0.06) 0%, transparent 50%)",
-              "radial-gradient(ellipse at 100% 50%, rgba(43,89,133,0.05) 0%, transparent 50%)",
-              "radial-gradient(ellipse at 50% -20%, rgba(196,150,42,0.08) 0%, transparent 60%)",
-              "linear-gradient(180deg, var(--ivory-warm) 0%, var(--ivory) 100%)",
-            ].join(","),
+            backgroundColor: "var(--ivory-warm)",
             borderBottom: "1px solid var(--limestone)",
           }}
         >
@@ -211,7 +206,7 @@ export default function Home() {
             className="px-7 py-5"
             style={{
               borderBottom: topNodes.length > 0 ? "1px solid var(--limestone)" : "none",
-              backgroundImage: "radial-gradient(ellipse at 50% 0%, rgba(196,150,42,0.07) 0%, transparent 70%)",
+              backgroundColor: "var(--ivory-warm)",
             }}
           >
             <div className="meander w-full mb-4" style={{ opacity: 0.35 }} aria-hidden="true" />
@@ -285,11 +280,7 @@ export default function Home() {
         style={{
           ...panel,
           textDecoration: "none",
-          backgroundImage: [
-            "radial-gradient(ellipse at 0% 50%, rgba(43,89,133,0.06) 0%, transparent 50%)",
-            "radial-gradient(ellipse at 100% 50%, rgba(196,150,42,0.06) 0%, transparent 50%)",
-            "linear-gradient(180deg, var(--ivory-warm) 0%, var(--ivory) 100%)",
-          ].join(","),
+          backgroundColor: "var(--ivory-warm)",
         }}
       >
         <div>

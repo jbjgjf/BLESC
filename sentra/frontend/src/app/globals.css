@@ -1,46 +1,49 @@
 @import "tailwindcss";
 
 /* ================================================================
-   SENTRA — Classical Greek Design System
-   Inspired by: the Parthenon, Attic pottery, ancient frescoes,
-   marble temple architecture, and Hellenistic manuscripts
+   BLESC — Modern Minimalist Design System
+   Clean typography, neutral tones, flat surfaces, subtle borders
    ================================================================ */
 
 :root {
-  /* Stone & marble palette */
-  --ivory:          #F5EFE0;
-  --ivory-warm:     #EDE5D0;
-  --ivory-aged:     #E4D8C0;
-  --limestone:      #D0C0A4;
-  --sandstone:      #BCA888;
-  --marble-vein:    #A89878;
+  /* Minimal monochrome & zinc palette */
+  --ivory:          #ffffff;
+  --ivory-warm:     #fafafa;
+  --ivory-aged:     #f4f4f5;
+  --limestone:      #e4e4e7;
+  --sandstone:      #a1a1aa;
+  --marble-vein:    #71717a;
 
-  /* Metal & mineral accents */
-  --gold:           #C4962A;
-  --gold-light:     #DEB84A;
-  --gold-deep:      #9B7820;
-  --bronze:         #7A5A18;
+  /* Neutrals & deep accents */
+  --gold:           #09090b;
+  --gold-light:     #27272a;
+  --gold-deep:      #09090b;
+  --bronze:         #3f3f46;
 
-  /* Mediterranean & Aegean */
-  --aegean:         #2B5985;
-  --aegean-dark:    #1D3D5C;
-  --cerulean:       #4A7AA0;
-  --sky-pale:       #C0D0DF;
+  /* Cool neutrals */
+  --aegean:         #09090b;
+  --aegean-dark:    #000000;
+  --cerulean:       #27272a;
+  --sky-pale:       #f4f4f5;
 
-  /* Earth & fresco tones */
-  --terracotta:     #A04830;
-  --ochre:          #C48830;
-  --sienna:         #8A3C20;
+  /* Alert / state colors */
+  --terracotta:     #ef4444;
+  --ochre:          #f59e0b;
+  --sienna:         #dc2626;
 
-  /* Text (carved ink & charcoal) */
-  --ink:            #2A2018;
-  --ink-soft:       #4A3C2C;
-  --ink-mid:        #6A5A48;
-  --ink-faint:      #9A8A78;
+  /* Text (charcoal & slate) */
+  --ink:            #09090b;
+  --ink-soft:       #18181b;
+  --ink-mid:        #52525b;
+  --ink-faint:      #a1a1aa;
 
   /* System */
   --background:     var(--ivory);
   --foreground:     var(--ink);
+
+  /* Map display and body fonts to Next.js Inter variable */
+  --font-cinzel:    var(--font-sans), sans-serif;
+  --font-garamond:  var(--font-sans), sans-serif;
 }
 
 @theme inline {
@@ -67,10 +70,10 @@
   --color-ink-mid:      var(--ink-mid);
   --color-ink-faint:    var(--ink-faint);
 
-  --font-sans:    var(--font-garamond), Georgia, 'Times New Roman', serif;
-  --font-serif:   var(--font-garamond), Georgia, 'Times New Roman', serif;
-  --font-display: var(--font-cinzel), Georgia, serif;
-  --font-mono:    'Courier New', Courier, monospace;
+  --font-sans:    var(--font-sans), sans-serif;
+  --font-serif:   var(--font-sans), sans-serif;
+  --font-display: var(--font-sans), sans-serif;
+  --font-mono:    monospace;
 }
 
 /* ================================================================
@@ -89,89 +92,58 @@ html {
 body {
   min-height: 100vh;
   background-color: var(--ivory);
-  /* Marble veining — barely perceptible diagonal striations */
-  background-image:
-    linear-gradient(108deg, transparent 39%, rgba(188,168,128,0.07) 39.5%, rgba(188,168,128,0.07) 40.5%, transparent 41%),
-    linear-gradient(74deg,  transparent 58%, rgba(168,152,112,0.05) 58.5%, rgba(168,152,112,0.05) 59.5%, transparent 60%),
-    radial-gradient(ellipse at 25% 0%,   rgba(228,200,148,0.28) 0%, transparent 55%),
-    radial-gradient(ellipse at 75% 100%, rgba(208,184,140,0.18) 0%, transparent 55%);
   color: var(--ink);
-  font-family: var(--font-serif);
-  font-size: 16px;
-  line-height: 1.65;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 summary::-webkit-details-marker { display: none; }
 
 /* ================================================================
-   Classical ornamental patterns
+   Minimal visual patterns
    ================================================================ */
 
-/* Greek meander (key) border strip — tiles horizontally */
+/* Hide Greek meander key pattern */
 .meander {
-  height: 8px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='8'%3E%3Cpath fill='none' stroke='%23C4962A' stroke-width='1.2' d='M0,7 L0,1 L7,1 L7,5 L5,5 L5,7 L11,7 L11,1 L18,1 L18,5 L16,5 L16,7 L22,7 L22,1 L29,1 L29,5 L27,5 L27,7 L32,7'/%3E%3C/svg%3E");
-  background-repeat: repeat-x;
-  background-size: 32px 8px;
-  opacity: 0.6;
+  display: none !important;
 }
 
-/* Double rule — classical entablature cornice */
+/* Hide classical cornice rule */
 .cornice {
-  border: none;
-  height: 5px;
-  background: linear-gradient(to bottom,
-    transparent 0%,
-    var(--gold-deep) 0%,    var(--gold-deep) 28%,
-    transparent 28%,        transparent 60%,
-    var(--sandstone) 60%,   var(--sandstone) 80%,
-    transparent 80%
-  );
-  opacity: 0.45;
+  display: none !important;
 }
 
-/* Short inscription label (uppercase Cinzel, tracking) */
+/* Clean text label */
 .inscription {
-  font-family: var(--font-display);
-  font-size: 0.6rem;
+  font-family: var(--font-sans);
+  font-size: 0.65rem;
   font-weight: 600;
-  letter-spacing: 0.28em;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--ink-faint);
 }
 
-/* Museum panel — the primary card surface */
+/* Minimal card panel */
 .museum-panel {
   background-color: var(--ivory);
-  background-image:
-    linear-gradient(112deg, transparent 42%, rgba(188,168,128,0.06) 42.5%, transparent 43%);
   border: 1px solid var(--limestone);
-  box-shadow:
-    0 1px 3px rgba(42, 32, 24, 0.10),
-    0 6px 24px rgba(42, 32, 24, 0.05),
-    inset 0 1px 0 rgba(252, 244, 228, 0.9);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
 }
 
-/* Stele card — slightly warmer, for sidebars */
+/* Minimal side/warm panel */
 .stele {
   background-color: var(--ivory-warm);
   border: 1px solid var(--limestone);
-  box-shadow:
-    0 2px 8px rgba(42, 32, 24, 0.09),
-    0 8px 32px rgba(42, 32, 24, 0.04),
-    inset 0 1px 0 rgba(252, 244, 228, 0.85);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
 }
 
-/* Fresco hero — warm archaeological amber wash */
+/* Minimal flat hero background */
 .fresco-bg {
-  background-image:
-    radial-gradient(ellipse at 6%  50%, rgba(160, 72, 48, 0.07) 0%, transparent 45%),
-    radial-gradient(ellipse at 94% 50%, rgba(43, 89, 133, 0.06) 0%, transparent 45%),
-    radial-gradient(ellipse at 50% -5%, rgba(196, 150, 42, 0.10) 0%, transparent 55%),
-    linear-gradient(180deg, var(--ivory-warm) 0%, var(--ivory) 100%);
+  background-color: var(--ivory-warm);
 }
 
-/* Thin gold-rule ornament divider */
+/* Simple light border line divider */
 .ornament-divider {
   display: flex;
   align-items: center;
@@ -182,12 +154,11 @@ summary::-webkit-details-marker { display: none; }
   content: '';
   flex: 1;
   height: 1px;
-  background: linear-gradient(to right, transparent, var(--gold), transparent);
-  opacity: 0.45;
+  background: var(--limestone);
 }
 
 /* ================================================================
-   Scrollbar (restrained stone palette)
+   Scrollbar (clean & minimal)
    ================================================================ */
 ::-webkit-scrollbar       { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: var(--ivory-aged); }
@@ -195,6 +166,7 @@ summary::-webkit-details-marker { display: none; }
 ::-webkit-scrollbar-thumb:hover { background: var(--marble-vein); }
 
 ::selection {
-  background-color: rgba(196, 150, 42, 0.2);
+  background-color: rgba(9, 9, 11, 0.08);
   color: var(--ink);
 }
+

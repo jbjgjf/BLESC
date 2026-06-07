@@ -46,7 +46,7 @@ export default function LoginPage() {
             <Activity className="h-5 w-5" />
           </span>
           <div>
-            <h1 className="text-lg font-semibold">Sentra</h1>
+            <h1 className="text-lg font-semibold">BLESC</h1>
             <p className="text-sm text-slate-500">Sign in to continue monitoring</p>
           </div>
         </div>

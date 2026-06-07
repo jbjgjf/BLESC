@@ -14,8 +14,8 @@ const S = {
     border: "1px solid var(--limestone)",
     boxShadow: "0 1px 3px rgba(42,32,24,0.09), 0 6px 24px rgba(42,32,24,0.05), inset 0 1px 0 rgba(252,244,228,0.85)",
   } as React.CSSProperties,
-  displayFont: { fontFamily: "var(--font-cinzel), serif" } as React.CSSProperties,
-  bodyFont:    { fontFamily: "var(--font-garamond), serif" } as React.CSSProperties,
+  displayFont: { fontFamily: "var(--font-sans), sans-serif" } as React.CSSProperties,
+  bodyFont:    { fontFamily: "var(--font-sans), sans-serif" } as React.CSSProperties,
 };
 
 export default function GraphPage() {
@@ -50,21 +50,15 @@ export default function GraphPage() {
         className="relative px-8 py-7"
         style={{
           ...S.panel,
-          backgroundImage: [
-            "radial-gradient(ellipse at 4% 50%, rgba(160,72,48,0.07) 0%, transparent 45%)",
-            "radial-gradient(ellipse at 96% 50%, rgba(43,89,133,0.06) 0%, transparent 45%)",
-            "radial-gradient(ellipse at 50% -10%, rgba(196,150,42,0.09) 0%, transparent 55%)",
-            "linear-gradient(180deg, var(--ivory-warm) 0%, var(--ivory) 100%)",
-          ].join(","),
+          backgroundColor: "var(--ivory-warm)",
         }}
       >
-        <div className="meander absolute top-0 left-0 w-full" aria-hidden="true" />
         <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
           <div>
             <div
               className="mb-3"
               style={{
-                fontFamily: "var(--font-cinzel), serif",
+                fontFamily: "var(--font-sans), sans-serif",
                 fontSize: "0.6rem",
                 fontWeight: 600,
                 letterSpacing: "0.28em",
