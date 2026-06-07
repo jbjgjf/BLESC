@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
@@ -28,9 +29,9 @@ export function AppHeader() {
     <header
       className="sticky top-0 z-50 backdrop-blur-md"
       style={{
-        backgroundColor: "rgba(15, 14, 21, 0.8)",
+        backgroundColor: "rgba(16, 10, 28, 0.86)",
         borderBottom: "1px solid var(--limestone)",
-        boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
+        boxShadow: "0 6px 28px rgba(76, 29, 149, 0.24)",
       }}
     >
       <div className="meander w-full" aria-hidden="true" />
@@ -43,11 +44,24 @@ export function AppHeader() {
           className="flex items-center gap-3 px-6 py-3"
           style={{ borderRight: "1px solid var(--limestone)", color: "var(--ink)", textDecoration: "none" }}
         >
-          <img
-            src="/logo.svg"
-            className="h-8 w-8 object-contain shrink-0"
-            alt="BLESC Logo"
-          />
+          <span
+            className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full"
+            aria-hidden="true"
+            style={{
+              background: "radial-gradient(circle at 38% 28%, #31205a 0%, #181027 58%, #0b0713 100%)",
+              border: "1px solid rgba(196, 181, 253, 0.42)",
+              boxShadow: "0 0 18px rgba(139, 92, 246, 0.45), inset 0 0 10px rgba(255,255,255,0.12)",
+            }}
+          >
+            <Image
+              src="/logo-cutout.png"
+              className="h-[30px] w-[30px] object-contain"
+              alt=""
+              width={30}
+              height={30}
+              priority
+            />
+          </span>
           <span
             style={{
               fontFamily: "var(--font-sans), sans-serif",

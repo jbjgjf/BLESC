@@ -1,31 +1,30 @@
 @import "tailwindcss";
 
 /* ================================================================
-   BLESC — Dark Neon Cyber-Minimalist Design System
-   Matches Blesc Logo: Deep black/charcoal backgrounds with glowing
-   neon cyan (#06b6d4) and neon purple (#8b5cf6) accents.
+   BLESC — Purple Dark Cyber-Minimalist Design System
+   Deep violet-black surfaces with purple-first accents.
    ================================================================ */
 
 :root {
   /* Minimal dark neon palette */
-  --ivory:          #08070b; /* Deep slate-black background */
-  --ivory-warm:     #0f0e15; /* Dark panel fill */
-  --ivory-aged:     #14131d; /* Slightly lighter panel fill */
-  --limestone:      #22212c; /* Border color */
-  --sandstone:      #706f80;
-  --marble-vein:    #454452;
+  --ivory:          #07040d; /* Violet-black background */
+  --ivory-warm:     #120a1f; /* Purple panel fill */
+  --ivory-aged:     #1a102b; /* Raised purple panel fill */
+  --limestone:      #2c2040; /* Purple border color */
+  --sandstone:      #8b7aa8;
+  --marble-vein:    #5b4a78;
 
-  /* Neon Cyan & Neon Purple accents from logo */
-  --gold:           #06b6d4; /* Neon cyan accent */
-  --gold-light:     #22d3ee; /* Neon cyan light highlight */
-  --gold-deep:      #0891b2; /* Cyan mid-tone */
-  --bronze:         #8b5cf6; /* Neon purple accent */
+  /* Purple-first brand accents */
+  --gold:           #a78bfa; /* Primary purple accent */
+  --gold-light:     #c4b5fd; /* Lavender highlight */
+  --gold-deep:      #7c3aed; /* Saturated purple */
+  --bronze:         #d946ef; /* Magenta secondary accent */
 
-  /* Cool darks & neon tones */
-  --aegean:         #06b6d4; /* Neon cyan */
-  --aegean-dark:    #0891b2;
-  --cerulean:       #8b5cf6; /* Neon purple */
-  --sky-pale:       rgba(6, 182, 212, 0.08); /* Glowing cyan tint */
+  /* Cool support tones */
+  --aegean:         #a78bfa;
+  --aegean-dark:    #7c3aed;
+  --cerulean:       #ec4899;
+  --sky-pale:       rgba(167, 139, 250, 0.12);
 
   /* Alert / state colors */
   --terracotta:     #f43f5e; /* Neon rose */
@@ -92,7 +91,10 @@ html {
 
 body {
   min-height: 100vh;
-  background-color: var(--ivory);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(124, 58, 237, 0.22), transparent 34rem),
+    radial-gradient(circle at 88% 12%, rgba(217, 70, 239, 0.16), transparent 30rem),
+    linear-gradient(180deg, #090414 0%, var(--ivory) 48%, #05030a 100%);
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: 15px;
@@ -171,8 +173,7 @@ summary::-webkit-details-marker { display: none; }
 ::-webkit-scrollbar-thumb:hover { background: var(--marble-vein); }
 
 ::selection {
-  background-color: rgba(6, 182, 212, 0.15);
+  background-color: rgba(167, 139, 250, 0.24);
   color: var(--ink);
 }
-
 
