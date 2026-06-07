@@ -131,7 +131,7 @@ export default function GraphPage() {
           snapshots={snapshots}
           currentSnapshot={currentSnapshot}
           explanation={demoSubmission.explanation}
-          title="Entity manifold"
+          title="Ontology Graph"
         />
       )}
     </div>

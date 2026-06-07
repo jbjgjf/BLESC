@@ -11,7 +11,6 @@ export const CATEGORY_COLORS: Record<string, string> = {
 
 const CATEGORY_ORDER = ["State", "Trigger", "Behavior", "Event", "Protective"];
 
-// Obsidian-style: thin bright edges with low opacity for depth
 export const RELATION_STYLES: Record<string, { color: string; width: number; opacity: number; dashed: boolean }> = {
   causes: { color: "#ff6b35", width: 1.0, opacity: 0.75, dashed: false },
   escalates: { color: "#ff4455", width: 1.2, opacity: 0.75, dashed: false },
@@ -27,6 +26,22 @@ function safeArray<T>(value: T[] | undefined | null): T[] {
 
 export function resolveRelationStyle(type: string) {
   return RELATION_STYLES[type] ?? RELATION_STYLES.co_occurs;
+}
+
+function relationField(value: object, field: "source_id" | "target_id" | "type") {
+  const record = value as Record<string, unknown>;
+  const legacyField = field === "source_id" ? "source_node_id" : field === "target_id" ? "target_node_id" : field;
+  return typeof record[field] === "string"
+    ? record[field]
+    : typeof record[legacyField] === "string"
+      ? record[legacyField]
+      : undefined;
+}
+
+function sameRelationShape(left: object, right: object) {
+  return relationField(left, "source_id") === relationField(right, "source_id")
+    && relationField(left, "target_id") === relationField(right, "target_id")
+    && relationField(left, "type") === relationField(right, "type");
 }
 
 export function buildGraphViewerData(
@@ -70,7 +85,7 @@ export function buildGraphViewerData(
       const angle = (categoryIndex / CATEGORY_ORDER.length) * Math.PI * 2 - Math.PI / 2;
       const localOffset = (categorySeen - 1) * 14;
       const orbitRadius = 58 + Math.min(24, index * 3);
-      // Obsidian-style: small nodes — degree and intensity influence size but keep them tiny
+      // Degree and intensity influence vertex size, but the layout stays readable.
       const radius = Math.max(2.8, 2.2 + Math.sqrt(degree) * 1.2 + intensity * 1.5);
       const viewerNode: GraphViewerNode = {
         ...node,
@@ -97,14 +112,17 @@ export function buildGraphViewerData(
       const source = nodeMap.get(relation.source_id) ?? nodes.find((item) => item.snapshotId === snapshot.id && item.originalId === relation.source_id);
       const target = nodeMap.get(relation.target_id) ?? nodes.find((item) => item.snapshotId === snapshot.id && item.originalId === relation.target_id);
       if (!source || !target) return;
+      const confidence = typeof relation.confidence === "number" ? relation.confidence : 1;
+      const isAdded = mode === "temporal" && safeArray(snapshot.temporal_diff_json?.added_relations).some((item) => sameRelationShape(item, relation));
+      const isChanged = mode === "temporal" && safeArray(snapshot.temporal_diff_json?.changed_relations).some((item) => sameRelationShape(item, relation));
       links.push({
         ...relation,
         source,
         target,
-        color: style.color,
-        width: style.width,
-        opacity: style.opacity,
-        dashed: style.dashed,
+        color: isAdded ? "#14b8a6" : isChanged ? "#f59e0b" : style.color,
+        width: Math.max(0.6, style.width * (0.72 + confidence * 0.72)),
+        opacity: Math.min(0.9, Math.max(0.35, style.opacity * (0.7 + confidence * 0.45))),
+        dashed: style.dashed || isChanged,
         layerIndex,
         snapshotId: snapshot.id,
         snapshotDay: snapshot.day,
@@ -134,8 +152,8 @@ export function buildGraphViewerData(
 }
 
 // ──────────────────────────────────────────────────────────────
-// Concept graph: merge all snapshots into a persistent network
-// Same label+category across entries → single growing node
+// Concept quotient graph: merge all snapshots into a recurrent directed graph.
+// Same label+category across entries -> single concept vertex.
 // ──────────────────────────────────────────────────────────────
 
 interface ConceptMeta {
@@ -218,7 +236,7 @@ export function buildConceptGraphData(snapshots: GraphSnapshot[]): GraphViewerDa
   const nodes: GraphViewerNode[] = Array.from(conceptMap.values()).map((meta) => {
     const avgIntensity = meta.totalIntensity / meta.frequency;
     const color = CATEGORY_COLORS[meta.category] ?? "#94a3b8";
-    // Obsidian-style: small glowing dots, size grows slowly with frequency
+    // Concept recurrence controls vertex size and grows slowly to avoid visual dominance.
     const radius = Math.max(2.5, 2 + Math.cbrt(meta.frequency) * 2.8 + avgIntensity * 1.2);
     // Spread nodes on a sphere so the force sim doesn't start with a degenerate state
     const theta = Math.random() * Math.PI * 2;

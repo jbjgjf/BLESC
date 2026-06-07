@@ -5,7 +5,7 @@ import type { ComponentType, MutableRefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { GraphSnapshot, ExplanationPayload } from "@/api/models";
-import { ArrowLeftRight, Box, Cpu, Info, Orbit, RotateCw } from "lucide-react";
+import { ArrowLeftRight, Box, Cpu, Info, Orbit, Route, RotateCw } from "lucide-react";
 import type { ForceGraphMethods } from "react-force-graph-3d";
 import type { GraphMode, GraphViewerLink, GraphViewerNode } from "./graphTypes";
 import {
@@ -35,6 +35,27 @@ const CATEGORY_LEGEND = [
   { label: "Protective", color: CATEGORY_COLORS.Protective },
 ];
 
+const MODE_COPY: Record<GraphMode, { label: string; title: string; description: string; canvasHint: string }> = {
+  current: {
+    label: "Snapshot",
+    title: "Typed Directed Multigraph",
+    description: "One snapshot rendered as typed vertices and directed predicate edges. Vertex color encodes ontology class; arrows encode predicate direction.",
+    canvasHint: "Typed directed multigraph · orbit / zoom / inspect",
+  },
+  temporal: {
+    label: "Temporal",
+    title: "Layered Temporal Digraph",
+    description: "Snapshots are stacked as time layers on the Z-axis. Z position encodes date; XY position is layout-only for readability.",
+    canvasHint: "Layered temporal digraph · orbit / zoom / inspect",
+  },
+  concept: {
+    label: "Quotient",
+    title: "Concept Quotient Graph",
+    description: "Repeated entities with the same ontology class and label collapse into one recurrent concept vertex across snapshots.",
+    canvasHint: "Concept quotient graph · orbit / zoom / inspect",
+  },
+};
+
 interface GraphViewer3DProps {
   snapshots: GraphSnapshot[];
   currentSnapshot?: GraphSnapshot | null;
@@ -42,68 +63,54 @@ interface GraphViewer3DProps {
   title?: string;
 }
 
-// ── Three.js helpers ───────────────────────────────────────────
-// Obsidian-style: tiny bright point of light with soft glow halo
 function makeNodeObject(node: GraphViewerNode, isConceptMode: boolean) {
   const group = new THREE.Group();
   const color = new THREE.Color(node.color);
   const dim = node.sourceKind === "historical";
+  const recurrence = node.frequency ?? 1;
+  const isHighSalience = isConceptMode ? recurrence >= 3 : node.intensity >= 0.8;
 
-  // Outer soft halo (feeds bloom, adds depth)
-  const haloOuter = new THREE.Mesh(
-    new THREE.SphereGeometry(node.radius * 2.8, 6, 4),
-    new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: dim ? 0.02 : 0.05,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.BackSide,
-    }),
-  );
-
-  // Inner halo — visible colored glow ring
-  const haloInner = new THREE.Mesh(
-    new THREE.SphereGeometry(node.radius * 1.6, 8, 6),
-    new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: dim ? 0.06 : 0.14,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
-  );
-
-  // Main emissive core — high emissiveIntensity + toneMapped:false
-  // lets the value exceed 1.0 so UnrealBloomPass picks it up strongly
   const core = new THREE.Mesh(
-    new THREE.SphereGeometry(node.radius * 0.65, 16, 12),
+    new THREE.SphereGeometry(node.radius * 0.78, 20, 14),
     new THREE.MeshStandardMaterial({
       color,
-      emissive: color,
-      emissiveIntensity: dim ? 1.2 : 2.8,
-      roughness: 0.0,
-      metalness: 0.0,
-      toneMapped: false,
+      emissive: isHighSalience ? color : new THREE.Color("#000000"),
+      emissiveIntensity: dim ? 0.08 : isHighSalience ? 0.35 : 0.0,
+      roughness: 0.72,
+      metalness: 0.05,
+      transparent: dim,
+      opacity: dim ? 0.45 : 1,
     }),
   );
-
-  // White-hot pinpoint center — the "star" look
-  const centre = new THREE.Mesh(
-    new THREE.SphereGeometry(node.radius * 0.28, 8, 6),
-    new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      toneMapped: false,
-    }),
-  );
-
-  group.add(haloOuter);
-  group.add(haloInner);
   group.add(core);
-  group.add(centre);
+
+  if (isHighSalience) {
+    const halo = new THREE.Mesh(
+      new THREE.SphereGeometry(node.radius * 1.45, 12, 8),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: dim ? 0.04 : 0.1,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    );
+    group.add(halo);
+  }
+
+  const outline = new THREE.Mesh(
+    new THREE.SphereGeometry(node.radius * 0.82, 20, 14),
+    new THREE.MeshBasicMaterial({
+      color,
+      wireframe: true,
+      transparent: true,
+      opacity: dim ? 0.12 : 0.28,
+    }),
+  );
+  group.add(outline);
 
   // Labels only on concept-mode hub nodes (freq >= 3) — shown as subtle glowing text
-  if (isConceptMode && (node.frequency ?? 0) >= 3) {
+  if (isConceptMode && recurrence >= 3) {
     const canvas = document.createElement("canvas");
     canvas.width = 384;
     canvas.height = 56;
@@ -112,9 +119,8 @@ function makeNodeObject(node: GraphViewerNode, isConceptMode: boolean) {
       ctx.font = "500 22px Arial";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.shadowColor = node.color;
-      ctx.shadowBlur = 10;
-      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "rgba(255,255,255,0.82)";
       const label = node.label.length > 18 ? `${node.label.slice(0, 17)}…` : node.label;
       ctx.fillText(label, 192, 28);
     }
@@ -139,11 +145,9 @@ export function GraphViewer3D({
   const [selectedNode, setSelectedNode] = useState<GraphViewerNode | null>(null);
   const [showFallback, setShowFallback] = useState(false);
   const [graphWidth, setGraphWidth] = useState(900);
-  const [simRunning, setSimRunning] = useState(false);
   const fgRef = useRef<ForceGraphMethods | null>(null);
   const graphFrameRef = useRef<HTMLDivElement | null>(null);
-  const bloomSetupRef = useRef(false);
-  const modeLabel = mode === "current" ? "Snapshot" : mode === "concept" ? "Lattice" : "Temporal";
+  const modeCopy = MODE_COPY[mode];
 
   const orderedSnapshots = useMemo(
     () => [...snapshots].sort((a, b) => `${a.day}`.localeCompare(`${b.day}`)),
@@ -225,35 +229,8 @@ export function GraphViewer3D({
     [isConceptMode],
   );
 
-  // Bloom post-processing — set up once after graph initializes
-  const setupBloom = useCallback(() => {
-    if (!fgRef.current || bloomSetupRef.current) return;
-    try {
-      const composer = (fgRef.current as unknown as { postProcessingComposer?: () => { addPass: (p: unknown) => void } }).postProcessingComposer?.();
-      if (!composer) return;
-
-      // Dynamic import keeps Three.js postprocessing out of the server bundle
-      Promise.all([
-        import("three/examples/jsm/postprocessing/UnrealBloomPass.js"),
-        import("three/examples/jsm/postprocessing/OutputPass.js"),
-      ]).then(([{ UnrealBloomPass }, { OutputPass }]) => {
-        // Obsidian-style: strong bloom + tight radius → glowing star dots
-        const bloom = new UnrealBloomPass(
-          new THREE.Vector2(graphWidth, 680),
-          2.2,   // strength
-          0.3,   // radius — tight, star-like spread
-          0.08,  // threshold — prevents pure-black background from blooming purple
-        );
-        composer.addPass(bloom);
-        composer.addPass(new OutputPass());
-        bloomSetupRef.current = true;
-      }).catch(() => {});
-    } catch {}
-  }, [graphWidth]);
-
   // Reconfigure d3 forces when mode changes
   useEffect(() => {
-    setSimRunning(true);
     if (!fgRef.current) return;
     try {
       const charge = (fgRef.current as unknown as { d3Force: (name: string) => { strength: (v: number) => void } | null }).d3Force("charge");
@@ -263,13 +240,11 @@ export function GraphViewer3D({
   }, [mode]);
 
   const handleEngineStop = useCallback(() => {
-    setSimRunning(false);
     if (!fgRef.current) return;
-    setupBloom();
     // Reset to a neutral forward-facing angle instantly, then animate zoom-to-fit
     fgRef.current.cameraPosition({ x: 0, y: 0, z: 600 }, { x: 0, y: 0, z: 0 }, 0);
     fgRef.current.zoomToFit(800, 60);
-  }, [setupBloom]);
+  }, []);
 
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -282,12 +257,10 @@ export function GraphViewer3D({
               {title}
             </div>
             <h2 className="mt-2 text-2xl font-semibold text-slate-950">
-              {mode === "concept" ? "Concept Lattice" : "Ontological Entity Manifold"}
+              {modeCopy.title}
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              {mode === "concept"
-                ? "All snapshots collapse into a recurrent concept lattice. Node scale encodes salience across the participant record."
-                : "Live extracted entities plotted as an ontological manifold. Color encodes class, arrows encode predicates, and temporal mode stacks snapshots on the Z-axis."}
+              {modeCopy.description}
             </p>
           </div>
 
@@ -310,14 +283,14 @@ export function GraphViewer3D({
                   mode === m ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"
                 }`}
               >
-                {m === "current" ? "Snapshot" : m === "concept" ? "Lattice" : "Temporal"}
+                {MODE_COPY[m].label}
               </button>
             ))}
           </div>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600">
-          <span className="rounded border border-slate-200 bg-white px-3 py-1">View: {modeLabel}</span>
+          <span className="rounded border border-slate-200 bg-white px-3 py-1">View: {modeCopy.title}</span>
           <span className="rounded border border-slate-200 bg-white px-3 py-1">{temporalLabel}</span>
           <span className="rounded border border-slate-200 bg-white px-3 py-1">
             {graphData.nodes.length} entities · {graphData.links.length} predicates
@@ -334,19 +307,9 @@ export function GraphViewer3D({
           className="relative min-h-[680px] overflow-hidden"
           style={{ background: "#020208" }}
         >
-          {/* Pure void — no grid, no noise */}
-
           <div className="pointer-events-none absolute left-5 top-5 z-10 rounded border border-white/10 bg-black/40 px-3 py-2 text-xs font-medium text-white/60 backdrop-blur">
-            {mode === "concept" ? "Concept lattice · orbit / zoom / inspect" : "Entity manifold · orbit / zoom / inspect"}
+            {modeCopy.canvasHint}
           </div>
-          {simRunning && (
-            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-              <div className="rounded border border-white/10 bg-black/60 px-4 py-2 text-xs text-white/40 backdrop-blur">
-                Simulating…
-              </div>
-            </div>
-          )}
-
           <div ref={graphFrameRef} className="h-[680px] w-full">
             {graphData.nodes.length > 0 ? (
               <ForceGraph3D
@@ -364,15 +327,16 @@ export function GraphViewer3D({
                 nodeVal={(node: GraphViewerNode) => node.radius * 10}
                 linkColor={(link: GraphViewerLink) => link.color}
                 linkWidth={(link: GraphViewerLink) => link.width}
-                linkOpacity={0.55}
+                linkOpacity={(link: GraphViewerLink) => link.opacity}
                 linkDirectionalArrowLength={(link: GraphViewerLink) => (link.type === "buffers" ? 1.5 : 3)}
                 linkDirectionalArrowRelPos={0.9}
                 linkDirectionalParticles={1}
                 linkDirectionalParticleWidth={(link: GraphViewerLink) => Math.max(0.8, link.width * 0.5)}
                 linkDirectionalParticleSpeed={0.004}
                 linkCurvature={(link: GraphViewerLink) => (link.dashed ? 0.15 : 0.05)}
+                linkLineDash={(link: GraphViewerLink) => link.dashed ? [4, 3] : undefined}
                 nodeRelSize={9}
-                enableNodeDrag={true}
+                enableNodeDrag={false}
                 onNodeClick={(node: GraphViewerNode) => setSelectedNode(node)}
                 onBackgroundClick={() => setSelectedNode(null)}
                 controlType="orbit"
@@ -385,7 +349,7 @@ export function GraphViewer3D({
               />
             ) : (
               <div className="flex h-full items-center justify-center p-8 text-center text-sm text-white/20">
-                No entity graph yet. Submit an observation to render the ontology manifold.
+                No ontology graph yet. Submit an observation to render the typed directed multigraph.
               </div>
             )}
           </div>
@@ -410,7 +374,7 @@ export function GraphViewer3D({
           <div className="rounded-lg border border-slate-200 bg-white p-5">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
               <ArrowLeftRight className="h-4 w-4 text-cyan-600" />
-              {mode === "concept" ? "Concept Lattice" : "Baseline Manifold"}
+              {modeCopy.title}
             </div>
             <div className="mt-3 space-y-2 text-sm text-slate-700">
               {mode === "concept" ? (
@@ -471,6 +435,19 @@ export function GraphViewer3D({
             </div>
           </div>
 
+          <div className="rounded-lg border border-slate-200 bg-white p-5">
+            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+              <Route className="h-4 w-4 text-cyan-600" />
+              Edge Semantics
+            </div>
+            <div className="mt-3 space-y-2 text-sm text-slate-600">
+              <p><strong>Arrow</strong> = predicate direction from source vertex to target vertex.</p>
+              <p><strong>Color</strong> = predicate type.</p>
+              <p><strong>Width</strong> = confidence in snapshot mode; recurrence in quotient mode.</p>
+              <p><strong>Length</strong> = layout-only, with no semantic value.</p>
+            </div>
+          </div>
+
           {/* Selected node */}
           <div className="rounded-lg border border-slate-200 bg-white p-5">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -509,25 +486,26 @@ export function GraphViewer3D({
           <div className="rounded-lg border border-slate-200 bg-white p-5">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
               <RotateCw className="h-4 w-4 text-cyan-600" />
-              {mode === "concept" ? "Lattice Semantics" : "Reading the Manifold"}
+              {mode === "concept" ? "Quotient Graph Semantics" : "Reading the Ontology Graph"}
             </div>
             <div className="mt-3 space-y-2 text-sm text-slate-600">
               {mode === "concept" ? (
                 <>
-                  <p>All journal snapshots are merged. Identical concepts collapse into a single lattice node.</p>
-                  <p><strong>Node size</strong> = recurrence frequency across the participant record.</p>
+                  <p>All snapshots are merged. Identical entity labels within the same ontology class collapse into one recurrent concept vertex.</p>
+                  <p><strong>Vertex size</strong> = concept recurrence across the participant record.</p>
                   <p><strong>Edge thickness</strong> = predicate recurrence across entries.</p>
-                  <p>The resulting web is a participant-specific ontology lattice.</p>
+                  <p>The result is a quotient graph, not a formal mathematical lattice.</p>
                   <p className="flex items-center gap-1 text-cyan-700 font-medium">
                     <Cpu className="h-3 w-3" /> More entries → richer ontology topology.
                   </p>
                 </>
               ) : (
                 <>
-                  <p>Node color encodes ontology class.</p>
-                  <p>Relation styling encodes predicate type.</p>
-                  <p>Temporal mode stacks snapshots on the Z-axis so entity drift is visible.</p>
-                  <p>Switch to <strong>Lattice</strong> mode to see the merged cross-entry ontology.</p>
+                  <p>Vertices are extracted entities. Directed edges are predicates.</p>
+                  <p>Temporal mode uses Z-axis position for time layers; XY position is layout-only.</p>
+                  <p>Edge length is layout-only and has no semantic value.</p>
+                  <p>Drag is disabled to preserve a stable analytical layout.</p>
+                  <p>Switch to <strong>Quotient</strong> mode to see repeated concepts collapsed across entries.</p>
                 </>
               )}
               {usingFallback && <p className="text-rose-600">Debug fallback is active.</p>}
