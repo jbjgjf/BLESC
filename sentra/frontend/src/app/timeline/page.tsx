@@ -4,8 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ApiClient } from "@/api/client";
 import { AnomalyResult } from "@/api/models";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
-import { AlertCircle, ArrowRight, BarChart3, Loader2 } from "lucide-react";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, ReferenceLine,
+} from "recharts";
+import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { demoGraphSnapshots } from "@/lib/demoData";
 
@@ -18,6 +21,16 @@ const demoTimeline: AnomalyResult[] = demoGraphSnapshots.map((snapshot, index) =
   explanation_id: index === demoGraphSnapshots.length - 1 ? 1204 : undefined,
   created_at: snapshot.created_at,
 }));
+
+const S = {
+  panel: {
+    backgroundColor: "var(--ivory)",
+    border: "1px solid var(--limestone)",
+    boxShadow: "0 1px 3px rgba(42,32,24,0.09), 0 6px 24px rgba(42,32,24,0.05), inset 0 1px 0 rgba(252,244,228,0.85)",
+  } as React.CSSProperties,
+  displayFont: { fontFamily: "var(--font-cinzel), serif" } as React.CSSProperties,
+  bodyFont:    { fontFamily: "var(--font-garamond), serif" } as React.CSSProperties,
+};
 
 export default function Timeline() {
   const { userId } = useAuth();
@@ -39,92 +52,264 @@ export default function Timeline() {
     }
   }, [userId]);
 
-  useEffect(() => {
-    loadTimeline();
-  }, [loadTimeline]);
+  useEffect(() => { loadTimeline(); }, [loadTimeline]);
 
   const latest = data.at(-1);
-  const highSignalDays = useMemo(() => data.filter((item) => item.anomaly_score >= 2).length, [data]);
-  const status = latest && latest.anomaly_score >= 2 ? "Review needed" : "Within baseline";
+  const highSignalDays = useMemo(() => data.filter((d) => d.anomaly_score >= 2).length, [data]);
+  const status = latest && latest.anomaly_score >= 2 ? "Review Needed" : "Within Baseline";
 
   if (isLoading) {
     return (
       <div className="flex h-96 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+        <Loader2 className="h-7 w-7 animate-spin" style={{ color: "var(--sandstone)" }} />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <section className="rounded-lg border border-slate-200 bg-white p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+
+      {/* Page header */}
+      <section
+        className="relative px-8 py-7"
+        style={{
+          ...S.panel,
+          backgroundImage: [
+            "radial-gradient(ellipse at 4% 50%, rgba(160,72,48,0.07) 0%, transparent 45%)",
+            "radial-gradient(ellipse at 96% 50%, rgba(43,89,133,0.06) 0%, transparent 45%)",
+            "radial-gradient(ellipse at 50% -10%, rgba(196,150,42,0.09) 0%, transparent 55%)",
+            "linear-gradient(180deg, var(--ivory-warm) 0%, var(--ivory) 100%)",
+          ].join(","),
+        }}
+      >
+        <div className="meander absolute top-0 left-0 w-full" aria-hidden="true" />
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <BarChart3 className="h-4 w-4 text-sky-700" />
-              Risk trend
+            <div
+              className="mb-3"
+              style={{
+                fontFamily: "var(--font-cinzel), serif",
+                fontSize: "0.6rem",
+                fontWeight: 600,
+                letterSpacing: "0.28em",
+                textTransform: "uppercase",
+                color: "var(--ink-faint)",
+              }}
+            >
+              Temporal Drift
             </div>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">Anomaly timeline</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              Structural deviations over time, measured against the participant&apos;s rolling baseline.
+            <h1
+              className="text-3xl"
+              style={{ ...S.displayFont, fontWeight: 700, letterSpacing: "0.04em", color: "var(--ink)" }}
+            >
+              Baseline Deviation Trajectory
+            </h1>
+            <p
+              className="mt-2 max-w-xl text-base leading-relaxed"
+              style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}
+            >
+              Entity-level deviations over time, measured against the participant&apos;s rolling baseline manifold.
             </p>
           </div>
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            Participant <span className="font-semibold text-slate-950">{userId}</span>
+          <div
+            className="px-4 py-2 text-xs"
+            style={{
+              ...S.displayFont,
+              border: "1px solid var(--limestone)",
+              color: "var(--ink-faint)",
+              fontSize: "0.6rem",
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+            }}
+          >
+            Participant · {userId}
           </div>
         </div>
       </section>
 
       {data.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center text-sm text-slate-500">
-          Insufficient data to generate a timeline.
+        <div
+          className="p-12 text-center text-sm"
+          style={{
+            border: "1px dashed var(--limestone)",
+            backgroundColor: "var(--ivory-warm)",
+            color: "var(--ink-faint)",
+            fontStyle: "italic",
+            ...S.bodyFont,
+          }}
+        >
+          Insufficient data to generate a trajectory.
         </div>
       ) : (
-        <section className="rounded-lg border border-slate-200 bg-white">
+        <section style={S.panel}>
           {error && (
-            <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-800">
-              <AlertCircle className="h-4 w-4" />
+            <div
+              className="flex items-center gap-2 px-5 py-3 text-sm"
+              style={{
+                borderBottom: "1px solid var(--sandstone)",
+                backgroundColor: "rgba(196,150,42,0.06)",
+                color: "var(--ochre)",
+                ...S.bodyFont,
+                fontStyle: "italic",
+              }}
+            >
+              <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
-          <div className="grid gap-0 border-b border-slate-200 md:grid-cols-3">
-            <div className="border-b border-slate-200 p-5 md:border-b-0 md:border-r">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</div>
-              <div className="mt-2 text-xl font-semibold text-slate-950">{status}</div>
-              <div className="mt-1 text-sm text-slate-600">Latest score {latest?.anomaly_score.toFixed(2) ?? "--"}</div>
+
+          {/* Stat row */}
+          <div
+            className="grid md:grid-cols-3"
+            style={{ borderBottom: "1px solid var(--limestone)" }}
+          >
+            {/* Inference state */}
+            <div
+              className="p-5"
+              style={{ borderRight: "1px solid var(--limestone)" }}
+            >
+              <div
+                className="mb-2"
+                style={{
+                  fontFamily: "var(--font-cinzel), serif",
+                  fontSize: "0.55rem",
+                  fontWeight: 600,
+                  letterSpacing: "0.22em",
+                  textTransform: "uppercase",
+                  color: "var(--ink-faint)",
+                }}
+              >
+                Inference State
+              </div>
+              <div
+                className="text-xl"
+                style={{ ...S.displayFont, fontWeight: 700, color: "var(--ink)" }}
+              >
+                {status}
+              </div>
+              <div className="mt-1 text-sm" style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}>
+                Latest score {latest?.anomaly_score.toFixed(2) ?? "—"}
+              </div>
             </div>
-            <div className="border-b border-slate-200 p-5 md:border-b-0 md:border-r">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">High-signal days</div>
-              <div className="mt-2 text-xl font-semibold text-slate-950">{highSignalDays}</div>
-              <div className="mt-1 text-sm text-slate-600">Threshold is 2.0</div>
+
+            {/* Excursion days */}
+            <div
+              className="p-5"
+              style={{ borderRight: "1px solid var(--limestone)" }}
+            >
+              <div
+                className="mb-2"
+                style={{
+                  fontFamily: "var(--font-cinzel), serif",
+                  fontSize: "0.55rem",
+                  fontWeight: 600,
+                  letterSpacing: "0.22em",
+                  textTransform: "uppercase",
+                  color: "var(--ink-faint)",
+                }}
+              >
+                Excursion Days
+              </div>
+              <div
+                className="text-xl"
+                style={{ ...S.displayFont, fontWeight: 700, color: "var(--ink)" }}
+              >
+                {highSignalDays}
+              </div>
+              <div className="mt-1 text-sm" style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}>
+                Review threshold 2.0
+              </div>
             </div>
+
+            {/* Next pass link */}
             <div className="p-5">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Next action</div>
-              <Link href="/insights" className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-sky-800 hover:underline">
-                Review diagnostic evidence <ArrowRight className="h-4 w-4" />
+              <div
+                className="mb-2"
+                style={{
+                  fontFamily: "var(--font-cinzel), serif",
+                  fontSize: "0.55rem",
+                  fontWeight: 600,
+                  letterSpacing: "0.22em",
+                  textTransform: "uppercase",
+                  color: "var(--ink-faint)",
+                }}
+              >
+                Next Inference Pass
+              </div>
+              <Link
+                href="/insights"
+                className="inline-flex items-center gap-2 text-sm"
+                style={{ ...S.bodyFont, color: "var(--aegean)" }}
+              >
+                Review Inference Ledger
+                <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
           </div>
-          <div className="h-96 w-full p-5 text-xs">
-            <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={300}>
-              <LineChart data={data} margin={{ top: 8, right: 18, left: -18, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="day" stroke="#64748b" tickLine={false} />
-                <YAxis stroke="#64748b" tickLine={false} axisLine={false} />
-                <Tooltip
-                  contentStyle={{ border: "1px solid #e2e8f0", borderRadius: "6px", boxShadow: "0 12px 30px rgba(15,23,42,0.08)" }}
-                  labelStyle={{ fontWeight: 700 }}
+
+          {/* Chart */}
+          <div className="h-96 w-full p-6 text-xs" style={{ backgroundColor: "var(--ivory)" }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data} margin={{ top: 8, right: 20, left: -20, bottom: 0 }}>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  vertical={false}
+                  stroke="var(--limestone)"
+                  opacity={0.8}
                 />
-                <ReferenceLine y={2.0} label={{ value: "Review threshold", fill: "#b45309", fontSize: 11 }} stroke="#f59e0b" strokeDasharray="4 4" />
+                <XAxis
+                  dataKey="day"
+                  stroke="var(--ink-faint)"
+                  tickLine={false}
+                  tick={{ fontFamily: "var(--font-cinzel), serif", fontSize: 10, letterSpacing: 1 }}
+                />
+                <YAxis
+                  stroke="var(--ink-faint)"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fontFamily: "var(--font-cinzel), serif", fontSize: 10 }}
+                />
+                <Tooltip
+                  contentStyle={{
+                    border: "1px solid var(--limestone)",
+                    backgroundColor: "var(--ivory)",
+                    boxShadow: "0 8px 32px rgba(42,32,24,0.12)",
+                    fontFamily: "var(--font-garamond), serif",
+                    fontSize: "13px",
+                    color: "var(--ink)",
+                    borderRadius: 0,
+                  }}
+                  labelStyle={{
+                    fontFamily: "var(--font-cinzel), serif",
+                    fontSize: "11px",
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase",
+                    color: "var(--ink-soft)",
+                    fontWeight: 700,
+                  }}
+                />
+                <ReferenceLine
+                  y={2.0}
+                  label={{
+                    value: "Review Threshold",
+                    fill: "var(--terracotta)",
+                    fontSize: 10,
+                    fontFamily: "var(--font-cinzel), serif",
+                    letterSpacing: 1,
+                  }}
+                  stroke="var(--terracotta)"
+                  strokeDasharray="5 5"
+                  opacity={0.6}
+                />
                 <Line
                   type="monotone"
                   dataKey="anomaly_score"
-                  stroke="#0369a1"
+                  stroke="var(--aegean)"
                   strokeWidth={2}
-                  dot={{ r: 3, fill: "#0369a1", strokeWidth: 2, stroke: "#fff" }}
-                  activeDot={{ r: 6, strokeWidth: 0 }}
-                  name="Anomaly score"
-                  animationDuration={800}
+                  dot={{ r: 3.5, fill: "var(--aegean)", strokeWidth: 2, stroke: "var(--ivory)" }}
+                  activeDot={{ r: 6, strokeWidth: 0, fill: "var(--gold)" }}
+                  name="Hybrid anomaly score"
+                  animationDuration={900}
                 />
               </LineChart>
             </ResponsiveContainer>

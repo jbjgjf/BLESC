@@ -1,11 +1,22 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { Space_Grotesk } from "next/font/google";
+import { Cinzel, EB_Garamond } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { AuthShell } from "@/components/AuthShell";
 
-const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-space-grotesk" });
+const cinzel = Cinzel({
+  subsets: ["latin"],
+  variable: "--font-cinzel",
+  weight: ["400", "600", "700"],
+});
+
+const ebGaramond = EB_Garamond({
+  subsets: ["latin"],
+  variable: "--font-garamond",
+  style: ["normal", "italic"],
+  weight: ["400", "500", "600", "700"],
+});
 
 export const metadata: Metadata = {
   title: "Sentra",
@@ -19,7 +30,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${spaceGrotesk.variable} bg-slate-50 text-slate-900`}>
+      <body className={`${cinzel.variable} ${ebGaramond.variable}`}>
         <AuthProvider>
           <Suspense fallback={null}>
             <AuthShell>{children}</AuthShell>
