@@ -8,20 +8,21 @@ import { AlertCircle, ArrowRight, CheckCircle2, Loader2, Send } from "lucide-rea
 import { demoEntries, demoGraphSnapshots, demoSubmission } from "@/lib/demoData";
 import { useAuth } from "@/lib/auth";
 
-/* ── category colour map ────────────────────────────────────── */
 const categoryColor: Record<string, { bg: string; text: string; border: string }> = {
-  Protective: { bg: "rgba(43,89,133,0.10)",  text: "var(--aegean)",      border: "rgba(43,89,133,0.25)"  },
-  Event:      { bg: "rgba(160,72,48,0.10)",  text: "var(--terracotta)",  border: "rgba(160,72,48,0.25)"  },
-  Behavior:   { bg: "rgba(196,150,42,0.12)", text: "var(--gold-deep)",   border: "rgba(196,150,42,0.30)" },
-  Trigger:    { bg: "rgba(138,60,32,0.10)",  text: "var(--sienna)",      border: "rgba(138,60,32,0.25)"  },
-  State:      { bg: "rgba(90,74,56,0.08)",   text: "var(--ink-mid)",     border: "rgba(90,74,56,0.20)"   },
+  Protective: { bg: "rgba(6,182,212,0.12)", text: "#22d3ee", border: "rgba(6,182,212,0.30)" },
+  Event:      { bg: "rgba(244,63,94,0.12)",  text: "#fb7185", border: "rgba(244,63,94,0.30)"  },
+  Behavior:   { bg: "rgba(139,92,246,0.12)", text: "#a78bfa", border: "rgba(139,92,246,0.30)" },
+  Trigger:    { bg: "rgba(236,72,153,0.12)", text: "#f472b6", border: "rgba(236,72,153,0.30)" },
+  State:      { bg: "rgba(245,158,11,0.12)", text: "#fbbf24", border: "rgba(245,158,11,0.30)" },
 };
 
 /* ── styles ─────────────────────────────────────────────────── */
 const panel: React.CSSProperties = {
-  backgroundColor: "var(--ivory)",
+  backgroundColor: "rgba(15, 14, 21, 0.85)",
   border: "1px solid var(--limestone)",
-  boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.04)",
+  boxShadow: "0 4px 30px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.03)",
+  backdropFilter: "blur(12px)",
+  borderRadius: "8px",
 };
 const displayFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
 const bodyFont: React.CSSProperties    = { fontFamily: "var(--font-sans), sans-serif" };
@@ -162,12 +163,13 @@ export default function Home() {
             <button
               type="submit"
               disabled={isSubmitting || !text.trim()}
-              className="inline-flex items-center gap-2 px-6 py-2.5 transition-all disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 px-6 py-2.5 transition-all disabled:cursor-not-allowed rounded-md font-semibold cursor-pointer"
               style={{
                 ...displayFont,
-                backgroundColor: isSubmitting || !text.trim() ? "var(--limestone)" : "var(--ink)",
-                color: isSubmitting || !text.trim() ? "var(--ink-faint)" : "var(--ivory)",
-                border: `1px solid ${isSubmitting || !text.trim() ? "var(--limestone)" : "var(--ink)"}`,
+                backgroundColor: isSubmitting || !text.trim() ? "var(--limestone)" : "var(--gold)",
+                color: isSubmitting || !text.trim() ? "var(--ink-faint)" : "#000000",
+                border: `1px solid ${isSubmitting || !text.trim() ? "var(--limestone)" : "var(--gold)"}`,
+                boxShadow: isSubmitting || !text.trim() ? "none" : "0 0 14px rgba(6, 182, 212, 0.4)",
                 letterSpacing: "0.14em",
                 textTransform: "uppercase",
                 fontSize: "0.62rem",
@@ -183,10 +185,10 @@ export default function Home() {
 
           {error && (
             <div
-              className="flex items-center gap-2 p-3 text-sm"
+              className="flex items-center gap-2 p-3 text-sm rounded-md"
               style={{
                 border: "1px solid var(--terracotta)",
-                backgroundColor: "rgba(160,72,48,0.06)",
+                backgroundColor: "rgba(244, 63, 94, 0.08)",
                 color: "var(--sienna)",
                 fontStyle: "italic",
                 ...bodyFont,

@@ -26,11 +26,11 @@ export function AppHeader() {
 
   return (
     <header
-      className="sticky top-0 z-50"
+      className="sticky top-0 z-50 backdrop-blur-md"
       style={{
-        backgroundColor: "var(--ivory-warm)",
+        backgroundColor: "rgba(15, 14, 21, 0.8)",
         borderBottom: "1px solid var(--limestone)",
-        boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
+        boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
       }}
     >
       <div className="meander w-full" aria-hidden="true" />
@@ -43,18 +43,11 @@ export function AppHeader() {
           className="flex items-center gap-3 px-6 py-3"
           style={{ borderRight: "1px solid var(--limestone)", color: "var(--ink)", textDecoration: "none" }}
         >
-          <div
-            className="flex h-8 w-8 items-center justify-center shrink-0"
-            style={{
-              border: "2px solid var(--gold)",
-              color: "var(--gold)",
-              fontFamily: "var(--font-sans), sans-serif",
-              fontSize: "1rem",
-              fontWeight: "700",
-            }}
-          >
-            B
-          </div>
+          <img
+            src="/logo.svg"
+            className="h-8 w-8 object-contain shrink-0"
+            alt="BLESC Logo"
+          />
           <span
             style={{
               fontFamily: "var(--font-sans), sans-serif",
