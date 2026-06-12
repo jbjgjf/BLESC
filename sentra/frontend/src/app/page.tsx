@@ -1,9 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ApiClient } from "@/api/client";
-import { Entry, EntrySubmissionResponse, GraphSnapshot } from "@/api/models";
+import {
+  ConsentSnapshot,
+  Entry,
+  EntrySubmissionResponse,
+  EntryTelemetryPayload,
+  FieldTelemetryPayload,
+  GraphSnapshot,
+  InteractionEventPayload,
+} from "@/api/models";
 import { AlertCircle, ArrowRight, CheckCircle2, Loader2, Send } from "lucide-react";
 import { demoEntries, demoGraphSnapshots, demoSubmission } from "@/lib/demoData";
 import { useAuth } from "@/lib/auth";
@@ -33,13 +41,151 @@ const bodyFont: React.CSSProperties    = { fontFamily: "var(--font-sans), sans-s
 export default function Home() {
   const { userId } = useAuth();
 
-  const [text, setText] = useState("");
+  const [journalText, setJournalText] = useState("");
+  const [recallText, setRecallText] = useState("");
   const [entries, setEntries] = useState<Entry[]>(demoEntries);
   const [graphSnapshots, setGraphSnapshots] = useState<GraphSnapshot[]>(demoGraphSnapshots);
   const [lastSubmission, setLastSubmission] = useState<EntrySubmissionResponse | null>(demoSubmission);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const telemetryRef = useRef<{
+    sessionId: string;
+    startedAt: string;
+    startedAtMs: number;
+    events: InteractionEventPayload[];
+    fieldMetrics: Record<string, FieldTelemetryPayload>;
+    lastInputAtMs: Record<string, number>;
+    previousLength: Record<string, number>;
+    fieldOrder: string[];
+  }>(createTelemetryState());
+
+  function createTelemetryState() {
+    const now = Date.now();
+    return {
+      sessionId: `entry-${now}-${Math.random().toString(36).slice(2, 10)}`,
+      startedAt: new Date(now).toISOString(),
+      startedAtMs: now,
+      events: [],
+      fieldMetrics: {},
+      lastInputAtMs: {},
+      previousLength: {},
+      fieldOrder: [],
+    };
+  }
+
+  const ensureFieldMetrics = (fieldName: string): FieldTelemetryPayload => {
+    const telemetry = telemetryRef.current;
+    if (!telemetry.fieldMetrics[fieldName]) {
+      telemetry.fieldMetrics[fieldName] = {
+        focus_count: 0,
+        blur_count: 0,
+        input_count: 0,
+        deletion_count: 0,
+        paste_count: 0,
+        revision_count: 0,
+        pause_count: 0,
+        max_pause_ms: 0,
+        active_typing_ms: 0,
+      };
+    }
+    return telemetry.fieldMetrics[fieldName];
+  };
+
+  const recordInteraction = (
+    fieldName: string,
+    eventType: string,
+    valueLength?: number,
+    selectionStart?: number | null,
+    selectionEnd?: number | null,
+    metadata: Record<string, string | number | boolean | null> = {},
+  ) => {
+    const telemetry = telemetryRef.current;
+    const now = Date.now();
+    telemetry.events.push({
+      field_name: fieldName,
+      event_type: eventType,
+      occurred_at: new Date(now).toISOString(),
+      relative_ms: now - telemetry.startedAtMs,
+      value_length: valueLength,
+      selection_start: selectionStart ?? undefined,
+      selection_end: selectionEnd ?? undefined,
+      metadata,
+    });
+    if (telemetry.events.length > 1200) telemetry.events.splice(0, telemetry.events.length - 1200);
+  };
+
+  const handleFieldFocus = (fieldName: string, valueLength: number) => {
+    const metrics = ensureFieldMetrics(fieldName);
+    metrics.focus_count += 1;
+    if (!telemetryRef.current.fieldOrder.includes(fieldName)) telemetryRef.current.fieldOrder.push(fieldName);
+    recordInteraction(fieldName, "focus", valueLength);
+  };
+
+  const handleFieldBlur = (fieldName: string, valueLength: number) => {
+    ensureFieldMetrics(fieldName).blur_count += 1;
+    recordInteraction(fieldName, "blur", valueLength);
+  };
+
+  const handleFieldPaste = (fieldName: string, valueLength: number) => {
+    ensureFieldMetrics(fieldName).paste_count += 1;
+    recordInteraction(fieldName, "paste", valueLength);
+  };
+
+  const handleFieldChange = (
+    fieldName: string,
+    nextValue: string,
+    setValue: (value: string) => void,
+    selectionStart: number | null,
+    selectionEnd: number | null,
+  ) => {
+    const telemetry = telemetryRef.current;
+    const now = Date.now();
+    const metrics = ensureFieldMetrics(fieldName);
+    const previousLength = telemetry.previousLength[fieldName] ?? 0;
+    const delta = nextValue.length - previousLength;
+    const lastInputAt = telemetry.lastInputAtMs[fieldName];
+    const pauseMs = lastInputAt ? now - lastInputAt : 0;
+
+    metrics.input_count += 1;
+    metrics.last_input_at = new Date(now).toISOString();
+    if (!metrics.first_input_at) metrics.first_input_at = metrics.last_input_at;
+    if (delta < 0) metrics.deletion_count += 1;
+    if (Math.abs(delta) > 1) metrics.revision_count += 1;
+    if (pauseMs >= 1500) {
+      metrics.pause_count += 1;
+      metrics.max_pause_ms = Math.max(metrics.max_pause_ms, pauseMs);
+    }
+    if (pauseMs > 0 && pauseMs < 1500) metrics.active_typing_ms += pauseMs;
+
+    telemetry.lastInputAtMs[fieldName] = now;
+    telemetry.previousLength[fieldName] = nextValue.length;
+    recordInteraction(fieldName, "input", nextValue.length, selectionStart, selectionEnd, {
+      delta,
+      pause_ms: pauseMs,
+    });
+    setValue(nextValue);
+  };
+
+  const buildTelemetryPayload = (): EntryTelemetryPayload => {
+    const telemetry = telemetryRef.current;
+    const submittedAt = new Date();
+    const durationMs = submittedAt.getTime() - telemetry.startedAtMs;
+    return {
+      session_id: telemetry.sessionId,
+      started_at: telemetry.startedAt,
+      submitted_at: submittedAt.toISOString(),
+      client_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      user_agent: typeof navigator === "undefined" ? undefined : navigator.userAgent,
+      events: telemetry.events,
+      field_metrics: telemetry.fieldMetrics,
+      aggregate_metrics: {
+        total_duration_ms: durationMs,
+        event_count: telemetry.events.length,
+        field_order: telemetry.fieldOrder,
+      },
+    };
+  };
 
   const loadEntries = useCallback(async () => {
     try {
@@ -60,14 +206,29 @@ export default function Home() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!text.trim()) return;
+    const combinedText = [journalText, recallText].filter((value) => value.trim()).join("\n\n");
+    if (!combinedText.trim()) return;
     setIsSubmitting(true);
     setError(null);
     setSubmitted(false);
     try {
-      const response = await ApiClient.createEntry(userId, text, "daily");
+      const consent: ConsentSnapshot = {
+        app_use: true,
+        research_analysis: true,
+        anonymized_export: false,
+        future_fine_tuning: false,
+        consent_version: "research-consent-v1",
+      };
+      const response = await ApiClient.createEntry(userId, combinedText, "daily", {
+        journal_text: journalText,
+        recall_text: recallText,
+        telemetry: buildTelemetryPayload(),
+        consent,
+      });
       setLastSubmission(response);
-      setText("");
+      setJournalText("");
+      setRecallText("");
+      telemetryRef.current = createTelemetryState();
       setSubmitted(true);
       loadEntries();
       loadGraphSnapshots();
@@ -122,28 +283,62 @@ export default function Home() {
               Record Today
             </h1>
             <p className="mt-1 text-sm" style={{ color: "var(--ink-mid)", fontStyle: "italic" }}>
-              Describe what you observed — behaviours, events, changes.
+              Two short notes are enough. Sentra keeps the student experience simple while recording research metadata transparently.
             </p>
           </div>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="px-7 py-6 space-y-4">
-          <textarea
-            className="w-full resize-none p-4 text-base leading-relaxed outline-none transition-all"
-            rows={5}
-            style={{
-              ...bodyFont,
-              border: "1px solid var(--limestone)",
-              backgroundColor: "var(--ivory-warm)",
-              color: "var(--ink)",
-              fontSize: "1rem",
-            }}
-            placeholder="Describe attendance shifts, notable behaviours, interactions, or any changes observed today…"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            disabled={isSubmitting}
-          />
+          <div>
+            <label className="inscription mb-2 block" htmlFor="journal-entry">Journal Entry</label>
+            <textarea
+              id="journal-entry"
+              className="w-full resize-none p-4 text-base leading-relaxed outline-none transition-all"
+              rows={5}
+              style={{
+                ...bodyFont,
+                border: "1px solid var(--limestone)",
+                backgroundColor: "var(--ivory-warm)",
+                color: "var(--ink)",
+                fontSize: "1rem",
+              }}
+              placeholder="Write what happened today, how it felt, or what stood out."
+              value={journalText}
+              onFocus={() => handleFieldFocus("journal_entry", journalText.length)}
+              onBlur={() => handleFieldBlur("journal_entry", journalText.length)}
+              onPaste={() => handleFieldPaste("journal_entry", journalText.length)}
+              onChange={(e) => handleFieldChange("journal_entry", e.target.value, setJournalText, e.target.selectionStart, e.target.selectionEnd)}
+              disabled={isSubmitting}
+            />
+          </div>
+
+          <div>
+            <label className="inscription mb-2 block" htmlFor="first-recall">30-First-Recall</label>
+            <textarea
+              id="first-recall"
+              className="w-full resize-none p-4 text-base leading-relaxed outline-none transition-all"
+              rows={3}
+              style={{
+                ...bodyFont,
+                border: "1px solid var(--limestone)",
+                backgroundColor: "var(--ivory-warm)",
+                color: "var(--ink)",
+                fontSize: "1rem",
+              }}
+              placeholder="Without overthinking, write the first thing you remember from the last 30 seconds."
+              value={recallText}
+              onFocus={() => handleFieldFocus("first_recall_30", recallText.length)}
+              onBlur={() => handleFieldBlur("first_recall_30", recallText.length)}
+              onPaste={() => handleFieldPaste("first_recall_30", recallText.length)}
+              onChange={(e) => handleFieldChange("first_recall_30", e.target.value, setRecallText, e.target.selectionStart, e.target.selectionEnd)}
+              disabled={isSubmitting}
+            />
+          </div>
+
+          <p className="text-xs leading-relaxed" style={{ color: "var(--ink-faint)", fontStyle: "italic" }}>
+            Sentra records writing-process metadata such as timing, pauses, edits, and field order for transparent research analysis.
+          </p>
 
           <div className="flex items-center justify-between">
             {submitted && !error ? (
@@ -156,20 +351,20 @@ export default function Home() {
               </span>
             ) : (
               <span style={{ color: "var(--ink-faint)", fontSize: "0.85rem", fontStyle: "italic" }}>
-                {text.length > 0 ? `${text.length} chars` : ""}
+                {journalText.length + recallText.length > 0 ? `${journalText.length + recallText.length} chars` : ""}
               </span>
             )}
 
             <button
               type="submit"
-              disabled={isSubmitting || !text.trim()}
+              disabled={isSubmitting || !(journalText.trim() || recallText.trim())}
               className="inline-flex items-center gap-2 px-6 py-2.5 transition-all disabled:cursor-not-allowed rounded-md font-semibold cursor-pointer"
               style={{
                 ...displayFont,
-                backgroundColor: isSubmitting || !text.trim() ? "var(--limestone)" : "var(--gold)",
-                color: isSubmitting || !text.trim() ? "var(--ink-faint)" : "#000000",
-                border: `1px solid ${isSubmitting || !text.trim() ? "var(--limestone)" : "var(--gold)"}`,
-                boxShadow: isSubmitting || !text.trim() ? "none" : "0 0 14px rgba(6, 182, 212, 0.4)",
+                backgroundColor: isSubmitting || !(journalText.trim() || recallText.trim()) ? "var(--limestone)" : "var(--gold)",
+                color: isSubmitting || !(journalText.trim() || recallText.trim()) ? "var(--ink-faint)" : "#000000",
+                border: `1px solid ${isSubmitting || !(journalText.trim() || recallText.trim()) ? "var(--limestone)" : "var(--gold)"}`,
+                boxShadow: isSubmitting || !(journalText.trim() || recallText.trim()) ? "none" : "0 0 14px rgba(6, 182, 212, 0.4)",
                 letterSpacing: "0.14em",
                 textTransform: "uppercase",
                 fontSize: "0.62rem",
