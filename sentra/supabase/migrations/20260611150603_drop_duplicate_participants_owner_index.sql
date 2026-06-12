@@ -1,0 +1,1 @@
+drop index if exists public.idx_participants_participants_owner_user_id_fkey;
