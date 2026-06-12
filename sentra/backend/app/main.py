@@ -2,7 +2,7 @@ import hashlib
 import logging
 import os
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import Body, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,9 +17,28 @@ from .ontology.validator import validate_extraction
 from .schemas.analytics import AnomalyResult, BaselineStats, DailyFeatureAggregation, Embedding
 from .schemas.entry import Entry, get_default_expires_at
 from .schemas.extraction import Extraction
+from .schemas.research import EvalExample
 from .schemas.structured import EntrySubmissionResponse, ExtractionResponse, GraphSnapshot, HybridExplanation
 from .services.inference_orchestrator import InferenceOrchestrator
 from .services.llm_adapter import llm_adapter
+from .services.research_pipeline import (
+    create_fine_tuning_dataset_export,
+    create_openai_fine_tuning_job,
+    create_research_export,
+    generate_research_chat_response,
+    link_entry_to_session,
+    record_consent,
+    record_entry_embeddings,
+    record_entry_session,
+    record_eval_candidate,
+    record_graph_version,
+    record_model_run,
+    reconstruct_entry_replay,
+    recompute_longitudinal_features,
+    search_similar_embeddings,
+    summarize_eval_readiness,
+    update_eval_example_review_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +60,49 @@ app.add_middleware(
 
 
 class EntryCreateRequest(BaseModel):
-    text: str
+    text: Optional[str] = None
+    journal_text: Optional[str] = None
+    recall_text: Optional[str] = None
+    telemetry: Optional[Dict[str, Any]] = None
+    consent: Optional[Dict[str, Any]] = None
+
+
+class ExportCreateRequest(BaseModel):
+    user_id: str
+    participant_code: Optional[str] = None
+    export_format: str
+
+
+class ChatCreateRequest(BaseModel):
+    user_id: str
+    participant_code: Optional[str] = None
+    message: str
+    limit: int = 5
+
+
+class SimilarQueryRequest(BaseModel):
+    user_id: str
+    participant_code: Optional[str] = None
+    query: str
+    limit: int = 5
+
+
+class FineTuningDatasetRequest(BaseModel):
+    user_id: str
+    participant_code: Optional[str] = None
+
+
+class FineTuningJobRequest(BaseModel):
+    user_id: str
+    participant_code: Optional[str] = None
+    export_job_id: int
+    model: Optional[str] = None
+
+
+class EvalReviewRequest(BaseModel):
+    user_id: str
+    participant_code: Optional[str] = None
+    review_status: str
 
 
 @app.on_event("startup")
@@ -154,13 +215,40 @@ def create_entry(
     observation_type: str = "daily",
     session: Session = Depends(get_session),
 ):
-    entry_text = payload.text if payload else text
+    journal_text = (payload.journal_text if payload else None) or (payload.text if payload else None) or text or ""
+    recall_text = (payload.recall_text if payload else None) or ""
+    entry_text = "\n\n".join(
+        part for part in [
+            f"Journal entry:\n{journal_text.strip()}" if journal_text.strip() else "",
+            f"30-first-recall:\n{recall_text.strip()}" if recall_text.strip() else "",
+        ]
+        if part
+    )
     if not entry_text or not entry_text.strip():
         raise HTTPException(status_code=422, detail="Entry text is required")
 
     _clear_expired_raw_text(session)
     logger.info("[submit] start user=%s text_len=%d observation_type=%s", user_id, len(entry_text), observation_type)
     model_metadata = llm_adapter.metadata()
+    participant_code = user_id
+
+    research_session = None
+    try:
+        consent_snapshot = payload.consent if payload else None
+        record_consent(session, user_id, participant_code, consent_snapshot)
+        research_session = record_entry_session(
+            session,
+            user_id=user_id,
+            participant_code=participant_code,
+            telemetry=(payload.telemetry if payload else None) or {},
+            field_texts={
+                "journal_entry": journal_text,
+                "first_recall_30": recall_text,
+            },
+            consent=consent_snapshot,
+        )
+    except Exception:
+        logger.exception("[research] session/consent capture failed; continuing with submission")
 
     # ── 1. Persist raw entry ─────────────────────────────────────────────────
     entry = Entry(
@@ -174,6 +262,7 @@ def create_entry(
     session.commit()
     session.refresh(entry)
     logger.info("[submit] entry persisted id=%s", entry.id)
+    link_entry_to_session(session, entry, research_session, "combined_submission", entry_text)
 
     # ── 2. Extract structure (LLM or mock) ───────────────────────────────────
     try:
@@ -216,6 +305,37 @@ def create_entry(
         session.commit()
         session.refresh(extraction)
         logger.info("[submit] extraction persisted id=%s", extraction.id)
+        try:
+            record_eval_candidate(
+                session,
+                user_id=user_id,
+                participant_code=participant_code,
+                entry=entry,
+                journal_text=journal_text,
+                recall_text=recall_text,
+                cleaned_extraction=cleaned,
+                consent=consent_snapshot,
+            )
+        except Exception:
+            logger.exception("[research] eval candidate capture failed")
+        try:
+            record_model_run(
+                session,
+                user_id=user_id,
+                participant_code=participant_code,
+                artifact_type="extraction",
+                artifact_id=extraction.id,
+                provider=model_metadata["provider"],
+                model=model_metadata["model"],
+                output=cleaned,
+                input_provenance={
+                    "entry_id": entry.id,
+                    "entry_session_id": research_session.id if research_session else None,
+                    "field_names": ["journal_entry", "first_recall_30"],
+                },
+            )
+        except Exception:
+            logger.exception("[research] model run capture failed")
     except Exception:
         logger.exception("[submit] extraction DB write failed; using in-memory fallback")
         extraction = Extraction(
@@ -239,8 +359,29 @@ def create_entry(
             model_metadata["model"],
         )
         logger.info("[submit] graph snapshot persisted id=%s", graph_snapshot.id)
+        try:
+            record_graph_version(session, user_id, participant_code, entry, graph_snapshot)
+        except Exception:
+            logger.exception("[research] graph version capture failed")
     except Exception:
         logger.exception("[submit] graph snapshot failed; continuing without snapshot")
+
+    embedding_artifacts: List[Dict[str, Any]] = []
+    try:
+        embedding_artifacts = record_entry_embeddings(
+            session,
+            user_id=user_id,
+            participant_code=participant_code,
+            entry=entry,
+            contents={
+                "journal_entry": journal_text,
+                "first_recall_30": recall_text,
+                "combined_submission": entry_text,
+            },
+            extraction=extraction,
+        )
+    except Exception:
+        logger.exception("[research] embedding queue capture failed")
 
     # ── 6. Mask raw text ─────────────────────────────────────────────────────
     try:
@@ -258,6 +399,10 @@ def create_entry(
         orchestrator = InferenceOrchestrator(session)
         anomaly_result = orchestrator.process_day(user_id, entry.created_at.date())
         logger.info("[submit] anomaly_result id=%s", anomaly_result.id if anomaly_result else None)
+        try:
+            recompute_longitudinal_features(session, user_id, participant_code, entry.created_at.date())
+        except Exception:
+            logger.exception("[research] longitudinal feature recompute failed")
     except Exception:
         logger.exception("[submit] inference orchestrator raised; returning empty anomaly")
 
@@ -280,6 +425,10 @@ def create_entry(
         graph_snapshot=graph_snapshot,
         anomaly_result=anomaly_result,
         explanation=explanation,
+        research_artifacts={
+            "embedding_artifacts": embedding_artifacts,
+            "pipeline_version": "research-pipeline-v1",
+        },
     )
 
 
@@ -321,6 +470,7 @@ def get_entry_structure(entry_id: int, session: Session = Depends(get_session)):
         graph_snapshot=graph_snapshot,
         anomaly_result=anomaly_result,
         explanation=explanation,
+        research_artifacts={},
     )
 
 
@@ -392,4 +542,122 @@ def get_similar(entry_id: int, k: int = 5, session: Session = Depends(get_sessio
     entry = session.get(Entry, entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
-    return {"entry_id": entry_id, "similar_ids": []}
+    query = entry.raw_text or entry.provenance_hash or str(entry.id)
+    results = search_similar_embeddings(session, entry.user_id, entry.user_id, query, limit=k)
+    return {"entry_id": entry_id, "similar": results}
+
+
+@app.post("/api/research/similar")
+def research_similar(payload: SimilarQueryRequest, session: Session = Depends(get_session)):
+    participant_code = payload.participant_code or payload.user_id
+    return {
+        "query_hash_only": True,
+        "similar": search_similar_embeddings(
+            session=session,
+            user_id=payload.user_id,
+            participant_code=participant_code,
+            query=payload.query,
+            limit=payload.limit,
+        ),
+    }
+
+
+@app.post("/api/chat")
+def create_chat(payload: ChatCreateRequest, session: Session = Depends(get_session)):
+    if not payload.message.strip():
+        raise HTTPException(status_code=422, detail="Message is required")
+    participant_code = payload.participant_code or payload.user_id
+    return generate_research_chat_response(
+        session=session,
+        user_id=payload.user_id,
+        participant_code=participant_code,
+        message=payload.message,
+        limit=payload.limit,
+    )
+
+
+@app.post("/api/research/exports")
+def create_export(payload: ExportCreateRequest, session: Session = Depends(get_session)):
+    participant_code = payload.participant_code or payload.user_id
+    return create_research_export(
+        session=session,
+        user_id=payload.user_id,
+        participant_code=participant_code,
+        export_format=payload.export_format,
+    )
+
+
+@app.get("/api/research/replay/{entry_session_id}")
+def get_entry_replay(
+    entry_session_id: int,
+    user_id: str,
+    participant_code: Optional[str] = None,
+    session: Session = Depends(get_session),
+):
+    participant = participant_code or user_id
+    replay = reconstruct_entry_replay(
+        session=session,
+        user_id=user_id,
+        participant_code=participant,
+        entry_session_id=entry_session_id,
+    )
+    if not replay:
+        raise HTTPException(status_code=404, detail="Entry session replay not found")
+    return replay
+
+
+@app.post("/api/research/fine-tuning-dataset")
+def create_fine_tuning_dataset(payload: FineTuningDatasetRequest, session: Session = Depends(get_session)):
+    participant_code = payload.participant_code or payload.user_id
+    return create_fine_tuning_dataset_export(
+        session=session,
+        user_id=payload.user_id,
+        participant_code=participant_code,
+    )
+
+
+@app.get("/api/research/eval-examples")
+def list_eval_examples(user_id: str, participant_code: Optional[str] = None, session: Session = Depends(get_session)):
+    participant = participant_code or user_id
+    query = (
+        select(EvalExample)
+        .where(EvalExample.user_id == user_id, EvalExample.participant_code == participant)
+        .order_by(EvalExample.created_at.desc())
+    )
+    return session.exec(query).all()
+
+
+@app.post("/api/research/eval-examples/{eval_example_id}/review")
+def review_eval_example(eval_example_id: int, payload: EvalReviewRequest, session: Session = Depends(get_session)):
+    participant_code = payload.participant_code or payload.user_id
+    try:
+        example = update_eval_example_review_status(
+            session,
+            user_id=payload.user_id,
+            participant_code=participant_code,
+            eval_example_id=eval_example_id,
+            review_status=payload.review_status,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not example:
+        raise HTTPException(status_code=404, detail="Eval example not found")
+    return example
+
+
+@app.get("/api/research/evals/summary")
+def get_eval_summary(user_id: str, participant_code: Optional[str] = None, session: Session = Depends(get_session)):
+    participant = participant_code or user_id
+    return summarize_eval_readiness(session, user_id, participant)
+
+
+@app.post("/api/research/fine-tuning-jobs")
+def create_fine_tuning_job(payload: FineTuningJobRequest, session: Session = Depends(get_session)):
+    participant_code = payload.participant_code or payload.user_id
+    return create_openai_fine_tuning_job(
+        session=session,
+        user_id=payload.user_id,
+        participant_code=participant_code,
+        export_job_id=payload.export_job_id,
+        model=payload.model,
+    )

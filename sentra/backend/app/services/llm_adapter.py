@@ -1,17 +1,103 @@
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import httpx
 from openai import OpenAI
 from dotenv import load_dotenv
 
-load_dotenv()
+_ENV_DIR = Path(__file__).resolve().parents[2]
+load_dotenv(_ENV_DIR / ".env.local")
+load_dotenv(_ENV_DIR / ".env")
 
 from ..ontology.repair import get_fallback_extraction, repair_json_string
 from ..ontology.validator import validate_extraction
 
 logger = logging.getLogger(__name__)
+
+
+EXTRACTION_JSON_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "nodes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "node_id": {"type": "string"},
+                    "category": {"type": "string", "enum": ["State", "Trigger", "Protective", "Behavior", "Event"]},
+                    "label": {"type": "string"},
+                    "intensity": {"type": "number", "minimum": 0, "maximum": 1},
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    "evidence_text": {"type": "string"},
+                    "rationale_tag": {"type": "string"},
+                    "start_time": {"type": ["string", "null"]},
+                    "end_time": {"type": ["string", "null"]},
+                    "duration": {"type": ["number", "null"]},
+                },
+                "required": [
+                    "node_id",
+                    "category",
+                    "label",
+                    "intensity",
+                    "confidence",
+                    "evidence_text",
+                    "rationale_tag",
+                    "start_time",
+                    "end_time",
+                    "duration",
+                ],
+            },
+        },
+        "relations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "source_node_id": {"type": "string"},
+                    "target_node_id": {"type": "string"},
+                    "type": {"type": "string", "enum": ["causes", "escalates", "buffers", "avoids", "co_occurs", "precedes"]},
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    "evidence_text": {"type": "string"},
+                    "rationale_tag": {"type": "string"},
+                },
+                "required": [
+                    "source_node_id",
+                    "target_node_id",
+                    "type",
+                    "confidence",
+                    "evidence_text",
+                    "rationale_tag",
+                ],
+            },
+        },
+        "temporal": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "recency": {"type": "string", "enum": ["recent", "ongoing", "past", "future", "unknown"]},
+                "event_density": {"type": "number"},
+                "sequence_shift": {"type": "number"},
+            },
+            "required": ["recency", "event_density", "sequence_shift"],
+        },
+        "uncertainty": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "level": {"type": "string", "enum": ["low", "medium", "high"]},
+                "reasons": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["level", "reasons"],
+        },
+        "safety_flags": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["nodes", "relations", "temporal", "uncertainty", "safety_flags"],
+}
 
 
 def _is_vercel() -> bool:
@@ -58,7 +144,7 @@ class LLMAdapter:
             self.provider = "openai"
             self.api_key = openai_key
             self.openai_url = os.getenv("LLM_OPENAI_BASE_URL", "https://api.openai.com/v1")
-            self.model_name = os.getenv("LLM_MODEL_NAME", "gpt-4o-mini")
+            self.model_name = os.getenv("OPENAI_EXTRACTION_MODEL") or os.getenv("LLM_MODEL_NAME", "gpt-4.1-mini")
             self.use_json_format = True
             logger.info("[llm] mode=openai model=%s", self.model_name)
 
@@ -126,6 +212,31 @@ class LLMAdapter:
             return get_fallback_extraction()
 
     def _real_extract(self, text: str) -> Dict[str, Any]:
+        if self.provider == "openai" and hasattr(self.client, "responses"):
+            try:
+                response = self.client.responses.create(
+                    model=self.model_name,
+                    instructions="You are a specialist ontology extractor for transparent psychological and behavioral research journaling. Return only schema-valid data and ground every node/relation in evidence text from the input.",
+                    input=self._get_prompt(text),
+                    temperature=0.1,
+                    store=False,
+                    text={
+                        "format": {
+                            "type": "json_schema",
+                            "name": "sentra_research_extraction",
+                            "strict": True,
+                            "schema": EXTRACTION_JSON_SCHEMA,
+                        }
+                    },
+                )
+                raw_content = getattr(response, "output_text", None)
+                if not raw_content:
+                    raw_content = response.output[0].content[0].text
+                parsed = repair_json_string(raw_content)
+                return validate_extraction(parsed) if parsed else get_fallback_extraction()
+            except Exception:
+                logger.exception("[llm] responses extraction failed; trying chat fallback")
+
         kwargs: Dict[str, Any] = {
             "model": self.model_name,
             "messages": [
@@ -136,6 +247,8 @@ class LLMAdapter:
         }
         if self.use_json_format:
             kwargs["response_format"] = {"type": "json_object"}
+        if self.provider == "openai":
+            kwargs["store"] = False
 
         try:
             response = self.client.chat.completions.create(**kwargs)

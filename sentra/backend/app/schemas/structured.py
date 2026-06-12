@@ -98,3 +98,4 @@ class EntrySubmissionResponse(SQLModel):
     graph_snapshot: Optional[GraphSnapshot] = None
     anomaly_result: Optional[AnomalyResult] = None
     explanation: Optional[HybridExplanation] = None
+    research_artifacts: Dict[str, Any] = Field(default_factory=dict)

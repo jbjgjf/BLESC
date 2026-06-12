@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any
 
 from ..analytics.graph_features import build_graph_summary
 
@@ -31,6 +31,8 @@ def validate_extraction(data: Dict[str, Any]) -> Dict[str, Any]:
             "label": node.get("label", node.get("node_id", "Unknown")),
             "intensity": float(node.get("intensity", 0.5)),
             "confidence": float(node.get("confidence", 1.0)),
+            "evidence_text": node.get("evidence_text", ""),
+            "rationale_tag": node.get("rationale_tag", ""),
         }
         
         # Add event-specific fields if category is Event
@@ -56,7 +58,9 @@ def validate_extraction(data: Dict[str, Any]) -> Dict[str, Any]:
                 "source_id": source_id,
                 "target_id": target_id,
                 "type": rel_type,
-                "confidence": float(rel.get("confidence", 1.0))
+                "confidence": float(rel.get("confidence", 1.0)),
+                "evidence_text": rel.get("evidence_text", ""),
+                "rationale_tag": rel.get("rationale_tag", ""),
             })
             
     graph_summary = build_graph_summary(clean_nodes, clean_relations)
@@ -69,4 +73,6 @@ def validate_extraction(data: Dict[str, Any]) -> Dict[str, Any]:
         else "unknown",
         "graph_summary": graph_summary,
         "temporal": data.get("temporal", {}),
+        "uncertainty": data.get("uncertainty", {}),
+        "safety_flags": data.get("safety_flags", []),
     }
