@@ -355,6 +355,179 @@ export class ApiClient {
     }
   }
 
+  private static async persistResearchMetadata(params: {
+    ownerUserId: string;
+    participantId: string;
+    entryId: string;
+    graphSnapshotId: string | null;
+    journalText: string;
+    recallText: string;
+    computed: EntrySubmissionResponse;
+    consent?: ConsentSnapshot;
+  }): Promise<void> {
+    const { ownerUserId, participantId, entryId, graphSnapshotId, journalText, recallText, computed, consent } = params;
+    const pipelineVersion = computed.research_artifacts?.pipeline_version ?? "research-pipeline-v1";
+    const provider = computed.extraction.extraction_provider ?? "unknown";
+    const model = computed.extraction.extraction_model ?? "unknown";
+
+    try {
+      const modelRunInsert = await supabase
+        .from("model_runs")
+        .insert({
+          owner_user_id: ownerUserId,
+          participant_id: participantId,
+          artifact_type: "extraction",
+          artifact_id: String(entryId),
+          provider,
+          model,
+          prompt_version: "sentra-production-extraction-v1",
+          schema_version: "sentra-entry-extraction-v1",
+          pipeline_version: pipelineVersion,
+          temperature: 0.2,
+          retrieval_config_json: {
+            embedding_model: computed.research_artifacts?.embedding_artifacts?.[0]?.embedding_model ?? "unknown",
+            source: "next_api_route",
+          },
+          input_provenance_json: {
+            entry_id: entryId,
+            field_names: ["journal_entry", "first_recall_30"],
+            journal_text_hash: await stableHash(journalText),
+            recall_text_hash: await stableHash(recallText),
+          },
+          output_hash: await stableHash(JSON.stringify(computed.extraction)),
+          status: computed.explanation?.uncertainty_json?.extraction_status === "completed" ? "completed" : "completed",
+        })
+        .select("id")
+        .single();
+
+      const modelRunId = modelRunInsert.data?.id ?? null;
+      if (modelRunInsert.error) console.warn("[research] model_runs insert skipped", modelRunInsert.error);
+
+      await supabase.from("extractions").insert({
+        owner_user_id: ownerUserId,
+        participant_id: participantId,
+        entry_id: entryId,
+        model_run_id: modelRunId,
+        nodes_json: computed.extraction.nodes_json as unknown as JsonValue,
+        relations_json: computed.extraction.relations_json as unknown as JsonValue,
+        temporal_json: { summary: computed.extraction.temporal_summary },
+        uncertainty_json: computed.explanation?.uncertainty_json ?? {},
+        safety_flags: [],
+      });
+
+      if (computed.graph_snapshot) {
+        const existingVersions = await supabase
+          .from("graph_versions")
+          .select("id", { count: "exact", head: true })
+          .eq("owner_user_id", ownerUserId)
+          .eq("participant_id", participantId);
+        const versionIndex = (existingVersions.count ?? 0) + 1;
+        const graphVersionInsert = await supabase
+          .from("graph_versions")
+          .insert({
+            owner_user_id: ownerUserId,
+            participant_id: participantId,
+            entry_id: entryId,
+            graph_snapshot_id: graphSnapshotId,
+            version_index: versionIndex,
+            nodes_json: computed.graph_snapshot.nodes_json as unknown as JsonValue,
+            relations_json: computed.graph_snapshot.relations_json as unknown as JsonValue,
+            summary_json: computed.graph_snapshot.graph_summary_json as unknown as JsonValue,
+          })
+          .select("id")
+          .single();
+
+        const graphVersionId = graphVersionInsert.data?.id;
+        if (graphVersionInsert.error) console.warn("[research] graph_versions insert skipped", graphVersionInsert.error);
+        if (graphVersionId) {
+          const changeRows = [
+            ...computed.graph_snapshot.nodes_json.slice(0, 24).map((node) => ({
+              owner_user_id: ownerUserId,
+              participant_id: participantId,
+              graph_version_id: graphVersionId,
+              change_type: "added",
+              entity_type: "node",
+              entity_key: node.id,
+              previous_json: null,
+              current_json: node as unknown as JsonValue,
+              semantic_drift_score: 0,
+              trajectory_tags: [node.category],
+            })),
+            ...computed.graph_snapshot.relations_json.slice(0, 24).map((relation) => ({
+              owner_user_id: ownerUserId,
+              participant_id: participantId,
+              graph_version_id: graphVersionId,
+              change_type: "added",
+              entity_type: "relation",
+              entity_key: `${relation.source_id}:${relation.type}:${relation.target_id}`,
+              previous_json: null,
+              current_json: relation as unknown as JsonValue,
+              semantic_drift_score: 0,
+              trajectory_tags: [relation.type],
+            })),
+          ];
+          if (changeRows.length > 0) await supabase.from("graph_change_events").insert(changeRows);
+        }
+      }
+
+      const day = computed.graph_snapshot?.day ?? computed.anomaly_result?.day ?? new Date().toISOString().slice(0, 10);
+      const nodeCount = computed.graph_snapshot?.nodes_json.length ?? 0;
+      const protectiveCount = computed.graph_snapshot?.nodes_json.filter((node) => node.category === "Protective").length ?? 0;
+      const triggerCount = computed.graph_snapshot?.nodes_json.filter((node) => node.category === "Trigger").length ?? 0;
+      const relationCount = computed.graph_snapshot?.relations_json.length ?? 0;
+      const windowRows = [7, 30].map((windowDays) => {
+        const end = new Date(`${day}T00:00:00.000Z`);
+        const start = new Date(end);
+        start.setUTCDate(start.getUTCDate() - windowDays + 1);
+        return {
+          owner_user_id: ownerUserId,
+          participant_id: participantId,
+          window_days: windowDays,
+          window_start: start.toISOString().slice(0, 10),
+          window_end: day,
+          pipeline_version: "longitudinal-v1",
+          feature_json: {
+            latest_anomaly_score: computed.anomaly_result?.anomaly_score ?? null,
+            node_count: nodeCount,
+            relation_count: relationCount,
+            protective_count: protectiveCount,
+            trigger_count: triggerCount,
+            protective_ratio: nodeCount ? protectiveCount / nodeCount : 0,
+            trigger_ratio: nodeCount ? triggerCount / nodeCount : 0,
+            consistency_proxy: relationCount ? nodeCount / relationCount : nodeCount,
+            change_rate_proxy: computed.graph_snapshot?.temporal_diff_json?.added_nodes?.length ?? nodeCount,
+          },
+        };
+      });
+      await supabase.from("longitudinal_features").insert(windowRows);
+
+      if (consent?.research_analysis ?? true) {
+        await supabase.from("eval_examples").insert({
+          owner_user_id: ownerUserId,
+          participant_id: participantId,
+          source_entry_id: entryId,
+          task_type: "entry_extraction",
+          input_json: {
+            journal_text_hash: await stableHash(journalText),
+            recall_text_hash: await stableHash(recallText),
+            field_names: ["journal_entry", "first_recall_30"],
+            journal_char_count: journalText.length,
+            recall_char_count: recallText.length,
+          },
+          expected_output_json: {
+            nodes_json: computed.extraction.nodes_json,
+            relations_json: computed.extraction.relations_json,
+            graph_summary_json: computed.graph_snapshot?.graph_summary_json ?? {},
+          },
+          consent_snapshot_json: consent ?? {},
+          review_status: "unreviewed",
+        });
+      }
+    } catch (err) {
+      console.warn("[research] metadata persistence skipped", err);
+    }
+  }
+
   static async getEntries(userId: string): Promise<Entry[]> {
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
@@ -418,13 +591,6 @@ export class ApiClient {
       telemetry: researchPayload?.telemetry,
       consent: researchPayload?.consent,
     });
-    await this.persistResearchArtifacts({
-      ownerUserId,
-      participantId: participant.id,
-      entryId: entry.id as string,
-      computed,
-    });
-
     let graphSnapshot: GraphSnapshot | null = null;
     let graphSnapshotId: string | null = null;
     if (computed.graph_snapshot) {
@@ -483,6 +649,23 @@ export class ApiClient {
       anomalyResult = toAnomaly(insightInsert.data as unknown as InsightRow, userId);
       explanation = toExplanation(insightInsert.data as unknown as InsightRow, userId);
     }
+
+    await this.persistResearchArtifacts({
+      ownerUserId,
+      participantId: participant.id,
+      entryId: entry.id as string,
+      computed,
+    });
+    await this.persistResearchMetadata({
+      ownerUserId,
+      participantId: participant.id,
+      entryId: entry.id as string,
+      graphSnapshotId,
+      journalText: researchPayload?.journal_text ?? text,
+      recallText: researchPayload?.recall_text ?? "",
+      computed,
+      consent: researchPayload?.consent,
+    });
 
     return {
       entry,
