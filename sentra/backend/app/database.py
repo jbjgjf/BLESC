@@ -22,6 +22,8 @@ def _apply_migrations() -> None:
         ("extraction", "extraction_model", "TEXT DEFAULT 'unknown'"),
         ("graphsnapshot", "extraction_provider", "TEXT DEFAULT 'unknown'"),
         ("graphsnapshot", "extraction_model", "TEXT DEFAULT 'unknown'"),
+        ("graphchangeevent", "user_id", "TEXT DEFAULT 'unknown'"),
+        ("graphchangeevent", "participant_code", "TEXT DEFAULT 'unknown'"),
     ]
     with engine.connect() as conn:
         for table, column, ddl in migrations:
@@ -38,6 +40,23 @@ def create_db_and_tables():
     from .schemas.extraction import Extraction
     from .schemas.analytics import DailyFeatureAggregation, BaselineStats, AnomalyResult, Embedding
     from .schemas.structured import GraphSnapshot, HybridExplanation
+    from .schemas.research import (
+        ChatMessage,
+        ChatSession,
+        ConsentRecord,
+        EntryEmbedding,
+        EntryField,
+        EntrySession,
+        EvalExample,
+        ExportJob,
+        GraphChangeEvent,
+        GraphVersion,
+        InteractionEvent,
+        LongitudinalFeature,
+        ModelRun,
+        ResearchEntryLink,
+        RetrievalEvent,
+    )
     SQLModel.metadata.create_all(engine)
     _apply_migrations()
 

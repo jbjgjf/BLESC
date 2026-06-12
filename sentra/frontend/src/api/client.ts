@@ -1,7 +1,9 @@
 import {
   AnomalyResult,
+  ConsentSnapshot,
   DailyFeatureAggregation,
   Entry,
+  EntryTelemetryPayload,
   EntrySubmissionResponse,
   ExplanationPayload,
   GraphSnapshot,
@@ -11,7 +13,7 @@ import {
 } from "./models";
 import { supabase } from "@/lib/supabase/client";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 type ParticipantRow = {
   id: string;
@@ -89,6 +91,12 @@ function throwSupabaseError(context: string, error: unknown): never {
     throw new Error(`${context}: ${parts.join(" | ") || JSON.stringify(error)}`);
   }
   throw new Error(`${context}: ${String(error)}`);
+}
+
+async function stableHash(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function toEntry(row: EntryRow, userId: string): Entry {
@@ -207,6 +215,146 @@ export class ApiClient {
     return data;
   }
 
+  private static async persistResearchTelemetry(params: {
+    ownerUserId: string;
+    participantId: string;
+    entryId: string;
+    journalText: string;
+    recallText: string;
+    telemetry?: EntryTelemetryPayload;
+    consent?: ConsentSnapshot;
+  }): Promise<void> {
+    const { ownerUserId, participantId, entryId, journalText, recallText, telemetry, consent } = params;
+    if (!telemetry) return;
+
+    try {
+      const consentSnapshot = consent ?? {
+        app_use: true,
+        research_analysis: true,
+        anonymized_export: false,
+        future_fine_tuning: false,
+        consent_version: "research-consent-v1",
+      };
+
+      await supabase.from("consent_records").insert({
+        owner_user_id: ownerUserId,
+        participant_id: participantId,
+        app_use: consentSnapshot.app_use,
+        research_analysis: consentSnapshot.research_analysis,
+        anonymized_export: consentSnapshot.anonymized_export,
+        future_fine_tuning: consentSnapshot.future_fine_tuning,
+        consent_version: consentSnapshot.consent_version,
+        source: "student_ui",
+      });
+
+      const sessionInsert = await supabase
+        .from("entry_sessions")
+        .insert({
+          owner_user_id: ownerUserId,
+          participant_id: participantId,
+          client_session_id: telemetry.session_id,
+          status: "submitted",
+          started_at: telemetry.started_at,
+          submitted_at: telemetry.submitted_at,
+          client_timezone: telemetry.client_timezone ?? null,
+          user_agent: telemetry.user_agent ?? null,
+          consent_snapshot_json: consentSnapshot as unknown as Record<string, JsonValue>,
+          aggregate_metrics_json: telemetry.aggregate_metrics,
+        })
+        .select("id")
+        .single();
+
+      if (sessionInsert.error || !sessionInsert.data) {
+        console.warn("[research] entry_sessions insert skipped", sessionInsert.error);
+        return;
+      }
+
+      const entrySessionId = sessionInsert.data.id;
+      const fieldRows = await Promise.all([
+        {
+          field_name: "journal_entry",
+          final_text_hash: await stableHash(journalText),
+          char_count: journalText.length,
+          word_count: journalText.trim() ? journalText.trim().split(/\s+/).length : 0,
+          metrics_json: telemetry.field_metrics.journal_entry ?? {},
+        },
+        {
+          field_name: "first_recall_30",
+          final_text_hash: await stableHash(recallText),
+          char_count: recallText.length,
+          word_count: recallText.trim() ? recallText.trim().split(/\s+/).length : 0,
+          metrics_json: telemetry.field_metrics.first_recall_30 ?? {},
+        },
+      ].map(async (row) => ({
+        owner_user_id: ownerUserId,
+        participant_id: participantId,
+        entry_session_id: entrySessionId,
+        ...row,
+        started_at: typeof row.metrics_json.first_input_at === "string" ? row.metrics_json.first_input_at : null,
+        completed_at: typeof row.metrics_json.last_input_at === "string" ? row.metrics_json.last_input_at : null,
+      })));
+
+      await supabase.from("entry_fields").insert(fieldRows);
+
+      const eventRows = telemetry.events.slice(0, 1200).map((event) => ({
+        owner_user_id: ownerUserId,
+        participant_id: participantId,
+        entry_session_id: entrySessionId,
+        field_name: event.field_name,
+        event_type: event.event_type,
+        occurred_at: event.occurred_at,
+        relative_ms: event.relative_ms,
+        value_length: event.value_length ?? null,
+        selection_start: event.selection_start ?? null,
+        selection_end: event.selection_end ?? null,
+        metadata_json: event.metadata ?? {},
+      }));
+      if (eventRows.length > 0) await supabase.from("interaction_events").insert(eventRows);
+
+      await supabase.from("entry_research_links").insert({
+        owner_user_id: ownerUserId,
+        participant_id: participantId,
+        entry_id: entryId,
+        entry_session_id: entrySessionId,
+        field_name: "combined_submission",
+        source_hash: await stableHash(`${journalText}\n\n${recallText}`),
+      });
+    } catch (err) {
+      console.warn("[research] telemetry persistence skipped", err);
+    }
+  }
+
+  private static async persistResearchArtifacts(params: {
+    ownerUserId: string;
+    participantId: string;
+    entryId: string;
+    computed: EntrySubmissionResponse;
+  }): Promise<void> {
+    const artifacts = params.computed.research_artifacts?.embedding_artifacts ?? [];
+    if (artifacts.length === 0) return;
+    try {
+      const rows = artifacts.map((artifact) => ({
+        owner_user_id: params.ownerUserId,
+        participant_id: params.participantId,
+        entry_id: params.entryId,
+        content_kind: artifact.content_kind,
+        embedding_model: artifact.embedding_model,
+        embedding: artifact.vector_json && artifact.vector_json.length > 0 ? `[${artifact.vector_json.join(",")}]` : null,
+        content_hash: artifact.content_hash,
+        metadata_json: {
+          ...(artifact.metadata_json ?? {}),
+          backend_local_id: artifact.local_id ?? null,
+          synced_from_backend_response: true,
+          pipeline_version: params.computed.research_artifacts?.pipeline_version ?? "research-pipeline-v1",
+        },
+      }));
+      const { error } = await supabase.from("entry_embeddings").insert(rows);
+      if (error) console.warn("[research] entry_embeddings insert skipped", error);
+    } catch (err) {
+      console.warn("[research] artifact persistence skipped", err);
+    }
+  }
+
   static async getEntries(userId: string): Promise<Entry[]> {
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
@@ -219,12 +367,28 @@ export class ApiClient {
     return (data ?? []).map((row) => toEntry(row as unknown as EntryRow, userId));
   }
 
-  static async createEntry(userId: string, text: string, observationType: string = "daily"): Promise<EntrySubmissionResponse> {
+  static async createEntry(
+    userId: string,
+    text: string,
+    observationType: string = "daily",
+    researchPayload?: {
+      journal_text?: string;
+      recall_text?: string;
+      telemetry?: EntryTelemetryPayload;
+      consent?: ConsentSnapshot;
+    },
+  ): Promise<EntrySubmissionResponse> {
     const ownerUserId = await this.requireOwnerId();
     const participant = await this.getParticipant(userId);
     const computed = await this.fetch<EntrySubmissionResponse>(`/entries?user_id=${encodeURIComponent(userId)}&observation_type=${encodeURIComponent(observationType)}`, {
       method: "POST",
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({
+        text,
+        journal_text: researchPayload?.journal_text ?? text,
+        recall_text: researchPayload?.recall_text ?? "",
+        telemetry: researchPayload?.telemetry,
+        consent: researchPayload?.consent,
+      }),
     });
 
     const entryInsert = await supabase
@@ -245,6 +409,21 @@ export class ApiClient {
 
     if (entryInsert.error) throwSupabaseError("Save entry failed", entryInsert.error);
     const entry = toEntry(entryInsert.data as unknown as EntryRow, userId);
+    await this.persistResearchTelemetry({
+      ownerUserId,
+      participantId: participant.id,
+      entryId: entry.id as string,
+      journalText: researchPayload?.journal_text ?? text,
+      recallText: researchPayload?.recall_text ?? "",
+      telemetry: researchPayload?.telemetry,
+      consent: researchPayload?.consent,
+    });
+    await this.persistResearchArtifacts({
+      ownerUserId,
+      participantId: participant.id,
+      entryId: entry.id as string,
+      computed,
+    });
 
     let graphSnapshot: GraphSnapshot | null = null;
     let graphSnapshotId: string | null = null;

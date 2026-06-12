@@ -15,3 +15,5 @@ httpx
 openai
 python-dotenv
 pyyaml
+pyarrow
+pytest

@@ -19,7 +19,7 @@ USE_MOCK_LLM=false python -m uvicorn app.main:app --reload --port 8000
 
 > [!TIP]
 > **LLMの選択:**
-> - **OpenAI (推奨):** `backend/.env` に `OPENAI_API_KEY` を記入してください。自動的に OpenAI の API が使用されます。
+> - **OpenAI (推奨):** `backend/.env.local` に `OPENAI_API_KEY` を記入してください。`backend/.env` は共有用の非秘密デフォルトとして扱い、API key は置かないでください。
 > - **Mock Mode:** `USE_MOCK_LLM=true` を設定すると、LLMを使わずにダミーデータで動作します（メモリ消費ゼロ）。
 > - **Local (Ollama):** APIキーが未設定の場合、ローカルの Ollama (`qwen2.5:7b`) を探します。
 

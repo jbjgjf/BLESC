@@ -116,9 +116,65 @@ export interface EntrySubmissionResponse {
   graph_snapshot: GraphSnapshot;
   anomaly_result?: AnomalyResult | null;
   explanation?: ExplanationPayload | null;
+  research_artifacts?: {
+    embedding_artifacts?: Array<{
+      local_id?: number;
+      entry_id?: RecordId;
+      content_kind: string;
+      embedding_model: string;
+      vector_json?: number[];
+      content_hash: string;
+      metadata_json?: Record<string, JsonValue>;
+    }>;
+    pipeline_version?: string;
+  };
 }
 
 export type GraphSnapshotResponse = GraphSnapshot;
+
+export interface ConsentSnapshot {
+  app_use: boolean;
+  research_analysis: boolean;
+  anonymized_export: boolean;
+  future_fine_tuning: boolean;
+  consent_version: string;
+}
+
+export interface InteractionEventPayload {
+  field_name: string;
+  event_type: string;
+  occurred_at: string;
+  relative_ms: number;
+  value_length?: number;
+  selection_start?: number;
+  selection_end?: number;
+  metadata?: Record<string, JsonValue>;
+}
+
+export interface FieldTelemetryPayload {
+  first_input_at?: string;
+  last_input_at?: string;
+  focus_count: number;
+  blur_count: number;
+  input_count: number;
+  deletion_count: number;
+  paste_count: number;
+  revision_count: number;
+  pause_count: number;
+  max_pause_ms: number;
+  active_typing_ms: number;
+}
+
+export interface EntryTelemetryPayload {
+  session_id: string;
+  started_at: string;
+  submitted_at: string;
+  client_timezone?: string;
+  user_agent?: string;
+  events: InteractionEventPayload[];
+  field_metrics: Record<string, FieldTelemetryPayload>;
+  aggregate_metrics: Record<string, JsonValue>;
+}
 
 export interface DailyFeatureAggregation {
   id: number;
