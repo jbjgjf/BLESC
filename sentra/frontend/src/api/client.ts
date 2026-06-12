@@ -13,7 +13,7 @@ import {
 } from "./models";
 import { supabase } from "@/lib/supabase/client";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 type ParticipantRow = {
   id: string;
