@@ -38,6 +38,7 @@ Each submission creates or updates these research records:
 - `entry_embeddings`: one embedding artifact per text or structural content kind
 - `graph_versions`, `graph_change_events`: longitudinal graph evolution
 - `longitudinal_features`: 7-day and 30-day trend, consistency, volatility, recurrence, and change-rate metrics
+- `longitudinal_patterns`: mined recurring motifs, leading indicators (lift), and feature trends
 - `eval_examples`: unreviewed extraction examples for evaluation and later fine-tuning review
 - `export_jobs`: CSV, JSONL, Parquet, and fine-tuning dataset exports
 
@@ -98,15 +99,59 @@ generates a student-friendly answer. Chat retrieval is hybrid:
 
 - Semantic RAG: vector similarity over `entry_embeddings`
 - Graph RAG: graph-pattern similarity over extracted nodes and relations
+- Pattern RAG: mined longitudinal patterns ranked against the query
 
 Graph RAG is intentionally structural. It can surface earlier days that share a
 Trigger -> State, Protective -> State, or other relation pattern even when the
-wording is not identical. The assistant must ground claims in retrieved
-evidence dates and avoid diagnosis.
+wording is not identical. Pattern RAG goes one step further: instead of a single
+similar day, it surfaces *learned* patterns ("this motif has recurred N times",
+"this leading indicator precedes harder next days"). The assistant must ground
+claims in retrieved evidence dates and avoid diagnosis.
 
 Supabase projects use `match_entry_embeddings(...)` for filtered pgvector
 search and `match_graph_patterns(...)` for owner-scoped graph-pattern search.
 Both functions are `security invoker`, so RLS remains active.
+
+## Longitudinal Pattern Learning
+
+`recompute_longitudinal_features` produces per-window descriptive statistics
+(trend, consistency, volatility, recurrence) but does not learn patterns.
+`mine_longitudinal_patterns` is the learning layer. After each submission (and
+on demand) it loads the participant's day-ordered `graph_snapshots`, their
+`anomaly_results`, and their most recent `longitudinal_features` window, then
+mines three pattern kinds into `longitudinal_patterns`:
+
+- `recurring_motif`: a relation motif (e.g. `Trigger:deadline -> escalates ->
+  State:anxiety`) that appears on two or more distinct days. Each row carries
+  `recurrence_count`, `support_days`, and first/last seen.
+- `leading_indicator`: an antecedent — a motif, or a synthetic
+  `__protective_decline__` signal (a day whose protective-node count dropped
+  versus the prior observed day) — whose presence is followed by an elevated
+  anomaly score on the next observed day. Strength is a `lift` ratio:
+  `mean(next-day score | antecedent present) / mean(next-day score)`.
+- `feature_trend`: a longitudinal feature whose window trend clears a threshold,
+  narrated (e.g. "protective resources declining over 30 days") with a
+  `flagged_as_risk` boolean for concerning directions.
+
+The miner in `app/analytics/pattern_mining.py` is dependency-free and
+deterministic (no numpy/sklearn), so it runs safely in the request path and is
+unit-tested in `tests/test_pattern_mining.py`. Mining is idempotent per
+participant+window: each run replaces that window's rows rather than appending.
+
+Read patterns (optionally forcing a re-mine) with:
+
+```bash
+curl "http://localhost:8000/api/research/patterns?user_id=research_user_01&refresh=true"
+curl "http://localhost:8000/api/research/patterns?user_id=research_user_01&pattern_kind=leading_indicator"
+```
+
+The response groups patterns into `recurring_motifs`, `leading_indicators`, and
+`feature_trends`. `support_days` and `last_seen` are well suited to timeline
+visualisations; `lift` is well suited to a "leading indicator" callout.
+
+Supabase projects persist these in `longitudinal_patterns`
+(`supabase/migrations/20260614140000_longitudinal_patterns.sql`), owner-scoped
+with the same RLS conventions as the rest of the research data layer.
 
 ## Evaluation And Fine-Tuning
 
@@ -172,6 +217,9 @@ active during vector search.
 `supabase/migrations/20260614130320_rag_retrieval_context.sql` extends retrieval
 with participant/content-kind/min-similarity filters and adds
 `match_graph_patterns(...)` for graph RAG.
+
+`supabase/migrations/20260614140000_longitudinal_patterns.sql` adds the
+owner-scoped `longitudinal_patterns` table for the pattern-learning layer.
 
 Apply after the Supabase local stack or remote project is available:
 

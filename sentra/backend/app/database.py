@@ -53,6 +53,7 @@ def create_db_and_tables():
         GraphVersion,
         InteractionEvent,
         LongitudinalFeature,
+        LongitudinalPattern,
         ModelRun,
         ResearchEntryLink,
         RetrievalEvent,

@@ -1,5 +1,6 @@
 import os
 import json
+from datetime import datetime
 from pathlib import Path
 
 os.environ["USE_MOCK_LLM"] = "true"
@@ -19,6 +20,7 @@ from app.schemas.research import (
     GraphVersion,
     InteractionEvent,
     LongitudinalFeature,
+    LongitudinalPattern,
     ModelRun,
 )
 
@@ -203,6 +205,121 @@ def test_chat_and_similarity_are_logged_without_openai_key():
         assert export.json()["status"] == "blocked"
 
 
+def _seed_multiday_history(user_id: str):
+    """Insert 5 day-ordered graph snapshots + anomaly scores for one user.
+
+    A ``deadline -> escalates -> anxiety`` motif is present every day (recurring
+    motif), the protective ``running`` node toggles on/off (protective decline),
+    and the day after each decline carries a high anomaly score (leading
+    indicator).
+    """
+    from datetime import timedelta
+
+    from app.schemas.analytics import AnomalyResult
+    from app.schemas.entry import Entry
+    from app.schemas.structured import GraphSnapshot
+
+    plan = [
+        (4, True, 1.0),    # protective present
+        (3, False, 1.0),   # decline vs prev
+        (2, True, 8.0),    # spike after decline
+        (1, False, 1.0),   # decline vs prev
+        (0, True, 8.0),    # spike after decline
+    ]
+    with Session(engine) as session:
+        for days_ago, protective, score in plan:
+            day_dt = datetime.utcnow() - timedelta(days=days_ago)
+            entry = Entry(user_id=user_id, created_at=day_dt, observation_type="daily")
+            session.add(entry)
+            session.commit()
+            session.refresh(entry)
+
+            nodes = [
+                {"node_id": "deadline", "category": "Trigger", "label": "deadline pressure"},
+                {"node_id": "anxiety", "category": "State", "label": "anxiety"},
+            ]
+            relations = [
+                {"source_node_id": "deadline", "target_node_id": "anxiety", "type": "escalates", "confidence": 0.8},
+            ]
+            if protective:
+                nodes.append({"node_id": "run", "category": "Protective", "label": "running"})
+                relations.append(
+                    {"source_node_id": "run", "target_node_id": "anxiety", "type": "buffers", "confidence": 0.7}
+                )
+            session.add(
+                GraphSnapshot(
+                    entry_id=entry.id,
+                    user_id=user_id,
+                    day=day_dt.date(),
+                    nodes_json=nodes,
+                    relations_json=relations,
+                    graph_summary_json={"summary": f"{len(nodes)} nodes"},
+                    temporal_diff_json={},
+                )
+            )
+            session.add(
+                AnomalyResult(
+                    user_id=user_id,
+                    day=day_dt.date(),
+                    anomaly_score=score,
+                    z_scores_json={},
+                )
+            )
+        session.commit()
+
+
+def test_longitudinal_pattern_mining_learns_recurring_and_leading_patterns():
+    user_id = "test_pattern_user"
+    _seed_multiday_history(user_id)
+
+    with TestClient(app) as client:
+        patterns = client.get(f"/api/research/patterns?user_id={user_id}&refresh=true")
+        assert patterns.status_code == 200, patterns.text
+        body = patterns.json()
+
+        recurring_keys = {item["pattern_key"] for item in body["recurring_motifs"]}
+        assert "trigger:deadline pressure->escalates->state:anxiety" in recurring_keys
+        escalate = next(
+            item for item in body["recurring_motifs"]
+            if item["pattern_key"] == "trigger:deadline pressure->escalates->state:anxiety"
+        )
+        assert escalate["recurrence_count"] == 5
+        assert len(escalate["support_days"]) == 5
+
+        declines = [item for item in body["leading_indicators"] if item["detail"].get("is_protective_decline")]
+        assert declines, body
+        assert declines[0]["lift"] >= 1.2
+
+    with Session(engine) as session:
+        rows = session.exec(
+            select(LongitudinalPattern).where(LongitudinalPattern.user_id == user_id)
+        ).all()
+        assert any(row.pattern_kind == "recurring_motif" for row in rows)
+        assert any(row.pattern_kind == "leading_indicator" for row in rows)
+
+    # Re-running mining must be idempotent (replace, not duplicate) for the window.
+    with TestClient(app) as client:
+        client.get(f"/api/research/patterns?user_id={user_id}&refresh=true")
+    with Session(engine) as session:
+        escalate_rows = session.exec(
+            select(LongitudinalPattern).where(
+                LongitudinalPattern.user_id == user_id,
+                LongitudinalPattern.pattern_key == "trigger:deadline pressure->escalates->state:anxiety",
+            )
+        ).all()
+        assert len(escalate_rows) == 1
+
+    # Chat retrieval is now pattern-aware.
+    with TestClient(app) as client:
+        chat = client.post(
+            "/api/chat",
+            json={"user_id": user_id, "message": "Does my deadline anxiety follow a pattern?"},
+        )
+        assert chat.status_code == 200, chat.text
+        assert "longitudinal_patterns" in chat.json()["evidence_refs"]
+        assert "longitudinal_patterns" in chat.json()["retrieval_context"]
+
+
 def test_replay_endpoint_reconstructs_raw_interaction_process():
     with TestClient(app) as client:
         response = client.post(
@@ -244,6 +361,11 @@ def test_research_exports_are_deidentified_and_written_in_all_formats():
         )
         assert chat.status_code == 200, chat.text
 
+        # Generating an eval summary records a ModelRun; its artifact_id must not
+        # embed the raw user_id, or it would leak through into anonymized exports.
+        summary = client.get("/api/research/evals/summary?user_id=test_export_user")
+        assert summary.status_code == 200, summary.text
+
         for export_format in ["jsonl", "csv", "parquet"]:
             export = client.post(
                 "/api/research/exports",
@@ -264,6 +386,15 @@ def test_research_exports_are_deidentified_and_written_in_all_formats():
                 rows = [json.loads(line) for line in payload.splitlines() if line.strip()]
                 assert any(row["table"] == "chat_messages" for row in rows)
                 assert all("subject_id" in row["row"] for row in rows)
+                eval_summary_runs = [
+                    row["row"]
+                    for row in rows
+                    if row["table"] == "model_runs" and row["row"].get("artifact_type") == "eval_summary"
+                ]
+                assert eval_summary_runs, "expected an eval_summary model run in the export"
+                assert all(
+                    "test_export_user" not in str(run.get("artifact_id")) for run in eval_summary_runs
+                )
             elif export_format == "csv":
                 combined = "\n".join(path.read_text(encoding="utf-8") for path in output_path.glob("*.csv"))
                 assert "test_export_user" not in combined

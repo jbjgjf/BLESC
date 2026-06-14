@@ -172,6 +172,25 @@ class LongitudinalFeature(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class LongitudinalPattern(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    participant_code: str = Field(index=True)
+    window_days: int = Field(index=True)
+    pattern_kind: str = Field(index=True)  # recurring_motif | leading_indicator | feature_trend
+    pattern_key: str = Field(index=True)
+    label: str = ""
+    recurrence_count: int = 0
+    lift: float = 0.0
+    mean_confidence: float = 0.0
+    first_seen: Optional[date] = Field(default=None, index=True)
+    last_seen: Optional[date] = Field(default=None, index=True)
+    support_days_json: List[str] = Field(default_factory=list, sa_column=Column(JSON))
+    detail_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    pipeline_version: str = "sentra-pattern-mining-v1"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class EvalExample(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: str = Field(index=True)

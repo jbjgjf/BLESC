@@ -15,7 +15,14 @@ from dotenv import load_dotenv
 from sqlmodel import Session, func, select
 
 from ..analytics.graph_features import build_temporal_graph_diff
-from ..schemas.analytics import DailyFeatureAggregation
+from ..analytics.pattern_mining import (
+    PATTERN_MINING_VERSION,
+    mine_feature_trends,
+    mine_leading_indicators,
+    mine_recurring_motifs,
+    summarize_patterns,
+)
+from ..schemas.analytics import AnomalyResult, DailyFeatureAggregation
 from ..schemas.entry import Entry
 from ..schemas.extraction import Extraction
 from ..schemas.research import (
@@ -31,6 +38,7 @@ from ..schemas.research import (
     GraphVersion,
     InteractionEvent,
     LongitudinalFeature,
+    LongitudinalPattern,
     ModelRun,
     ResearchEntryLink,
     RetrievalEvent,
@@ -52,6 +60,8 @@ CHAT_PROMPT_VERSION = "sentra-research-chat-v1"
 CHAT_SCHEMA_VERSION = "sentra-chat-grounded-answer-v1"
 GRAPH_RAG_VERSION = "sentra-graph-rag-v1"
 SEMANTIC_RAG_VERSION = "sentra-semantic-rag-v2"
+PATTERN_RAG_VERSION = "sentra-pattern-rag-v1"
+PATTERN_MINING_WINDOW_DAYS = int(os.getenv("SENTRA_PATTERN_WINDOW_DAYS", "90"))
 PERSONALIZATION_VERSION = "sentra-personalization-v1"
 MIN_REVIEWED_EXAMPLES_FOR_PERSONALIZATION = int(os.getenv("SENTRA_MIN_PERSONALIZATION_EXAMPLES", "100"))
 RAW_TEXT_EXPORT_KEYS = {
@@ -902,13 +912,22 @@ def build_research_retrieval_context(
         limit=bounded_limit,
         semantic_evidence=semantic_evidence,
     )
+    longitudinal_patterns = search_relevant_patterns(
+        session=session,
+        user_id=user_id,
+        participant_code=participant_code,
+        query=message,
+        limit=bounded_limit,
+    )
     return {
         "retrieval_version": {
             "semantic": SEMANTIC_RAG_VERSION,
             "graph": GRAPH_RAG_VERSION,
+            "pattern": PATTERN_RAG_VERSION,
         },
         "semantic_matches": semantic_evidence,
         "graph_pattern_matches": graph_evidence,
+        "longitudinal_patterns": longitudinal_patterns,
         "personalization": get_personalization_profile(session, user_id, participant_code),
     }
 
@@ -924,6 +943,7 @@ def generate_research_chat_response(
     evidence = {
         "semantic_matches": retrieval_context["semantic_matches"],
         "graph_pattern_matches": retrieval_context["graph_pattern_matches"],
+        "longitudinal_patterns": retrieval_context.get("longitudinal_patterns", []),
     }
     consent_snapshot = _consent_snapshot(None)
     chat_session = ChatSession(
@@ -947,10 +967,14 @@ def generate_research_chat_response(
 
     instructions = (
         "You are Sentra's student-facing research assistant. Answer in simple, supportive language. "
-        "Ground the response only in retrieved semantic and graph-pattern evidence. "
+        "Ground the response only in retrieved semantic, graph-pattern, and longitudinal-pattern evidence. "
         "When graph-pattern evidence repeats an earlier Trigger, State, Protective, Behavior, or Event relation, "
-        "you may mention that pattern with the evidence date. Explicitly mark uncertainty. "
-        "Do not diagnose or make clinical claims. Suggest reflection questions, not medical advice."
+        "you may mention that pattern with the evidence date. "
+        "When longitudinal_patterns are present, you may reference how often a pattern has recurred "
+        "(recurrence_count and support_days) or that a 'leading_indicator' tends to precede harder next days "
+        "(lift), but frame these as observed tendencies, not predictions or diagnoses. "
+        "Explicitly mark uncertainty. Do not diagnose or make clinical claims. "
+        "Suggest reflection questions, not medical advice."
     )
     evidence_context = json.dumps(retrieval_context, ensure_ascii=False, sort_keys=True, default=str)
     fallback_answer = (
@@ -1003,6 +1027,7 @@ def generate_research_chat_response(
             "message_hash": stable_hash(message),
             "semantic_match_count": len(retrieval_context["semantic_matches"]),
             "graph_pattern_match_count": len(retrieval_context["graph_pattern_matches"]),
+            "longitudinal_pattern_count": len(retrieval_context.get("longitudinal_patterns", [])),
             "personalization": retrieval_context["personalization"],
         },
         status=status,
@@ -1088,6 +1113,236 @@ def recompute_longitudinal_features(
         created.append(row)
     session.commit()
     return created
+
+
+def mine_longitudinal_patterns(
+    session: Session,
+    user_id: str,
+    participant_code: str,
+    window_days: int = PATTERN_MINING_WINDOW_DAYS,
+) -> Dict[str, Any]:
+    """
+    Learn the patterns that repeat across a participant's history.
+
+    Loads the participant's day-ordered graph snapshots, their anomaly scores,
+    and their most recent longitudinal feature window, mines recurring motifs /
+    leading indicators / feature trends, then replaces the participant's
+    persisted ``LongitudinalPattern`` rows for this window. Returns a summary
+    plus the top patterns so the caller can surface or log them.
+    """
+    anchor_day = datetime.utcnow().date()
+    window_start = anchor_day - timedelta(days=window_days - 1)
+
+    snapshots = session.exec(
+        select(GraphSnapshot)
+        .where(
+            GraphSnapshot.user_id == user_id,
+            GraphSnapshot.day >= window_start,
+            GraphSnapshot.day <= anchor_day,
+        )
+        .order_by(GraphSnapshot.day.asc(), GraphSnapshot.created_at.asc())
+    ).all()
+    daily_graphs = [
+        (snapshot.day, snapshot.nodes_json or [], snapshot.relations_json or [])
+        for snapshot in snapshots
+    ]
+
+    anomalies = session.exec(
+        select(AnomalyResult)
+        .where(
+            AnomalyResult.user_id == user_id,
+            AnomalyResult.day >= window_start,
+            AnomalyResult.day <= anchor_day,
+        )
+    ).all()
+    anomaly_by_day = {result.day: float(result.anomaly_score or 0.0) for result in anomalies}
+
+    latest_feature = session.exec(
+        select(LongitudinalFeature)
+        .where(
+            LongitudinalFeature.user_id == user_id,
+            LongitudinalFeature.participant_code == participant_code,
+        )
+        .order_by(LongitudinalFeature.window_days.desc(), LongitudinalFeature.created_at.desc())
+        .limit(1)
+    ).first()
+
+    recurring = mine_recurring_motifs(daily_graphs)
+    leading = mine_leading_indicators(daily_graphs, anomaly_by_day)
+    trends = mine_feature_trends(latest_feature.feature_json if latest_feature else None)
+    summary = summarize_patterns(recurring, leading, trends)
+
+    # Replace this participant+window's patterns so repeated submissions stay idempotent.
+    existing = session.exec(
+        select(LongitudinalPattern).where(
+            LongitudinalPattern.user_id == user_id,
+            LongitudinalPattern.participant_code == participant_code,
+            LongitudinalPattern.window_days == window_days,
+        )
+    ).all()
+    for row in existing:
+        session.delete(row)
+
+    persisted: List[Dict[str, Any]] = []
+    for pattern in [*recurring, *leading, *trends]:
+        row = LongitudinalPattern(
+            user_id=user_id,
+            participant_code=participant_code,
+            window_days=window_days,
+            pattern_kind=pattern["pattern_kind"],
+            pattern_key=pattern["pattern_key"],
+            label=pattern["label"],
+            recurrence_count=pattern["recurrence_count"],
+            lift=pattern["lift"],
+            mean_confidence=pattern["mean_confidence"],
+            first_seen=_as_pattern_date(pattern.get("first_seen")),
+            last_seen=_as_pattern_date(pattern.get("last_seen")),
+            support_days_json=pattern.get("support_days", []),
+            detail_json=pattern.get("detail", {}),
+            pipeline_version=PATTERN_MINING_VERSION,
+        )
+        session.add(row)
+        persisted.append(pattern)
+    session.commit()
+
+    record_model_run(
+        session,
+        user_id=user_id,
+        participant_code=participant_code,
+        artifact_type="pattern_mining",
+        artifact_id=f"window_{window_days}",
+        provider="local",
+        model="deterministic-pattern-miner",
+        output={"summary": summary, "pattern_count": len(persisted)},
+        prompt_version=PATTERN_MINING_VERSION,
+        schema_version="longitudinal-pattern-v1",
+        temperature=0.0,
+        input_provenance={
+            "window_days": window_days,
+            "snapshot_count": len(snapshots),
+            "anomaly_day_count": len(anomaly_by_day),
+            "feature_window_days": latest_feature.window_days if latest_feature else None,
+        },
+    )
+    return {
+        "summary": summary,
+        "window_days": window_days,
+        "recurring_motifs": recurring,
+        "leading_indicators": leading,
+        "feature_trends": trends,
+    }
+
+
+def _as_pattern_date(value: Any) -> Optional[date]:
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    if isinstance(value, date):
+        return value
+    return None
+
+
+def _pattern_to_dict(pattern: LongitudinalPattern) -> Dict[str, Any]:
+    return {
+        "pattern_kind": pattern.pattern_kind,
+        "pattern_key": pattern.pattern_key,
+        "label": pattern.label,
+        "recurrence_count": pattern.recurrence_count,
+        "lift": pattern.lift,
+        "mean_confidence": pattern.mean_confidence,
+        "first_seen": pattern.first_seen.isoformat() if pattern.first_seen else None,
+        "last_seen": pattern.last_seen.isoformat() if pattern.last_seen else None,
+        "support_days": pattern.support_days_json or [],
+        "detail": pattern.detail_json or {},
+        "window_days": pattern.window_days,
+    }
+
+
+def get_longitudinal_patterns(
+    session: Session,
+    user_id: str,
+    participant_code: str,
+    pattern_kind: Optional[str] = None,
+    limit: int = 50,
+) -> Dict[str, Any]:
+    """Return the persisted mined patterns, grouped by kind, for the API/UI."""
+    query = select(LongitudinalPattern).where(
+        LongitudinalPattern.user_id == user_id,
+        LongitudinalPattern.participant_code == participant_code,
+    )
+    if pattern_kind:
+        query = query.where(LongitudinalPattern.pattern_kind == pattern_kind)
+    rows = session.exec(
+        query.order_by(
+            LongitudinalPattern.lift.desc(),
+            LongitudinalPattern.recurrence_count.desc(),
+        ).limit(max(1, min(limit, 200)))
+    ).all()
+    grouped: Dict[str, List[Dict[str, Any]]] = {
+        "recurring_motif": [],
+        "leading_indicator": [],
+        "feature_trend": [],
+    }
+    for row in rows:
+        grouped.setdefault(row.pattern_kind, []).append(_pattern_to_dict(row))
+    return {
+        "pattern_mining_version": PATTERN_MINING_VERSION,
+        "recurring_motifs": grouped.get("recurring_motif", []),
+        "leading_indicators": grouped.get("leading_indicator", []),
+        "feature_trends": grouped.get("feature_trend", []),
+    }
+
+
+def search_relevant_patterns(
+    session: Session,
+    user_id: str,
+    participant_code: str,
+    query: str,
+    limit: int = 5,
+) -> List[Dict[str, Any]]:
+    """
+    Rank persisted patterns by relevance to a chat query so Graph RAG can say
+    "this pattern has recurred N times" instead of only surfacing single days.
+
+    Leading indicators and recurring motifs are prioritised; query-token overlap
+    against the pattern label breaks ties and lifts on-topic patterns.
+    """
+    query_terms = _tokenize(query)
+    rows = session.exec(
+        select(LongitudinalPattern).where(
+            LongitudinalPattern.user_id == user_id,
+            LongitudinalPattern.participant_code == participant_code,
+        )
+    ).all()
+    kind_weight = {"leading_indicator": 3.0, "recurring_motif": 2.0, "feature_trend": 1.0}
+    scored: List[Tuple[float, LongitudinalPattern]] = []
+    for row in rows:
+        overlap = len(query_terms.intersection(_tokenize(row.label)))
+        base = kind_weight.get(row.pattern_kind, 1.0)
+        strength = row.lift if row.pattern_kind == "leading_indicator" else float(row.recurrence_count)
+        score = base + (2.0 * overlap) + min(strength, 5.0) * 0.2
+        scored.append((score, row))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    results = [_pattern_to_dict(row) for _score, row in scored[:max(1, min(limit, 20))]]
+
+    session.add(
+        RetrievalEvent(
+            user_id=user_id,
+            participant_code=participant_code,
+            query_hash=stable_hash(query),
+            retrieval_config_json={
+                "limit": limit,
+                "retrieval_mode": "longitudinal_pattern",
+                "retrieval_version": PATTERN_RAG_VERSION,
+                "pipeline_version": PIPELINE_VERSION,
+            },
+            result_refs_json=results,
+        )
+    )
+    session.commit()
+    return results
 
 
 def _safe_export_value(value: Any) -> Any:
@@ -1176,6 +1431,9 @@ def _rows_for_export(session: Session, user_id: str, participant_code: str) -> D
         ).all(),
         "longitudinal_features": session.exec(
             select(LongitudinalFeature).where(LongitudinalFeature.user_id == user_id, LongitudinalFeature.participant_code == participant_code)
+        ).all(),
+        "longitudinal_patterns": session.exec(
+            select(LongitudinalPattern).where(LongitudinalPattern.user_id == user_id, LongitudinalPattern.participant_code == participant_code)
         ).all(),
         "entry_embeddings": session.exec(
             select(EntryEmbedding).where(EntryEmbedding.user_id == user_id, EntryEmbedding.participant_code == participant_code)
@@ -1494,7 +1752,7 @@ def summarize_eval_readiness(
         user_id=user_id,
         participant_code=participant_code,
         artifact_type="eval_summary",
-        artifact_id=f"{user_id}:{participant_code}",
+        artifact_id=_export_subject_id(user_id, participant_code),
         provider="local",
         model="deterministic-eval-summary",
         output=summary,

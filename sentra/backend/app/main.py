@@ -26,8 +26,10 @@ from .services.research_pipeline import (
     create_openai_fine_tuning_job,
     create_research_export,
     generate_research_chat_response,
+    get_longitudinal_patterns,
     get_personalization_profile,
     link_entry_to_session,
+    mine_longitudinal_patterns,
     record_consent,
     record_entry_embeddings,
     record_entry_session,
@@ -414,6 +416,10 @@ def create_entry(
             recompute_longitudinal_features(session, user_id, participant_code, entry.created_at.date())
         except Exception:
             logger.exception("[research] longitudinal feature recompute failed")
+        try:
+            mine_longitudinal_patterns(session, user_id, participant_code)
+        except Exception:
+            logger.exception("[research] longitudinal pattern mining failed")
     except Exception:
         logger.exception("[submit] inference orchestrator raised; returning empty anomaly")
 
@@ -667,6 +673,23 @@ def get_eval_summary(user_id: str, participant_code: Optional[str] = None, sessi
 def get_personalization(user_id: str, participant_code: Optional[str] = None, session: Session = Depends(get_session)):
     participant = participant_code or user_id
     return get_personalization_profile(session, user_id, participant)
+
+
+@app.get("/api/research/patterns")
+def get_patterns(
+    user_id: str,
+    participant_code: Optional[str] = None,
+    pattern_kind: Optional[str] = None,
+    refresh: bool = False,
+    session: Session = Depends(get_session),
+):
+    participant = participant_code or user_id
+    if refresh:
+        try:
+            mine_longitudinal_patterns(session, user_id, participant)
+        except Exception:
+            logger.exception("[research] pattern refresh failed; returning persisted patterns")
+    return get_longitudinal_patterns(session, user_id, participant, pattern_kind=pattern_kind)
 
 
 @app.post("/api/research/fine-tuning-jobs")
