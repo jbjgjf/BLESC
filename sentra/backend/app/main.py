@@ -26,6 +26,7 @@ from .services.research_pipeline import (
     create_openai_fine_tuning_job,
     create_research_export,
     generate_research_chat_response,
+    get_personalization_profile,
     link_entry_to_session,
     record_consent,
     record_entry_embeddings,
@@ -229,13 +230,14 @@ def create_entry(
 
     _clear_expired_raw_text(session)
     logger.info("[submit] start user=%s text_len=%d observation_type=%s", user_id, len(entry_text), observation_type)
-    model_metadata = llm_adapter.metadata()
     participant_code = user_id
+    personalization_profile: Dict[str, Any] = {}
 
     research_session = None
     try:
         consent_snapshot = payload.consent if payload else None
         record_consent(session, user_id, participant_code, consent_snapshot)
+        personalization_profile = get_personalization_profile(session, user_id, participant_code)
         research_session = record_entry_session(
             session,
             user_id=user_id,
@@ -249,6 +251,14 @@ def create_entry(
         )
     except Exception:
         logger.exception("[research] session/consent capture failed; continuing with submission")
+        consent_snapshot = payload.consent if payload else None
+
+    active_personal_model = (
+        personalization_profile.get("adapter_model")
+        if personalization_profile.get("ready_for_personal_adapter")
+        else None
+    )
+    model_metadata = llm_adapter.metadata(model_override=active_personal_model)
 
     # ── 1. Persist raw entry ─────────────────────────────────────────────────
     entry = Entry(
@@ -266,7 +276,7 @@ def create_entry(
 
     # ── 2. Extract structure (LLM or mock) ───────────────────────────────────
     try:
-        extracted = llm_adapter.extract_structure(entry_text)
+        extracted = llm_adapter.extract_structure(entry_text, model_override=active_personal_model)
         logger.info(
             "[submit] extraction result nodes=%d relations=%d error_flag=%s",
             len(extracted.get("nodes", [])),
@@ -332,6 +342,7 @@ def create_entry(
                     "entry_id": entry.id,
                     "entry_session_id": research_session.id if research_session else None,
                     "field_names": ["journal_entry", "first_recall_30"],
+                    "personalization": personalization_profile,
                 },
             )
         except Exception:
@@ -428,6 +439,7 @@ def create_entry(
         research_artifacts={
             "embedding_artifacts": embedding_artifacts,
             "pipeline_version": "research-pipeline-v1",
+            "personalization": personalization_profile,
         },
     )
 
@@ -649,6 +661,12 @@ def review_eval_example(eval_example_id: int, payload: EvalReviewRequest, sessio
 def get_eval_summary(user_id: str, participant_code: Optional[str] = None, session: Session = Depends(get_session)):
     participant = participant_code or user_id
     return summarize_eval_readiness(session, user_id, participant)
+
+
+@app.get("/api/research/personalization")
+def get_personalization(user_id: str, participant_code: Optional[str] = None, session: Session = Depends(get_session)):
+    participant = participant_code or user_id
+    return get_personalization_profile(session, user_id, participant)
 
 
 @app.post("/api/research/fine-tuning-jobs")

@@ -5,9 +5,10 @@ import hashlib
 import json
 import math
 import os
+import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -49,6 +50,10 @@ DEFAULT_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-
 DEFAULT_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL") or os.getenv("LLM_MODEL_NAME", "gpt-4.1-mini")
 CHAT_PROMPT_VERSION = "sentra-research-chat-v1"
 CHAT_SCHEMA_VERSION = "sentra-chat-grounded-answer-v1"
+GRAPH_RAG_VERSION = "sentra-graph-rag-v1"
+SEMANTIC_RAG_VERSION = "sentra-semantic-rag-v2"
+PERSONALIZATION_VERSION = "sentra-personalization-v1"
+MIN_REVIEWED_EXAMPLES_FOR_PERSONALIZATION = int(os.getenv("SENTRA_MIN_PERSONALIZATION_EXAMPLES", "100"))
 RAW_TEXT_EXPORT_KEYS = {
     "content",
     "content_redacted",
@@ -87,6 +92,146 @@ def _parse_datetime(value: Any, fallback: Optional[datetime] = None) -> datetime
 
 def _word_count(text: str) -> int:
     return len([part for part in text.replace("\n", " ").split(" ") if part.strip()])
+
+
+def _normalize_text(value: Any) -> str:
+    text = str(value or "").lower()
+    text = re.sub(r"[^a-z0-9_\-\sぁ-んァ-ン一-龥]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _tokenize(value: Any) -> Set[str]:
+    normalized = _normalize_text(value)
+    return {
+        part
+        for part in normalized.replace("_", " ").replace("-", " ").split()
+        if len(part) >= 3 or re.search(r"[ぁ-んァ-ン一-龥]", part)
+    }
+
+
+def _node_id(node: Dict[str, Any]) -> str:
+    return str(node.get("node_id") or node.get("id") or node.get("label") or "")
+
+
+def _node_label(node: Dict[str, Any]) -> str:
+    return str(node.get("label") or _node_id(node))
+
+
+def _node_category(node: Dict[str, Any]) -> str:
+    return str(node.get("category") or "Unknown")
+
+
+def _relation_source_id(relation: Dict[str, Any]) -> str:
+    return str(relation.get("source_node_id") or relation.get("source_id") or "")
+
+
+def _relation_target_id(relation: Dict[str, Any]) -> str:
+    return str(relation.get("target_node_id") or relation.get("target_id") or "")
+
+
+def _node_brief(node: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": _node_id(node),
+        "category": _node_category(node),
+        "label": _node_label(node),
+        "intensity": node.get("intensity"),
+        "confidence": node.get("confidence"),
+    }
+
+
+def _relation_brief(relation: Dict[str, Any], nodes_by_id: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    source = nodes_by_id.get(_relation_source_id(relation), {})
+    target = nodes_by_id.get(_relation_target_id(relation), {})
+    return {
+        "source": _node_label(source) if source else _relation_source_id(relation),
+        "source_category": _node_category(source) if source else None,
+        "target": _node_label(target) if target else _relation_target_id(relation),
+        "target_category": _node_category(target) if target else None,
+        "type": relation.get("type") or "co_occurs",
+        "confidence": relation.get("confidence"),
+    }
+
+
+def _relation_signature(relation: Dict[str, Any], nodes_by_id: Dict[str, Dict[str, Any]]) -> str:
+    source = nodes_by_id.get(_relation_source_id(relation), {})
+    target = nodes_by_id.get(_relation_target_id(relation), {})
+    source_label = _normalize_text(_node_label(source) if source else _relation_source_id(relation))
+    target_label = _normalize_text(_node_label(target) if target else _relation_target_id(relation))
+    source_category = _normalize_text(_node_category(source) if source else "")
+    target_category = _normalize_text(_node_category(target) if target else "")
+    relation_type = _normalize_text(relation.get("type") or "co_occurs")
+    return f"{source_category}:{source_label}->{relation_type}->{target_category}:{target_label}"
+
+
+def _graph_signature(nodes: List[Dict[str, Any]], relations: List[Dict[str, Any]]) -> Dict[str, Set[str]]:
+    nodes_by_id = {_node_id(node): node for node in nodes}
+    node_terms: Set[str] = set()
+    category_terms: Set[str] = set()
+    relation_terms: Set[str] = set()
+    relation_patterns: Set[str] = set()
+
+    for node in nodes:
+        category = _normalize_text(_node_category(node))
+        label = _normalize_text(_node_label(node))
+        if category:
+            category_terms.add(category)
+        node_terms.update(_tokenize(label))
+        node_terms.add(f"{category}:{label}")
+
+    for relation in relations:
+        relation_type = _normalize_text(relation.get("type") or "co_occurs")
+        if relation_type:
+            relation_terms.add(relation_type)
+        signature = _relation_signature(relation, nodes_by_id)
+        relation_patterns.add(signature)
+        relation_terms.update(_tokenize(signature))
+
+    return {
+        "node_terms": node_terms,
+        "category_terms": category_terms,
+        "relation_terms": relation_terms,
+        "relation_patterns": relation_patterns,
+        "all_terms": node_terms | category_terms | relation_terms | relation_patterns,
+    }
+
+
+def _search_terms_for_embedding(content_kind: str, content: str) -> List[str]:
+    if content_kind not in {"extracted_nodes", "extracted_relations"}:
+        return []
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return sorted(_tokenize(content))[:80]
+    terms: Set[str] = set()
+    if isinstance(parsed, list):
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            for key in ("category", "label", "type", "rationale_tag"):
+                terms.update(_tokenize(item.get(key)))
+    return sorted(terms)[:120]
+
+
+def _latest_graph_for_entry(session: Session, entry_id: Optional[int]) -> Optional[GraphSnapshot]:
+    if entry_id is None:
+        return None
+    return session.exec(
+        select(GraphSnapshot)
+        .where(GraphSnapshot.entry_id == entry_id)
+        .order_by(GraphSnapshot.created_at.desc())
+        .limit(1)
+    ).first()
+
+
+def _latest_extraction_for_entry(session: Session, entry_id: Optional[int]) -> Optional[Extraction]:
+    if entry_id is None:
+        return None
+    return session.exec(
+        select(Extraction)
+        .where(Extraction.entry_id == entry_id)
+        .order_by(Extraction.created_at.desc())
+        .limit(1)
+    ).first()
 
 
 def _consent_snapshot(consent: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -403,6 +548,7 @@ def record_entry_embeddings(
                 metadata_json={
                     "status": status,
                     "char_count": len(content),
+                    "search_terms": _search_terms_for_embedding(content_kind, content),
                     "pipeline_version": PIPELINE_VERSION,
                     "error": error_message,
                 },
@@ -489,6 +635,34 @@ def _cosine_similarity(left: List[float], right: List[float]) -> float:
     return dot / (left_norm * right_norm)
 
 
+def _entry_semantic_context(session: Session, row: EntryEmbedding, score: float) -> Dict[str, Any]:
+    graph_snapshot = _latest_graph_for_entry(session, row.entry_id)
+    extraction = _latest_extraction_for_entry(session, row.entry_id)
+    nodes = graph_snapshot.nodes_json if graph_snapshot else (extraction.nodes_json if extraction else [])
+    relations = graph_snapshot.relations_json if graph_snapshot else (extraction.relations_json if extraction else [])
+    nodes_by_id = {_node_id(node): node for node in nodes}
+    key_nodes = [_node_brief(node) for node in nodes[:8]]
+    key_relations = [_relation_brief(relation, nodes_by_id) for relation in relations[:8]]
+    entry = session.get(Entry, row.entry_id) if row.entry_id is not None else None
+    return {
+        "entry_embedding_id": row.id,
+        "entry_id": row.entry_id,
+        "day": graph_snapshot.day.isoformat() if graph_snapshot else (entry.created_at.date().isoformat() if entry else None),
+        "content_kind": row.content_kind,
+        "score": round(score, 6),
+        "content_hash": row.content_hash,
+        "embedding_model": row.embedding_model,
+        "summary": (graph_snapshot.graph_summary_json or {}).get("summary") if graph_snapshot else None,
+        "key_nodes": key_nodes,
+        "key_relations": key_relations,
+        "temporal_diff": graph_snapshot.temporal_diff_json if graph_snapshot else {},
+        "metadata": {
+            "status": (row.metadata_json or {}).get("status"),
+            "search_terms": (row.metadata_json or {}).get("search_terms", []),
+        },
+    }
+
+
 def search_similar_embeddings(
     session: Session,
     user_id: str,
@@ -512,39 +686,22 @@ def search_similar_embeddings(
         .order_by(EntryEmbedding.created_at.desc())
         .limit(250)
     ).all()
-    scored: List[Dict[str, Any]] = []
+    scored_rows: List[Tuple[EntryEmbedding, float]] = []
     if query_vector:
         for row in rows:
             score = _cosine_similarity(query_vector, row.vector_json or [])
             if score > 0:
-                scored.append(
-                    {
-                        "entry_embedding_id": row.id,
-                        "entry_id": row.entry_id,
-                        "content_kind": row.content_kind,
-                        "score": round(score, 6),
-                        "content_hash": row.content_hash,
-                        "embedding_model": row.embedding_model,
-                    }
-                )
+                scored_rows.append((row, score))
     else:
-        query_terms = {term.lower() for term in query.split() if len(term) > 3}
+        query_terms = _tokenize(query)
         for row in rows:
             metadata = row.metadata_json or {}
-            text_terms = set(str(metadata.get("search_text", "")).lower().split())
+            text_terms = set(str(term).lower() for term in metadata.get("search_terms", []))
             overlap = len(query_terms.intersection(text_terms))
             if overlap:
-                scored.append(
-                    {
-                        "entry_embedding_id": row.id,
-                        "entry_id": row.entry_id,
-                        "content_kind": row.content_kind,
-                        "score": float(overlap),
-                        "content_hash": row.content_hash,
-                        "embedding_model": row.embedding_model,
-                    }
-                )
-    scored = sorted(scored, key=lambda item: item["score"], reverse=True)[:limit]
+                scored_rows.append((row, float(overlap)))
+    scored_rows = sorted(scored_rows, key=lambda item: item[1], reverse=True)[:limit]
+    scored = [_entry_semantic_context(session, row, score) for row, score in scored_rows]
     session.add(
         RetrievalEvent(
             user_id=user_id,
@@ -553,6 +710,8 @@ def search_similar_embeddings(
             retrieval_config_json={
                 "limit": limit,
                 "embedding_model": DEFAULT_EMBEDDING_MODEL,
+                "retrieval_mode": "semantic_vector",
+                "retrieval_version": SEMANTIC_RAG_VERSION,
                 "query_status": status,
                 "error": error_message,
                 "pipeline_version": PIPELINE_VERSION,
@@ -564,6 +723,196 @@ def search_similar_embeddings(
     return scored
 
 
+def _seed_graph_signatures(
+    session: Session,
+    semantic_evidence: List[Dict[str, Any]],
+) -> Set[str]:
+    seed_patterns: Set[str] = set()
+    for evidence in semantic_evidence:
+        graph_snapshot = _latest_graph_for_entry(session, evidence.get("entry_id"))
+        if not graph_snapshot:
+            continue
+        signature = _graph_signature(graph_snapshot.nodes_json or [], graph_snapshot.relations_json or [])
+        seed_patterns.update(signature["relation_patterns"])
+    return seed_patterns
+
+
+def _score_graph_snapshot(
+    graph_snapshot: GraphSnapshot,
+    query_terms: Set[str],
+    seed_patterns: Set[str],
+) -> Tuple[float, List[str], Dict[str, Set[str]]]:
+    nodes = graph_snapshot.nodes_json or []
+    relations = graph_snapshot.relations_json or []
+    signature = _graph_signature(nodes, relations)
+    term_overlap = query_terms.intersection(signature["all_terms"])
+    pattern_overlap = seed_patterns.intersection(signature["relation_patterns"])
+    score = float(len(term_overlap)) + (2.5 * len(pattern_overlap))
+    reasons: List[str] = []
+    if term_overlap:
+        reasons.append(f"query_terms:{','.join(sorted(term_overlap)[:6])}")
+    if pattern_overlap:
+        reasons.append(f"relation_patterns:{len(pattern_overlap)}")
+    if not reasons and relations:
+        relation_types = sorted(signature["relation_terms"].intersection({"causes", "escalates", "buffers", "avoids", "co_occurs", "precedes"}))
+        if relation_types and query_terms.intersection({"pattern", "patterns", "構造", "関係", "前回", "いつ"}):
+            score += 0.5
+            reasons.append(f"available_relation_types:{','.join(relation_types[:4])}")
+    return score, reasons, signature
+
+
+def search_similar_graph_patterns(
+    session: Session,
+    user_id: str,
+    participant_code: str,
+    query: str,
+    limit: int = 5,
+    semantic_evidence: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    query_terms = _tokenize(query)
+    seed_patterns = _seed_graph_signatures(session, semantic_evidence or [])
+    snapshots = session.exec(
+        select(GraphSnapshot)
+        .where(GraphSnapshot.user_id == user_id)
+        .order_by(GraphSnapshot.day.desc(), GraphSnapshot.created_at.desc())
+        .limit(250)
+    ).all()
+    scored: List[Tuple[GraphSnapshot, float, List[str]]] = []
+    for snapshot in snapshots:
+        score, reasons, _signature = _score_graph_snapshot(snapshot, query_terms, seed_patterns)
+        if score > 0:
+            scored.append((snapshot, score, reasons))
+
+    scored = sorted(scored, key=lambda item: (item[1], item[0].day), reverse=True)[:limit]
+    results: List[Dict[str, Any]] = []
+    for snapshot, score, reasons in scored:
+        nodes = snapshot.nodes_json or []
+        relations = snapshot.relations_json or []
+        nodes_by_id = {_node_id(node): node for node in nodes}
+        results.append(
+            {
+                "graph_snapshot_id": snapshot.id,
+                "entry_id": snapshot.entry_id,
+                "day": snapshot.day.isoformat(),
+                "score": round(score, 6),
+                "match_reasons": reasons,
+                "summary": (snapshot.graph_summary_json or {}).get("summary"),
+                "key_nodes": [_node_brief(node) for node in nodes[:10]],
+                "key_relations": [_relation_brief(relation, nodes_by_id) for relation in relations[:10]],
+                "temporal_diff": snapshot.temporal_diff_json or {},
+                "retrieval_mode": "graph_pattern",
+            }
+        )
+
+    session.add(
+        RetrievalEvent(
+            user_id=user_id,
+            participant_code=participant_code,
+            query_hash=stable_hash(query),
+            retrieval_config_json={
+                "limit": limit,
+                "retrieval_mode": "graph_pattern",
+                "retrieval_version": GRAPH_RAG_VERSION,
+                "seed_relation_patterns": len(seed_patterns),
+                "pipeline_version": PIPELINE_VERSION,
+            },
+            result_refs_json=results,
+        )
+    )
+    session.commit()
+    return results
+
+
+def get_personalization_profile(
+    session: Session,
+    user_id: str,
+    participant_code: str,
+) -> Dict[str, Any]:
+    examples = session.exec(
+        select(EvalExample).where(
+            EvalExample.user_id == user_id,
+            EvalExample.participant_code == participant_code,
+        )
+    ).all()
+    status_counts: Dict[str, int] = {}
+    latest_consent = session.exec(
+        select(ConsentRecord)
+        .where(ConsentRecord.user_id == user_id, ConsentRecord.participant_code == participant_code)
+        .order_by(ConsentRecord.created_at.desc())
+        .limit(1)
+    ).first()
+    for example in examples:
+        status_counts[example.review_status] = status_counts.get(example.review_status, 0) + 1
+
+    model_map: Dict[str, Any] = {}
+    try:
+        model_map = json.loads(os.getenv("SENTRA_PERSONAL_EXTRACTION_MODEL_MAP", "{}") or "{}")
+    except json.JSONDecodeError:
+        model_map = {}
+
+    latest_fine_tune = session.exec(
+        select(ModelRun)
+        .where(
+            ModelRun.user_id == user_id,
+            ModelRun.participant_code == participant_code,
+            ModelRun.artifact_type == "fine_tuning_job",
+        )
+        .order_by(ModelRun.created_at.desc())
+        .limit(1)
+    ).first()
+    configured_model = (
+        model_map.get(participant_code)
+        or model_map.get(user_id)
+        or os.getenv("SENTRA_PERSONAL_EXTRACTION_MODEL")
+    )
+    reviewed_count = status_counts.get("reviewed", 0)
+    consent_allows = bool(latest_consent.future_fine_tuning) if latest_consent else False
+    return {
+        "personalization_version": PERSONALIZATION_VERSION,
+        "reviewed_examples": reviewed_count,
+        "minimum_reviewed_examples": MIN_REVIEWED_EXAMPLES_FOR_PERSONALIZATION,
+        "status_counts": status_counts,
+        "consent_allows_future_fine_tuning": consent_allows,
+        "ready_for_personal_adapter": consent_allows and reviewed_count >= MIN_REVIEWED_EXAMPLES_FOR_PERSONALIZATION,
+        "adapter_model": configured_model,
+        "latest_fine_tuning_run_id": latest_fine_tune.id if latest_fine_tune else None,
+    }
+
+
+def build_research_retrieval_context(
+    session: Session,
+    user_id: str,
+    participant_code: str,
+    message: str,
+    limit: int = 5,
+) -> Dict[str, Any]:
+    bounded_limit = max(1, min(limit, 12))
+    semantic_evidence = search_similar_embeddings(
+        session=session,
+        user_id=user_id,
+        participant_code=participant_code,
+        query=message,
+        limit=bounded_limit,
+    )
+    graph_evidence = search_similar_graph_patterns(
+        session=session,
+        user_id=user_id,
+        participant_code=participant_code,
+        query=message,
+        limit=bounded_limit,
+        semantic_evidence=semantic_evidence,
+    )
+    return {
+        "retrieval_version": {
+            "semantic": SEMANTIC_RAG_VERSION,
+            "graph": GRAPH_RAG_VERSION,
+        },
+        "semantic_matches": semantic_evidence,
+        "graph_pattern_matches": graph_evidence,
+        "personalization": get_personalization_profile(session, user_id, participant_code),
+    }
+
+
 def generate_research_chat_response(
     session: Session,
     user_id: str,
@@ -571,7 +920,11 @@ def generate_research_chat_response(
     message: str,
     limit: int = 5,
 ) -> Dict[str, Any]:
-    evidence = search_similar_embeddings(session, user_id, participant_code, message, limit=limit)
+    retrieval_context = build_research_retrieval_context(session, user_id, participant_code, message, limit=limit)
+    evidence = {
+        "semantic_matches": retrieval_context["semantic_matches"],
+        "graph_pattern_matches": retrieval_context["graph_pattern_matches"],
+    }
     consent_snapshot = _consent_snapshot(None)
     chat_session = ChatSession(
         user_id=user_id,
@@ -594,10 +947,12 @@ def generate_research_chat_response(
 
     instructions = (
         "You are Sentra's student-facing research assistant. Answer in simple, supportive language. "
-        "Ground the response only in retrieved evidence references and explicitly mark uncertainty. "
+        "Ground the response only in retrieved semantic and graph-pattern evidence. "
+        "When graph-pattern evidence repeats an earlier Trigger, State, Protective, Behavior, or Event relation, "
+        "you may mention that pattern with the evidence date. Explicitly mark uncertainty. "
         "Do not diagnose or make clinical claims. Suggest reflection questions, not medical advice."
     )
-    evidence_context = json.dumps(evidence, ensure_ascii=False, sort_keys=True)
+    evidence_context = json.dumps(retrieval_context, ensure_ascii=False, sort_keys=True, default=str)
     fallback_answer = (
         "I can reflect on patterns from your recorded entries, but I will stay cautious. "
         "The current evidence is limited, so treat this as a prompt for reflection rather than a conclusion."
@@ -643,7 +998,13 @@ def generate_research_chat_response(
         schema_version=CHAT_SCHEMA_VERSION,
         temperature=0.2,
         retrieval_config={"limit": limit, "embedding_model": DEFAULT_EMBEDDING_MODEL},
-        input_provenance={"chat_session_id": chat_session.id, "message_hash": stable_hash(message)},
+        input_provenance={
+            "chat_session_id": chat_session.id,
+            "message_hash": stable_hash(message),
+            "semantic_match_count": len(retrieval_context["semantic_matches"]),
+            "graph_pattern_match_count": len(retrieval_context["graph_pattern_matches"]),
+            "personalization": retrieval_context["personalization"],
+        },
         status=status,
         error_message=error_message,
     )
@@ -652,7 +1013,7 @@ def generate_research_chat_response(
         role="assistant",
         content_hash=stable_hash(answer),
         content_redacted=answer[:1000],
-        evidence_refs_json=evidence,
+        evidence_refs_json=[evidence],
         model_run_id=model_run.id,
     )
     session.add(assistant_message)
@@ -663,6 +1024,7 @@ def generate_research_chat_response(
         "message_id": assistant_message.id,
         "answer": answer,
         "evidence_refs": evidence,
+        "retrieval_context": retrieval_context,
         "model_run_id": model_run.id,
         "status": status,
         "error_message": error_message,

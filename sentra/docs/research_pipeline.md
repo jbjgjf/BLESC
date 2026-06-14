@@ -87,12 +87,26 @@ submission path working.
 ## Retrieval And Chat
 
 `POST /api/research/similar` computes a query embedding when a backend OpenAI
-key is available and records a `retrieval_events` trace. Without a key, the
-retrieval event still records the blocked state.
+key is available and records a `retrieval_events` trace. The response now
+returns usable evidence context for each match: entry day, graph summary,
+key nodes, key relations, temporal diff metadata, and the matched content kind.
+Without a key, Sentra falls back to derived graph/search terms rather than raw
+entry text.
 
 `POST /api/chat` creates a research chat session, retrieves evidence refs, and
-generates a student-friendly answer. The assistant must ground claims in
-retrieved evidence and avoid diagnosis.
+generates a student-friendly answer. Chat retrieval is hybrid:
+
+- Semantic RAG: vector similarity over `entry_embeddings`
+- Graph RAG: graph-pattern similarity over extracted nodes and relations
+
+Graph RAG is intentionally structural. It can surface earlier days that share a
+Trigger -> State, Protective -> State, or other relation pattern even when the
+wording is not identical. The assistant must ground claims in retrieved
+evidence dates and avoid diagnosis.
+
+Supabase projects use `match_entry_embeddings(...)` for filtered pgvector
+search and `match_graph_patterns(...)` for owner-scoped graph-pattern search.
+Both functions are `security invoker`, so RLS remains active.
 
 ## Evaluation And Fine-Tuning
 
@@ -125,6 +139,26 @@ curl -X POST http://localhost:8000/api/research/fine-tuning-jobs \
   -d '{"user_id":"research_user_01","export_job_id":1}'
 ```
 
+Personal adaptation is gated before use. Check readiness with:
+
+```bash
+curl "http://localhost:8000/api/research/personalization?user_id=research_user_01"
+```
+
+The backend requires `future_fine_tuning=true` and at least
+`SENTRA_MIN_PERSONALIZATION_EXAMPLES` reviewed Eval Examples before an adapter
+model is selected for extraction. The default threshold is `100`. Once a
+participant-specific model exists, set it through
+`SENTRA_PERSONAL_EXTRACTION_MODEL_MAP`, for example:
+
+```bash
+printf 'SENTRA_PERSONAL_EXTRACTION_MODEL_MAP={"research_user_01":"ft:gpt-4.1-mini:org:sentra-user-01"}\n' >> .env.local
+```
+
+This keeps the generic model as the default while allowing reviewed,
+consented users to route extraction through their personal adapter/fine-tuned
+model.
+
 ## Supabase Migration
 
 The research data layer is in
@@ -134,6 +168,10 @@ It adds RLS-protected append-only research tables, `entry_embeddings` with
 `extensions.vector(1536)`, an HNSW cosine index, and
 `match_entry_embeddings(...)` as a `security invoker` function so RLS remains
 active during vector search.
+
+`supabase/migrations/20260614130320_rag_retrieval_context.sql` extends retrieval
+with participant/content-kind/min-similarity filters and adds
+`match_graph_patterns(...)` for graph RAG.
 
 Apply after the Supabase local stack or remote project is available:
 

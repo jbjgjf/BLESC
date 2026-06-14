@@ -192,17 +192,18 @@ class LLMAdapter:
     def extractor_version(self) -> str:
         return f"{self.provider}:{self.model_name}"
 
-    def metadata(self) -> Dict[str, str]:
+    def metadata(self, model_override: Optional[str] = None) -> Dict[str, str]:
+        active_model = model_override or self.model_name
         return {
             "provider": self.provider,
-            "model": self.model_name,
-            "extractor_version": self.extractor_version,
+            "model": active_model,
+            "extractor_version": f"{self.provider}:{active_model}",
         }
 
-    def extract_structure(self, text: str) -> Dict[str, Any]:
+    def extract_structure(self, text: str, model_override: Optional[str] = None) -> Dict[str, Any]:
         """Always returns a valid dict — never raises."""
         try:
-            result = self._mock_extract(text) if self.use_mock else self._real_extract(text)
+            result = self._mock_extract(text) if self.use_mock else self._real_extract(text, model_override=model_override)
             if not isinstance(result, dict):
                 logger.warning("[llm] extraction returned non-dict type=%s; using fallback", type(result))
                 return get_fallback_extraction()
@@ -211,11 +212,12 @@ class LLMAdapter:
             logger.exception("[llm] extract_structure raised; using fallback")
             return get_fallback_extraction()
 
-    def _real_extract(self, text: str) -> Dict[str, Any]:
+    def _real_extract(self, text: str, model_override: Optional[str] = None) -> Dict[str, Any]:
+        active_model = model_override or self.model_name
         if self.provider == "openai" and hasattr(self.client, "responses"):
             try:
                 response = self.client.responses.create(
-                    model=self.model_name,
+                    model=active_model,
                     instructions="You are a specialist ontology extractor for transparent psychological and behavioral research journaling. Return only schema-valid data and ground every node/relation in evidence text from the input.",
                     input=self._get_prompt(text),
                     temperature=0.1,
@@ -238,7 +240,7 @@ class LLMAdapter:
                 logger.exception("[llm] responses extraction failed; trying chat fallback")
 
         kwargs: Dict[str, Any] = {
-            "model": self.model_name,
+            "model": active_model,
             "messages": [
                 {"role": "system", "content": "You are a specialized ontology extractor for research journaling."},
                 {"role": "user", "content": self._get_prompt(text)},

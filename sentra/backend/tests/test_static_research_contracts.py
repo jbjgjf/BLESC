@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
 MIGRATION = ROOT / "supabase/migrations/20260611000000_research_grade_data_layer.sql"
+RAG_MIGRATION = ROOT / "supabase/migrations/20260614130320_rag_retrieval_context.sql"
 
 
 RESEARCH_TABLES = [
@@ -56,6 +57,21 @@ def test_vector_search_function_is_owner_scoped():
     assert "limit greatest(1, least(match_count, 50))" in function_sql
 
 
+def test_rag_migration_adds_filtered_vector_and_graph_pattern_search():
+    sql = _read(RAG_MIGRATION).lower()
+
+    assert "drop function if exists public.match_entry_embeddings(extensions.vector, integer)" in sql
+    assert "participant_filter uuid default null" in sql
+    assert "content_kinds text[] default null" in sql
+    assert "min_similarity double precision default 0" in sql
+    assert "entry_embeddings.owner_user_id = (select auth.uid())" in sql
+    assert "create or replace function public.match_graph_patterns" in sql
+    assert "security invoker" in sql
+    assert "security definer" not in sql
+    assert "graph_versions.owner_user_id = (select auth.uid())" in sql
+    assert "grant execute on function public.match_graph_patterns" in sql
+
+
 def test_openai_keys_are_backend_only_and_not_tracked_as_active_values():
     frontend_source = "\n".join(
         path.read_text(encoding="utf-8")
@@ -103,3 +119,5 @@ def test_fine_tuning_export_is_consent_and_review_gated():
     assert 'review_status == "reviewed"' in pipeline
     assert "Consent scope does not allow future fine-tuning dataset inclusion." in pipeline
     assert "client.fine_tuning.jobs.create" in pipeline
+    assert "MIN_REVIEWED_EXAMPLES_FOR_PERSONALIZATION" in pipeline
+    assert "ready_for_personal_adapter" in pipeline

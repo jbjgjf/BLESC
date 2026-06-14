@@ -176,14 +176,24 @@ def test_chat_and_similarity_are_logged_without_openai_key():
         )
         assert similar.status_code == 200, similar.text
         assert "similar" in similar.json()
+        if similar.json()["similar"]:
+            assert "key_nodes" in similar.json()["similar"][0]
 
         chat = client.post(
             "/api/chat",
             json={"user_id": "test_chat_user", "message": "What patterns are visible?", "limit": 3},
         )
         assert chat.status_code == 200, chat.text
-        assert chat.json()["answer"]
-        assert chat.json()["status"] in {"completed", "failed"}
+        chat_body = chat.json()
+        assert chat_body["answer"]
+        assert chat_body["status"] in {"completed", "failed"}
+        assert "semantic_matches" in chat_body["evidence_refs"]
+        assert "graph_pattern_matches" in chat_body["evidence_refs"]
+        assert "personalization" in chat_body["retrieval_context"]
+
+        personalization = client.get("/api/research/personalization?user_id=test_chat_user")
+        assert personalization.status_code == 200, personalization.text
+        assert personalization.json()["ready_for_personal_adapter"] is False
 
         export = client.post(
             "/api/research/fine-tuning-dataset",
