@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -44,7 +45,10 @@ from ..schemas.research import (
     RetrievalEvent,
 )
 from ..schemas.structured import GraphSnapshot
+from .static_knowledge import search_static_knowledge, static_knowledge_config
 
+
+logger = logging.getLogger(__name__)
 
 _ENV_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(_ENV_DIR / ".env.local")
@@ -61,6 +65,7 @@ CHAT_SCHEMA_VERSION = "sentra-chat-grounded-answer-v1"
 GRAPH_RAG_VERSION = "sentra-graph-rag-v1"
 SEMANTIC_RAG_VERSION = "sentra-semantic-rag-v2"
 PATTERN_RAG_VERSION = "sentra-pattern-rag-v1"
+STATIC_KNOWLEDGE_RAG_VERSION = "blesc-static-knowledge-rag-v1"
 PATTERN_MINING_WINDOW_DAYS = int(os.getenv("SENTRA_PATTERN_WINDOW_DAYS", "90"))
 PERSONALIZATION_VERSION = "sentra-personalization-v1"
 MIN_REVIEWED_EXAMPLES_FOR_PERSONALIZATION = int(os.getenv("SENTRA_MIN_PERSONALIZATION_EXAMPLES", "100"))
@@ -919,15 +924,56 @@ def build_research_retrieval_context(
         query=message,
         limit=bounded_limit,
     )
+    static_knowledge = search_static_knowledge(message, limit=bounded_limit)
+    session.add(
+        RetrievalEvent(
+            user_id=user_id,
+            participant_code=participant_code,
+            query_hash=stable_hash(message),
+            retrieval_config_json={
+                "limit": bounded_limit,
+                "retrieval_mode": "static_knowledge_vector_store",
+                "retrieval_version": STATIC_KNOWLEDGE_RAG_VERSION,
+                "source": "openai_vector_store",
+                "status": static_knowledge.get("status"),
+                "vector_store_configured": bool(static_knowledge_config().vector_store_id),
+                "pipeline_version": PIPELINE_VERSION,
+            },
+            result_refs_json=[
+                {
+                    "file_id": match.get("file_id"),
+                    "filename": match.get("filename"),
+                    "score": match.get("score"),
+                    "retrieval_source": "openai_vector_store",
+                }
+                for match in static_knowledge.get("matches", [])
+            ],
+        )
+    )
+    session.commit()
+    retrieval_source_counts = {
+        "supabase_semantic": len(semantic_evidence),
+        "supabase_graph": len(graph_evidence),
+        "supabase_patterns": len(longitudinal_patterns),
+        "openai_vector_store": len(static_knowledge.get("matches", [])),
+    }
+    logger.info(
+        "[research_retrieval] sources=%s static_status=%s",
+        retrieval_source_counts,
+        static_knowledge.get("status"),
+    )
     return {
         "retrieval_version": {
             "semantic": SEMANTIC_RAG_VERSION,
             "graph": GRAPH_RAG_VERSION,
             "pattern": PATTERN_RAG_VERSION,
+            "static_knowledge": STATIC_KNOWLEDGE_RAG_VERSION,
         },
+        "retrieval_sources": retrieval_source_counts,
         "semantic_matches": semantic_evidence,
         "graph_pattern_matches": graph_evidence,
         "longitudinal_patterns": longitudinal_patterns,
+        "static_knowledge_matches": static_knowledge,
         "personalization": get_personalization_profile(session, user_id, participant_code),
     }
 
@@ -944,6 +990,7 @@ def generate_research_chat_response(
         "semantic_matches": retrieval_context["semantic_matches"],
         "graph_pattern_matches": retrieval_context["graph_pattern_matches"],
         "longitudinal_patterns": retrieval_context.get("longitudinal_patterns", []),
+        "static_knowledge_matches": retrieval_context.get("static_knowledge_matches", {}),
     }
     consent_snapshot = _consent_snapshot(None)
     chat_session = ChatSession(
@@ -967,14 +1014,21 @@ def generate_research_chat_response(
 
     instructions = (
         "You are Sentra's student-facing research assistant. Answer in simple, supportive language. "
-        "Ground the response only in retrieved semantic, graph-pattern, and longitudinal-pattern evidence. "
+        "Ground the response only in retrieved user evidence and static BLESC knowledge. "
+        "User-specific evidence comes only from Supabase retrieval. Static policy, crisis, and psychoeducation "
+        "evidence comes only from OpenAI Vector Store retrieval. Never imply that user journal content was uploaded "
+        "to the OpenAI Vector Store. "
         "When graph-pattern evidence repeats an earlier Trigger, State, Protective, Behavior, or Event relation, "
         "you may mention that pattern with the evidence date. "
         "When longitudinal_patterns are present, you may reference how often a pattern has recurred "
         "(recurrence_count and support_days) or that a 'leading_indicator' tends to precede harder next days "
         "(lift), but frame these as observed tendencies, not predictions or diagnoses. "
-        "Explicitly mark uncertainty. Do not diagnose or make clinical claims. "
-        "Suggest reflection questions, not medical advice."
+        "Follow BLESC policy: BLESC is not a medical device, does not diagnose or treat, and must not replace "
+        "doctors, therapists, school counselors, guardians, emergency services, or licensed professionals. "
+        "For crisis or high-risk content, prioritize immediate safety and trusted human or emergency support over "
+        "continued conversation. Use cautious language such as may, could, consider, and please contact a qualified "
+        "professional. Explicitly mark uncertainty. Do not diagnose or make clinical claims. "
+        "Suggest reflection questions and support options, not medical, legal, or clinical instructions."
     )
     evidence_context = json.dumps(retrieval_context, ensure_ascii=False, sort_keys=True, default=str)
     fallback_answer = (
@@ -1028,6 +1082,10 @@ def generate_research_chat_response(
             "semantic_match_count": len(retrieval_context["semantic_matches"]),
             "graph_pattern_match_count": len(retrieval_context["graph_pattern_matches"]),
             "longitudinal_pattern_count": len(retrieval_context.get("longitudinal_patterns", [])),
+            "static_knowledge_source": "openai_vector_store",
+            "static_knowledge_status": retrieval_context.get("static_knowledge_matches", {}).get("status"),
+            "static_knowledge_match_count": len(retrieval_context.get("static_knowledge_matches", {}).get("matches", [])),
+            "retrieval_sources": retrieval_context.get("retrieval_sources", {}),
             "personalization": retrieval_context["personalization"],
         },
         status=status,

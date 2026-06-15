@@ -191,6 +191,14 @@ def test_chat_and_similarity_are_logged_without_openai_key():
         assert chat_body["status"] in {"completed", "failed"}
         assert "semantic_matches" in chat_body["evidence_refs"]
         assert "graph_pattern_matches" in chat_body["evidence_refs"]
+        assert "static_knowledge_matches" in chat_body["evidence_refs"]
+        assert chat_body["retrieval_context"]["static_knowledge_matches"]["source"] == "openai_vector_store"
+        assert chat_body["retrieval_context"]["static_knowledge_matches"]["status"] in {
+            "missing_vector_store_id",
+            "pending_no_openai_key",
+            "disabled",
+        }
+        assert "openai_vector_store" in chat_body["retrieval_context"]["retrieval_sources"]
         assert "personalization" in chat_body["retrieval_context"]
 
         personalization = client.get("/api/research/personalization?user_id=test_chat_user")

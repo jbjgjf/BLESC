@@ -42,6 +42,7 @@ from .services.research_pipeline import (
     summarize_eval_readiness,
     update_eval_example_review_status,
 )
+from .services.static_knowledge import get_or_create_blesc_vector_store, static_knowledge_config
 
 logger = logging.getLogger(__name__)
 
@@ -577,6 +578,21 @@ def research_similar(payload: SimilarQueryRequest, session: Session = Depends(ge
             query=payload.query,
             limit=payload.limit,
         ),
+    }
+
+
+@app.get("/api/research/static-knowledge")
+def static_knowledge_status():
+    config = static_knowledge_config()
+    connection = get_or_create_blesc_vector_store(create_if_missing=False)
+    return {
+        "enabled": config.enabled,
+        "source": "openai_vector_store",
+        "vector_store_configured": bool(config.vector_store_id),
+        "vector_store_id": config.vector_store_id,
+        "max_results": config.max_results,
+        "allowed_source_dirs": [str(path) for path in config.allowed_source_dirs],
+        "connection_status": connection.get("status"),
     }
 
 

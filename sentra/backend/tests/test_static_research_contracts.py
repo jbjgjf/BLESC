@@ -5,6 +5,9 @@ ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
 MIGRATION = ROOT / "supabase/migrations/20260611000000_research_grade_data_layer.sql"
 RAG_MIGRATION = ROOT / "supabase/migrations/20260614130320_rag_retrieval_context.sql"
+PRODUCT_POLICY = ROOT / "docs/product_policy.md"
+SAFETY_POLICY = ROOT / "docs/safety_escalation_policy.md"
+VECTOR_STORE_PLAN = ROOT / "docs/vector_store_knowledge_plan.md"
 
 
 RESEARCH_TABLES = [
@@ -110,6 +113,74 @@ def test_openai_calls_disable_storage_and_record_reproducibility_metadata():
         "output_hash",
     ]:
         assert required in research_pipeline or required in _read(BACKEND / "app/schemas/research.py")
+
+
+def test_static_knowledge_vector_store_has_strict_user_data_boundary():
+    static_service = _read(BACKEND / "app/services/static_knowledge.py")
+    research_pipeline = _read(BACKEND / "app/services/research_pipeline.py")
+    ingestion_script = _read(BACKEND / "scripts/ingest_static_knowledge.py")
+
+    assert "BLESC_VECTOR_STORE_ID" in static_service
+    assert "OPENAI_VECTOR_STORE_ID" in static_service
+    assert "data_boundary" in static_service
+    assert "static_curated_only" in static_service
+    assert "user_data_allowed" in static_service
+    assert "SENSITIVE_PATH_MARKERS" in static_service
+    assert "entry_embeddings" not in static_service
+    assert "EntryEmbedding" not in static_service
+    assert ".vector_stores.search" in static_service
+    assert "client.vector_stores.files.create_and_poll" in static_service
+    assert "search_static_knowledge(message" in research_pipeline
+    assert '"static_knowledge_matches"' in research_pipeline
+    assert '"openai_vector_store"' in research_pipeline
+    assert "scripts/ingest_static_knowledge.py" in str(BACKEND / "scripts/ingest_static_knowledge.py")
+    assert "default_static_knowledge_files" in ingestion_script
+
+
+def test_blesc_policy_docs_are_original_static_knowledge_sources():
+    product = _read(PRODUCT_POLICY)
+    safety = _read(SAFETY_POLICY)
+    plan = _read(VECTOR_STORE_PLAN)
+    combined = "\n".join([product, safety, plan])
+
+    for required in [
+        "BLESC is not a medical device",
+        "does not provide diagnosis",
+        "supportive journaling, reflection, psychoeducation",
+        "must not replace",
+        "emergency services",
+        "qualified professional",
+        "must not be uploaded into OpenAI Vector Store",
+        "Static documents must be reviewed before upload",
+        "Supabase Postgres with pgvector",
+        "OpenAI Vector Store stores static, curated BLESC knowledge documents only",
+    ]:
+        assert required in combined
+
+
+def test_static_knowledge_file_guard_accepts_docs_and_rejects_user_paths(tmp_path):
+    import sys
+
+    sys.path.insert(0, str(BACKEND))
+    from app.services.static_knowledge import assert_static_knowledge_file, static_knowledge_config
+
+    config = static_knowledge_config()
+    assert assert_static_knowledge_file(PRODUCT_POLICY, config) == PRODUCT_POLICY.resolve()
+
+    unsafe = ROOT / "docs" / "journal"
+    unsafe.mkdir(exist_ok=True)
+    unsafe_file = unsafe / "student-entry.md"
+    unsafe_file.write_text("private journal placeholder", encoding="utf-8")
+    try:
+        try:
+            assert_static_knowledge_file(unsafe_file, config)
+        except ValueError as exc:
+            assert "Refusing to ingest" in str(exc)
+        else:
+            raise AssertionError("Expected user-data-looking static path to be rejected")
+    finally:
+        unsafe_file.unlink(missing_ok=True)
+        unsafe.rmdir()
 
 
 def test_fine_tuning_export_is_consent_and_review_gated():
