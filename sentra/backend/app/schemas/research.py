@@ -61,6 +61,32 @@ class InteractionEvent(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class WritingFeature(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    entry_id: Optional[int] = Field(default=None, foreign_key="entry.id", index=True)
+    entry_session_id: int = Field(foreign_key="entrysession.id", index=True)
+    user_id: str = Field(index=True)
+    participant_code: str = Field(index=True)
+    field_name: str = Field(index=True)
+    feature_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    pipeline_version: str = "writing-dynamics-v1"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class CognitiveProbeFeature(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    entry_id: Optional[int] = Field(default=None, foreign_key="entry.id", index=True)
+    entry_session_id: Optional[int] = Field(default=None, foreign_key="entrysession.id", index=True)
+    user_id: str = Field(index=True)
+    participant_code: str = Field(index=True)
+    probe_name: str = Field(default="first_recall_30", index=True)
+    journal_text_hash: str
+    recall_text_hash: str
+    feature_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    pipeline_version: str = "cognitive-probe-v1"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class ResearchEntryLink(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     entry_id: int = Field(foreign_key="entry.id", index=True)

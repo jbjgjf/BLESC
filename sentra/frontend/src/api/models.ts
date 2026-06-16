@@ -126,6 +126,24 @@ export interface EntrySubmissionResponse {
       content_hash: string;
       metadata_json?: Record<string, JsonValue>;
     }>;
+    writing_feature_artifacts?: Array<{
+      local_id?: number;
+      entry_id?: RecordId;
+      entry_session_id?: number;
+      field_name: string;
+      pipeline_version: string;
+      feature_json: Record<string, JsonValue>;
+    }>;
+    cognitive_probe_artifact?: {
+      local_id?: number;
+      entry_id?: RecordId;
+      entry_session_id?: number | null;
+      probe_name: string;
+      journal_text_hash: string;
+      recall_text_hash: string;
+      pipeline_version: string;
+      feature_json: Record<string, JsonValue>;
+    } | null;
     pipeline_version?: string;
   };
 }

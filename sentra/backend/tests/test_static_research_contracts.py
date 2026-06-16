@@ -15,6 +15,8 @@ RESEARCH_TABLES = [
     "entry_sessions",
     "entry_fields",
     "interaction_events",
+    "writing_features",
+    "cognitive_probe_features",
     "entry_research_links",
     "model_runs",
     "extractions",
@@ -181,6 +183,19 @@ def test_static_knowledge_file_guard_accepts_docs_and_rejects_user_paths(tmp_pat
     finally:
         unsafe_file.unlink(missing_ok=True)
         unsafe.rmdir()
+
+
+def test_frontend_uses_non_diagnostic_reflection_signal_language():
+    frontend_source = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (ROOT / "frontend/src/app").rglob("*.tsx")
+        if path.is_file()
+    )
+
+    assert "Diagnostic Score" not in frontend_source
+    assert "Hybrid Anomaly Score" not in frontend_source
+    assert "Reflection Signal" in frontend_source
+    assert "Non-diagnostic" in frontend_source
 
 
 def test_fine_tuning_export_is_consent_and_review_gated():

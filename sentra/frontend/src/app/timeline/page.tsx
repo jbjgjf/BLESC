@@ -182,7 +182,7 @@ export default function Timeline() {
                 {status}
               </div>
               <div className="mt-1 text-sm" style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}>
-                Latest score {latest?.anomaly_score.toFixed(2) ?? "—"}
+                Latest reflection signal {latest?.anomaly_score.toFixed(2) ?? "—"}
               </div>
             </div>
 
@@ -302,7 +302,7 @@ export default function Timeline() {
                   strokeWidth={2}
                   dot={{ r: 3.5, fill: "var(--aegean)", strokeWidth: 2, stroke: "var(--ivory)" }}
                   activeDot={{ r: 6, strokeWidth: 0, fill: "var(--gold)" }}
-                  name="Hybrid anomaly score"
+                  name="Hybrid reflection signal"
                   animationDuration={900}
                 />
               </LineChart>

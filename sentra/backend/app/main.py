@@ -33,9 +33,11 @@ from .services.research_pipeline import (
     record_consent,
     record_entry_embeddings,
     record_entry_session,
+    record_cognitive_probe_features,
     record_eval_candidate,
     record_graph_version,
     record_model_run,
+    record_writing_features,
     reconstruct_entry_replay,
     recompute_longitudinal_features,
     search_similar_embeddings,
@@ -276,6 +278,28 @@ def create_entry(
     session.refresh(entry)
     logger.info("[submit] entry persisted id=%s", entry.id)
     link_entry_to_session(session, entry, research_session, "combined_submission", entry_text)
+    writing_feature_artifacts: List[Dict[str, Any]] = []
+    cognitive_probe_artifact: Optional[Dict[str, Any]] = None
+    try:
+        writing_feature_artifacts = record_writing_features(
+            session=session,
+            user_id=user_id,
+            participant_code=participant_code,
+            entry=entry,
+            entry_session=research_session,
+            telemetry=(payload.telemetry if payload else None) or {},
+        )
+        cognitive_probe_artifact = record_cognitive_probe_features(
+            session=session,
+            user_id=user_id,
+            participant_code=participant_code,
+            entry=entry,
+            entry_session=research_session,
+            journal_text=journal_text,
+            recall_text=recall_text,
+        )
+    except Exception:
+        logger.exception("[research] writing/cognitive feature capture failed")
 
     # ── 2. Extract structure (LLM or mock) ───────────────────────────────────
     try:
@@ -445,6 +469,8 @@ def create_entry(
         explanation=explanation,
         research_artifacts={
             "embedding_artifacts": embedding_artifacts,
+            "writing_feature_artifacts": writing_feature_artifacts,
+            "cognitive_probe_artifact": cognitive_probe_artifact,
             "pipeline_version": "research-pipeline-v1",
             "personalization": personalization_profile,
         },

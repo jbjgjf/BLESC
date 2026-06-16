@@ -23,6 +23,8 @@ from ..analytics.pattern_mining import (
     mine_recurring_motifs,
     summarize_patterns,
 )
+from ..analytics.cognitive_probe import cognitive_probe_features
+from ..analytics.writing_dynamics import writing_dynamics_for_session
 from ..schemas.analytics import AnomalyResult, DailyFeatureAggregation
 from ..schemas.entry import Entry
 from ..schemas.extraction import Extraction
@@ -30,6 +32,7 @@ from ..schemas.research import (
     ChatMessage,
     ChatSession,
     ConsentRecord,
+    CognitiveProbeFeature,
     EntryEmbedding,
     EntryField,
     EntrySession,
@@ -43,6 +46,7 @@ from ..schemas.research import (
     ModelRun,
     ResearchEntryLink,
     RetrievalEvent,
+    WritingFeature,
 )
 from ..schemas.structured import GraphSnapshot
 from .static_knowledge import search_static_knowledge, static_knowledge_config
@@ -66,6 +70,8 @@ GRAPH_RAG_VERSION = "sentra-graph-rag-v1"
 SEMANTIC_RAG_VERSION = "sentra-semantic-rag-v2"
 PATTERN_RAG_VERSION = "sentra-pattern-rag-v1"
 STATIC_KNOWLEDGE_RAG_VERSION = "blesc-static-knowledge-rag-v1"
+WRITING_DYNAMICS_VERSION = "writing-dynamics-v1"
+COGNITIVE_PROBE_VERSION = "cognitive-probe-v1"
 PATTERN_MINING_WINDOW_DAYS = int(os.getenv("SENTRA_PATTERN_WINDOW_DAYS", "90"))
 PERSONALIZATION_VERSION = "sentra-personalization-v1"
 MIN_REVIEWED_EXAMPLES_FOR_PERSONALIZATION = int(os.getenv("SENTRA_MIN_PERSONALIZATION_EXAMPLES", "100"))
@@ -377,6 +383,81 @@ def link_entry_to_session(
         )
     )
     session.commit()
+
+
+def record_writing_features(
+    session: Session,
+    user_id: str,
+    participant_code: str,
+    entry: Entry,
+    entry_session: Optional[EntrySession],
+    telemetry: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    if not entry_session or not entry_session.id:
+        return []
+    field_metrics = telemetry.get("field_metrics") if isinstance(telemetry.get("field_metrics"), dict) else {}
+    raw_events = telemetry.get("events") if isinstance(telemetry.get("events"), list) else []
+    artifacts: List[Dict[str, Any]] = []
+    for field_name, feature_json in writing_dynamics_for_session(field_metrics, raw_events).items():
+        row = WritingFeature(
+            entry_id=entry.id,
+            entry_session_id=entry_session.id,
+            user_id=user_id,
+            participant_code=participant_code,
+            field_name=field_name,
+            feature_json=feature_json,
+            pipeline_version=WRITING_DYNAMICS_VERSION,
+        )
+        session.add(row)
+        session.flush()
+        artifacts.append(
+            {
+                "local_id": row.id,
+                "entry_id": entry.id,
+                "entry_session_id": entry_session.id,
+                "field_name": field_name,
+                "pipeline_version": row.pipeline_version,
+                "feature_json": feature_json,
+            }
+        )
+    session.commit()
+    return artifacts
+
+
+def record_cognitive_probe_features(
+    session: Session,
+    user_id: str,
+    participant_code: str,
+    entry: Entry,
+    entry_session: Optional[EntrySession],
+    journal_text: str,
+    recall_text: str,
+) -> Dict[str, Any]:
+    feature_json = cognitive_probe_features(journal_text, recall_text)
+    row = CognitiveProbeFeature(
+        entry_id=entry.id,
+        entry_session_id=entry_session.id if entry_session else None,
+        user_id=user_id,
+        participant_code=participant_code,
+        probe_name="first_recall_30",
+        journal_text_hash=stable_hash(journal_text),
+        recall_text_hash=stable_hash(recall_text),
+        feature_json=feature_json,
+        pipeline_version=COGNITIVE_PROBE_VERSION,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return {
+        "local_id": row.id,
+        "entry_id": entry.id,
+        "entry_session_id": row.entry_session_id,
+        "probe_name": row.probe_name,
+        "journal_text_hash": row.journal_text_hash,
+        "recall_text_hash": row.recall_text_hash,
+        "pipeline_version": row.pipeline_version,
+        "feature_json": feature_json,
+    }
 
 
 def record_model_run(
@@ -1473,6 +1554,15 @@ def _rows_for_export(session: Session, user_id: str, participant_code: str) -> D
             select(InteractionEvent).join(EntrySession).where(
                 EntrySession.user_id == user_id,
                 EntrySession.participant_code == participant_code,
+            )
+        ).all(),
+        "writing_features": session.exec(
+            select(WritingFeature).where(WritingFeature.user_id == user_id, WritingFeature.participant_code == participant_code)
+        ).all(),
+        "cognitive_probe_features": session.exec(
+            select(CognitiveProbeFeature).where(
+                CognitiveProbeFeature.user_id == user_id,
+                CognitiveProbeFeature.participant_code == participant_code,
             )
         ).all(),
         "model_runs": session.exec(

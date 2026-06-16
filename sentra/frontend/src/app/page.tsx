@@ -239,7 +239,7 @@ export default function Home() {
     }
   };
 
-  /* Derived data for the diagnostic panel */
+  /* Derived data for the reflection signal panel */
   const graphSummary =
     lastSubmission?.explanation?.graph_summary_json ??
     lastSubmission?.graph_snapshot?.graph_summary_json;
@@ -396,7 +396,7 @@ export default function Home() {
         </form>
       </section>
 
-      {/* ── Diagnostic result ─────────────────────────────────── */}
+      {/* ── Reflection signal result ───────────────────────────── */}
       {(score !== undefined || topNodes.length > 0) && (
         <section style={panel} className="mb-8">
           <div
@@ -410,12 +410,15 @@ export default function Home() {
             <div className="flex items-end gap-6">
               {/* Score */}
               <div>
-                <div className="inscription mb-1">Diagnostic Score</div>
+                <div className="inscription mb-1">Reflection Signal</div>
                 <div
                   className="text-5xl leading-none"
                   style={{ ...displayFont, fontWeight: 700, color: "var(--ink)", letterSpacing: "0.02em" }}
                 >
                   {score === undefined ? "—" : score.toFixed(2)}
+                </div>
+                <div className="mt-2 max-w-52 text-xs leading-relaxed" style={{ color: "var(--ink-mid)", ...bodyFont }}>
+                  Non-diagnostic pattern difference. Use it as a prompt to reflect, not as a clinical conclusion.
                 </div>
               </div>
               {/* Summary */}

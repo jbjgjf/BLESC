@@ -44,6 +44,7 @@ def create_db_and_tables():
         ChatMessage,
         ChatSession,
         ConsentRecord,
+        CognitiveProbeFeature,
         EntryEmbedding,
         EntryField,
         EntrySession,
@@ -57,6 +58,7 @@ def create_db_and_tables():
         ModelRun,
         ResearchEntryLink,
         RetrievalEvent,
+        WritingFeature,
     )
     SQLModel.metadata.create_all(engine)
     _apply_migrations()

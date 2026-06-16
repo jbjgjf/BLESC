@@ -223,9 +223,9 @@ export class ApiClient {
     recallText: string;
     telemetry?: EntryTelemetryPayload;
     consent?: ConsentSnapshot;
-  }): Promise<void> {
+  }): Promise<string | null> {
     const { ownerUserId, participantId, entryId, journalText, recallText, telemetry, consent } = params;
-    if (!telemetry) return;
+    if (!telemetry) return null;
 
     try {
       const consentSnapshot = consent ?? {
@@ -266,7 +266,7 @@ export class ApiClient {
 
       if (sessionInsert.error || !sessionInsert.data) {
         console.warn("[research] entry_sessions insert skipped", sessionInsert.error);
-        return;
+        return null;
       }
 
       const entrySessionId = sessionInsert.data.id;
@@ -319,8 +319,10 @@ export class ApiClient {
         field_name: "combined_submission",
         source_hash: await stableHash(`${journalText}\n\n${recallText}`),
       });
+      return entrySessionId;
     } catch (err) {
       console.warn("[research] telemetry persistence skipped", err);
+      return null;
     }
   }
 
@@ -328,28 +330,61 @@ export class ApiClient {
     ownerUserId: string;
     participantId: string;
     entryId: string;
+    entrySessionId: string | null;
     computed: EntrySubmissionResponse;
   }): Promise<void> {
     const artifacts = params.computed.research_artifacts?.embedding_artifacts ?? [];
-    if (artifacts.length === 0) return;
+    const writingArtifacts = params.computed.research_artifacts?.writing_feature_artifacts ?? [];
+    const cognitiveArtifact = params.computed.research_artifacts?.cognitive_probe_artifact ?? null;
     try {
-      const rows = artifacts.map((artifact) => ({
-        owner_user_id: params.ownerUserId,
-        participant_id: params.participantId,
-        entry_id: params.entryId,
-        content_kind: artifact.content_kind,
-        embedding_model: artifact.embedding_model,
-        embedding: artifact.vector_json && artifact.vector_json.length > 0 ? `[${artifact.vector_json.join(",")}]` : null,
-        content_hash: artifact.content_hash,
-        metadata_json: {
-          ...(artifact.metadata_json ?? {}),
-          backend_local_id: artifact.local_id ?? null,
-          synced_from_backend_response: true,
-          pipeline_version: params.computed.research_artifacts?.pipeline_version ?? "research-pipeline-v1",
-        },
-      }));
-      const { error } = await supabase.from("entry_embeddings").insert(rows);
-      if (error) console.warn("[research] entry_embeddings insert skipped", error);
+      if (artifacts.length > 0) {
+        const rows = artifacts.map((artifact) => ({
+          owner_user_id: params.ownerUserId,
+          participant_id: params.participantId,
+          entry_id: params.entryId,
+          content_kind: artifact.content_kind,
+          embedding_model: artifact.embedding_model,
+          embedding: artifact.vector_json && artifact.vector_json.length > 0 ? `[${artifact.vector_json.join(",")}]` : null,
+          content_hash: artifact.content_hash,
+          metadata_json: {
+            ...(artifact.metadata_json ?? {}),
+            backend_local_id: artifact.local_id ?? null,
+            synced_from_backend_response: true,
+            pipeline_version: params.computed.research_artifacts?.pipeline_version ?? "research-pipeline-v1",
+          },
+        }));
+        const { error } = await supabase.from("entry_embeddings").insert(rows);
+        if (error) console.warn("[research] entry_embeddings insert skipped", error);
+      }
+
+      if (params.entrySessionId && writingArtifacts.length > 0) {
+        const writingRows = writingArtifacts.map((artifact) => ({
+          owner_user_id: params.ownerUserId,
+          participant_id: params.participantId,
+          entry_id: params.entryId,
+          entry_session_id: params.entrySessionId,
+          field_name: artifact.field_name,
+          feature_json: artifact.feature_json as Record<string, JsonValue>,
+          pipeline_version: artifact.pipeline_version,
+        }));
+        const { error } = await supabase.from("writing_features").insert(writingRows);
+        if (error) console.warn("[research] writing_features insert skipped", error);
+      }
+
+      if (cognitiveArtifact) {
+        const { error } = await supabase.from("cognitive_probe_features").insert({
+          owner_user_id: params.ownerUserId,
+          participant_id: params.participantId,
+          entry_id: params.entryId,
+          entry_session_id: params.entrySessionId,
+          probe_name: cognitiveArtifact.probe_name,
+          journal_text_hash: cognitiveArtifact.journal_text_hash,
+          recall_text_hash: cognitiveArtifact.recall_text_hash,
+          feature_json: cognitiveArtifact.feature_json as Record<string, JsonValue>,
+          pipeline_version: cognitiveArtifact.pipeline_version,
+        });
+        if (error) console.warn("[research] cognitive_probe_features insert skipped", error);
+      }
     } catch (err) {
       console.warn("[research] artifact persistence skipped", err);
     }
@@ -582,7 +617,7 @@ export class ApiClient {
 
     if (entryInsert.error) throwSupabaseError("Save entry failed", entryInsert.error);
     const entry = toEntry(entryInsert.data as unknown as EntryRow, userId);
-    await this.persistResearchTelemetry({
+    const entrySessionId = await this.persistResearchTelemetry({
       ownerUserId,
       participantId: participant.id,
       entryId: entry.id as string,
@@ -654,6 +689,7 @@ export class ApiClient {
       ownerUserId,
       participantId: participant.id,
       entryId: entry.id as string,
+      entrySessionId,
       computed,
     });
     await this.persistResearchMetadata({
@@ -676,6 +712,7 @@ export class ApiClient {
       graph_snapshot: graphSnapshot ?? computed.graph_snapshot,
       anomaly_result: anomalyResult,
       explanation,
+      research_artifacts: computed.research_artifacts,
     };
   }
 

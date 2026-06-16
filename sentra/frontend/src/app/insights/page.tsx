@@ -189,7 +189,7 @@ export default function Insights() {
                     color: "var(--ink-faint)",
                   }}
                 >
-                  Hybrid Anomaly Score
+                  Hybrid Reflection Signal
                 </div>
                 <div
                   className="text-6xl leading-none"
@@ -201,7 +201,7 @@ export default function Insights() {
                   className="mt-4 text-sm leading-relaxed"
                   style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}
                 >
-                  Final hybrid score from rule activations, baseline deviation, and temporal drift.
+                  Non-diagnostic signal from rule activations, baseline deviation, and temporal drift.
                 </p>
               </div>
             </div>

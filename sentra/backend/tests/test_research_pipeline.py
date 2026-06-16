@@ -14,6 +14,7 @@ from app.database import engine
 from app.main import app
 from app.schemas.research import (
     ConsentRecord,
+    CognitiveProbeFeature,
     EntryEmbedding,
     EntrySession,
     EvalExample,
@@ -22,6 +23,7 @@ from app.schemas.research import (
     LongitudinalFeature,
     LongitudinalPattern,
     ModelRun,
+    WritingFeature,
 )
 
 
@@ -120,11 +122,18 @@ def test_submission_creates_research_artifacts():
         assert response.status_code == 200, response.text
         body = response.json()
         assert len(body["research_artifacts"]["embedding_artifacts"]) == 5
+        assert len(body["research_artifacts"]["writing_feature_artifacts"]) >= 2
+        assert body["research_artifacts"]["cognitive_probe_artifact"]["probe_name"] == "first_recall_30"
+        recall_features = body["research_artifacts"]["cognitive_probe_artifact"]["feature_json"]
+        assert "rumination_index" in recall_features
+        assert "semantic_distance_to_journal" in recall_features
 
     with Session(engine) as session:
         assert len(session.exec(select(ConsentRecord)).all()) >= 1
         assert len(session.exec(select(EntrySession)).all()) >= 1
         assert len(session.exec(select(InteractionEvent)).all()) >= 3
+        assert len(session.exec(select(WritingFeature)).all()) >= 2
+        assert len(session.exec(select(CognitiveProbeFeature)).all()) >= 1
         assert len(session.exec(select(GraphVersion)).all()) >= 1
         assert len(session.exec(select(LongitudinalFeature)).all()) >= 2
         assert len(session.exec(select(EntryEmbedding)).all()) >= 5

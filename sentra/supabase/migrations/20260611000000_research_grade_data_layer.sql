@@ -86,6 +86,44 @@ create table if not exists public.interaction_events (
     on delete cascade
 );
 
+create table if not exists public.writing_features (
+  id uuid primary key default gen_random_uuid(),
+  owner_user_id uuid not null references auth.users(id) on delete cascade,
+  participant_id uuid not null references public.participants(id) on delete cascade,
+  entry_id uuid references public.entries(id) on delete cascade,
+  entry_session_id uuid not null references public.entry_sessions(id) on delete cascade,
+  field_name text not null,
+  feature_json jsonb not null default '{}'::jsonb,
+  pipeline_version text not null default 'writing-dynamics-v1',
+  created_at timestamptz not null default now(),
+  constraint writing_features_participant_owner_fk
+    foreign key (participant_id, owner_user_id)
+    references public.participants(id, owner_user_id)
+    on delete cascade,
+  constraint writing_features_session_owner_fk
+    foreign key (entry_session_id, owner_user_id)
+    references public.entry_sessions(id, owner_user_id)
+    on delete cascade
+);
+
+create table if not exists public.cognitive_probe_features (
+  id uuid primary key default gen_random_uuid(),
+  owner_user_id uuid not null references auth.users(id) on delete cascade,
+  participant_id uuid not null references public.participants(id) on delete cascade,
+  entry_id uuid references public.entries(id) on delete cascade,
+  entry_session_id uuid references public.entry_sessions(id) on delete cascade,
+  probe_name text not null default 'first_recall_30',
+  journal_text_hash text not null,
+  recall_text_hash text not null,
+  feature_json jsonb not null default '{}'::jsonb,
+  pipeline_version text not null default 'cognitive-probe-v1',
+  created_at timestamptz not null default now(),
+  constraint cognitive_probe_features_participant_owner_fk
+    foreign key (participant_id, owner_user_id)
+    references public.participants(id, owner_user_id)
+    on delete cascade
+);
+
 create table if not exists public.entry_research_links (
   id uuid primary key default gen_random_uuid(),
   owner_user_id uuid not null references auth.users(id) on delete cascade,
@@ -315,6 +353,8 @@ create table if not exists public.export_jobs (
 
 create index if not exists entry_sessions_owner_participant_created_idx on public.entry_sessions(owner_user_id, participant_id, created_at desc);
 create index if not exists interaction_events_session_time_idx on public.interaction_events(entry_session_id, occurred_at);
+create index if not exists writing_features_owner_field_idx on public.writing_features(owner_user_id, participant_id, field_name, created_at desc);
+create index if not exists cognitive_probe_features_owner_probe_idx on public.cognitive_probe_features(owner_user_id, participant_id, probe_name, created_at desc);
 create index if not exists model_runs_owner_artifact_idx on public.model_runs(owner_user_id, participant_id, artifact_type, created_at desc);
 create index if not exists graph_versions_owner_participant_version_idx on public.graph_versions(owner_user_id, participant_id, version_index desc);
 create index if not exists graph_change_events_version_idx on public.graph_change_events(graph_version_id, change_type, entity_type);
@@ -364,6 +404,8 @@ alter table public.consent_records enable row level security;
 alter table public.entry_sessions enable row level security;
 alter table public.entry_fields enable row level security;
 alter table public.interaction_events enable row level security;
+alter table public.writing_features enable row level security;
+alter table public.cognitive_probe_features enable row level security;
 alter table public.entry_research_links enable row level security;
 alter table public.model_runs enable row level security;
 alter table public.extractions enable row level security;
@@ -381,6 +423,8 @@ create policy "consent_records_own_all" on public.consent_records for all to aut
 create policy "entry_sessions_own_all" on public.entry_sessions for all to authenticated using ((select auth.uid()) = owner_user_id) with check ((select auth.uid()) = owner_user_id);
 create policy "entry_fields_own_all" on public.entry_fields for all to authenticated using ((select auth.uid()) = owner_user_id) with check ((select auth.uid()) = owner_user_id);
 create policy "interaction_events_own_all" on public.interaction_events for all to authenticated using ((select auth.uid()) = owner_user_id) with check ((select auth.uid()) = owner_user_id);
+create policy "writing_features_own_all" on public.writing_features for all to authenticated using ((select auth.uid()) = owner_user_id) with check ((select auth.uid()) = owner_user_id);
+create policy "cognitive_probe_features_own_all" on public.cognitive_probe_features for all to authenticated using ((select auth.uid()) = owner_user_id) with check ((select auth.uid()) = owner_user_id);
 create policy "entry_research_links_own_all" on public.entry_research_links for all to authenticated using ((select auth.uid()) = owner_user_id) with check ((select auth.uid()) = owner_user_id);
 create policy "model_runs_own_all" on public.model_runs for all to authenticated using ((select auth.uid()) = owner_user_id) with check ((select auth.uid()) = owner_user_id);
 create policy "extractions_own_all" on public.extractions for all to authenticated using ((select auth.uid()) = owner_user_id) with check ((select auth.uid()) = owner_user_id);
@@ -398,6 +442,8 @@ grant select, insert, update, delete on public.consent_records to authenticated;
 grant select, insert, update, delete on public.entry_sessions to authenticated;
 grant select, insert, update, delete on public.entry_fields to authenticated;
 grant select, insert, update, delete on public.interaction_events to authenticated;
+grant select, insert, update, delete on public.writing_features to authenticated;
+grant select, insert, update, delete on public.cognitive_probe_features to authenticated;
 grant select, insert, update, delete on public.entry_research_links to authenticated;
 grant select, insert, update, delete on public.model_runs to authenticated;
 grant select, insert, update, delete on public.extractions to authenticated;
