@@ -38,21 +38,21 @@ const CATEGORY_LEGEND = [
 const MODE_COPY: Record<GraphMode, { label: string; title: string; description: string; canvasHint: string }> = {
   current: {
     label: "Snapshot",
-    title: "Typed Directed Multigraph",
-    description: "One snapshot rendered as typed vertices and directed predicate edges. Vertex color encodes ontology class; arrows encode predicate direction.",
-    canvasHint: "Typed directed multigraph · orbit / zoom / inspect",
+    title: "Current Entry Graph",
+    description: "A typed directed multigraph for the selected entry: nodes are extracted observations, categories are ontology types, and arrows show relation direction. Multiple relation types can connect the same pair.",
+    canvasHint: "Current entry graph · orbit / zoom / inspect",
   },
   temporal: {
     label: "Temporal",
-    title: "Layered Temporal Digraph",
-    description: "Snapshots are stacked as time layers on the Z-axis. Z position encodes date; XY position is layout-only for readability.",
-    canvasHint: "Layered temporal digraph · orbit / zoom / inspect",
+    title: "Time-Layered Graph",
+    description: "Entry graphs are stacked by day so changes can be inspected over time. Z position encodes chronology; XY position is a force layout for readability, not a measured psychological distance.",
+    canvasHint: "Time-layered graph · orbit / zoom / inspect",
   },
   concept: {
-    label: "Quotient",
-    title: "Concept Quotient Graph",
-    description: "Repeated entities with the same ontology class and label collapse into one recurrent concept vertex across snapshots.",
-    canvasHint: "Concept quotient graph · orbit / zoom / inspect",
+    label: "Concepts",
+    title: "Recurring Concept Graph",
+    description: "Repeated labels with the same ontology class are collapsed across entries. Larger nodes and thicker edges mean recurrence in the participant record, not clinical certainty.",
+    canvasHint: "Recurring concept graph · orbit / zoom / inspect",
   },
 };
 
@@ -296,6 +296,9 @@ export function GraphViewer3D({
             {graphData.nodes.length} entities · {graphData.links.length} predicates
           </span>
           <span className="rounded border border-slate-200 bg-white px-3 py-1">{modelLabel}</span>
+          <span className="rounded border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800">
+            Layout is visual; it is not diagnostic.
+          </span>
         </div>
       </div>
 
@@ -441,10 +444,23 @@ export function GraphViewer3D({
               Edge Semantics
             </div>
             <div className="mt-3 space-y-2 text-sm text-slate-600">
-              <p><strong>Arrow</strong> = predicate direction from source vertex to target vertex.</p>
-              <p><strong>Color</strong> = predicate type.</p>
-              <p><strong>Width</strong> = confidence in snapshot mode; recurrence in quotient mode.</p>
+              <p><strong>Arrow</strong> = extracted relation direction from source node to target node.</p>
+              <p><strong>Color</strong> = relation type such as causes, escalates, buffers, avoids, co-occurs, or precedes.</p>
+              <p><strong>Width</strong> = confidence in snapshot mode; recurrence in concept mode.</p>
               <p><strong>Length</strong> = layout-only, with no semantic value.</p>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white p-5">
+            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+              <Cpu className="h-4 w-4 text-cyan-600" />
+              Construction Pipeline
+            </div>
+            <div className="mt-3 space-y-2 text-sm text-slate-600">
+              <p><strong>1. Extract</strong> observations and candidate relations from submitted text.</p>
+              <p><strong>2. Validate</strong> them against BLESC ontology types and allowed relation labels.</p>
+              <p><strong>3. Store</strong> the graph snapshot with model, day, confidence, and temporal diff metadata.</p>
+              <p><strong>4. Render</strong> with a force layout. Only temporal Z-axis and concept recurrence are semantic; ordinary XY distance is visual.</p>
             </div>
           </div>
 
@@ -491,24 +507,36 @@ export function GraphViewer3D({
             <div className="mt-3 space-y-2 text-sm text-slate-600">
               {mode === "concept" ? (
                 <>
-                  <p>All snapshots are merged. Identical entity labels within the same ontology class collapse into one recurrent concept vertex.</p>
-                  <p><strong>Vertex size</strong> = concept recurrence across the participant record.</p>
-                  <p><strong>Edge thickness</strong> = predicate recurrence across entries.</p>
-                  <p>The result is a quotient graph, not a formal mathematical lattice.</p>
+                  <p>All snapshots are merged. Identical entity labels within the same ontology class collapse into one recurring concept node.</p>
+                  <p><strong>Node size</strong> = how often that concept appears across stored entries.</p>
+                  <p><strong>Edge thickness</strong> = how often that relation pattern appears.</p>
+                  <p>This is pattern evidence for reflection. It does not detect depression, suicide risk, anxiety, PTSD, ADHD, or any condition with clinical certainty.</p>
                   <p className="flex items-center gap-1 text-cyan-700 font-medium">
                     <Cpu className="h-3 w-3" /> More entries → richer ontology topology.
                   </p>
                 </>
               ) : (
                 <>
-                  <p>Vertices are extracted entities. Directed edges are predicates.</p>
+                  <p>Nodes are extracted observations: State, Trigger, Behavior, Event, and Protective factors.</p>
+                  <p>Directed edges are extracted relations between those observations.</p>
                   <p>Temporal mode uses Z-axis position for time layers; XY position is layout-only.</p>
                   <p>Edge length is layout-only and has no semantic value.</p>
                   <p>Drag is disabled to preserve a stable analytical layout.</p>
-                  <p>Switch to <strong>Quotient</strong> mode to see repeated concepts collapsed across entries.</p>
+                  <p>Switch to <strong>Concepts</strong> mode to see repeated concepts collapsed across entries.</p>
                 </>
               )}
               {usingFallback && <p className="text-rose-600">Debug fallback is active.</p>}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-5">
+            <div className="text-sm font-semibold uppercase tracking-[0.16em] text-amber-800">
+              Precision Boundary
+            </div>
+            <div className="mt-3 space-y-2 text-sm text-amber-900">
+              <p>The graph is precise as a structured record of extracted pattern evidence, not as a diagnosis.</p>
+              <p>Use confidence, recurrence, source day, and relation type together. A single node or edge should not be treated as proof.</p>
+              <p>Improving precision means adding reviewed examples, tighter ontology rules, source-span evidence, and human review for high-risk interpretations.</p>
             </div>
           </div>
         </aside>

@@ -67,6 +67,14 @@ AUDIO_CONTENT_TYPES = {
     "video/webm",
 }
 
+TRANSCRIPTION_SAFE_ERRORS = {
+    "AuthenticationError",
+    "BadRequestError",
+    "NotFoundError",
+    "PermissionDeniedError",
+    "RateLimitError",
+}
+
 allowed_origins = [
     origin.strip()
     for origin in os.getenv("CORS_ALLOW_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
@@ -149,10 +157,14 @@ def _audio_extension(filename: Optional[str]) -> str:
     return "." + filename.rsplit(".", 1)[-1].lower()
 
 
+def _audio_content_type(content_type: Optional[str]) -> str:
+    return (content_type or "").split(";", 1)[0].strip().lower()
+
+
 @app.post("/api/audio/transcriptions")
 async def transcribe_audio(file: UploadFile = File(...)):
     extension = _audio_extension(file.filename)
-    content_type = (file.content_type or "").lower()
+    content_type = _audio_content_type(file.content_type)
     if extension not in AUDIO_EXTENSIONS and content_type not in AUDIO_CONTENT_TYPES:
         raise HTTPException(
             status_code=415,
@@ -186,8 +198,14 @@ async def transcribe_audio(file: UploadFile = File(...)):
             prompt="Transcribe the student's spoken reflection accurately. Preserve Japanese or English as spoken.",
         )
     except Exception as exc:
-        logger.exception("[audio] transcription failed")
-        raise HTTPException(status_code=502, detail="Audio transcription failed.") from exc
+        error_type = exc.__class__.__name__
+        logger.exception("[audio] transcription failed type=%s", error_type)
+        expose_safe_errors = os.getenv("OPENAI_TRANSCRIPTION_EXPOSE_SAFE_ERRORS", "true").lower() == "true"
+        if expose_safe_errors or error_type in TRANSCRIPTION_SAFE_ERRORS:
+            detail = f"Audio transcription failed at provider: {error_type}."
+        else:
+            detail = "Audio transcription failed at provider."
+        raise HTTPException(status_code=502, detail=detail) from exc
 
     text = getattr(transcription, "text", "") or ""
     logger.info("[audio] transcription completed chars=%s model=%s", len(text), model)

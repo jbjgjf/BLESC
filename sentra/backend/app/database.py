@@ -1,9 +1,11 @@
-from sqlmodel import SQLModel, create_engine, Session
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import text
 import os
+from pathlib import Path
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sentra.db")
+from sqlalchemy import text
+from sqlmodel import SQLModel, create_engine, Session
+
+DEFAULT_SQLITE_PATH = Path(__file__).resolve().parents[1] / "sentra.db"
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_SQLITE_PATH}")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 

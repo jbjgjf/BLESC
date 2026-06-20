@@ -239,7 +239,7 @@ export class ApiClient {
       } catch {
         // Keep status text if the response is not JSON.
       }
-      throw new Error(`Audio transcription failed: ${detail}`);
+      throw new Error(`Audio transcription failed (${res.status}): ${detail}`);
     }
     return res.json();
   }
@@ -832,9 +832,9 @@ export class ApiClient {
           pipeline_version: recall.pipeline_version,
           status: recall.status,
         });
-        if (error) console.warn("[conversation_recall_30] Supabase mirror skipped", error);
+        if (error) console.info("[conversation_recall_30] Supabase mirror skipped", error);
       } catch (err) {
-        console.warn("[conversation_recall_30] Supabase mirror failed", err);
+        console.info("[conversation_recall_30] Supabase mirror failed", err);
       }
     }
 
@@ -859,6 +859,27 @@ export class ApiClient {
 
     if (error) throwSupabaseError("Load conversation recall failed", error);
     return data ? toConversationRecall(data as unknown as ConversationRecallSummaryRow) : null;
+  }
+
+  static async getConversationRecallWithFallback(userId: string, refresh = false): Promise<ConversationRecallSummary> {
+    try {
+      const mirrored = await this.getMirroredConversationRecall(userId);
+      if (mirrored && !refresh) {
+        console.info("[conversation_recall_30] source=supabase_mirror", {
+          status: mirrored.status,
+          turns: mirrored.window_turn_count,
+        });
+        return mirrored;
+      }
+    } catch (err) {
+      console.info("[conversation_recall_30] Supabase mirror unavailable; using backend", err);
+    }
+    const backend = await this.getConversationRecall(userId, refresh);
+    console.info("[conversation_recall_30] source=backend", {
+      status: backend.status,
+      turns: backend.window_turn_count,
+    });
+    return backend;
   }
 
   static async getTimeline(userId: string): Promise<AnomalyResult[]> {

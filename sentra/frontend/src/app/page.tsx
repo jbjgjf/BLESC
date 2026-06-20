@@ -225,12 +225,7 @@ export default function Home() {
 
   const loadConversationRecall = useCallback(async () => {
     try {
-      const mirrored = await ApiClient.getMirroredConversationRecall(userId);
-      if (mirrored) {
-        setConversationRecall(mirrored);
-        return;
-      }
-      const data = await ApiClient.getConversationRecall(userId);
+      const data = await ApiClient.getConversationRecallWithFallback(userId);
       setConversationRecall(data);
     } catch (err) {
       console.warn("[conversation_recall_30] load failed", err);
@@ -341,18 +336,40 @@ export default function Home() {
     }
   };
 
+  const recordTranscriptInteraction = (fieldName: "journal_entry" | "first_recall_30", nextValue: string, previousValue: string) => {
+    const now = Date.now();
+    const metrics = ensureFieldMetrics(fieldName);
+    if (!metrics.first_input_at) metrics.first_input_at = new Date(now).toISOString();
+    metrics.last_input_at = new Date(now).toISOString();
+    metrics.input_count += 1;
+    metrics.revision_count += 1;
+    telemetryRef.current.lastInputAtMs[fieldName] = now;
+    telemetryRef.current.previousLength[fieldName] = nextValue.length;
+    if (!telemetryRef.current.fieldOrder.includes(fieldName)) telemetryRef.current.fieldOrder.push(fieldName);
+    recordInteraction(fieldName, "voice_transcript", nextValue.length, null, null, {
+      source: "openai_transcription",
+      inserted_chars: nextValue.length - previousValue.length,
+    });
+  };
+
   const insertTranscript = (target: "journal" | "recall" | "chat", text: string) => {
     const append = (current: string) => [current.trim(), text.trim()].filter(Boolean).join(current.trim() ? "\n" : "");
-    if (target === "chat") setChatText(append);
+    if (target === "chat") {
+      setChatText((current) => append(current));
+    }
     if (target === "recall") {
-      const nextValue = append(recallText);
-      setRecallText(nextValue);
-      recordInteraction("first_recall_30", "voice_transcript", nextValue.length, null, null, { source: "openai_transcription" });
+      setRecallText((current) => {
+        const nextValue = append(current);
+        recordTranscriptInteraction("first_recall_30", nextValue, current);
+        return nextValue;
+      });
     }
     if (target === "journal") {
-      const nextValue = append(journalText);
-      setJournalText(nextValue);
-      recordInteraction("journal_entry", "voice_transcript", nextValue.length, null, null, { source: "openai_transcription" });
+      setJournalText((current) => {
+        const nextValue = append(current);
+        recordTranscriptInteraction("journal_entry", nextValue, current);
+        return nextValue;
+      });
     }
   };
 
@@ -682,6 +699,24 @@ export default function Home() {
               : "Conversation summary has not been calculated yet."
             }
           </p>
+          <Link
+            href="/recall"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-4 inline-flex items-center gap-2 rounded-md px-4 py-2 text-xs font-semibold transition-all"
+            style={{
+              ...displayFont,
+              border: "1px solid var(--gold)",
+              color: "var(--ink)",
+              backgroundColor: "rgba(167,139,250,0.12)",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              textDecoration: "none",
+            }}
+          >
+            Open 30-Turn Recall Workspace
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
         </div>
         <form onSubmit={handleChatSubmit} className="px-7 py-5 space-y-3">
           <textarea
