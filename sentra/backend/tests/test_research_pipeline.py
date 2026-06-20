@@ -247,7 +247,7 @@ def test_audio_transcription_validates_uploads_and_fails_safely_without_openai_k
             files={"file": ("voice.webm", b"not-real-audio", "audio/webm")},
         )
         assert missing_key.status_code == 503
-        assert missing_key.json()["detail"] == "OpenAI transcription is not configured."
+        assert missing_key.json()["detail"] == "Voice transcription is not configured. Set OPENAI_API_KEY and ensure USE_MOCK_LLM is not true."
 
 
 def test_reflection_signal_requires_real_baseline_history_and_changes_with_data():

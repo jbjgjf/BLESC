@@ -3,11 +3,13 @@ import io
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import Body, Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
+from dotenv import load_dotenv
 from pydantic import BaseModel
 from sqlmodel import Session, select, func
 
@@ -50,6 +52,10 @@ from .services.research_pipeline import (
 from .services.static_knowledge import get_or_create_blesc_vector_store, static_knowledge_config
 
 logger = logging.getLogger(__name__)
+
+_ENV_DIR = Path(__file__).resolve().parents[1]
+load_dotenv(_ENV_DIR / ".env.local")
+load_dotenv(_ENV_DIR / ".env")
 
 app = FastAPI(title="Sentra API")
 
@@ -178,7 +184,10 @@ async def transcribe_audio(file: UploadFile = File(...)):
         raise HTTPException(status_code=413, detail="Audio file is too large.")
     if not _has_openai_key():
         logger.info("[audio] transcription blocked: OPENAI_API_KEY unavailable or mock mode active")
-        raise HTTPException(status_code=503, detail="OpenAI transcription is not configured.")
+        raise HTTPException(
+            status_code=503,
+            detail="Voice transcription is not configured. Set OPENAI_API_KEY and ensure USE_MOCK_LLM is not true.",
+        )
 
     model = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe")
     logger.info(

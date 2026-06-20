@@ -177,3 +177,135 @@ summary::-webkit-details-marker { display: none; }
   color: var(--ink);
 }
 
+.voice-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 8.75rem;
+}
+
+.voice-orb {
+  position: relative;
+  display: inline-flex;
+  width: 4rem;
+  height: 4rem;
+  flex: 0 0 4rem;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 9999px;
+  background: #0a84ff;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.16) inset,
+    0 12px 28px rgba(10, 132, 255, 0.28);
+  transition: transform 160ms ease, background-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.voice-orb:hover:not(:disabled) {
+  transform: translateY(-1px) scale(1.02);
+  background: #2596ff;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.2) inset,
+    0 16px 34px rgba(10, 132, 255, 0.34);
+}
+
+.voice-orb:focus-visible {
+  outline: 2px solid #9fd0ff;
+  outline-offset: 4px;
+}
+
+.voice-orb:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.voice-orb[data-state="recording"] {
+  background: #0a84ff;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.18) inset,
+    0 0 0 8px rgba(10, 132, 255, 0.16),
+    0 18px 38px rgba(10, 132, 255, 0.38);
+}
+
+.voice-orb[data-state="error"] {
+  background: var(--sienna);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.12) inset,
+    0 12px 26px rgba(225, 29, 72, 0.26);
+}
+
+.voice-orb__halo {
+  position: absolute;
+  inset: -0.5rem;
+  border-radius: inherit;
+  border: 1px solid rgba(10, 132, 255, 0.28);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.voice-orb[data-state="recording"] .voice-orb__halo,
+.voice-orb[data-state="transcribing"] .voice-orb__halo,
+.voice-orb[data-state="permission"] .voice-orb__halo {
+  animation: voice-pulse 1.5s ease-out infinite;
+  opacity: 1;
+}
+
+.voice-orb__core {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voice-input__label {
+  max-width: 12rem;
+  color: var(--ink-faint);
+  font-size: 0.76rem;
+  font-style: italic;
+  line-height: 1.25;
+}
+
+.voice-input__label[data-state="recording"],
+.voice-input__label[data-state="transcribing"],
+.voice-input__label[data-state="permission"] {
+  color: #9fd0ff;
+}
+
+.voice-input__label[data-state="error"] {
+  color: var(--sienna);
+}
+
+@keyframes voice-pulse {
+  0% {
+    transform: scale(0.84);
+    opacity: 0.56;
+  }
+  72% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .voice-input {
+    gap: 0.6rem;
+    min-width: 0;
+  }
+
+  .voice-orb {
+    width: 3.5rem;
+    height: 3.5rem;
+    flex-basis: 3.5rem;
+  }
+
+  .voice-input__label {
+    max-width: 9rem;
+  }
+}

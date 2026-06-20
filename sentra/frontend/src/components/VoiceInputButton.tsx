@@ -14,10 +14,27 @@ type VoiceInputButtonProps = {
 
 function preferredMimeType() {
   if (typeof MediaRecorder === "undefined") return "";
-  for (const type of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]) {
+  for (const type of ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"]) {
     if (MediaRecorder.isTypeSupported(type)) return type;
   }
   return "";
+}
+
+function voiceErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "Voice input failed.";
+  if (message.includes("503") || message.includes("not configured") || message.includes("USE_MOCK_LLM")) {
+    return "Voice transcription is not configured on the server.";
+  }
+  if (message.includes("401") || message.includes("AuthenticationError")) {
+    return "OpenAI authentication failed for voice transcription.";
+  }
+  if (message.includes("429") || message.includes("RateLimitError")) {
+    return "Voice transcription is rate limited. Try again shortly.";
+  }
+  if (message.includes("415") || message.includes("Unsupported audio format")) {
+    return "This browser recorded an unsupported audio format.";
+  }
+  return message.replace(/^Audio transcription failed/, "Voice transcription failed");
 }
 
 export function VoiceInputButton({ disabled = false, onTranscript, onStatusChange }: VoiceInputButtonProps) {
@@ -78,7 +95,7 @@ export function VoiceInputButton({ disabled = false, onTranscript, onStatusChang
           if (result.text.trim()) onTranscript(result.text.trim());
           setVoiceState("ready");
         } catch (err) {
-          setError(err instanceof Error ? err.message : "Transcription failed.");
+          setError(voiceErrorMessage(err));
           setVoiceState("error");
         }
       };
@@ -101,29 +118,37 @@ export function VoiceInputButton({ disabled = false, onTranscript, onStatusChang
 
   const busy = state === "permission" || state === "stopping" || state === "transcribing";
   const recording = state === "recording";
+  const label =
+    state === "recording"
+      ? "Listening"
+      : state === "transcribing"
+        ? "Transcribing"
+        : state === "permission"
+          ? "Allow microphone"
+          : state === "ready"
+            ? "Transcript inserted"
+            : state === "error"
+              ? error ?? "Voice input failed"
+              : "Voice";
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="voice-input">
       <button
         type="button"
         disabled={disabled || busy}
         onClick={recording ? stopRecording : startRecording}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-md transition-all disabled:cursor-not-allowed"
+        className="voice-orb"
+        data-state={state}
         title={recording ? "Stop recording" : "Record voice"}
-        style={{
-          border: "1px solid var(--limestone)",
-          backgroundColor: recording ? "var(--terracotta)" : "var(--ivory-warm)",
-          color: recording ? "#ffffff" : "var(--ink)",
-        }}
+        aria-label={recording ? "Stop voice recording" : "Start voice recording"}
       >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+        <span className="voice-orb__halo" aria-hidden="true" />
+        <span className="voice-orb__core">
+          {busy ? <Loader2 className="h-6 w-6 animate-spin" /> : recording ? <Square className="h-5 w-5" /> : <Mic className="h-6 w-6" />}
+        </span>
       </button>
-      <span className="text-xs" style={{ color: state === "error" ? "var(--sienna)" : "var(--ink-faint)", fontStyle: "italic" }}>
-        {state === "recording" && "Recording"}
-        {state === "transcribing" && "Transcribing"}
-        {state === "permission" && "Allow microphone"}
-        {state === "ready" && "Transcript inserted"}
-        {state === "error" && (error ?? "Voice input failed")}
+      <span className="voice-input__label" data-state={state} aria-live="polite">
+        {label}
       </span>
     </div>
   );
