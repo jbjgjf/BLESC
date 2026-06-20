@@ -211,12 +211,17 @@ function toConversationRecall(row: ConversationRecallSummaryRow): ConversationRe
 
 export class ApiClient {
   static async fetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const { data } = await supabase.auth.getSession();
+    const headers = new Headers(options.headers);
+    if (!headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+    if (data.session?.access_token && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${data.session.access_token}`);
+    }
     const res = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
+      headers,
     });
     if (!res.ok) {
       throw new Error(`API Error: ${res.statusText}`);
