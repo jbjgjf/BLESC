@@ -12,10 +12,12 @@ from sqlmodel import Session, select
 
 from app.database import engine
 from app.main import app
+from app.schemas.entry import Entry
 from app.schemas.research import (
     ChatMessage,
     ChatSession,
     ConsentRecord,
+    ConversationMemoryObject,
     ConversationRecallSummary,
     CognitiveProbeFeature,
     EntryEmbedding,
@@ -26,8 +28,11 @@ from app.schemas.research import (
     LongitudinalFeature,
     LongitudinalPattern,
     ModelRun,
+    RetrievalEvent,
     WritingFeature,
 )
+from app.schemas.structured import GraphSnapshot
+from app.services.research_pipeline import analyze_conversation_recall_30, record_graph_version, search_relevant_memory_objects, search_similar_graph_patterns, stable_hash
 
 
 def teardown_module():
@@ -551,3 +556,174 @@ def test_research_exports_are_deidentified_and_written_in_all_formats():
                 assert "participant_code" not in chat_messages.columns
                 assert "content_redacted" not in chat_messages.columns
                 assert "content_redacted_hash" in chat_messages.columns
+
+
+def test_conversation_recall_produces_multiple_reusable_memory_objects():
+    user_id = "test_memory_object_user"
+    participant = user_id
+    topics = [
+        "I have been so anxious about my upcoming exam deadline, it is stressing me out.",
+        "I have not been sleeping well at all lately, waking up every night.",
+        "My friend invited me for a walk and it actually helped me feel calmer.",
+        "The exam deadline pressure is still there, I keep thinking about it.",
+        "Walking with my friend again today, it really helps me relax.",
+        "Another rough night of barely sleeping, I feel exhausted.",
+    ]
+    with Session(engine) as session:
+        chat_session = ChatSession(user_id=user_id, participant_code=participant, consent_snapshot_json={})
+        session.add(chat_session)
+        session.commit()
+        session.refresh(chat_session)
+        for index, text in enumerate(topics):
+            session.add(
+                ChatMessage(
+                    chat_session_id=chat_session.id,
+                    role="user",
+                    content_hash=f"mem-hash-{index}",
+                    content_redacted=text,
+                    evidence_refs_json=[],
+                )
+            )
+            session.add(
+                ChatMessage(
+                    chat_session_id=chat_session.id,
+                    role="assistant",
+                    content_hash=f"mem-hash-ack-{index}",
+                    content_redacted="I hear you, thanks for sharing that.",
+                    evidence_refs_json=[],
+                )
+            )
+        session.commit()
+
+        result = analyze_conversation_recall_30(session, user_id, participant)
+        assert result["status"] == "completed"
+        memory_objects = result["memory_objects"]
+        # one blob per window is the old, weak behavior -- this must produce
+        # several discrete, individually-scored objects instead.
+        assert len(memory_objects) > 1
+
+        all_source_ids = [source_id for obj in memory_objects for source_id in obj["source_message_ids"]]
+        assert len(all_source_ids) == len(set(all_source_ids)), "segments must not overlap"
+
+        for obj in memory_objects:
+            assert 0.0 <= obj["importance_score"] <= 1.0
+            assert 0.0 <= obj["confidence_score"] <= 1.0
+            assert obj["embedding_status"] == "pending_no_openai_key"  # USE_MOCK_LLM=true in this test env
+            assert set(obj["score_breakdown"]["components"].keys()) == {
+                "tone_intensity", "has_open_loop", "specificity", "crisis_or_safety_flag",
+            }
+
+        recurring = [obj for obj in memory_objects if obj["recurrence_count"] > 0]
+        assert recurring, "at least one repeated topic (exam deadline / walk with friend) should recur"
+
+        stored_rows = session.exec(
+            select(ConversationMemoryObject).where(
+                ConversationMemoryObject.user_id == user_id,
+                ConversationMemoryObject.participant_code == participant,
+            )
+        ).all()
+        assert len(stored_rows) == len(memory_objects)
+
+
+def test_search_similar_graph_patterns_traverses_and_explains_hybrid_score():
+    user_id = "test_graph_rag_user"
+    with Session(engine) as session:
+        base_nodes = [
+            {"id": "n1", "category": "Trigger", "label": "deadline pressure", "confidence": 0.9, "intensity": 0.7},
+            {"id": "n2", "category": "State", "label": "anxiety spike", "confidence": 0.8, "intensity": 0.6},
+        ]
+        base_relations = [
+            {"source_id": "n1", "target_id": "n2", "type": "escalates", "confidence": 0.85},
+        ]
+        for day_offset in range(4):
+            entry = Entry(user_id=user_id, observation_type="daily")
+            session.add(entry)
+            session.commit()
+            session.refresh(entry)
+            snapshot = GraphSnapshot(
+                entry_id=entry.id,
+                user_id=user_id,
+                day=datetime(2026, 6, 1 + day_offset).date(),
+                nodes_json=base_nodes,
+                relations_json=base_relations,
+                graph_summary_json={"summary": f"day {day_offset}"},
+                temporal_diff_json={},
+            )
+            session.add(snapshot)
+            session.commit()
+            session.refresh(snapshot)
+            record_graph_version(session, user_id, user_id, entry, snapshot)
+
+        results = search_similar_graph_patterns(session, user_id, user_id, query="deadline pressure anxiety", limit=5)
+        assert results, "expected at least one ranked graph node for a matching query"
+        assert results[0]["retrieval_mode"] == "graph_semantic_v2"
+
+        breakdown = results[0]["score_breakdown"]["components"]
+        assert set(breakdown.keys()) == {
+            "semantic_similarity", "graph_distance_score", "confidence",
+            "recency_score", "recurrence_score", "linked_memory_importance",
+        }
+        # the motif repeated across 4 days, so the matched node's occurrence_count
+        # (surfaced via "seen Nx" in the summary) must reflect that recurrence.
+        assert any("seen 4x" in result["summary"] for result in results)
+        assert any(result["key_relations"] for result in results), "the escalates edge should surface as a key relation"
+
+
+def test_search_relevant_memory_objects_round_trips_through_sqlite_json_storage():
+    # Regression test: search_relevant_memory_objects persists its results onto a
+    # RetrievalEvent.result_refs_json column. _memory_object_to_dict previously
+    # returned raw datetime objects for created_at/updated_at/last_reinforced_at,
+    # which SQLite's JSON column serializer cannot encode -- this only surfaced
+    # once real memory objects existed to be retrieved (an empty-results call
+    # never hits the serializer), so it slipped past tests that ran before any
+    # memory objects existed. This seeds memory objects first, then asserts the
+    # retrieval event actually round-trips through the DB's JSON column.
+    user_id = "test_memory_retrieval_user"
+    participant = user_id
+    with Session(engine) as session:
+        chat_session = ChatSession(user_id=user_id, participant_code=participant, consent_snapshot_json={})
+        session.add(chat_session)
+        session.commit()
+        session.refresh(chat_session)
+        texts = [
+            "I have been anxious about my exam deadline, it is stressing me out.",
+            "I hear that, exams can feel overwhelming.",
+            "The exam deadline pressure is still there honestly.",
+            "That sounds tough, deadlines pile up fast.",
+            "My friend invited me for a walk and it helped me feel calmer.",
+            "It is great that your friend supported you like that.",
+        ]
+        for index, text in enumerate(texts):
+            session.add(
+                ChatMessage(
+                    chat_session_id=chat_session.id,
+                    role="user" if index % 2 == 0 else "assistant",
+                    content_hash=f"retrieval-hash-{index}",
+                    content_redacted=text,
+                    evidence_refs_json=[],
+                )
+            )
+        session.commit()
+
+        recall_result = analyze_conversation_recall_30(session, user_id, participant)
+        assert recall_result["status"] == "completed"
+        assert recall_result["memory_objects"], "expected memory objects to exist before exercising retrieval"
+
+        results = search_relevant_memory_objects(session, user_id, participant, query="exam deadline anxiety", limit=5)
+        assert isinstance(results, list)
+
+        latest_event = session.exec(
+            select(RetrievalEvent)
+            .where(
+                RetrievalEvent.user_id == user_id,
+                RetrievalEvent.participant_code == participant,
+            )
+            .order_by(RetrievalEvent.created_at.desc())
+            .limit(1)
+        ).first()
+        assert latest_event is not None
+        # Forces SQLite to actually decode the stored JSON column back out --
+        # this is exactly the round trip that raised TypeError before the fix.
+        assert isinstance(latest_event.result_refs_json, list)
+        for ref in latest_event.result_refs_json:
+            assert isinstance(ref.get("created_at"), str) or ref.get("created_at") is None

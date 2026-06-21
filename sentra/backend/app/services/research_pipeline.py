@@ -17,6 +17,35 @@ from dotenv import load_dotenv
 from sqlmodel import Session, func, select
 
 from ..analytics.graph_features import build_temporal_graph_diff
+from ..analytics.graph_index import (
+    GRAPH_INDEX_VERSION,
+    hybrid_rank as graph_hybrid_rank,
+    node_key as graph_node_key,
+    recency_score,
+    traverse_graph,
+    upsert_graph_index,
+)
+from ..analytics.memory_objects import (
+    MEMORY_OBJECT_VERSION,
+    NEGATIVE_TONE_TERMS,
+    PriorMemoryObject,
+    PROTECTIVE_TONE_TERMS,
+    RecallMessage,
+    TOPIC_STOPWORDS,
+    build_summary as build_memory_summary,
+    build_topic_label,
+    cosine_similarity as memory_cosine_similarity,
+    detect_contradictions,
+    effective_importance,
+    emotional_tone,
+    find_duplicate,
+    jaccard as memory_jaccard,
+    score_confidence as score_memory_confidence,
+    score_importance,
+    score_recurrence,
+    segment_window,
+    topic_tokens as memory_topic_tokens,
+)
 from ..analytics.pattern_mining import (
     PATTERN_MINING_VERSION,
     mine_feature_trends,
@@ -32,6 +61,7 @@ from ..schemas.extraction import Extraction
 from ..schemas.research import (
     ChatMessage,
     ChatSession,
+    ConversationMemoryObject,
     ConversationRecallSummary,
     ConsentRecord,
     CognitiveProbeFeature,
@@ -41,6 +71,8 @@ from ..schemas.research import (
     EvalExample,
     ExportJob,
     GraphChangeEvent,
+    GraphEdge,
+    GraphNode,
     GraphVersion,
     InteractionEvent,
     LongitudinalFeature,
@@ -68,7 +100,7 @@ DEFAULT_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-
 DEFAULT_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL") or os.getenv("LLM_MODEL_NAME", "gpt-4.1-mini")
 CHAT_PROMPT_VERSION = "sentra-research-chat-v1"
 CHAT_SCHEMA_VERSION = "sentra-chat-grounded-answer-v1"
-GRAPH_RAG_VERSION = "sentra-graph-rag-v1"
+GRAPH_RAG_VERSION = "sentra-graph-rag-v2"
 SEMANTIC_RAG_VERSION = "sentra-semantic-rag-v2"
 PATTERN_RAG_VERSION = "sentra-pattern-rag-v1"
 STATIC_KNOWLEDGE_RAG_VERSION = "blesc-static-knowledge-rag-v1"
@@ -89,20 +121,11 @@ RAW_TEXT_EXPORT_KEYS = {
     "transcript",
 }
 IDENTIFIER_EXPORT_KEYS = {"user_id", "participant_code", "owner_user_id", "participant_id"}
-TOPIC_STOPWORDS = {
-    "about", "after", "again", "also", "and", "are", "because", "before", "but", "can", "could", "does",
-    "from", "have", "how", "into", "just", "like", "maybe", "more", "not", "please", "that", "the",
-    "then", "there", "this", "what", "when", "with", "would", "your", "you", "yourself", "です", "ます",
-    "した", "して", "こと", "それ", "これ", "ある", "いる", "ない", "よう", "から", "ですか",
-}
-NEGATIVE_TONE_TERMS = {
-    "anxious", "anxiety", "bad", "deadline", "fear", "hard", "hopeless", "lonely", "panic", "sad",
-    "scared", "stress", "stuck", "tired", "worried", "不安", "怖い", "悲しい", "孤独", "疲れ", "つらい",
-}
-PROTECTIVE_TONE_TERMS = {
-    "better", "calm", "friend", "help", "helped", "plan", "safe", "sleep", "support", "walk",
-    "安心", "友達", "助け", "相談", "休む", "安全", "睡眠",
-}
+# TOPIC_STOPWORDS / NEGATIVE_TONE_TERMS / PROTECTIVE_TONE_TERMS now live in
+# analytics/memory_objects.py (single source of truth, imported above) so the
+# conversation-memory-object scoring and the legacy tone/topic helpers below
+# can't drift apart.
+RECALL_RECURRENCE_LOOKBACK = int(os.getenv("SENTRA_RECALL_RECURRENCE_LOOKBACK", "200"))
 
 
 def stable_hash(value: Any) -> str:
@@ -623,6 +646,20 @@ def record_graph_version(
         )
         session.add(event)
     session.commit()
+
+    try:
+        upsert_graph_index(
+            session,
+            user_id=user_id,
+            participant_code=participant_code,
+            nodes=graph_version.nodes_json or [],
+            relations=graph_version.relations_json or [],
+            day=graph_snapshot.day,
+            embed_fn=_embed_for_graph_index,
+        )
+    except Exception:
+        logger.exception("[research] graph_nodes/graph_edges upsert failed")
+
     return graph_version
 
 
@@ -633,6 +670,11 @@ def _generate_embedding(content: str, model: str = DEFAULT_EMBEDDING_MODEL) -> t
         return [], "pending_no_openai_key"
     response = _openai_client().embeddings.create(model=model, input=content)
     return list(response.data[0].embedding), "generated"
+
+
+def _embed_for_graph_index(content: str) -> Tuple[List[float], str, str]:
+    vector, status = _generate_embedding(content)
+    return vector, DEFAULT_EMBEDDING_MODEL, status
 
 
 def record_entry_embeddings(
@@ -843,42 +885,70 @@ def search_similar_embeddings(
     return scored
 
 
-def _seed_graph_signatures(
-    session: Session,
-    semantic_evidence: List[Dict[str, Any]],
-) -> Set[str]:
-    seed_patterns: Set[str] = set()
-    for evidence in semantic_evidence:
-        graph_snapshot = _latest_graph_for_entry(session, evidence.get("entry_id"))
-        if not graph_snapshot:
-            continue
-        signature = _graph_signature(graph_snapshot.nodes_json or [], graph_snapshot.relations_json or [])
-        seed_patterns.update(signature["relation_patterns"])
-    return seed_patterns
+def _node_brief_from_row(node: GraphNode) -> Dict[str, Any]:
+    return {
+        "id": node.id,
+        "node_key": node.node_key,
+        "category": node.category,
+        "label": node.label,
+        "intensity": node.intensity,
+        "confidence": node.confidence,
+        "occurrence_count": node.occurrence_count,
+        "last_seen_day": node.last_seen_day.isoformat() if node.last_seen_day else None,
+    }
 
 
-def _score_graph_snapshot(
-    graph_snapshot: GraphSnapshot,
+def _relation_brief_from_row(edge: GraphEdge, nodes_by_id: Dict[int, GraphNode]) -> Dict[str, Any]:
+    source = nodes_by_id.get(edge.source_node_id)
+    target = nodes_by_id.get(edge.target_node_id)
+    return {
+        "source": source.label if source else str(edge.source_node_id),
+        "source_category": source.category if source else None,
+        "target": target.label if target else str(edge.target_node_id),
+        "target_category": target.category if target else None,
+        "type": edge.relation_type,
+        "confidence": edge.mean_confidence,
+        "occurrence_count": edge.occurrence_count,
+    }
+
+
+def _semantic_node_seeds(
+    nodes: List[GraphNode],
+    query_vector: List[float],
     query_terms: Set[str],
-    seed_patterns: Set[str],
-) -> Tuple[float, List[str], Dict[str, Set[str]]]:
-    nodes = graph_snapshot.nodes_json or []
-    relations = graph_snapshot.relations_json or []
-    signature = _graph_signature(nodes, relations)
-    term_overlap = query_terms.intersection(signature["all_terms"])
-    pattern_overlap = seed_patterns.intersection(signature["relation_patterns"])
-    score = float(len(term_overlap)) + (2.5 * len(pattern_overlap))
-    reasons: List[str] = []
-    if term_overlap:
-        reasons.append(f"query_terms:{','.join(sorted(term_overlap)[:6])}")
-    if pattern_overlap:
-        reasons.append(f"relation_patterns:{len(pattern_overlap)}")
-    if not reasons and relations:
-        relation_types = sorted(signature["relation_terms"].intersection({"causes", "escalates", "buffers", "avoids", "co_occurs", "precedes"}))
-        if relation_types and query_terms.intersection({"pattern", "patterns", "構造", "関係", "前回", "いつ"}):
-            score += 0.5
-            reasons.append(f"available_relation_types:{','.join(relation_types[:4])}")
-    return score, reasons, signature
+    top_k: int = 8,
+) -> List[int]:
+    """Seed nodes for traversal: semantic similarity when an embedding is
+    available, plus a lexical fallback (query terms vs. label/category tokens)
+    so seeding still works with no OpenAI key configured."""
+    scored: List[Tuple[int, float]] = []
+    for node in nodes:
+        semantic = memory_cosine_similarity(query_vector, node.vector_json) if query_vector and node.vector_json else 0.0
+        token_overlap = len(query_terms.intersection(_tokenize(node.label) | _tokenize(node.category)))
+        if semantic <= 0 and token_overlap <= 0:
+            continue
+        scored.append((node.id, semantic + 0.2 * token_overlap))
+    scored.sort(key=lambda item: item[1], reverse=True)
+    return [node_id for node_id, _ in scored[:top_k]]
+
+
+def _linked_memory_importance(
+    label_tokens: Set[str],
+    memory_objects: List[ConversationMemoryObject],
+    now: datetime,
+) -> float:
+    """The hybrid-ranking bridge between Graph RAG and 30-turn recall: a node
+    that shares topic tokens with a recalled (non-merged, non-superseded)
+    memory object inherits that memory's decayed importance."""
+    best = 0.0
+    for obj in memory_objects:
+        if obj.merged_into_id or obj.contradiction_status == "superseded":
+            continue
+        obj_tokens = set(memory_topic_tokens(f"{obj.topic} {obj.summary}"))
+        if memory_jaccard(label_tokens, obj_tokens) < 0.3:
+            continue
+        best = max(best, effective_importance(obj.importance_score, now, obj.last_reinforced_at))
+    return best
 
 
 def search_similar_graph_patterns(
@@ -889,38 +959,95 @@ def search_similar_graph_patterns(
     limit: int = 5,
     semantic_evidence: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    query_terms = _tokenize(query)
-    seed_patterns = _seed_graph_signatures(session, semantic_evidence or [])
-    snapshots = session.exec(
-        select(GraphSnapshot)
-        .where(GraphSnapshot.user_id == user_id)
-        .order_by(GraphSnapshot.day.desc(), GraphSnapshot.created_at.desc())
-        .limit(250)
-    ).all()
-    scored: List[Tuple[GraphSnapshot, float, List[str]]] = []
-    for snapshot in snapshots:
-        score, reasons, _signature = _score_graph_snapshot(snapshot, query_terms, seed_patterns)
-        if score > 0:
-            scored.append((snapshot, score, reasons))
+    """
+    Semantic + bounded-traversal + hybrid-ranked retrieval over the normalized
+    graph_nodes/graph_edges index (analytics/graph_index.py), replacing the old
+    full-snapshot token-overlap scan over up to 250 GraphSnapshot rows.
 
-    scored = sorted(scored, key=lambda item: (item[1], item[0].day), reverse=True)[:limit]
+    `semantic_evidence` is accepted for call-site/back-compat parity (and kept
+    in the signature so `build_research_retrieval_context` doesn't change its
+    call), but seeding now comes directly from semantic + lexical node matches
+    rather than from semantic_evidence's entry-level graph snapshots.
+    """
+    query_terms = _tokenize(query)
+    try:
+        query_vector, _status = _generate_embedding(query)
+    except Exception:
+        query_vector = []
+
+    nodes = session.exec(
+        select(GraphNode).where(GraphNode.user_id == user_id, GraphNode.participant_code == participant_code)
+    ).all()
+    edges = session.exec(
+        select(GraphEdge).where(GraphEdge.user_id == user_id, GraphEdge.participant_code == participant_code)
+    ).all()
+    nodes_by_id = {node.id: node for node in nodes}
+    edge_dicts = [
+        {"id": edge.id, "source_node_id": edge.source_node_id, "target_node_id": edge.target_node_id}
+        for edge in edges
+    ]
+
+    seed_ids = _semantic_node_seeds(nodes, query_vector, query_terms, top_k=8)
+    distances = traverse_graph(seed_ids, edge_dicts, depth=2, max_nodes=30) if seed_ids else {}
+
+    memory_objects = session.exec(
+        select(ConversationMemoryObject)
+        .where(
+            ConversationMemoryObject.user_id == user_id,
+            ConversationMemoryObject.participant_code == participant_code,
+        )
+        .order_by(ConversationMemoryObject.created_at.desc())
+        .limit(RECALL_RECURRENCE_LOOKBACK)
+    ).all()
+
+    today = date.today()
+    now = datetime.utcnow()
+    scored_nodes: List[Tuple[GraphNode, int, float, Dict[str, Any]]] = []
+    for node_id, hop in distances.items():
+        node = nodes_by_id.get(node_id)
+        if not node:
+            continue
+        semantic_similarity = (
+            memory_cosine_similarity(query_vector, node.vector_json) if query_vector and node.vector_json else 0.0
+        )
+        days_since = (today - (node.last_seen_day or today)).days
+        label_tokens = _tokenize(node.label) | _tokenize(node.category)
+        linked_importance = _linked_memory_importance(label_tokens, memory_objects, now)
+        score, breakdown = graph_hybrid_rank(
+            semantic_similarity, hop, node.confidence, days_since, node.occurrence_count, linked_importance
+        )
+        scored_nodes.append((node, hop, score, breakdown))
+
+    scored_nodes.sort(key=lambda item: item[2], reverse=True)
+    scored_nodes = scored_nodes[:limit]
+
     results: List[Dict[str, Any]] = []
-    for snapshot, score, reasons in scored:
-        nodes = snapshot.nodes_json or []
-        relations = snapshot.relations_json or []
-        nodes_by_id = {_node_id(node): node for node in nodes}
+    for node, hop, score, breakdown in scored_nodes:
+        incident_edges = [
+            edge
+            for edge in edges
+            if (edge.source_node_id == node.id or edge.target_node_id == node.id)
+            and edge.source_node_id in distances
+            and edge.target_node_id in distances
+        ][:10]
+        label_term_matches = query_terms.intersection(_tokenize(node.label))
+        match_reasons = [f"hop_distance:{hop}"]
+        if label_term_matches:
+            match_reasons.insert(0, f"query_terms:{','.join(sorted(label_term_matches)[:6])}")
         results.append(
             {
-                "graph_snapshot_id": snapshot.id,
-                "entry_id": snapshot.entry_id,
-                "day": snapshot.day.isoformat(),
-                "score": round(score, 6),
-                "match_reasons": reasons,
-                "summary": (snapshot.graph_summary_json or {}).get("summary"),
-                "key_nodes": [_node_brief(node) for node in nodes[:10]],
-                "key_relations": [_relation_brief(relation, nodes_by_id) for relation in relations[:10]],
-                "temporal_diff": snapshot.temporal_diff_json or {},
-                "retrieval_mode": "graph_pattern",
+                "graph_node_id": node.id,
+                "graph_snapshot_id": None,
+                "entry_id": None,
+                "day": node.last_seen_day.isoformat() if node.last_seen_day else None,
+                "score": score,
+                "score_breakdown": breakdown,
+                "match_reasons": match_reasons,
+                "summary": f"{node.label} ({node.category}), seen {node.occurrence_count}x",
+                "key_nodes": [_node_brief_from_row(node)],
+                "key_relations": [_relation_brief_from_row(edge, nodes_by_id) for edge in incident_edges],
+                "temporal_diff": {},
+                "retrieval_mode": "graph_semantic_v2",
             }
         )
 
@@ -931,9 +1058,11 @@ def search_similar_graph_patterns(
             query_hash=stable_hash(query),
             retrieval_config_json={
                 "limit": limit,
-                "retrieval_mode": "graph_pattern",
+                "retrieval_mode": "graph_semantic_v2",
                 "retrieval_version": GRAPH_RAG_VERSION,
-                "seed_relation_patterns": len(seed_patterns),
+                "graph_index_version": GRAPH_INDEX_VERSION,
+                "seed_node_count": len(seed_ids),
+                "traversed_node_count": len(distances),
                 "pipeline_version": PIPELINE_VERSION,
             },
             result_refs_json=results,
@@ -1029,6 +1158,13 @@ def build_research_retrieval_context(
         query=message,
         limit=bounded_limit,
     )
+    memory_object_evidence = search_relevant_memory_objects(
+        session=session,
+        user_id=user_id,
+        participant_code=participant_code,
+        query=message,
+        limit=bounded_limit,
+    )
     static_knowledge = search_static_knowledge(message, limit=bounded_limit)
     session.add(
         RetrievalEvent(
@@ -1060,6 +1196,7 @@ def build_research_retrieval_context(
         "supabase_semantic": len(semantic_evidence),
         "supabase_graph": len(graph_evidence),
         "supabase_patterns": len(longitudinal_patterns),
+        "supabase_conversation_memory": len(memory_object_evidence),
         "openai_vector_store": len(static_knowledge.get("matches", [])),
     }
     logger.info(
@@ -1072,12 +1209,14 @@ def build_research_retrieval_context(
             "semantic": SEMANTIC_RAG_VERSION,
             "graph": GRAPH_RAG_VERSION,
             "pattern": PATTERN_RAG_VERSION,
+            "conversation_memory": MEMORY_OBJECT_VERSION,
             "static_knowledge": STATIC_KNOWLEDGE_RAG_VERSION,
         },
         "retrieval_sources": retrieval_source_counts,
         "semantic_matches": semantic_evidence,
         "graph_pattern_matches": graph_evidence,
         "longitudinal_patterns": longitudinal_patterns,
+        "conversation_memory_matches": memory_object_evidence,
         "static_knowledge_matches": static_knowledge,
         "personalization": get_personalization_profile(session, user_id, participant_code),
     }
@@ -1095,6 +1234,7 @@ def generate_research_chat_response(
         "semantic_matches": retrieval_context["semantic_matches"],
         "graph_pattern_matches": retrieval_context["graph_pattern_matches"],
         "longitudinal_patterns": retrieval_context.get("longitudinal_patterns", []),
+        "conversation_memory_matches": retrieval_context.get("conversation_memory_matches", []),
         "static_knowledge_matches": retrieval_context.get("static_knowledge_matches", {}),
     }
     consent_snapshot = _consent_snapshot(None)
@@ -1128,6 +1268,9 @@ def generate_research_chat_response(
         "When longitudinal_patterns are present, you may reference how often a pattern has recurred "
         "(recurrence_count and support_days) or that a 'leading_indicator' tends to precede harder next days "
         "(lift), but frame these as observed tendencies, not predictions or diagnoses. "
+        "When conversation_memory_matches are present, you may refer back to a specific earlier memory "
+        "(its topic and summary) and how many times it has recurred, but only if its contradiction_status "
+        "is not 'superseded' by a later, more current memory on the same topic. "
         "Follow BLESC policy: BLESC is not a medical device, does not diagnose or treat, and must not replace "
         "doctors, therapists, school counselors, guardians, emergency services, or licensed professionals. "
         "For crisis or high-risk content, prioritize immediate safety and trusted human or emergency support over "
@@ -1187,6 +1330,7 @@ def generate_research_chat_response(
             "semantic_match_count": len(retrieval_context["semantic_matches"]),
             "graph_pattern_match_count": len(retrieval_context["graph_pattern_matches"]),
             "longitudinal_pattern_count": len(retrieval_context.get("longitudinal_patterns", [])),
+            "conversation_memory_match_count": len(retrieval_context.get("conversation_memory_matches", [])),
             "static_knowledge_source": "openai_vector_store",
             "static_knowledge_status": retrieval_context.get("static_knowledge_matches", {}).get("status"),
             "static_knowledge_match_count": len(retrieval_context.get("static_knowledge_matches", {}).get("matches", [])),
@@ -1328,6 +1472,326 @@ def _conversation_summary_from_messages(messages: List[ChatMessage]) -> Dict[str
     }
 
 
+def _llm_refine_memory_object(
+    segment: List[RecallMessage],
+    fallback_topic: str,
+    fallback_summary: str,
+) -> Tuple[str, str, bool]:
+    """
+    Best-effort LLM polish of the topic/summary *text* for one segment. Never
+    used to produce a score — every score is always computed deterministically
+    from the segmented text itself (see analytics/memory_objects.py). Falls back
+    silently to the deterministic topic/summary on any failure or missing key.
+    """
+    if not _has_openai_key():
+        return fallback_topic, fallback_summary, False
+    try:
+        combined = "\n".join(f"{message.role}: {message.text}" for message in segment)
+        response = _openai_client().responses.create(
+            model=DEFAULT_CHAT_MODEL,
+            instructions=(
+                "Read this excerpt of a non-diagnostic recall conversation. Return exactly two lines: "
+                "a 2-5 word topic label, then a 1-2 sentence neutral summary of what was said. "
+                "No diagnosis, no clinical claims, no advice."
+            ),
+            input=combined[:4000],
+            store=False,
+        )
+        text = getattr(response, "output_text", None) or ""
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if len(lines) >= 2:
+            return lines[0][:80], " ".join(lines[1:])[:240], True
+    except Exception:
+        logger.exception("[conversation_memory_objects] LLM refine failed; using deterministic fallback")
+    return fallback_topic, fallback_summary, False
+
+
+def _build_memory_objects_for_window(
+    session: Session,
+    user_id: str,
+    participant_code: str,
+    messages: List[ChatMessage],
+) -> List[ConversationMemoryObject]:
+    """
+    Segments a recall window into discrete memory objects (instead of the old
+    single blob), scores each deterministically, and reconciles it against
+    prior objects for this participant: recurrence counting, duplicate merge,
+    and tone-contradiction detection (see analytics/memory_objects.py).
+    """
+    recall_messages = [
+        RecallMessage(
+            id=message.id,
+            role=message.role,
+            text=message.content_redacted or "",
+            created_at=message.created_at,
+        )
+        for message in messages
+    ]
+    segments = segment_window(recall_messages)
+    if not segments:
+        return []
+
+    prior_rows = session.exec(
+        select(ConversationMemoryObject)
+        .where(
+            ConversationMemoryObject.user_id == user_id,
+            ConversationMemoryObject.participant_code == participant_code,
+        )
+        .order_by(ConversationMemoryObject.created_at.desc())
+        .limit(RECALL_RECURRENCE_LOOKBACK)
+    ).all()
+    prior_candidates = [
+        PriorMemoryObject(
+            id=prior.id,
+            topic_tokens=set(memory_topic_tokens(f"{prior.topic} {prior.summary}")),
+            embedding=prior.vector_json or [],
+            dominant_tone=(prior.emotional_tone_json or {}).get("dominant", "neutral"),
+            created_at=prior.created_at,
+        )
+        for prior in prior_rows
+        if not prior.merged_into_id
+    ]
+
+    now = datetime.utcnow()
+    created_rows: List[ConversationMemoryObject] = []
+    for segment in segments:
+        fallback_topic = build_topic_label(segment)
+        fallback_summary = build_memory_summary(segment)
+        topic, summary, llm_used = _llm_refine_memory_object(segment, fallback_topic, fallback_summary)
+        combined_text = " ".join(message.text for message in segment)
+        tone = emotional_tone(combined_text)
+        importance, importance_breakdown = score_importance(segment)
+
+        try:
+            vector, embed_status = _generate_embedding(f"{topic}. {summary}")
+        except Exception:
+            vector, embed_status = [], "generation_failed"
+
+        new_topic_tokens = set(memory_topic_tokens(f"{topic} {summary}"))
+        recurrence_val, recurrence_count, _matched_ids = score_recurrence(new_topic_tokens, vector, prior_candidates)
+        extraction_mode = "llm_assisted" if llm_used else "deterministic_fallback"
+        confidence = score_memory_confidence(extraction_mode, embed_status)
+
+        row = ConversationMemoryObject(
+            user_id=user_id,
+            participant_code=participant_code,
+            source_message_ids_json=[message.id for message in segment],
+            topic=topic,
+            summary=summary,
+            emotional_tone_json=tone,
+            importance_score=importance,
+            score_breakdown_json=importance_breakdown,
+            recurrence_score=recurrence_val,
+            recurrence_count=recurrence_count,
+            confidence_score=confidence,
+            extraction_mode=extraction_mode,
+            embedding_model=DEFAULT_EMBEDDING_MODEL if vector else "not_generated",
+            vector_json=vector,
+            embedding_status=embed_status,
+            last_reinforced_at=now,
+            pipeline_version=MEMORY_OBJECT_VERSION,
+        )
+        session.add(row)
+        session.flush()
+
+        duplicate = find_duplicate(new_topic_tokens, vector, prior_candidates)
+        if duplicate:
+            existing_id, merge_reason = duplicate
+            existing_row = session.get(ConversationMemoryObject, existing_id)
+            if existing_row:
+                canonical, loser = (
+                    (row, existing_row) if row.confidence_score > existing_row.confidence_score else (existing_row, row)
+                )
+                canonical.source_message_ids_json = sorted(
+                    set(canonical.source_message_ids_json) | set(loser.source_message_ids_json)
+                )
+                canonical.recurrence_count = max(canonical.recurrence_count, loser.recurrence_count) + 1
+                canonical.recurrence_score, _, _ = score_recurrence(
+                    set(memory_topic_tokens(f"{canonical.topic} {canonical.summary}")),
+                    canonical.vector_json,
+                    [candidate for candidate in prior_candidates if candidate.id != canonical.id],
+                )
+                canonical.last_reinforced_at = now
+                loser.merged_into_id = canonical.id
+                loser.merge_reason = merge_reason
+                session.add(canonical)
+                session.add(loser)
+                session.flush()
+
+        for contradiction in detect_contradictions(new_topic_tokens, tone["dominant"], now, prior_candidates):
+            prior_row = session.get(ConversationMemoryObject, contradiction["id"])
+            if not prior_row:
+                continue
+            prior_row.contradiction_status = contradiction["status"]
+            prior_row.contradiction_detail_json = contradiction["detail"]
+            if contradiction["status"] == "superseded":
+                prior_row.superseded_by_id = row.id
+            session.add(prior_row)
+
+        prior_candidates.append(
+            PriorMemoryObject(
+                id=row.id,
+                topic_tokens=new_topic_tokens,
+                embedding=vector,
+                dominant_tone=tone["dominant"],
+                created_at=now,
+            )
+        )
+        created_rows.append(row)
+
+    session.commit()
+    for row in created_rows:
+        session.refresh(row)
+    return created_rows
+
+
+def _memory_object_to_dict(row: ConversationMemoryObject, now: Optional[datetime] = None) -> Dict[str, Any]:
+    now = now or datetime.utcnow()
+    return {
+        "memory_id": row.id,
+        "source_message_ids": row.source_message_ids_json,
+        "topic": row.topic,
+        "summary": row.summary,
+        "emotional_tone": row.emotional_tone_json,
+        "importance_score": row.importance_score,
+        "effective_importance": effective_importance(row.importance_score, now, row.last_reinforced_at),
+        "score_breakdown": row.score_breakdown_json,
+        "recurrence_score": row.recurrence_score,
+        "recurrence_count": row.recurrence_count,
+        "confidence_score": row.confidence_score,
+        "extraction_mode": row.extraction_mode,
+        "embedding_model": row.embedding_model,
+        "embedding_status": row.embedding_status,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "last_reinforced_at": row.last_reinforced_at.isoformat() if row.last_reinforced_at else None,
+        "merged_into_id": row.merged_into_id,
+        "merge_reason": row.merge_reason,
+        "superseded_by_id": row.superseded_by_id,
+        "contradiction_status": row.contradiction_status,
+        "contradiction_detail": row.contradiction_detail_json,
+        "pipeline_version": row.pipeline_version,
+    }
+
+
+def get_conversation_memory_objects(
+    session: Session,
+    user_id: str,
+    participant_code: str,
+    active_only: bool = True,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """Memory objects for the recall UI, sorted by decayed (effective)
+    importance — reinforced/recurring memories rank above stale ones."""
+    rows = session.exec(
+        select(ConversationMemoryObject)
+        .where(
+            ConversationMemoryObject.user_id == user_id,
+            ConversationMemoryObject.participant_code == participant_code,
+        )
+        .order_by(ConversationMemoryObject.created_at.desc())
+        .limit(max(1, min(limit, 200)))
+    ).all()
+    if active_only:
+        rows = [row for row in rows if not row.merged_into_id and row.contradiction_status != "superseded"]
+    now = datetime.utcnow()
+    payload = [_memory_object_to_dict(row, now) for row in rows]
+    payload.sort(key=lambda item: item["effective_importance"], reverse=True)
+    return payload
+
+
+MEMORY_RETRIEVAL_WEIGHTS = {
+    "semantic": float(os.getenv("SENTRA_MEMORY_RAG_WEIGHT_SEMANTIC", "0.4")),
+    "importance": float(os.getenv("SENTRA_MEMORY_RAG_WEIGHT_IMPORTANCE", "0.25")),
+    "recurrence": float(os.getenv("SENTRA_MEMORY_RAG_WEIGHT_RECURRENCE", "0.15")),
+    "confidence": float(os.getenv("SENTRA_MEMORY_RAG_WEIGHT_CONFIDENCE", "0.1")),
+    "recency": float(os.getenv("SENTRA_MEMORY_RAG_WEIGHT_RECENCY", "0.1")),
+}
+MEMORY_RETRIEVAL_RECENCY_HALF_LIFE_DAYS = float(os.getenv("SENTRA_MEMORY_RAG_RECENCY_HALF_LIFE_DAYS", "14"))
+
+
+def search_relevant_memory_objects(
+    session: Session,
+    user_id: str,
+    participant_code: str,
+    query: str,
+    limit: int = 5,
+) -> List[Dict[str, Any]]:
+    """
+    Retrieval ranking over persisted conversation memory objects: combines
+    semantic similarity to the query, decayed (effective) importance,
+    recurrence, confidence, and recency. Every weighted component is returned
+    in `score_breakdown`. Surfaced in `build_research_retrieval_context` as
+    `conversation_memory_matches`, separate from the literal latest-window
+    summary so the chat can recall relevant *past* memories, not just the
+    most recent 30 turns.
+    """
+    try:
+        query_vector, _status = _generate_embedding(query)
+    except Exception:
+        query_vector = []
+
+    rows = session.exec(
+        select(ConversationMemoryObject)
+        .where(
+            ConversationMemoryObject.user_id == user_id,
+            ConversationMemoryObject.participant_code == participant_code,
+        )
+        .order_by(ConversationMemoryObject.created_at.desc())
+        .limit(RECALL_RECURRENCE_LOOKBACK)
+    ).all()
+    active_rows = [row for row in rows if not row.merged_into_id and row.contradiction_status != "superseded"]
+
+    now = datetime.utcnow()
+    scored: List[Tuple[ConversationMemoryObject, float, Dict[str, Any]]] = []
+    weight_map = {
+        "semantic_similarity": "semantic",
+        "effective_importance": "importance",
+        "recurrence_score": "recurrence",
+        "confidence_score": "confidence",
+        "recency_score": "recency",
+    }
+    for row in active_rows:
+        semantic = memory_cosine_similarity(query_vector, row.vector_json) if query_vector and row.vector_json else 0.0
+        days_since = max(0.0, (now - row.created_at).total_seconds() / 86400.0)
+        components = {
+            "semantic_similarity": round(semantic, 4),
+            "effective_importance": effective_importance(row.importance_score, now, row.last_reinforced_at),
+            "recurrence_score": round(row.recurrence_score, 4),
+            "confidence_score": round(row.confidence_score, 4),
+            "recency_score": round(recency_score(days_since, MEMORY_RETRIEVAL_RECENCY_HALF_LIFE_DAYS), 4),
+        }
+        score = sum(components[key] * MEMORY_RETRIEVAL_WEIGHTS[weight_key] for key, weight_key in weight_map.items())
+        if score <= 0:
+            continue
+        breakdown = {"components": components, "weights": dict(MEMORY_RETRIEVAL_WEIGHTS)}
+        scored.append((row, round(score, 6), breakdown))
+
+    scored.sort(key=lambda item: item[1], reverse=True)
+    scored = scored[:limit]
+    results = [
+        {**_memory_object_to_dict(row, now), "score": score, "score_breakdown": breakdown}
+        for row, score, breakdown in scored
+    ]
+
+    session.add(
+        RetrievalEvent(
+            user_id=user_id,
+            participant_code=participant_code,
+            query_hash=stable_hash(query),
+            retrieval_config_json={
+                "limit": limit,
+                "retrieval_mode": "conversation_memory_object",
+                "retrieval_version": MEMORY_OBJECT_VERSION,
+                "pipeline_version": PIPELINE_VERSION,
+            },
+            result_refs_json=results,
+        )
+    )
+    session.commit()
+    return results
+
+
 def analyze_conversation_recall_30(
     session: Session,
     user_id: str,
@@ -1336,6 +1800,7 @@ def analyze_conversation_recall_30(
 ) -> Dict[str, Any]:
     messages = _conversation_message_window(session, user_id, participant_code, limit=limit)
     source_hashes = [message.content_hash for message in messages]
+    memory_rows: List[ConversationMemoryObject] = []
     if len(messages) < MIN_CONVERSATION_RECALL_TURNS:
         summary = {
             "pipeline_version": CONVERSATION_RECALL_VERSION,
@@ -1350,7 +1815,12 @@ def analyze_conversation_recall_30(
     else:
         summary = _conversation_summary_from_messages(messages)
         status = "completed"
+        try:
+            memory_rows = _build_memory_objects_for_window(session, user_id, participant_code, messages)
+        except Exception:
+            logger.exception("[conversation_memory_objects] window segmentation failed")
 
+    memory_object_ids = [row.id for row in memory_rows]
     row = ConversationRecallSummary(
         user_id=user_id,
         participant_code=participant_code,
@@ -1359,6 +1829,7 @@ def analyze_conversation_recall_30(
         message_end=messages[-1].created_at if messages else None,
         summary_json=summary,
         source_message_hashes_json=source_hashes,
+        memory_object_ids_json=memory_object_ids,
         pipeline_version=CONVERSATION_RECALL_VERSION,
         status=status,
     )
@@ -1366,14 +1837,17 @@ def analyze_conversation_recall_30(
     session.commit()
     session.refresh(row)
     logger.info(
-        "[conversation_recall_30] user=%s participant=%s status=%s window_turns=%s source_hashes=%s summary_id=%s",
+        "[conversation_recall_30] user=%s participant=%s status=%s window_turns=%s source_hashes=%s "
+        "summary_id=%s memory_objects=%s",
         user_id,
         participant_code,
         status,
         len(messages),
         len(source_hashes),
         row.id,
+        len(memory_object_ids),
     )
+    now = datetime.utcnow()
     return {
         "id": row.id,
         "status": row.status,
@@ -1383,6 +1857,8 @@ def analyze_conversation_recall_30(
         "message_end": row.message_end,
         "summary_json": row.summary_json,
         "source_message_hashes": row.source_message_hashes_json,
+        "memory_object_ids": row.memory_object_ids_json,
+        "memory_objects": [_memory_object_to_dict(memory_row, now) for memory_row in memory_rows],
         "pipeline_version": row.pipeline_version,
         "created_at": row.created_at,
     }
@@ -1407,6 +1883,14 @@ def get_latest_conversation_recall_30(
         .limit(1)
     ).first()
     if row:
+        memory_object_ids = row.memory_object_ids_json or []
+        memory_rows = (
+            session.exec(select(ConversationMemoryObject).where(ConversationMemoryObject.id.in_(memory_object_ids)))
+            .all()
+            if memory_object_ids
+            else []
+        )
+        now = datetime.utcnow()
         return {
             "id": row.id,
             "status": row.status,
@@ -1416,6 +1900,8 @@ def get_latest_conversation_recall_30(
             "message_end": row.message_end,
             "summary_json": row.summary_json,
             "source_message_hashes": row.source_message_hashes_json,
+            "memory_object_ids": memory_object_ids,
+            "memory_objects": [_memory_object_to_dict(memory_row, now) for memory_row in memory_rows],
             "pipeline_version": row.pipeline_version,
             "created_at": row.created_at,
         }

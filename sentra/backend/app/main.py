@@ -30,6 +30,7 @@ from .services.research_pipeline import (
     create_openai_fine_tuning_job,
     create_research_export,
     generate_research_chat_response,
+    get_conversation_memory_objects,
     get_latest_conversation_recall_30,
     get_longitudinal_patterns,
     get_personalization_profile,
@@ -766,6 +767,26 @@ def get_conversation_recall(
         participant_code=participant,
         refresh=refresh,
     )
+
+
+@app.get("/api/research/conversation-recall/memory-objects")
+def get_conversation_memory_objects_route(
+    user_id: str,
+    participant_code: Optional[str] = None,
+    active_only: bool = True,
+    limit: int = 50,
+    session: Session = Depends(get_session),
+):
+    participant = participant_code or user_id
+    return {
+        "memory_objects": get_conversation_memory_objects(
+            session=session,
+            user_id=user_id,
+            participant_code=participant,
+            active_only=active_only,
+            limit=limit,
+        )
+    }
 
 
 @app.post("/api/research/exports")

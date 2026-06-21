@@ -195,6 +195,7 @@ class ConversationRecallSummary(SQLModel, table=True):
     message_end: Optional[datetime] = Field(default=None, index=True)
     summary_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     source_message_hashes_json: List[str] = Field(default_factory=list, sa_column=Column(JSON))
+    memory_object_ids_json: List[int] = Field(default_factory=list, sa_column=Column(JSON))
     pipeline_version: str = "conversation-recall-30-v1"
     status: str = Field(default="completed", index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -256,3 +257,92 @@ class ExportJob(SQLModel, table=True):
     error_message: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
+
+
+class GraphNode(SQLModel, table=True):
+    """A deduplicated graph entity, derived from graph_versions.
+
+    node_key is the stable identity (normalized "category:label" signature) so the
+    same concept dedupes across days even when raw casing/wording drifts. Counts and
+    confidence are rolling aggregates over every occurrence seen so far.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    participant_code: str = Field(index=True)
+    node_key: str = Field(index=True)
+    category: str = Field(index=True)
+    label: str = ""
+    embedding_model: str = "not_generated"
+    vector_json: List[float] = Field(default_factory=list, sa_column=Column(JSON))
+    embedding_status: str = "pending_no_openai_key"
+    confidence: float = 1.0
+    intensity: float = 0.5
+    occurrence_count: int = 0
+    first_seen_day: Optional[date] = Field(default=None, index=True)
+    last_seen_day: Optional[date] = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class GraphEdge(SQLModel, table=True):
+    """A deduplicated directed relation between two GraphNode rows.
+
+    Keyed on (source_node_id, target_node_id, relation_type); occurrence_count and
+    mean_confidence accumulate across every graph_version that re-observes the edge.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    participant_code: str = Field(index=True)
+    source_node_id: int = Field(foreign_key="graphnode.id", index=True)
+    target_node_id: int = Field(foreign_key="graphnode.id", index=True)
+    relation_type: str = Field(default="co_occurs", index=True)
+    embedding_model: str = "not_generated"
+    vector_json: List[float] = Field(default_factory=list, sa_column=Column(JSON))
+    embedding_status: str = "pending_no_openai_key"
+    confidence: float = 1.0
+    mean_confidence: float = 1.0
+    confidence_count: int = 0
+    occurrence_count: int = 0
+    first_seen_day: Optional[date] = Field(default=None, index=True)
+    last_seen_day: Optional[date] = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ConversationMemoryObject(SQLModel, table=True):
+    """A single reusable memory fragment extracted from a 30-turn recall window.
+
+    Replaces the single-blob-per-window approach: one window produces N of these.
+    Scores (importance/recurrence/confidence) are always computed deterministically
+    after segmentation, never trusted blindly from an LLM, and score_breakdown_json
+    keeps every weighted component inspectable.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    participant_code: str = Field(index=True)
+    window_id: Optional[int] = Field(default=None, foreign_key="conversationrecallsummary.id", index=True)
+    source_message_ids_json: List[int] = Field(default_factory=list, sa_column=Column(JSON))
+    topic: str = Field(default="", index=True)
+    summary: str = ""
+    emotional_tone_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    importance_score: float = 0.0
+    score_breakdown_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    recurrence_score: float = 0.0
+    recurrence_count: int = 0
+    confidence_score: float = 0.0
+    extraction_mode: str = "deterministic_fallback"
+    embedding_model: str = "not_generated"
+    vector_json: List[float] = Field(default_factory=list, sa_column=Column(JSON))
+    embedding_status: str = "pending_no_openai_key"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    last_reinforced_at: datetime = Field(default_factory=datetime.utcnow)
+    merged_into_id: Optional[int] = Field(default=None, foreign_key="conversationmemoryobject.id", index=True)
+    merge_reason: Optional[str] = None
+    superseded_by_id: Optional[int] = Field(default=None, foreign_key="conversationmemoryobject.id", index=True)
+    contradiction_status: str = Field(default="none", index=True)
+    contradiction_detail_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    pipeline_version: str = "conversation-memory-object-v1"

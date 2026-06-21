@@ -4,7 +4,8 @@ import { FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertCircle, ArrowLeft, Loader2, MessageCircle, Send } from "lucide-react";
 import { ApiClient } from "@/api/client";
-import { ConversationRecallSummary } from "@/api/models";
+import { ConversationMemoryObject, ConversationRecallSummary } from "@/api/models";
+import { MemoryObjectCard } from "@/components/MemoryObjectCard";
 import { ProcessingTimeline } from "@/components/ProcessingTimeline";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
 import { useAuth } from "@/lib/auth";
@@ -79,10 +80,15 @@ export default function RecallWorkspacePage() {
   const [complete, setComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<ConversationRecallSummary | null>(null);
+  const [memoryObjects, setMemoryObjects] = useState<ConversationMemoryObject[]>([]);
 
   const userTurnCount = useMemo(() => messages.filter((message) => message.role === "user").length, [messages]);
   const canSend = input.trim().length > 0 && !isSubmitting && userTurnCount < MAX_USER_TURNS;
   const progressLabel = `${userTurnCount}/${MAX_USER_TURNS} user turns`;
+  const sortedMemoryObjects = useMemo(
+    () => [...memoryObjects].sort((a, b) => b.effective_importance - a.effective_importance),
+    [memoryObjects],
+  );
 
   const refreshSummary = async (force = false) => {
     try {
@@ -90,6 +96,12 @@ export default function RecallWorkspacePage() {
       setSummary(data);
     } catch (err) {
       console.warn("[recall_workspace] summary refresh failed", err);
+    }
+    try {
+      const objects = await ApiClient.getConversationMemoryObjects(userId);
+      setMemoryObjects(objects);
+    } catch (err) {
+      console.warn("[recall_workspace] memory object refresh failed", err);
     }
   };
 
@@ -142,6 +154,9 @@ export default function RecallWorkspacePage() {
         };
         setMessages((current) => [...current, assistantMessage]);
         setSummary(response.conversation_recall_30 ?? null);
+        if (response.conversation_recall_30?.memory_objects?.length) {
+          setMemoryObjects(response.conversation_recall_30.memory_objects);
+        }
       }
 
       if (timer) window.clearInterval(timer);
@@ -243,12 +258,25 @@ export default function RecallWorkspacePage() {
 
         <aside className="space-y-4">
           <div style={panel} className="p-5">
-            <div className="inscription mb-3">Recall Summary</div>
-            <p className="text-sm leading-relaxed" style={{ color: "var(--ink-mid)", fontStyle: "italic" }}>
-              {summary?.status === "completed"
-                ? summary.summary_json.summary
-                : `Not enough conversation history. Minimum: ${MIN_SUMMARY_TURNS} turns.`}
-            </p>
+            <div className="inscription mb-3">Recall Memories</div>
+            {summary?.status === "completed" ? (
+              <p className="text-sm leading-relaxed" style={{ color: "var(--ink-mid)", fontStyle: "italic" }}>
+                {summary.summary_json.summary}
+              </p>
+            ) : (
+              <p className="text-sm leading-relaxed" style={{ color: "var(--ink-mid)", fontStyle: "italic" }}>
+                {`Not enough conversation history. Minimum: ${MIN_SUMMARY_TURNS} turns.`}
+              </p>
+            )}
+
+            {sortedMemoryObjects.length > 0 && (
+              <div className="mt-4 max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                {sortedMemoryObjects.map((memoryObject) => (
+                  <MemoryObjectCard key={String(memoryObject.memory_id)} memoryObject={memoryObject} />
+                ))}
+              </div>
+            )}
+
             <button
               type="button"
               onClick={() => void refreshSummary(true)}

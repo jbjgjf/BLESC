@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "sentra/frontend"],
       "port": 3000
+    },
+    {
+      "name": "sentra-backend",
+      "runtimeExecutable": "sentra/backend/.venv/bin/uvicorn",
+      "runtimeArgs": ["app.main:app", "--reload", "--port", "8000", "--app-dir", "sentra/backend"],
+      "port": 8000
     }
   ]
 }

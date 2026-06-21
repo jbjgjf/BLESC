@@ -26,6 +26,7 @@ def _apply_migrations() -> None:
         ("graphsnapshot", "extraction_model", "TEXT DEFAULT 'unknown'"),
         ("graphchangeevent", "user_id", "TEXT DEFAULT 'unknown'"),
         ("graphchangeevent", "participant_code", "TEXT DEFAULT 'unknown'"),
+        ("conversationrecallsummary", "memory_object_ids_json", "JSON DEFAULT '[]'"),
     ]
     with engine.connect() as conn:
         for table, column, ddl in migrations:
@@ -45,6 +46,7 @@ def create_db_and_tables():
     from .schemas.research import (
         ChatMessage,
         ChatSession,
+        ConversationMemoryObject,
         ConversationRecallSummary,
         ConsentRecord,
         CognitiveProbeFeature,
@@ -54,6 +56,8 @@ def create_db_and_tables():
         EvalExample,
         ExportJob,
         GraphChangeEvent,
+        GraphEdge,
+        GraphNode,
         GraphVersion,
         InteractionEvent,
         LongitudinalFeature,

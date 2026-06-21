@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
 MIGRATION = ROOT / "supabase/migrations/20260611000000_research_grade_data_layer.sql"
 RAG_MIGRATION = ROOT / "supabase/migrations/20260614130320_rag_retrieval_context.sql"
+GRAPH_INDEX_MIGRATION = ROOT / "supabase/migrations/20260621000000_graph_index_and_memory_objects.sql"
 PRODUCT_POLICY = ROOT / "docs/product_policy.md"
 SAFETY_POLICY = ROOT / "docs/safety_escalation_policy.md"
 VECTOR_STORE_PLAN = ROOT / "docs/vector_store_knowledge_plan.md"
@@ -76,6 +77,39 @@ def test_rag_migration_adds_filtered_vector_and_graph_pattern_search():
     assert "security definer" not in sql
     assert "graph_versions.owner_user_id = (select auth.uid())" in sql
     assert "grant execute on function public.match_graph_patterns" in sql
+
+
+def test_graph_index_and_memory_objects_migration_has_rls_policy_and_grants():
+    sql = _read(GRAPH_INDEX_MIGRATION).lower()
+
+    new_tables = ["graph_nodes", "graph_edges", "conversation_memory_objects"]
+    for table in new_tables:
+        assert f"create table if not exists public.{table}" in sql
+        assert f"alter table public.{table} enable row level security" in sql
+        assert f"on public.{table} for all to authenticated" in sql
+        assert f"grant select, insert, update, delete on public.{table} to authenticated" in sql
+        assert f"embedding extensions.vector(1536)" in sql
+        assert f"using hnsw (embedding vector_cosine_ops)" in sql
+
+    assert "security invoker" in sql
+    assert "security definer" not in sql
+    assert "create or replace function public.match_graph_nodes" in sql
+    assert "create or replace function public.match_graph_edges" in sql
+    assert "create or replace function public.match_conversation_memory_objects" in sql
+    assert "graph_nodes.owner_user_id = (select auth.uid())" in sql
+    assert "graph_edges.owner_user_id = (select auth.uid())" in sql
+    assert "conversation_memory_objects.owner_user_id = (select auth.uid())" in sql
+    assert "conversation_memory_objects.merged_into_id is null" in sql
+    assert "conversation_memory_objects.contradiction_status <> 'superseded'" in sql
+    assert "grant execute on function public.match_graph_nodes" in sql
+    assert "grant execute on function public.match_graph_edges" in sql
+    assert "grant execute on function public.match_conversation_memory_objects" in sql
+
+    assert (
+        "alter table public.conversation_recall_summaries\n  add column if not exists memory_object_ids_json"
+        in sql
+    )
+    assert "alter publication supabase_realtime add table public.conversation_memory_objects" in sql
 
 
 def test_openai_keys_are_backend_only_and_not_tracked_as_active_values():

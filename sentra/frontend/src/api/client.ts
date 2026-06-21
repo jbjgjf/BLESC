@@ -3,6 +3,7 @@ import {
   AudioTranscriptionResponse,
   ChatResponse,
   ConsentSnapshot,
+  ConversationMemoryObject,
   ConversationRecallSummary,
   DailyFeatureAggregation,
   Entry,
@@ -78,6 +79,7 @@ type ConversationRecallSummaryRow = {
   message_end: string | null;
   summary_json: Record<string, JsonValue>;
   source_message_hashes_json: JsonValue;
+  memory_object_ids_json?: JsonValue;
   pipeline_version: string;
   status: string;
   created_at: string;
@@ -204,6 +206,7 @@ function toConversationRecall(row: ConversationRecallSummaryRow): ConversationRe
     message_end: row.message_end,
     summary_json: row.summary_json as ConversationRecallSummary["summary_json"],
     source_message_hashes: asArray<string>(row.source_message_hashes_json),
+    memory_object_ids: asArray<string | number>(row.memory_object_ids_json),
     pipeline_version: row.pipeline_version,
     created_at: row.created_at,
   };
@@ -834,12 +837,46 @@ export class ApiClient {
           message_end: recall.message_end ?? null,
           summary_json: recall.summary_json as Record<string, JsonValue>,
           source_message_hashes_json: recall.source_message_hashes ?? [],
+          memory_object_ids_json: recall.memory_object_ids ?? [],
           pipeline_version: recall.pipeline_version,
           status: recall.status,
         });
         if (error) console.info("[conversation_recall_30] Supabase mirror skipped", error);
       } catch (err) {
         console.info("[conversation_recall_30] Supabase mirror failed", err);
+      }
+
+      // Mirror the discrete memory objects too (best-effort, non-blocking). Note:
+      // merged_into_id/superseded_by_id/window_id reference the backend's own
+      // integer ids and aren't remapped here, same as chat_session_id above --
+      // the canonical merge/contradiction lineage lives in the backend DB; this
+      // mirror is for Supabase-side realtime/RLS reads of the surface fields.
+      if (recall.memory_objects?.length) {
+        try {
+          const rows = recall.memory_objects.map((memoryObject) => ({
+            owner_user_id: ownerUserId,
+            participant_id: participant.id,
+            source_message_ids_json: memoryObject.source_message_ids as unknown as JsonValue,
+            topic: memoryObject.topic,
+            summary: memoryObject.summary,
+            emotional_tone_json: memoryObject.emotional_tone as unknown as Record<string, JsonValue>,
+            importance_score: memoryObject.importance_score,
+            score_breakdown_json: memoryObject.score_breakdown,
+            recurrence_score: memoryObject.recurrence_score,
+            recurrence_count: memoryObject.recurrence_count,
+            confidence_score: memoryObject.confidence_score,
+            extraction_mode: memoryObject.extraction_mode,
+            embedding_model: memoryObject.embedding_model,
+            embedding_status: memoryObject.embedding_status,
+            contradiction_status: memoryObject.contradiction_status,
+            contradiction_detail_json: memoryObject.contradiction_detail ?? {},
+            pipeline_version: memoryObject.pipeline_version,
+          }));
+          const { error } = await supabase.from("conversation_memory_objects").insert(rows);
+          if (error) console.info("[conversation_memory_objects] Supabase mirror skipped", error);
+        } catch (err) {
+          console.info("[conversation_memory_objects] Supabase mirror failed", err);
+        }
       }
     }
 
@@ -852,11 +889,18 @@ export class ApiClient {
     );
   }
 
+  static async getConversationMemoryObjects(userId: string, activeOnly = true): Promise<ConversationMemoryObject[]> {
+    const response = await this.fetch<{ memory_objects: ConversationMemoryObject[] }>(
+      `/research/conversation-recall/memory-objects?user_id=${encodeURIComponent(userId)}&active_only=${activeOnly ? "true" : "false"}`,
+    );
+    return response.memory_objects;
+  }
+
   static async getMirroredConversationRecall(userId: string): Promise<ConversationRecallSummary | null> {
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("conversation_recall_summaries")
-      .select("id, window_turn_count, message_start, message_end, summary_json, source_message_hashes_json, pipeline_version, status, created_at")
+      .select("id, window_turn_count, message_start, message_end, summary_json, source_message_hashes_json, memory_object_ids_json, pipeline_version, status, created_at")
       .eq("participant_id", participant.id)
       .order("created_at", { ascending: false })
       .limit(1)

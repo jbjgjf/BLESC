@@ -209,6 +209,37 @@ export interface DailyFeatureAggregation {
   feature_vector_json: Record<string, JsonValue>;
 }
 
+export interface ConversationMemoryObject {
+  memory_id: RecordId;
+  source_message_ids: Array<string | number>;
+  topic: string;
+  summary: string;
+  emotional_tone: {
+    negative: number;
+    protective: number;
+    valence: number;
+    dominant: "negative" | "protective" | "neutral" | string;
+  };
+  importance_score: number;
+  effective_importance: number;
+  score_breakdown: Record<string, JsonValue>;
+  recurrence_score: number;
+  recurrence_count: number;
+  confidence_score: number;
+  extraction_mode: "llm_assisted" | "deterministic_fallback" | string;
+  embedding_model: string;
+  embedding_status: "generated" | "pending_no_openai_key" | "generation_failed" | "empty_content" | string;
+  created_at?: string;
+  updated_at?: string;
+  last_reinforced_at?: string;
+  merged_into_id?: RecordId | null;
+  merge_reason?: string | null;
+  superseded_by_id?: RecordId | null;
+  contradiction_status: "none" | "flagged" | "superseded" | string;
+  contradiction_detail?: Record<string, JsonValue>;
+  pipeline_version: string;
+}
+
 export interface ConversationRecallSummary {
   id?: RecordId;
   status: "completed" | "not_enough_history" | string;
@@ -226,6 +257,8 @@ export interface ConversationRecallSummary {
     [key: string]: JsonValue | undefined;
   };
   source_message_hashes?: string[];
+  memory_object_ids?: Array<string | number>;
+  memory_objects?: ConversationMemoryObject[];
   pipeline_version: string;
   created_at?: string;
 }
