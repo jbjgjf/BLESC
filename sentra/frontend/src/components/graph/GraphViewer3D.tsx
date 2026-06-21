@@ -5,7 +5,7 @@ import type { ComponentType, MutableRefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { GraphSnapshot, ExplanationPayload } from "@/api/models";
-import { ArrowLeftRight, Box, Cpu, Info, Orbit, Route, RotateCw } from "lucide-react";
+import { ArrowLeftRight, Box, Cpu, Info, Orbit, Route, RotateCw, ChevronDown, ChevronUp, Maximize2, Minimize2 } from "lucide-react";
 import type { ForceGraphMethods } from "react-force-graph-3d";
 import type { GraphMode, GraphViewerLink, GraphViewerNode } from "./graphTypes";
 import {
@@ -145,6 +145,27 @@ export function GraphViewer3D({
   const [selectedNode, setSelectedNode] = useState<GraphViewerNode | null>(null);
   const [showFallback, setShowFallback] = useState(false);
   const [graphWidth, setGraphWidth] = useState(900);
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
+    overview: false,
+    ontology: false,
+    edges: false,
+    pipeline: false,
+    howToRead: false,
+    precision: false,
+    inspector_history: false,
+  });
+
+  const toggleSection = (section: string) => {
+    setCollapsedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  // Reset focus when mode changes
+  useEffect(() => {
+    setFocusNodeId(null);
+  }, [mode]);
+
   const fgRef = useRef<ForceGraphMethods | null>(null);
   const graphFrameRef = useRef<HTMLDivElement | null>(null);
   const modeCopy = MODE_COPY[mode];
@@ -167,7 +188,7 @@ export function GraphViewer3D({
     const obs = new ResizeObserver(update);
     obs.observe(frame);
     return () => obs.disconnect();
-  }, []);
+  }, [isSidebarCollapsed]);
 
   // Graph data
   const realGraphData = useMemo(
@@ -181,6 +202,37 @@ export function GraphViewer3D({
     return realGraphData;
   }, [realGraphData, showFallback]);
   const usingFallback = ENABLE_GRAPH_DEBUG && showFallback;
+
+  // Filtered graph data when focused on a node
+  const focusedGraphData = useMemo(() => {
+    if (!focusNodeId) return graphData;
+
+    const neighbors = new Set<string>();
+    neighbors.add(focusNodeId);
+
+    graphData.links.forEach((link) => {
+      const sourceId = typeof link.source === "object" ? (link.source as { id: string }).id : link.source;
+      const targetId = typeof link.target === "object" ? (link.target as { id: string }).id : link.target;
+
+      if (sourceId === focusNodeId) {
+        if (targetId) neighbors.add(targetId);
+      } else if (targetId === focusNodeId) {
+        if (sourceId) neighbors.add(sourceId);
+      }
+    });
+
+    const filteredNodes = graphData.nodes.filter((node) => neighbors.has(node.id));
+    const filteredLinks = graphData.links.filter((link) => {
+      const sourceId = typeof link.source === "object" ? (link.source as { id: string }).id : link.source;
+      const targetId = typeof link.target === "object" ? (link.target as { id: string }).id : link.target;
+      return sourceId === focusNodeId || targetId === focusNodeId;
+    });
+
+    return {
+      nodes: filteredNodes,
+      links: filteredLinks,
+    };
+  }, [graphData, focusNodeId]);
 
   // Keep selected node in sync with visible nodes
   const visibleSelectedNode = selectedNode && graphData.nodes.some(
@@ -264,7 +316,7 @@ export function GraphViewer3D({
             </p>
           </div>
 
-          <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-1">
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-1">
             {ENABLE_GRAPH_DEBUG && (
               <button
                 type="button"
@@ -286,6 +338,25 @@ export function GraphViewer3D({
                 {MODE_COPY[m].label}
               </button>
             ))}
+            <div className="mx-1 h-6 w-[1px] bg-slate-200" />
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="flex items-center gap-1.5 rounded px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white transition"
+              title={isSidebarCollapsed ? "Show Sidebar Panel" : "Hide Sidebar Panel"}
+            >
+              {isSidebarCollapsed ? (
+                <>
+                  <Minimize2 className="h-4 w-4" />
+                  <span className="hidden sm:inline">Show Sidebar</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="h-4 w-4" />
+                  <span className="hidden sm:inline">Maximize Graph</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
@@ -303,7 +374,7 @@ export function GraphViewer3D({
       </div>
 
       {/* ── Main grid ── */}
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1.35fr)_360px]">
+      <div className={`grid gap-0 transition-all duration-300 ${isSidebarCollapsed ? "grid-cols-1" : "lg:grid-cols-[minmax(0,1.35fr)_360px]"}`}>
 
         {/* ── Graph canvas (dark space theme) ── */}
         <div
@@ -313,11 +384,26 @@ export function GraphViewer3D({
           <div className="pointer-events-none absolute left-5 top-5 z-10 rounded border border-white/10 bg-black/40 px-3 py-2 text-xs font-medium text-white/60 backdrop-blur">
             {modeCopy.canvasHint}
           </div>
+
+          {focusNodeId && (
+            <div className="absolute left-5 top-14 z-10 flex items-center gap-2.5 rounded border border-cyan-500/30 bg-cyan-950/80 px-3.5 py-2 text-xs font-medium text-cyan-200 backdrop-blur">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
+              <span>Focusing neighbors of: <strong>{graphData.nodes.find(n => n.id === focusNodeId)?.label || "selected node"}</strong></span>
+              <button
+                type="button"
+                onClick={() => setFocusNodeId(null)}
+                className="ml-2 rounded bg-cyan-800/60 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-cyan-50 hover:bg-cyan-700 transition"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+
           <div ref={graphFrameRef} className="h-[680px] w-full">
-            {graphData.nodes.length > 0 ? (
+            {focusedGraphData.nodes.length > 0 ? (
               <ForceGraph3D
                 ref={fgRef}
-                graphData={graphData}
+                graphData={focusedGraphData}
                 backgroundColor="#020208"
                 nodeLabel={(node: GraphViewerNode) =>
                   mode === "concept"
@@ -341,6 +427,7 @@ export function GraphViewer3D({
                 nodeRelSize={9}
                 enableNodeDrag={false}
                 onNodeClick={(node: GraphViewerNode) => setSelectedNode(node)}
+                onNodeDoubleClick={(node: GraphViewerNode) => setFocusNodeId(focusNodeId === node.id ? null : node.id)}
                 onBackgroundClick={() => setSelectedNode(null)}
                 controlType="orbit"
                 warmupTicks={mode === "concept" ? 100 : 80}
@@ -352,13 +439,13 @@ export function GraphViewer3D({
               />
             ) : (
               <div className="flex h-full items-center justify-center p-8 text-center text-sm text-white/20">
-                No ontology graph yet. Submit an observation to render the typed directed multigraph.
+                No ontology graph nodes match. Clear filters or submit an observation to render.
               </div>
             )}
           </div>
 
           {/* Category dot legend — top-right of canvas */}
-          {graphData.nodes.length > 0 && (
+          {focusedGraphData.nodes.length > 0 && (
             <div className="pointer-events-none absolute right-4 top-4 z-10 flex flex-col gap-1.5 rounded border border-white/10 bg-black/40 px-3 py-2.5 backdrop-blur">
               {CATEGORY_LEGEND.map((cat) => (
                 <div key={cat.label} className="flex items-center gap-2 text-[11px] text-white/60">
@@ -371,175 +458,274 @@ export function GraphViewer3D({
         </div>
 
         {/* ── Sidebar ── */}
-        <aside className="space-y-4 border-l border-slate-200 bg-slate-50 p-5">
+        {!isSidebarCollapsed && (
+          <aside className="space-y-4 border-l border-slate-200 bg-slate-50 p-5 max-h-[680px] overflow-y-auto">
 
-          {/* Overview */}
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
-              <ArrowLeftRight className="h-4 w-4 text-cyan-600" />
-              {modeCopy.title}
-            </div>
-            <div className="mt-3 space-y-2 text-sm text-slate-700">
-              {mode === "concept" ? (
-                <>
-                  <div>Entries merged: {orderedSnapshots.length}</div>
-                  <div>Unique concepts: {graphData.nodes.length}</div>
-                  <div>Total predicates: {graphData.links.length}</div>
-                  <div>Span: {orderedSnapshots[0]?.day ?? "—"} → {orderedSnapshots.at(-1)?.day ?? "—"}</div>
-                </>
-              ) : (
-                <>
-                  <div>Snapshots: {orderedSnapshots.length}</div>
-                  <div>Baseline layer: {baselineSnapshot?.day ?? "n/a"}</div>
-                  <div>Current layer: {activeSnapshot?.day ?? "n/a"}</div>
-                  <div>Source: {usingFallback ? "debug fallback" : "live snapshots"}</div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Ontology basis / top concepts */}
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
-              <Box className="h-4 w-4 text-cyan-600" />
-              {mode === "concept" ? "Concept Salience" : "Ontological Basis"}
-            </div>
-            <div className="mt-4 space-y-3">
-              {mode === "concept" ? (
-                topConcepts.map((node) => (
-                  <div key={node.originalId} className="grid grid-cols-[1fr_28px] items-center gap-2 text-xs text-slate-600">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: node.color }} />
-                      <span className="truncate">{node.label}</span>
-                    </div>
-                    <div className="text-right tabular-nums text-slate-400">{node.frequency}×</div>
-                  </div>
-                ))
-              ) : (
-                categoryCounts.map((item) => (
-                  <div key={item.label} className="grid grid-cols-[96px_1fr_24px] items-center gap-3 text-xs text-slate-600">
-                    <div className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                      {item.label}
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${graphData.nodes.length ? Math.max(8, (item.count / graphData.nodes.length) * 100) : 0}%`,
-                          backgroundColor: item.color,
-                        }}
-                      />
-                    </div>
-                    <div className="text-right tabular-nums text-slate-500">{item.count}</div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
-              <Route className="h-4 w-4 text-cyan-600" />
-              Edge Semantics
-            </div>
-            <div className="mt-3 space-y-2 text-sm text-slate-600">
-              <p><strong>Arrow</strong> = extracted relation direction from source node to target node.</p>
-              <p><strong>Color</strong> = relation type such as causes, escalates, buffers, avoids, co-occurs, or precedes.</p>
-              <p><strong>Width</strong> = confidence in snapshot mode; recurrence in concept mode.</p>
-              <p><strong>Length</strong> = layout-only, with no semantic value.</p>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
-              <Cpu className="h-4 w-4 text-cyan-600" />
-              Construction Pipeline
-            </div>
-            <div className="mt-3 space-y-2 text-sm text-slate-600">
-              <p><strong>1. Extract</strong> observations and candidate relations from submitted text.</p>
-              <p><strong>2. Validate</strong> them against BLESC ontology types and allowed relation labels.</p>
-              <p><strong>3. Store</strong> the graph snapshot with model, day, confidence, and temporal diff metadata.</p>
-              <p><strong>4. Render</strong> with a force layout. Only temporal Z-axis and concept recurrence are semantic; ordinary XY distance is visual.</p>
-            </div>
-          </div>
-
-          {/* Selected node */}
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
-              <Info className="h-4 w-4 text-cyan-600" />
-              Entity Inspector
-            </div>
-            {selection ? (
-              <div className="mt-3 space-y-3 text-sm text-slate-700">
-                <div>
-                  <div className="font-medium text-slate-950">{selection.node.label}</div>
-                  <div className="text-xs text-slate-500">{selection.roleSummary}</div>
+            {/* Selected node / Entity Inspector — ALWAYS at the top */}
+            <div className="rounded-lg border border-slate-200 bg-white">
+              <button
+                type="button"
+                onClick={() => toggleSection("inspector")}
+                className="flex w-full items-center justify-between p-5 text-left font-semibold text-slate-700 hover:bg-slate-50/50 transition"
+              >
+                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <Info className="h-4 w-4 text-cyan-600" />
+                  Entity Inspector
                 </div>
-                <div className="rounded-md bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
-                  <div>Category: {selection.node.category}</div>
-                  <div>Intensity: {selection.node.intensity.toFixed(2)}</div>
-                  <div>Confidence: {selection.node.confidence.toFixed(2)}</div>
-                  {selection.node.frequency && <div>Frequency: {selection.node.frequency}× across {selection.node.allDays?.length} days</div>}
-                  {selection.node.allDays && (
-                    <div className="text-slate-400">Days: {selection.node.allDays.join(", ")}</div>
+                {collapsedSections.inspector ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronUp className="h-4 w-4 text-slate-400" />}
+              </button>
+
+              {!collapsedSections.inspector && (
+                <div className="border-t border-slate-100 p-5 pt-4">
+                  {selection ? (
+                    <div className="space-y-3 text-sm text-slate-700">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-slate-950 truncate">{selection.node.label}</div>
+                          <div className="text-xs text-slate-500">{selection.roleSummary}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFocusNodeId(focusNodeId === selection.node.id ? null : selection.node.id)}
+                          className={`shrink-0 rounded px-2.5 py-1 text-xs font-semibold shadow-sm border transition ${
+                            focusNodeId === selection.node.id
+                              ? "bg-cyan-600 text-white border-cyan-600 hover:bg-cyan-700"
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          {focusNodeId === selection.node.id ? "Unfocus" : "Focus Neighbors"}
+                        </button>
+                      </div>
+
+                      <div className="rounded-md bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
+                        <div>Category: {selection.node.category}</div>
+                        <div>Intensity: {selection.node.intensity.toFixed(2)}</div>
+                        <div>Confidence: {selection.node.confidence.toFixed(2)}</div>
+                        {selection.node.frequency && <div>Frequency: {selection.node.frequency}× across {selection.node.allDays?.length} days</div>}
+                      </div>
+
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ontological role</div>
+                        <ul className="mt-2 space-y-1 text-xs text-slate-600">
+                          {selection.relationSummary.map((item) => <li key={item}>• {item}</li>)}
+                          {selection.anomalySignals.map((item) => <li key={item}>• {item}</li>)}
+                        </ul>
+                      </div>
+
+                      {selection.node.allDays && selection.node.allDays.length > 0 && (
+                        <div className="border-t border-slate-100 pt-3">
+                          <button
+                            type="button"
+                            onClick={() => toggleSection("inspector_history")}
+                            className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 hover:text-slate-700 transition"
+                          >
+                            <span>Appearance History ({selection.node.allDays.length})</span>
+                            {collapsedSections.inspector_history ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" /> : <ChevronUp className="h-3.5 w-3.5 text-slate-400" />}
+                          </button>
+                          {!collapsedSections.inspector_history && (
+                            <div className="mt-2 max-h-32 overflow-y-auto space-y-1.5 pr-1 text-xs">
+                              {selection.node.allDays.map((dayString) => (
+                                <div key={dayString} className="rounded bg-slate-50 p-2 border border-slate-100">
+                                  <div className="font-semibold text-slate-600">{dayString}</div>
+                                  <div className="mt-0.5 text-slate-400">
+                                    Intensity: {selection.node.intensity.toFixed(2)}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-slate-500">Click an entity to inspect its metadata and ontological role.</div>
                   )}
                 </div>
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ontological role</div>
-                  <ul className="mt-2 space-y-1 text-xs text-slate-600">
-                    {selection.relationSummary.map((item) => <li key={item}>• {item}</li>)}
-                    {selection.anomalySignals.map((item) => <li key={item}>• {item}</li>)}
-                  </ul>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-3 text-sm text-slate-500">Click an entity to inspect its metadata and ontological role.</div>
-            )}
-          </div>
-
-          {/* How to read */}
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
-              <RotateCw className="h-4 w-4 text-cyan-600" />
-              {mode === "concept" ? "Quotient Graph Semantics" : "Reading the Ontology Graph"}
-            </div>
-            <div className="mt-3 space-y-2 text-sm text-slate-600">
-              {mode === "concept" ? (
-                <>
-                  <p>All snapshots are merged. Identical entity labels within the same ontology class collapse into one recurring concept node.</p>
-                  <p><strong>Node size</strong> = how often that concept appears across stored entries.</p>
-                  <p><strong>Edge thickness</strong> = how often that relation pattern appears.</p>
-                  <p>This is pattern evidence for reflection. It does not detect depression, suicide risk, anxiety, PTSD, ADHD, or any condition with clinical certainty.</p>
-                  <p className="flex items-center gap-1 text-cyan-700 font-medium">
-                    <Cpu className="h-3 w-3" /> More entries → richer ontology topology.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p>Nodes are extracted observations: State, Trigger, Behavior, Event, and Protective factors.</p>
-                  <p>Directed edges are extracted relations between those observations.</p>
-                  <p>Temporal mode uses Z-axis position for time layers; XY position is layout-only.</p>
-                  <p>Edge length is layout-only and has no semantic value.</p>
-                  <p>Drag is disabled to preserve a stable analytical layout.</p>
-                  <p>Switch to <strong>Concepts</strong> mode to see repeated concepts collapsed across entries.</p>
-                </>
               )}
-              {usingFallback && <p className="text-rose-600">Debug fallback is active.</p>}
             </div>
-          </div>
 
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-5">
-            <div className="text-sm font-semibold uppercase tracking-[0.16em] text-amber-800">
-              Precision Boundary
+            {/* Overview */}
+            <div className="rounded-lg border border-slate-200 bg-white">
+              <button
+                type="button"
+                onClick={() => toggleSection("overview")}
+                className="flex w-full items-center justify-between p-5 text-left font-semibold text-slate-700 hover:bg-slate-50/50 transition"
+              >
+                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <ArrowLeftRight className="h-4 w-4 text-cyan-600" />
+                  {modeCopy.title}
+                </div>
+                {collapsedSections.overview ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronUp className="h-4 w-4 text-slate-400" />}
+              </button>
+              {!collapsedSections.overview && (
+                <div className="border-t border-slate-100 p-5 pt-4 space-y-2 text-sm text-slate-700">
+                  {mode === "concept" ? (
+                    <>
+                      <div>Entries merged: {orderedSnapshots.length}</div>
+                      <div>Unique concepts: {graphData.nodes.length}</div>
+                      <div>Total predicates: {graphData.links.length}</div>
+                      <div>Span: {orderedSnapshots[0]?.day ?? "—"} → {orderedSnapshots.at(-1)?.day ?? "—"}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div>Snapshots: {orderedSnapshots.length}</div>
+                      <div>Baseline layer: {baselineSnapshot?.day ?? "n/a"}</div>
+                      <div>Current layer: {activeSnapshot?.day ?? "n/a"}</div>
+                      <div>Source: {usingFallback ? "debug fallback" : "live snapshots"}</div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="mt-3 space-y-2 text-sm text-amber-900">
-              <p>The graph is precise as a structured record of extracted pattern evidence, not as a diagnosis.</p>
-              <p>Use confidence, recurrence, source day, and relation type together. A single node or edge should not be treated as proof.</p>
-              <p>Improving precision means adding reviewed examples, tighter ontology rules, source-span evidence, and human review for high-risk interpretations.</p>
+
+            {/* Ontology basis / top concepts */}
+            <div className="rounded-lg border border-slate-200 bg-white">
+              <button
+                type="button"
+                onClick={() => toggleSection("ontology")}
+                className="flex w-full items-center justify-between p-5 text-left font-semibold text-slate-700 hover:bg-slate-50/50 transition"
+              >
+                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <Box className="h-4 w-4 text-cyan-600" />
+                  {mode === "concept" ? "Concept Salience" : "Ontological Basis"}
+                </div>
+                {collapsedSections.ontology ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronUp className="h-4 w-4 text-slate-400" />}
+              </button>
+              {!collapsedSections.ontology && (
+                <div className="border-t border-slate-100 p-5 pt-4 space-y-3">
+                  {mode === "concept" ? (
+                    topConcepts.map((node) => (
+                      <div key={node.originalId} className="grid grid-cols-[1fr_28px] items-center gap-2 text-xs text-slate-600">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: node.color }} />
+                          <span className="truncate">{node.label}</span>
+                        </div>
+                        <div className="text-right tabular-nums text-slate-400">{node.frequency}×</div>
+                      </div>
+                    ))
+                  ) : (
+                    categoryCounts.map((item) => (
+                      <div key={item.label} className="grid grid-cols-[96px_1fr_24px] items-center gap-3 text-xs text-slate-600">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                          {item.label}
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${graphData.nodes.length ? Math.max(8, (item.count / graphData.nodes.length) * 100) : 0}%`,
+                              backgroundColor: item.color,
+                            }}
+                          />
+                        </div>
+                        <div className="text-right tabular-nums text-slate-500">{item.count}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
-          </div>
-        </aside>
+
+            {/* Edge Semantics */}
+            <div className="rounded-lg border border-slate-200 bg-white">
+              <button
+                type="button"
+                onClick={() => toggleSection("edges")}
+                className="flex w-full items-center justify-between p-5 text-left font-semibold text-slate-700 hover:bg-slate-50/50 transition"
+              >
+                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <Route className="h-4 w-4 text-cyan-600" />
+                  Edge Semantics
+                </div>
+                {collapsedSections.edges ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronUp className="h-4 w-4 text-slate-400" />}
+              </button>
+              {!collapsedSections.edges && (
+                <div className="border-t border-slate-100 p-5 pt-4 space-y-2 text-sm text-slate-600">
+                  <p><strong>Arrow</strong> = relation direction from source to target.</p>
+                  <p><strong>Color</strong> = relation type (causes, escalates, buffers, avoids, co-occurs, precedes).</p>
+                  <p><strong>Width</strong> = confidence in snapshot mode; recurrence in concept mode.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Construction Pipeline */}
+            <div className="rounded-lg border border-slate-200 bg-white">
+              <button
+                type="button"
+                onClick={() => toggleSection("pipeline")}
+                className="flex w-full items-center justify-between p-5 text-left font-semibold text-slate-700 hover:bg-slate-50/50 transition"
+              >
+                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <Cpu className="h-4 w-4 text-cyan-600" />
+                  Construction Pipeline
+                </div>
+                {collapsedSections.pipeline ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronUp className="h-4 w-4 text-slate-400" />}
+              </button>
+              {!collapsedSections.pipeline && (
+                <div className="border-t border-slate-100 p-5 pt-4 space-y-2 text-sm text-slate-600">
+                  <p><strong>1. Extract</strong> observations and candidate relations from text.</p>
+                  <p><strong>2. Validate</strong> against BLESC ontology rules.</p>
+                  <p><strong>3. Store</strong> snapshot with day and model metadata.</p>
+                  <p><strong>4. Render</strong> layout structure.</p>
+                </div>
+              )}
+            </div>
+
+            {/* How to read */}
+            <div className="rounded-lg border border-slate-200 bg-white">
+              <button
+                type="button"
+                onClick={() => toggleSection("howToRead")}
+                className="flex w-full items-center justify-between p-5 text-left font-semibold text-slate-700 hover:bg-slate-50/50 transition"
+              >
+                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <RotateCw className="h-4 w-4 text-cyan-600" />
+                  {mode === "concept" ? "Quotient Graph Semantics" : "Reading the Graph"}
+                </div>
+                {collapsedSections.howToRead ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronUp className="h-4 w-4 text-slate-400" />}
+              </button>
+              {!collapsedSections.howToRead && (
+                <div className="border-t border-slate-100 p-5 pt-4 space-y-2 text-sm text-slate-600">
+                  {mode === "concept" ? (
+                    <>
+                      <p>Identical entity labels collapse into one recurring concept node.</p>
+                      <p><strong>Node size</strong> = appearance frequency.</p>
+                      <p><strong>Edge thickness</strong> = relation pattern recurrence.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p>Nodes are extracted observations (State, Trigger, Behavior, Event, Protective).</p>
+                      <p>Temporal mode uses Z-axis for chronology.</p>
+                      <p>Double-click a node to focus on its direct neighborhood.</p>
+                    </>
+                  )}
+                  {usingFallback && <p className="text-rose-600 font-medium">Debug fallback active.</p>}
+                </div>
+              )}
+            </div>
+
+            {/* Precision Boundary */}
+            <div className="rounded-lg border border-amber-200 bg-amber-50">
+              <button
+                type="button"
+                onClick={() => toggleSection("precision")}
+                className="flex w-full items-center justify-between p-5 text-left font-semibold text-amber-800 hover:bg-amber-100/50 transition"
+              >
+                <div className="text-sm font-semibold uppercase tracking-[0.16em]">
+                  Precision Boundary
+                </div>
+                {collapsedSections.precision ? <ChevronDown className="h-4 w-4 text-amber-600" /> : <ChevronUp className="h-4 w-4 text-amber-600" />}
+              </button>
+              {!collapsedSections.precision && (
+                <div className="border-t border-amber-100 p-5 pt-4 space-y-2 text-sm text-amber-900">
+                  <p>The graph is precise as a structured pattern record, not as clinical diagnosis.</p>
+                  <p>Use confidence, recurrence, and relation types together. A single node or edge is not definitive proof.</p>
+                </div>
+              )}
+            </div>
+          </aside>
+        )}
       </div>
     </section>
   );
