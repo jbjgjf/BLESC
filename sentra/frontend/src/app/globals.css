@@ -41,9 +41,10 @@
   --background:     var(--ivory);
   --foreground:     var(--ink);
 
-  /* Map display and body fonts to Next.js Inter variable */
-  --font-cinzel:    var(--font-sans), sans-serif;
-  --font-garamond:  var(--font-sans), sans-serif;
+  /* Map display and body fonts to Helvetica Neue */
+  --font-sans:      "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-cinzel:    var(--font-sans);
+  --font-garamond:  var(--font-sans);
 }
 
 @theme inline {
@@ -70,9 +71,9 @@
   --color-ink-mid:      var(--ink-mid);
   --color-ink-faint:    var(--ink-faint);
 
-  --font-sans:    var(--font-sans), sans-serif;
-  --font-serif:   var(--font-sans), sans-serif;
-  --font-display: var(--font-sans), sans-serif;
+  --font-sans:    var(--font-sans);
+  --font-serif:   var(--font-sans);
+  --font-display: var(--font-sans);
   --font-mono:    monospace;
 }
 
