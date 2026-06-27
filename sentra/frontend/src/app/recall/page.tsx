@@ -134,15 +134,17 @@ export default function RecallWorkspacePage() {
         };
         setMessages((current) => [...current, safetyMessage]);
       } else {
+        const conversationContext = [
+          "BLESC 30-turn recall workspace. Use cautious, non-diagnostic language.",
+          "Briefly reflect the user's latest answer, avoid clinical certainty, then keep the interview moving.",
+          `Current user turn: ${nextUserTurnCount}/${MAX_USER_TURNS}.`,
+          `Next guided question candidate: ${nextQuestionForTurn(nextUserTurnCount)}`,
+        ];
         const response = await ApiClient.createChat(
           userId,
-          [
-            "BLESC 30-turn recall workspace. Use cautious, non-diagnostic language.",
-            "Briefly reflect the user's latest answer, avoid clinical certainty, then keep the interview moving.",
-            `Current user turn: ${nextUserTurnCount}/${MAX_USER_TURNS}.`,
-            `Latest answer: ${content}`,
-          ].join("\n"),
+          content,
           5,
+          { mode: "recall_workspace", conversationContext },
         );
         const nextQuestion = nextUserTurnCount >= MAX_USER_TURNS
           ? "That completes the 30-turn window. Review the summary below and consider sharing concerning patterns with a trusted adult or qualified professional."

@@ -18,6 +18,7 @@ import {
 import { supabase } from "@/lib/supabase/client";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 
 type ParticipantRow = {
   id: string;
@@ -114,6 +115,18 @@ async function stableHash(value: string): Promise<string> {
   const bytes = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function responseError(prefix: string, res: Response): Promise<Error> {
+  let detail = res.statusText || `HTTP ${res.status}`;
+  try {
+    const payload = await res.json();
+    if (typeof payload.detail === "string") detail = payload.detail;
+    else if (typeof payload.error === "string") detail = payload.error;
+  } catch {
+    // Keep status text when the body is not JSON.
+  }
+  return new Error(`${prefix} (${res.status}): ${detail}`);
 }
 
 function toEntry(row: EntryRow, userId: string): Entry {
@@ -222,32 +235,42 @@ export class ApiClient {
     if (data.session?.access_token && !headers.has("Authorization")) {
       headers.set("Authorization", `Bearer ${data.session.access_token}`);
     }
-    const res = await fetch(`${API_BASE_URL}${path}`, {
-      ...options,
-      headers,
-    });
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE_URL}${path}`, {
+        ...options,
+        headers,
+        signal: options.signal ?? controller.signal,
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        throw new Error(`API request timed out after ${DEFAULT_REQUEST_TIMEOUT_MS / 1000}s: ${path}`);
+      }
+      throw err;
+    } finally {
+      window.clearTimeout(timeout);
+    }
     if (!res.ok) {
-      throw new Error(`API Error: ${res.statusText}`);
+      throw await responseError("API Error", res);
     }
     return res.json();
   }
 
   static async transcribeAudio(file: File): Promise<AudioTranscriptionResponse> {
+    const { data } = await supabase.auth.getSession();
     const body = new FormData();
+    const headers = new Headers();
+    if (data.session?.access_token) headers.set("Authorization", `Bearer ${data.session.access_token}`);
     body.append("file", file);
     const res = await fetch(`${API_BASE_URL}/audio/transcriptions`, {
       method: "POST",
+      headers,
       body,
     });
     if (!res.ok) {
-      let detail = res.statusText;
-      try {
-        const payload = await res.json();
-        detail = typeof payload.detail === "string" ? payload.detail : detail;
-      } catch {
-        // Keep status text if the response is not JSON.
-      }
-      throw new Error(`Audio transcription failed (${res.status}): ${detail}`);
+      throw await responseError("Audio transcription failed", res);
     }
     return res.json();
   }
@@ -775,13 +798,21 @@ export class ApiClient {
     };
   }
 
-  static async createChat(userId: string, message: string, limit = 5): Promise<ChatResponse> {
+  static async createChat(userId: string, message: string, limit = 5, options: { mode?: "general" | "recall_workspace"; conversationContext?: string[] } = {}): Promise<ChatResponse> {
     const ownerUserId = await this.requireOwnerId();
     const participant = await this.getParticipant(userId);
     const response = await this.fetch<ChatResponse>("/chat", {
       method: "POST",
-      body: JSON.stringify({ user_id: userId, participant_code: userId, message, limit }),
+      body: JSON.stringify({
+        user_id: userId,
+        participant_code: userId,
+        message,
+        limit,
+        mode: options.mode ?? "general",
+        conversation_context: options.conversationContext ?? [],
+      }),
     });
+    if (response.mirrored) return response;
 
     try {
       const chatSession = await supabase

@@ -273,6 +273,7 @@ export interface ChatResponse {
   model_run_id?: RecordId;
   status: string;
   error_message?: string | null;
+  mirrored?: boolean;
 }
 
 export interface AudioTranscriptionResponse {

@@ -717,6 +717,24 @@ export default function Home() {
             Open 30-Turn Recall Workspace
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
+          <Link
+            href="/voice"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-3 mt-4 inline-flex items-center gap-2 rounded-md px-4 py-2 text-xs font-semibold transition-all"
+            style={{
+              ...displayFont,
+              border: "1px solid rgba(34,211,238,0.55)",
+              color: "var(--ink)",
+              backgroundColor: "rgba(34,211,238,0.10)",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              textDecoration: "none",
+            }}
+          >
+            Open Voice Workspace
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
         </div>
         <form onSubmit={handleChatSubmit} className="px-7 py-5 space-y-3">
           <textarea

@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 
 const primaryNav = [
   { href: "/",      label: "Record" },
+  { href: "/voice", label: "Voice" },
   { href: "/graph", label: "Graph" },
 ];
 
