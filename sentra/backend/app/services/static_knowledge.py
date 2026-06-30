@@ -26,6 +26,8 @@ DEFAULT_STATIC_KNOWLEDGE_FILES = [
     DEFAULT_STATIC_DOCS_DIR / "product_policy.md",
     DEFAULT_STATIC_DOCS_DIR / "safety_escalation_policy.md",
     DEFAULT_STATIC_DOCS_DIR / "vector_store_knowledge_plan.md",
+    DEFAULT_STATIC_DOCS_DIR / "static_authoritative_source_inventory.md",
+    DEFAULT_STATIC_DOCS_DIR / "static_safety_school_support_reference.md",
 ]
 ALLOWED_EXTENSIONS = {".md", ".txt", ".pdf", ".docx"}
 SENSITIVE_PATH_MARKERS = {

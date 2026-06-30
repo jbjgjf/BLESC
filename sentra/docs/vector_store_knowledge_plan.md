@@ -38,6 +38,8 @@ The backend ingestion pipeline accepts only approved file extensions from config
 - `docs/product_policy.md`
 - `docs/safety_escalation_policy.md`
 - `docs/vector_store_knowledge_plan.md`
+- `docs/static_authoritative_source_inventory.md`
+- `docs/static_safety_school_support_reference.md`
 
 The ingestion code rejects paths that look like user data, exports, journals, entries, chats, uploads, or local databases. Static documents must be reviewed before upload.
 
