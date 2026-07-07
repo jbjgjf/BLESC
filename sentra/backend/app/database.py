@@ -20,6 +20,10 @@ def _apply_migrations() -> None:
         # (table_name, column_name, column_ddl)
         ("hybridexplanation", "key_relations", "JSON DEFAULT '[]'"),
         ("entry", "observation_type", "TEXT DEFAULT 'daily'"),
+        ("extraction", "emotional_state_json", "JSON DEFAULT '{}'"),
+        ("extraction", "reflection_cards_json", "JSON DEFAULT '[]'"),
+        ("extraction", "safety_flags_json", "JSON DEFAULT '[]'"),
+        ("extraction", "prompt_version", "TEXT DEFAULT 'unknown'"),
         ("extraction", "extraction_provider", "TEXT DEFAULT 'unknown'"),
         ("extraction", "extraction_model", "TEXT DEFAULT 'unknown'"),
         ("graphsnapshot", "extraction_provider", "TEXT DEFAULT 'unknown'"),

@@ -25,6 +25,7 @@ from .schemas.research import EvalExample
 from .schemas.structured import EntrySubmissionResponse, ExtractionResponse, GraphSnapshot, HybridExplanation
 from .services.inference_orchestrator import InferenceOrchestrator
 from .services.llm_adapter import llm_adapter
+from .services.reflection_intelligence import analyze_reflection, run_reflection_eval
 from .services.research_pipeline import (
     create_fine_tuning_dataset_export,
     create_openai_fine_tuning_job,
@@ -141,6 +142,17 @@ class EvalReviewRequest(BaseModel):
     user_id: str
     participant_code: Optional[str] = None
     review_status: str
+
+
+class ReflectionAnalyzeRequest(BaseModel):
+    reflection_id: str
+    content: str
+    locale: str = "en-US"
+    recent_context: List[Dict[str, Any]] = []
+
+
+class ReflectionEvalRequest(BaseModel):
+    case_ids: Optional[List[str]] = None
 
 
 @app.on_event("startup")
@@ -311,11 +323,35 @@ def _to_extraction_response(extraction: Extraction) -> ExtractionResponse:
         nodes_json=extraction.nodes_json or [],
         relations_json=extraction.relations_json or [],
         temporal_summary=extraction.temporal_summary,
+        emotional_state_json=extraction.emotional_state_json or {},
+        reflection_cards_json=extraction.reflection_cards_json or [],
+        safety_flags_json=extraction.safety_flags_json or [],
+        prompt_version=extraction.prompt_version,
         extractor_version=extraction.extractor_version,
         extraction_provider=extraction.extraction_provider,
         extraction_model=extraction.extraction_model,
         created_at=extraction.created_at,
     )
+
+
+@app.post("/api/reflections/analyze")
+def analyze_reflection_endpoint(payload: ReflectionAnalyzeRequest):
+    if not payload.content.strip():
+        raise HTTPException(status_code=422, detail="Reflection content is required")
+    return analyze_reflection(
+        reflection_id=payload.reflection_id,
+        content=payload.content,
+        locale=payload.locale,
+        recent_context=payload.recent_context,
+    )
+
+
+@app.post("/api/reflections/eval")
+def run_reflection_eval_endpoint(payload: ReflectionEvalRequest = Body(default=ReflectionEvalRequest())):
+    result = run_reflection_eval(payload.case_ids)
+    if result["status"] != "passed":
+        raise HTTPException(status_code=500, detail=result)
+    return result
 
 
 @app.post("/api/entries", response_model=EntrySubmissionResponse)
@@ -432,6 +468,16 @@ def create_entry(
         logger.exception("[submit] temporal_summary normalization failed; using 'unknown'")
         temporal_summary = "unknown"
 
+    reflection_analysis = analyze_reflection(
+        reflection_id=f"entry:{entry.id}",
+        content=entry_text,
+        locale="en-US",
+        graph_extraction=cleaned,
+    )
+    emotional_state = reflection_analysis["emotional_state"]
+    reflection_cards = reflection_analysis["reflection_cards"]
+    safety_flags = emotional_state.get("safety_classification", {}).get("flags", [])
+
     # ── 4. Persist extraction ────────────────────────────────────────────────
     try:
         extraction = Extraction(
@@ -439,6 +485,10 @@ def create_entry(
             nodes_json=cleaned.get("nodes", []),
             relations_json=cleaned.get("relations", []),
             temporal_summary=temporal_summary,
+            emotional_state_json=emotional_state,
+            reflection_cards_json=reflection_cards,
+            safety_flags_json=safety_flags,
+            prompt_version=emotional_state.get("prompt_version", "unknown"),
             extractor_version=model_metadata["extractor_version"],
             extraction_provider=model_metadata["provider"],
             extraction_model=model_metadata["model"],
@@ -486,6 +536,10 @@ def create_entry(
             nodes_json=[],
             relations_json=[],
             temporal_summary="unknown",
+            emotional_state_json=emotional_state,
+            reflection_cards_json=reflection_cards,
+            safety_flags_json=safety_flags,
+            prompt_version=emotional_state.get("prompt_version", "unknown"),
             extractor_version=model_metadata["extractor_version"],
             extraction_provider=model_metadata["provider"],
             extraction_model=model_metadata["model"],

@@ -14,7 +14,7 @@ import {
   GraphSnapshot,
   InteractionEventPayload,
 } from "@/api/models";
-import { AlertCircle, ArrowRight, CheckCircle2, Loader2, MessageCircle, Send } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, Loader2, MessageCircle, Send, Sparkles } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase/client";
 import { ProcessingTimeline } from "@/components/ProcessingTimeline";
@@ -390,6 +390,8 @@ export default function Home() {
       .slice(0, 5);
   }, [lastSubmission]);
 
+  const reflectionCards = lastSubmission?.extraction.reflection_cards_json ?? [];
+  const emotionalState = lastSubmission?.extraction.emotional_state_json;
   const recentEntries = entries.slice(0, 5);
 
   /* ── render ─────────────────────────────────────────────────── */
@@ -625,6 +627,58 @@ export default function Home() {
                     </span>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {reflectionCards.length > 0 && (
+            <div className="px-7 py-5" style={{ borderTop: "1px solid var(--limestone)" }}>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" style={{ color: "var(--gold)" }} />
+                  <div className="inscription">Reflection Cards</div>
+                </div>
+                {emotionalState?.safety_classification?.level && (
+                  <span
+                    className="px-2 py-1 text-xs"
+                    style={{
+                      ...displayFont,
+                      border: "1px solid var(--limestone)",
+                      color: emotionalState.safety_classification.level === "crisis" ? "var(--sienna)" : "var(--ink-faint)",
+                      backgroundColor: "rgba(255,255,255,0.04)",
+                      fontSize: "0.5rem",
+                      letterSpacing: "0.14em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {emotionalState.safety_classification.level}
+                  </span>
+                )}
+              </div>
+              <div className="grid gap-3">
+                {reflectionCards.map((card) => (
+                  <article
+                    key={card.id}
+                    className="p-4"
+                    style={{
+                      border: "1px solid var(--limestone)",
+                      backgroundColor: card.status === "suppressed" ? "rgba(244,63,94,0.08)" : "var(--ivory-warm)",
+                    }}
+                  >
+                    <div
+                      className="mb-1 text-sm"
+                      style={{ ...displayFont, fontWeight: 700, color: "var(--ink)", letterSpacing: "0.04em" }}
+                    >
+                      {card.title}
+                    </div>
+                    <p className="text-sm leading-relaxed" style={{ color: "var(--ink-mid)", fontStyle: "italic", ...bodyFont }}>
+                      {card.body}
+                    </p>
+                    <div className="mt-2 text-xs" style={{ color: "var(--ink-faint)", ...bodyFont }}>
+                      {card.type.replaceAll("_", " ")} · {card.confidence} confidence
+                    </div>
+                  </article>
+                ))}
               </div>
             </div>
           )}

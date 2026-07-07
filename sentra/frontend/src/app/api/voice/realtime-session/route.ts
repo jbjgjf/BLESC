@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
 
   const key = openAIKey();
   if (!key || process.env.USE_MOCK_LLM?.toLowerCase() === "true") {
-    return jsonError("Realtime voice is not configured. Set OPENAI_API_KEY and ensure USE_MOCK_LLM is not true.", 503);
+    return jsonError("Realtime voice is not configured. Set the server OpenAI API key and ensure mock mode is disabled.", 503);
   }
 
   const payload = await request.json().catch(() => ({})) as VoiceRequest;

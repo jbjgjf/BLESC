@@ -165,7 +165,7 @@ async function callOpenAI(message: string, payload: ChatPayload, recentMessages:
       answer: fallbackAnswer(payload.mode),
       provider: "deterministic",
       status: "degraded",
-      error_message: "OpenAI chat is not configured. Set OPENAI_API_KEY and ensure USE_MOCK_LLM is not true.",
+      error_message: "OpenAI chat is not configured. Set the server OpenAI API key and ensure mock mode is disabled.",
     };
   }
 

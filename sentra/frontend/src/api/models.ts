@@ -29,12 +29,54 @@ export interface ExtractionRelation {
   confidence: number;
 }
 
+export interface EmotionalStateExtraction {
+  reflection_id: string;
+  locale: string;
+  primary_emotions: Array<{
+    label: string;
+    intensity: number;
+    confidence: "low" | "medium" | "high" | string;
+    evidence_ref: Record<string, JsonValue>;
+  }>;
+  intensity: number;
+  trigger_candidates: Array<Record<string, JsonValue>>;
+  cognitive_themes: Array<Record<string, JsonValue>>;
+  body_behavior_signals: Array<Record<string, JsonValue>>;
+  protective_factors: Array<Record<string, JsonValue>>;
+  support_needs: Array<Record<string, JsonValue>>;
+  uncertainty_notes: string[];
+  evidence_spans: Array<Record<string, JsonValue>>;
+  safety_classification: {
+    level: "normal" | "elevated" | "crisis" | string;
+    flags: string[];
+    action: string;
+  };
+  prompt_version: string;
+  model: string;
+  status: string;
+}
+
+export interface ReflectionCard {
+  id: string;
+  type: "emotion_mirror" | "possible_trigger_pattern" | "support_need" | "small_next_step" | "reflection_question" | "safety_suppression" | string;
+  title: string;
+  body: string;
+  evidence_refs: Array<Record<string, JsonValue>>;
+  confidence: "low" | "medium" | "high" | string;
+  status: "active" | "suppressed" | string;
+  prompt_version: string;
+}
+
 export interface Extraction {
   id: RecordId;
   entry_id: RecordId;
   nodes_json: ExtractionNode[];
   relations_json: ExtractionRelation[];
   temporal_summary: string;
+  emotional_state_json?: EmotionalStateExtraction;
+  reflection_cards_json?: ReflectionCard[];
+  safety_flags_json?: string[];
+  prompt_version?: string;
   created_at: string;
 }
 
