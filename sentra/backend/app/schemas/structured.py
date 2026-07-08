@@ -34,6 +34,10 @@ class ExtractionResponse(SQLModel):
     nodes_json: List[Dict[str, Any]] = Field(default_factory=list)
     relations_json: List[Dict[str, Any]] = Field(default_factory=list)
     temporal_summary: Optional[str] = None
+    emotional_state_json: Dict[str, Any] = Field(default_factory=dict)
+    reflection_cards_json: List[Dict[str, Any]] = Field(default_factory=list)
+    safety_flags_json: List[str] = Field(default_factory=list)
+    prompt_version: str = "unknown"
     extractor_version: str = ""
     extraction_provider: str = "unknown"
     extraction_model: str = "unknown"

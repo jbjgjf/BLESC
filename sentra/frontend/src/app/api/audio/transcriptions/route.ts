@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
   const key = openAIKey();
   if (!key || process.env.USE_MOCK_LLM?.toLowerCase() === "true") {
     return NextResponse.json(
-      { detail: "Voice transcription is not configured. Set OPENAI_API_KEY and ensure USE_MOCK_LLM is not true." },
+      { detail: "Voice transcription is not configured. Set the server OpenAI API key and ensure mock mode is disabled." },
       { status: 503 },
     );
   }
