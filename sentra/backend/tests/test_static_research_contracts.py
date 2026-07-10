@@ -121,7 +121,7 @@ def test_openai_keys_are_backend_only_and_not_tracked_as_active_values():
     assert "NEXT_PUBLIC_OPENAI" not in frontend_source
     assert "OPENAI_API_KEY" not in frontend_source
 
-    tracked_env = _read(BACKEND / ".env")
+    tracked_env = _read(BACKEND / ".env") if (BACKEND / ".env").exists() else ""
     active_secret_lines = [
         line for line in tracked_env.splitlines()
         if "OPENAI_API_KEY" in line and not line.strip().startswith("#")

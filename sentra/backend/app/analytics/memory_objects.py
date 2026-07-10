@@ -42,6 +42,7 @@ RECURRENCE_COSINE_THRESHOLD = 0.85       # embedding similarity required to coun
 # A strict Jaccard ratio would miss those real recurrences, so the bar is low —
 # this is intentionally a looser, "topic-adjacent" signal than the embedding path.
 RECURRENCE_TOPIC_JACCARD_THRESHOLD = 0.2
+RECURRENCE_TOPIC_MIN_OVERLAP = 2
 RECURRENCE_CAP = 8                       # recurrence_score saturates around this many matches
 DECAY_HALF_LIFE_DAYS = 21.0
 CONTRADICTION_TOPIC_JACCARD_THRESHOLD = 0.2
@@ -252,7 +253,11 @@ def score_recurrence(
     """
     matched_ids: List[int] = []
     for prior in prior_objects:
-        topic_match = jaccard(new_topic_tokens, prior.topic_tokens) >= RECURRENCE_TOPIC_JACCARD_THRESHOLD
+        topic_overlap = len(new_topic_tokens & prior.topic_tokens)
+        topic_match = (
+            topic_overlap >= RECURRENCE_TOPIC_MIN_OVERLAP
+            or jaccard(new_topic_tokens, prior.topic_tokens) >= RECURRENCE_TOPIC_JACCARD_THRESHOLD
+        )
         embedding_match = (
             bool(new_embedding) and bool(prior.embedding)
             and cosine_similarity(new_embedding, prior.embedding) >= RECURRENCE_COSINE_THRESHOLD
