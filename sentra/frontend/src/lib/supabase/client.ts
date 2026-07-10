@@ -1,6 +1,6 @@
 "use client";
 
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -23,7 +23,7 @@ console.info("[supabase] auth config", {
   detectSessionInUrl: true,
 });
 
-export const supabase = createClient(configuredSupabaseUrl, configuredSupabaseAnonKey, {
+export const supabase = createBrowserClient(configuredSupabaseUrl, configuredSupabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
