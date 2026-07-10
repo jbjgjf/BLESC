@@ -1,5 +1,7 @@
+import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -15,7 +17,7 @@ export function jsonError(detail: string, status: number, extra: Record<string, 
 type ApiAuth = { error: NextResponse } | { client: SupabaseClient };
 type ApiUserAuth = { error: NextResponse } | { client: SupabaseClient; user: User };
 
-export function supabaseForRequest(request: NextRequest): ApiAuth {
+export async function supabaseForRequest(request: NextRequest): Promise<ApiAuth> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const authorization = request.headers.get("authorization");
@@ -23,19 +25,33 @@ export function supabaseForRequest(request: NextRequest): ApiAuth {
   if (!supabaseUrl || !supabaseAnonKey) {
     return { error: jsonError("Supabase is not configured.", 503) };
   }
-  if (!authorization) {
-    return { error: jsonError("Authentication is required.", 401) };
-  }
 
-  const client = createClient(supabaseUrl, supabaseAnonKey, {
+  if (authorization) {
+    const client = createClient(supabaseUrl, supabaseAnonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { headers: { Authorization: authorization } },
+    }) as SupabaseClient;
+    return { client };
+  }
+
+  const cookieStore = await cookies();
+  const client = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          cookieStore.set(name, value, options);
+        });
+      },
+    },
   }) as SupabaseClient;
   return { client };
 }
 
 export async function requireUser(request: NextRequest): Promise<ApiUserAuth> {
-  const auth = supabaseForRequest(request);
+  const auth = await supabaseForRequest(request);
   if ("error" in auth) return auth;
 
   const userResult = await auth.client.auth.getUser();

@@ -151,7 +151,6 @@ export function ContinuousVoiceWorkspace() {
       const tokenResponse = await fetch("/api/voice/realtime-session", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ voice }),

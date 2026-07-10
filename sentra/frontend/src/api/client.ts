@@ -20,6 +20,16 @@ import { supabase } from "@/lib/supabase/client";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 
+function shouldAttachAuthorizationHeader() {
+  if (typeof window === "undefined") return true;
+  if (API_BASE_URL.startsWith("/")) return false;
+  try {
+    return new URL(API_BASE_URL, window.location.origin).origin !== window.location.origin;
+  } catch {
+    return true;
+  }
+}
+
 type ParticipantRow = {
   id: string;
   code: string;
@@ -227,13 +237,15 @@ function toConversationRecall(row: ConversationRecallSummaryRow): ConversationRe
 
 export class ApiClient {
   static async fetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const { data } = await supabase.auth.getSession();
     const headers = new Headers(options.headers);
     if (!headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
     }
-    if (data.session?.access_token && !headers.has("Authorization")) {
-      headers.set("Authorization", `Bearer ${data.session.access_token}`);
+    if (shouldAttachAuthorizationHeader() && !headers.has("Authorization")) {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.access_token) {
+        headers.set("Authorization", `Bearer ${data.session.access_token}`);
+      }
     }
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS);
@@ -259,10 +271,12 @@ export class ApiClient {
   }
 
   static async transcribeAudio(file: File): Promise<AudioTranscriptionResponse> {
-    const { data } = await supabase.auth.getSession();
     const body = new FormData();
     const headers = new Headers();
-    if (data.session?.access_token) headers.set("Authorization", `Bearer ${data.session.access_token}`);
+    if (shouldAttachAuthorizationHeader()) {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.access_token) headers.set("Authorization", `Bearer ${data.session.access_token}`);
+    }
     body.append("file", file);
     const res = await fetch(`${API_BASE_URL}/audio/transcriptions`, {
       method: "POST",

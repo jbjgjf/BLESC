@@ -1,5 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { requireUser } from "@/lib/server/api";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -34,24 +34,6 @@ type ConversationRecallRow = {
 const REQUIRED_USER_TURNS = 6;
 const MAX_MESSAGES = 30;
 const PIPELINE_VERSION = "conversation-recall-30-v1";
-
-function supabaseForRequest(request: NextRequest) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const authorization = request.headers.get("authorization");
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return { error: NextResponse.json({ detail: "Supabase is not configured." }, { status: 503 }) };
-  }
-  if (!authorization) {
-    return { error: NextResponse.json({ detail: "Authentication is required." }, { status: 401 }) };
-  }
-  return {
-    client: createClient(supabaseUrl, supabaseAnonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: authorization } },
-    }),
-  };
-}
 
 function isMissingTable(error: unknown) {
   return Boolean(
@@ -152,13 +134,9 @@ function notEnoughHistory(messages: ChatMessageRow[]) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = supabaseForRequest(request);
-  if (auth.error) return auth.error;
+  const auth = await requireUser(request);
+  if ("error" in auth) return auth.error;
   const supabase = auth.client;
-  const userResult = await supabase.auth.getUser();
-  if (userResult.error || !userResult.data.user) {
-    return NextResponse.json({ detail: "Authentication is required." }, { status: 401 });
-  }
 
   const userId = request.nextUrl.searchParams.get("user_id")?.trim();
   const refresh = request.nextUrl.searchParams.get("refresh") === "true";
@@ -231,7 +209,7 @@ export async function GET(request: NextRequest) {
   const inserted = await supabase
     .from("conversation_recall_summaries")
     .insert({
-      owner_user_id: userResult.data.user.id,
+      owner_user_id: auth.user.id,
       participant_id: participant.id,
       ...payload,
     })
