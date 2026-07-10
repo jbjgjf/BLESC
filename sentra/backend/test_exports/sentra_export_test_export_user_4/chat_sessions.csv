@@ -1,0 +1,2 @@
+consent_snapshot_json,created_at,id,source_table,subject_id
+"{""anonymized_export"": false, ""app_use"": true, ""consent_version"": ""research-consent-v1"", ""future_fine_tuning"": false, ""research_analysis"": true}",2026-07-10T10:18:35.462904,4,chat_sessions,subject_bc6c9a692c5384a502d39da0

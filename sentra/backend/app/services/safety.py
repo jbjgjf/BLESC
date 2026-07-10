@@ -2,28 +2,43 @@ from app.models.safety import SafetyAssessmentInput, SafetyAssessmentReturn
 
 
 def assess_safety(payload: SafetyAssessmentInput) -> SafetyAssessmentReturn:
-    """
-    Analyzes user text content to evaluate risk levels, identify self-harm or 
-    crisis intent, and trigger crisis safety bypasses if necessary.
-    """
     content_lower = payload.content.lower()
 
-    # Simple trigger check for crisis words (Matches implementation scope indicators)
-    crisis_keywords = ["hurt myself", "suicide",
-                       "end everything", "cannot stay safe", "imminent danger"]
+    # 1. Grouping the exact triggers from your scope document
+    crisis_triggers = ["hurt myself", "suicide",
+                       "end my life", "cannot stay safe", "imminent danger"]
+    abuse_violence_triggers = ["abusing me",
+                               "hit me", "domestic violence", "assault"]
+    concealment_triggers = ["don't tell anyone",
+                            "keep this a secret", "hide this"]
 
-    if any(keyword in content_lower for keyword in crisis_keywords):
+    reasons = []
+
+    # 2. Check conditions
+    if any(t in content_lower for t in crisis_triggers):
+        reasons.append(
+            "Detected explicit self-harm intent, suicide ideation, or inability to stay safe.")
+    if any(t in content_lower for t in abuse_violence_triggers):
+        reasons.append(
+            "Detected indicators of abuse, domestic harm, or active violence.")
+    if any(t in content_lower for t in concealment_triggers):
+        reasons.append(
+            "Detected critical concealment or secrecy request regarding personal harm.")
+
+    # 3. If any trigger hit, trigger Crisis Mode
+    if reasons:
         return SafetyAssessmentReturn(
             risk_level="crisis",
-            confidence=0.95,
+            confidence=0.98,
             escalation_required=True,
-            reasons=[
-                "Detected explicit crisis indicators or immediate safety risks."],
-            safe_response="I'm really sorry you're going through this, but I want to make sure you stay safe. Please connect with a professional or reach out to a crisis hotline immediately.",
-            policy_refs=["static_safety_policy_v1"]
+            reasons=reasons,
+            # Scope Requirement: Return policy-safe response for crisis mode
+            safe_response="Your safety is our top priority. If you or someone you know is struggling or in distress, help is available. Please reach out to a professional or a local crisis line immediately.",
+            # Scope Requirement: Link to static safety policy source
+            policy_refs=["static_safety_policy_v1", "escalation_protocol_doc"]
         )
 
-    # Default fallback for clean/safe messages
+    # Default fallback for "none" risk level
     return SafetyAssessmentReturn(
         risk_level="none",
         confidence=1.0,
