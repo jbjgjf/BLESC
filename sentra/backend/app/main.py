@@ -24,6 +24,7 @@ from .schemas.extraction import Extraction
 from .schemas.research import EvalExample
 from .schemas.structured import EntrySubmissionResponse, ExtractionResponse, GraphSnapshot, HybridExplanation
 from .services.inference_orchestrator import InferenceOrchestrator
+from .services.hf_research_benchmark import hf_dataset_rows, run_hf_research_benchmark
 from .services.llm_adapter import llm_adapter
 from .services.reflection_intelligence import analyze_reflection, run_reflection_eval
 from .services.research_pipeline import (
@@ -153,6 +154,12 @@ class ReflectionAnalyzeRequest(BaseModel):
 
 class ReflectionEvalRequest(BaseModel):
     case_ids: Optional[List[str]] = None
+
+
+class HfResearchBenchmarkRequest(BaseModel):
+    methods: Optional[List[str]] = None
+    k: int = 2
+    include_dataset_rows: bool = False
 
 
 @app.on_event("startup")
@@ -352,6 +359,14 @@ def run_reflection_eval_endpoint(payload: ReflectionEvalRequest = Body(default=R
     result = run_reflection_eval(payload.case_ids)
     if result["status"] != "passed":
         raise HTTPException(status_code=500, detail=result)
+    return result
+
+
+@app.post("/api/research/hf-benchmark")
+def run_hf_research_benchmark_endpoint(payload: HfResearchBenchmarkRequest = Body(default=HfResearchBenchmarkRequest())):
+    result = run_hf_research_benchmark(methods=payload.methods, k=payload.k)
+    if payload.include_dataset_rows:
+        result["hf_dataset_rows"] = hf_dataset_rows()
     return result
 
 

@@ -161,11 +161,6 @@ export function GraphViewer3D({
     setCollapsedSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
-  // Reset focus when mode changes
-  useEffect(() => {
-    setFocusNodeId(null);
-  }, [mode]);
-
   const fgRef = useRef<ForceGraphMethods | null>(null);
   const graphFrameRef = useRef<HTMLDivElement | null>(null);
   const modeCopy = MODE_COPY[mode];
@@ -330,7 +325,7 @@ export function GraphViewer3D({
               <button
                 key={m}
                 type="button"
-                onClick={() => { setMode(m); setSelectedNode(null); }}
+                onClick={() => { setMode(m); setSelectedNode(null); setFocusNodeId(null); }}
                 className={`rounded px-3 py-2 text-sm font-medium capitalize transition ${
                   mode === m ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"
                 }`}
