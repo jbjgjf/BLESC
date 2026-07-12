@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { assessSafety, SAFETY_ASSESSMENT_VERSION } from "@/lib/safety-assessment";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -323,6 +324,7 @@ export async function POST(request: NextRequest) {
   const idSeed = await sha256(`${userId}:${createdAt}:${entryText}`);
   const entryId = `prod_${idSeed.slice(0, 16)}`;
   const { extraction, provider, model, status } = await extractWithOpenAI(entryText);
+  const safetyAssessment = assessSafety(entryText);
   const day = createdAt.slice(0, 10);
   const protectiveCount = extraction.nodes.filter((node) => node.category === "Protective").length;
   const triggerCount = extraction.nodes.filter((node) => node.category === "Trigger").length;
@@ -359,6 +361,40 @@ export async function POST(request: NextRequest) {
       nodes_json: extraction.nodes,
       relations_json: extraction.relations,
       temporal_summary: extraction.temporal_summary,
+      emotional_state_json: {
+        reflection_id: entryId,
+        locale: "und",
+        primary_emotions: [],
+        intensity: safetyAssessment.risk_level === "crisis" ? 5 : safetyAssessment.risk_level === "elevated" ? 4 : 2,
+        trigger_candidates: [],
+        cognitive_themes: [],
+        body_behavior_signals: [],
+        protective_factors: [],
+        support_needs: [],
+        uncertainty_notes: [],
+        evidence_spans: [],
+        safety_classification: {
+          level: safetyAssessment.risk_level === "none" ? "normal" : safetyAssessment.risk_level,
+          flags: safetyAssessment.reasons,
+          action: safetyAssessment.risk_level === "crisis" ? "suppress_cards_and_prioritize_escalation" : "show_reflection_cards",
+        },
+        prompt_version: SAFETY_ASSESSMENT_VERSION,
+        model: "deterministic-rules",
+        status: "complete",
+      },
+      reflection_cards_json: safetyAssessment.risk_level === "crisis" ? [{
+        id: `${entryId}:crisis_suppressed`,
+        type: "safety_suppression",
+        title: "Support first",
+        body: safetyAssessment.safe_response,
+        evidence_refs: [],
+        confidence: "high",
+        status: "suppressed",
+        prompt_version: SAFETY_ASSESSMENT_VERSION,
+        policy_refs: safetyAssessment.policy_refs,
+      }] : [],
+      safety_flags_json: safetyAssessment.reasons,
+      safety_assessment_json: safetyAssessment,
       extractor_version: PIPELINE_VERSION,
       extraction_provider: provider,
       extraction_model: model,
