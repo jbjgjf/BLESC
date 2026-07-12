@@ -22,10 +22,10 @@ import { VoiceInputButton } from "@/components/VoiceInputButton";
 
 const categoryColor: Record<string, { bg: string; text: string; border: string }> = {
   Protective: { bg: "rgba(6,182,212,0.12)", text: "#22d3ee", border: "rgba(6,182,212,0.30)" },
-  Event: { bg: "rgba(244,63,94,0.12)", text: "#fb7185", border: "rgba(244,63,94,0.30)" },
-  Behavior: { bg: "rgba(139,92,246,0.12)", text: "#a78bfa", border: "rgba(139,92,246,0.30)" },
-  Trigger: { bg: "rgba(236,72,153,0.12)", text: "#f472b6", border: "rgba(236,72,153,0.30)" },
-  State: { bg: "rgba(245,158,11,0.12)", text: "#fbbf24", border: "rgba(245,158,11,0.30)" },
+  Event:      { bg: "rgba(244,63,94,0.12)",  text: "#fb7185", border: "rgba(244,63,94,0.30)"  },
+  Behavior:   { bg: "rgba(139,92,246,0.12)", text: "#a78bfa", border: "rgba(139,92,246,0.30)" },
+  Trigger:    { bg: "rgba(236,72,153,0.12)", text: "#f472b6", border: "rgba(236,72,153,0.30)" },
+  State:      { bg: "rgba(245,158,11,0.12)", text: "#fbbf24", border: "rgba(245,158,11,0.30)" },
 };
 
 /* ── styles ─────────────────────────────────────────────────── */
@@ -37,7 +37,7 @@ const panel: React.CSSProperties = {
   borderRadius: "8px",
 };
 const displayFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
-const bodyFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
+const bodyFont: React.CSSProperties    = { fontFamily: "var(--font-sans), sans-serif" };
 const journalSteps = ["Saving observation", "Extracting graph", "Computing reflection signal", "Updating research artifacts", "Done"];
 const chatSteps = ["Preparing message", "Retrieving related entries", "Checking BLESC static knowledge", "Generating cautious response", "Done"];
 
@@ -918,44 +918,44 @@ export default function Home() {
               No records yet.
             </div>
           ) : recentEntries.map((entry, i) => (
-            <div
-              key={entry.id}
-              className="px-6 py-4 flex items-start justify-between gap-4"
-              style={{
-                borderBottom: i < recentEntries.length - 1 ? "1px solid var(--ivory-aged)" : "none",
-              }}
-            >
-              <div className="flex-1 min-w-0">
-                <div
-                  className="text-xs mb-1"
-                  style={{ ...displayFont, color: "var(--ink-faint)", letterSpacing: "0.08em" }}
-                >
-                  {new Date(entry.created_at).toLocaleDateString(undefined, {
-                    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-                  })}
-                </div>
-                <div
-                  className="text-sm leading-relaxed truncate"
-                  style={{ color: "var(--ink-mid)", ...bodyFont, fontStyle: "italic" }}
-                >
-                  {entry.raw_text ?? "Observation recorded."}
-                </div>
-              </div>
-              <span
-                className="shrink-0 px-2 py-0.5 text-xs"
+              <div
+                key={entry.id}
+                className="px-6 py-4 flex items-start justify-between gap-4"
                 style={{
-                  ...displayFont,
-                  border: "1px solid var(--limestone)",
-                  color: "var(--ink-faint)",
-                  fontSize: "0.5rem",
-                  letterSpacing: "0.14em",
-                  textTransform: "uppercase",
+                  borderBottom: i < recentEntries.length - 1 ? "1px solid var(--ivory-aged)" : "none",
                 }}
               >
-                {entry.observation_type ?? "daily"}
-              </span>
-            </div>
-          ))
+                <div className="flex-1 min-w-0">
+                  <div
+                    className="text-xs mb-1"
+                    style={{ ...displayFont, color: "var(--ink-faint)", letterSpacing: "0.08em" }}
+                  >
+                    {new Date(entry.created_at).toLocaleDateString(undefined, {
+                      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+                    })}
+                  </div>
+                  <div
+                    className="text-sm leading-relaxed truncate"
+                    style={{ color: "var(--ink-mid)", ...bodyFont, fontStyle: "italic" }}
+                  >
+                    {entry.raw_text ?? "Observation recorded."}
+                  </div>
+                </div>
+                <span
+                  className="shrink-0 px-2 py-0.5 text-xs"
+                  style={{
+                    ...displayFont,
+                    border: "1px solid var(--limestone)",
+                    color: "var(--ink-faint)",
+                    fontSize: "0.5rem",
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {entry.observation_type ?? "daily"}
+                </span>
+              </div>
+            ))
           }
         </div>
       </section>
