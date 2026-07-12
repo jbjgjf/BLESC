@@ -111,6 +111,7 @@ class ModelRun(SQLModel, table=True):
     retrieval_config_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     input_provenance_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     output_hash: Optional[str] = None
+    output_summary_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     status: str = "completed"
     error_message: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

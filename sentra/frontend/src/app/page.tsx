@@ -46,7 +46,8 @@ const chatSteps = ["Preparing message", "Retrieving related entries", "Checking 
    ================================================================ */
 export default function Home() {
   const { userId, participant } = useAuth();
-
+  const [isSafetyDiverted, setIsSafetyDiverted] = useState(false);
+  const [safetyMessage, setSafetyMessage] = useState("");
   const [journalText, setJournalText] = useState("");
   const [recallText, setRecallText] = useState("");
   const [chatText, setChatText] = useState("");
@@ -292,6 +293,16 @@ export default function Home() {
       setJournalStep(journalSteps.length - 1);
       setJournalComplete(true);
       setLastSubmission(response);
+
+      const safetyAssessment = response.extraction.safety_assessment_json;
+      if (safetyAssessment?.risk_level === "crisis") {
+        setIsSafetyDiverted(true);
+        setSafetyMessage(safetyAssessment.safe_response);
+      } else {
+        setIsSafetyDiverted(false);
+        setSafetyMessage("");
+      }
+
       setEntries((current) => [response.entry, ...current.filter((entry) => entry.id !== response.entry.id)]);
       setJournalText("");
       setRecallText("");
@@ -552,6 +563,32 @@ export default function Home() {
           )}
         </form>
       </section>
+
+      {isSafetyDiverted && (
+        <section
+          role="alert"
+          aria-live="assertive"
+          className="mb-8 px-7 py-6"
+          style={{
+            ...panel,
+            border: "2px solid var(--terracotta)",
+            backgroundColor: "rgba(244, 63, 94, 0.10)",
+          }}
+        >
+          <div className="mb-3 flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 shrink-0" style={{ color: "var(--sienna)" }} />
+            <h2 style={{ ...displayFont, color: "var(--sienna)", fontWeight: 700 }}>
+              Immediate human support recommended
+            </h2>
+          </div>
+          <p className="text-sm leading-relaxed" style={{ color: "var(--ink)", ...bodyFont }}>
+            {safetyMessage}
+          </p>
+          <p className="mt-3 text-xs" style={{ color: "var(--ink-mid)", ...bodyFont }}>
+            BLESC is not a clinical assessment or an emergency service.
+          </p>
+        </section>
+      )}
 
       {/* ── Reflection signal result ───────────────────────────── */}
       {lastSubmission && (

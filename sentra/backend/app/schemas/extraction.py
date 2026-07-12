@@ -29,6 +29,7 @@ class Extraction(SQLModel, table=True):
     emotional_state_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     reflection_cards_json: List[Dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
     safety_flags_json: List[str] = Field(default_factory=list, sa_column=Column(JSON))
+    safety_assessment_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     prompt_version: str = "unknown"
     extractor_version: str = "qwen-2.5-7b-v1"
     extraction_provider: str = "unknown"

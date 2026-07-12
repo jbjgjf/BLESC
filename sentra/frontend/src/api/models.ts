@@ -65,6 +65,16 @@ export interface ReflectionCard {
   confidence: "low" | "medium" | "high" | string;
   status: "active" | "suppressed" | string;
   prompt_version: string;
+  policy_refs?: string[];
+}
+
+export interface SafetyAssessment {
+  risk_level: "none" | "low" | "elevated" | "crisis";
+  confidence: number;
+  escalation_required: boolean;
+  reasons: string[];
+  safe_response: string;
+  policy_refs: string[];
 }
 
 export interface Extraction {
@@ -76,6 +86,7 @@ export interface Extraction {
   emotional_state_json?: EmotionalStateExtraction;
   reflection_cards_json?: ReflectionCard[];
   safety_flags_json?: string[];
+  safety_assessment_json?: SafetyAssessment;
   prompt_version?: string;
   created_at: string;
 }

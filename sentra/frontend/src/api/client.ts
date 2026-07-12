@@ -533,6 +533,32 @@ export class ApiClient {
       const modelRunId = modelRunInsert.data?.id ?? null;
       if (modelRunInsert.error) console.warn("[research] model_runs insert skipped", modelRunInsert.error);
 
+      const safetyAssessment = computed.extraction.safety_assessment_json;
+      if (safetyAssessment) {
+        const { error: safetyAuditError } = await supabase.from("model_runs").insert({
+          owner_user_id: ownerUserId,
+          participant_id: participantId,
+          artifact_type: "safety_assessment",
+          artifact_id: String(entryId),
+          provider: "rules",
+          model: "safety-assessment-v1",
+          prompt_version: "safety-assessment-v1",
+          schema_version: "safety-assessment-v1",
+          pipeline_version: pipelineVersion,
+          temperature: 0,
+          retrieval_config_json: {
+            risk_level: safetyAssessment.risk_level,
+            escalation_required: safetyAssessment.escalation_required,
+            reasons: safetyAssessment.reasons,
+            policy_refs: safetyAssessment.policy_refs,
+          },
+          input_provenance_json: { entry_id: entryId },
+          output_hash: await stableHash(JSON.stringify(safetyAssessment)),
+          status: "completed",
+        });
+        if (safetyAuditError) console.warn("[research] safety model_runs insert skipped", safetyAuditError);
+      }
+
       await supabase.from("extractions").insert({
         owner_user_id: ownerUserId,
         participant_id: participantId,
@@ -542,7 +568,7 @@ export class ApiClient {
         relations_json: computed.extraction.relations_json as unknown as JsonValue,
         temporal_json: { summary: computed.extraction.temporal_summary },
         uncertainty_json: computed.explanation?.uncertainty_json ?? {},
-        safety_flags: [],
+        safety_flags: computed.extraction.safety_flags_json ?? [],
       });
 
       if (computed.graph_snapshot) {

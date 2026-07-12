@@ -333,6 +333,7 @@ def _to_extraction_response(extraction: Extraction) -> ExtractionResponse:
         emotional_state_json=extraction.emotional_state_json or {},
         reflection_cards_json=extraction.reflection_cards_json or [],
         safety_flags_json=extraction.safety_flags_json or [],
+        safety_assessment_json=extraction.safety_assessment_json or {},
         prompt_version=extraction.prompt_version,
         extractor_version=extraction.extractor_version,
         extraction_provider=extraction.extraction_provider,
@@ -492,6 +493,7 @@ def create_entry(
     emotional_state = reflection_analysis["emotional_state"]
     reflection_cards = reflection_analysis["reflection_cards"]
     safety_flags = emotional_state.get("safety_classification", {}).get("flags", [])
+    safety_assessment = reflection_analysis["safety_assessment"]
 
     # ── 4. Persist extraction ────────────────────────────────────────────────
     try:
@@ -503,6 +505,7 @@ def create_entry(
             emotional_state_json=emotional_state,
             reflection_cards_json=reflection_cards,
             safety_flags_json=safety_flags,
+            safety_assessment_json=safety_assessment,
             prompt_version=emotional_state.get("prompt_version", "unknown"),
             extractor_version=model_metadata["extractor_version"],
             extraction_provider=model_metadata["provider"],
@@ -542,6 +545,26 @@ def create_entry(
                     "personalization": personalization_profile,
                 },
             )
+            record_model_run(
+                session,
+                user_id=user_id,
+                participant_code=participant_code,
+                artifact_type="safety_assessment",
+                artifact_id=extraction.id,
+                provider="rules",
+                model="safety-assessment-v1",
+                output=safety_assessment,
+                prompt_version="safety-assessment-v1",
+                schema_version="safety-assessment-v1",
+                temperature=0.0,
+                input_provenance={"entry_id": entry.id},
+                output_summary={
+                    "risk_level": safety_assessment["risk_level"],
+                    "escalation_required": safety_assessment["escalation_required"],
+                    "reasons": safety_assessment["reasons"],
+                    "policy_refs": safety_assessment["policy_refs"],
+                },
+            )
         except Exception:
             logger.exception("[research] model run capture failed")
     except Exception:
@@ -554,6 +577,7 @@ def create_entry(
             emotional_state_json=emotional_state,
             reflection_cards_json=reflection_cards,
             safety_flags_json=safety_flags,
+            safety_assessment_json=safety_assessment,
             prompt_version=emotional_state.get("prompt_version", "unknown"),
             extractor_version=model_metadata["extractor_version"],
             extraction_provider=model_metadata["provider"],

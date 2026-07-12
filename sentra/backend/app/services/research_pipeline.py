@@ -522,6 +522,7 @@ def record_model_run(
     temperature: float = 0.1,
     retrieval_config: Optional[Dict[str, Any]] = None,
     input_provenance: Optional[Dict[str, Any]] = None,
+    output_summary: Optional[Dict[str, Any]] = None,
     status: str = "completed",
     error_message: Optional[str] = None,
 ) -> ModelRun:
@@ -539,6 +540,7 @@ def record_model_run(
         retrieval_config_json=retrieval_config or {},
         input_provenance_json=input_provenance or {},
         output_hash=stable_hash(output) if output is not None else None,
+        output_summary_json=output_summary or {},
         status=status,
         error_message=error_message,
     )
