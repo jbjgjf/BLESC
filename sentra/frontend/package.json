@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "test": "vitest run",
+    "test": "node --experimental-strip-types --test tests/counselor-summary.test.mjs",
     "start": "next start",
     "lint": "eslint"
   },
@@ -31,7 +31,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.2",
     "tailwindcss": "^4",
-    "typescript": "^5",
-    "vitest": "^4.1.10"
+    "typescript": "^5"
   }
 }
