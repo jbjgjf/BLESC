@@ -13,6 +13,7 @@ from app.services.safety import assess_safety
         ("I don't want to be here anymore.", "crisis"),
         ("I might hurt myself tonight and cannot stay safe.", "crisis"),
         ("Someone at home is hurting me and said don't tell anyone.", "crisis"),
+        ("Someone at home is hurting me.", "crisis"),
         ("Don't tell anyone about the surprise party.", "none"),
         ("Sure, I could just kill myself, lol.", "crisis"),
         ("今夜、自殺したい。安全でいられない。", "crisis"),

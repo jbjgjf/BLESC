@@ -38,7 +38,7 @@ export function assessSafety(rawContent: string): SafetyAssessment {
 
   if (selfHarm && (imminent || includesAny(content, ["kill myself", "end my life", "want to die", "suicide", "自殺", "死にたい"]))) reasons.push("self_harm_or_suicide_risk");
   if (violence && imminent) reasons.push("imminent_violence_risk");
-  if (abuse && (imminent || concealment)) reasons.push("abuse_or_violence_disclosure");
+  if (abuse) reasons.push("abuse_or_violence_disclosure");
   if (includesAny(content, ["cannot stay safe", "can't stay safe", "安全でいられない"])) reasons.push("inability_to_stay_safe");
   if (passive) reasons.push("possible_suicide_risk");
 
