@@ -121,7 +121,8 @@ function summaryEvent(row: SummaryEntryRow): CounselorTimelineEvent {
   const labels = (values: JsonValue | undefined) => asArray<Record<string, JsonValue>>(values).map((item) => String(item.label ?? "")).filter(Boolean);
   const nodeLabels = (category: string) => nodes.filter((node) => node.category === category).map((node) => String(node.label ?? "")).filter(Boolean);
   const unique = (values: string[]) => [...new Set(values)];
-  const primaryEmotion = asArray<Record<string, JsonValue>>(emotional.primary_emotions)[0]?.label;
+  const primaryEmotion = asArray<Record<string, JsonValue>>(emotional.primary_emotions)[0]?.label ?? nodes.find((node) => node.category === "State")?.label;
+  const safetyClassification = asRecord(emotional.safety_classification, {} as Record<string, JsonValue>);
   return {
     event_id: String(row.id),
     timestamp: row.created_at,
@@ -130,8 +131,8 @@ function summaryEvent(row: SummaryEntryRow): CounselorTimelineEvent {
     triggers: unique([...labels(emotional.trigger_candidates), ...nodeLabels("Trigger")]),
     support_needs: unique(labels(emotional.support_needs)),
     protective_factors: unique([...labels(emotional.protective_factors), ...nodeLabels("Protective")]),
-    safety_level: String(assessment.risk_level ?? asRecord(emotional.safety_classification, {} as Record<string, JsonValue>).level ?? "none"),
-    safety_reasons: asArray<string>(assessment.reasons),
+    safety_level: String(assessment.risk_level ?? safetyClassification.level ?? "none"),
+    safety_reasons: asArray<string>(assessment.reasons, asArray<string>(extraction.safety_flags_json, asArray<string>(safetyClassification.flags))),
   };
 }
 
@@ -1046,6 +1047,7 @@ export class ApiClient {
     const { data, error } = await supabase
       .from("entries")
       .select("id, extraction_json, created_at")
+      .eq("owner_user_id", ownerUserId)
       .eq("participant_id", participant.id)
       .order("created_at", { ascending: false })
       .limit(Math.max(1, Math.min(limit, 30)));
