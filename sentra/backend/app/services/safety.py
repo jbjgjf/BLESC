@@ -74,7 +74,7 @@ def assess_safety(payload: SafetyAssessmentInput) -> SafetyAssessmentReturn:
         crisis_reasons.append("self_harm_or_suicide_risk")
     if violence and imminent:
         crisis_reasons.append("imminent_violence_risk")
-    if abuse and (imminent or concealment):
+    if abuse:
         crisis_reasons.append("abuse_or_violence_disclosure")
     if passive:
         crisis_reasons.append("possible_suicide_risk")
