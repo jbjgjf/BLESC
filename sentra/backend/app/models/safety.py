@@ -1,7 +1,6 @@
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Literal
+from typing import Any, Dict, List, Literal
 
-# Matches your "Input" schema screenshot
+from pydantic import BaseModel, Field
 
 
 class SafetyAssessmentInput(BaseModel):
@@ -9,12 +8,9 @@ class SafetyAssessmentInput(BaseModel):
     content: str
     extraction: Dict[str, Any] = Field(default_factory=dict)
 
-# Matches your "Return" schema screenshot
-
-
 class SafetyAssessmentReturn(BaseModel):
     risk_level: Literal["none", "low", "elevated", "crisis"]
-    confidence: float
+    confidence: float = Field(ge=0.0, le=1.0)
     escalation_required: bool
     reasons: List[str]
     safe_response: str

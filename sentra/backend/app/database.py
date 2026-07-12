@@ -23,6 +23,7 @@ def _apply_migrations() -> None:
         ("extraction", "emotional_state_json", "JSON DEFAULT '{}'"),
         ("extraction", "reflection_cards_json", "JSON DEFAULT '[]'"),
         ("extraction", "safety_flags_json", "JSON DEFAULT '[]'"),
+        ("extraction", "safety_assessment_json", "JSON DEFAULT '{}'"),
         ("extraction", "prompt_version", "TEXT DEFAULT 'unknown'"),
         ("extraction", "extraction_provider", "TEXT DEFAULT 'unknown'"),
         ("extraction", "extraction_model", "TEXT DEFAULT 'unknown'"),
@@ -31,6 +32,7 @@ def _apply_migrations() -> None:
         ("graphchangeevent", "user_id", "TEXT DEFAULT 'unknown'"),
         ("graphchangeevent", "participant_code", "TEXT DEFAULT 'unknown'"),
         ("conversationrecallsummary", "memory_object_ids_json", "JSON DEFAULT '[]'"),
+        ("modelrun", "output_summary_json", "JSON DEFAULT '{}'"),
     ]
     with engine.connect() as conn:
         for table, column, ddl in migrations:

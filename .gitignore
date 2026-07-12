@@ -8,3 +8,5 @@ venv/
 node_modules/
 .next/
 .vercel
+sentra/test_exports/
+sentra/backend/test_exports/

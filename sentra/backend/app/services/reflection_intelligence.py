@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional
 
-from app.models.safety import SafetyAssessmentInput
+from app.models.safety import SafetyAssessmentInput, SafetyAssessmentReturn
 from app.services.safety import assess_safety
 
 PROMPT_VERSION = "reflection-extraction-v1"
@@ -132,17 +132,23 @@ def _evidence(text: str, keywords: Iterable[str]) -> Dict[str, Any]:
     return {"text": snippet, "start": 0, "end": len(snippet)}
 
 
-def _safety_classification(text: str) -> Dict[str, Any]:
-    if _contains_any(text, CRISIS_PATTERNS):
+def _safety_classification(
+    text: str,
+    assessment: Optional[SafetyAssessmentReturn] = None,
+) -> Dict[str, Any]:
+    assessment = assessment or assess_safety(
+        SafetyAssessmentInput(reflection_id="standalone", content=text)
+    )
+    if assessment.risk_level == "crisis":
         return {
             "level": "crisis",
-            "flags": ["crisis_or_imminent_risk"],
+            "flags": assessment.reasons,
             "action": "suppress_cards_and_prioritize_escalation",
         }
-    if _contains_any(text, ELEVATED_PATTERNS):
+    if assessment.risk_level in {"low", "elevated"}:
         return {
             "level": "elevated",
-            "flags": ["needs_supportive_check_in"],
+            "flags": assessment.reasons,
             "action": "show_cautious_supportive_cards",
         }
     return {"level": "normal", "flags": [], "action": "show_reflection_cards"}
@@ -162,12 +168,13 @@ def extract_emotional_state(
     locale: str = "en-US",
     recent_context: Optional[List[Dict[str, Any]]] = None,
     graph_extraction: Optional[Dict[str, Any]] = None,
+    safety_assessment: Optional[SafetyAssessmentReturn] = None,
 ) -> Dict[str, Any]:
     text = content.strip()
     low = text.lower()
     recent_context = recent_context or []
     graph_extraction = graph_extraction or {}
-    safety = _safety_classification(text)
+    safety = _safety_classification(text, safety_assessment)
 
     emotions: List[Dict[str, Any]] = []
     for label, keywords in EMOTION_KEYWORDS.items():
@@ -408,56 +415,37 @@ def analyze_reflection(
     recent_context: Optional[List[Dict[str, Any]]] = None,
     graph_extraction: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-
-    # 1. Scope Requirement: Add safety assessment step after input/extraction
     safety_input = SafetyAssessmentInput(
         reflection_id=reflection_id,
         content=content,
-        extraction={"graph_nodes_count": len(
-            graph_extraction.get("nodes", [])) if graph_extraction else 0}
+        extraction={
+            "graph_nodes_count": len(graph_extraction.get("nodes", []))
+            if graph_extraction else 0
+        },
     )
     safety_assessment = assess_safety(safety_input)
-
-    # 2. Scope Requirement: Ensure normal reflection card generation is bypassed in crisis mode
-    if safety_assessment.risk_level == "crisis":
-        return {
-            "reflection_id": reflection_id,
-            "status": "diverted_to_safety",
-            # Pydantic structured object to dict
-            "safety_assessment": safety_assessment.model_dump(),
-            "reflection_cards": [
-                {
-                    "id": f"{reflection_id}:crisis_suppressed",
-                    "type": "safety_suppression",
-                    "title": "Support First",
-                    # Scope Requirement: Return policy-safe response
-                    "body": safety_assessment.safe_response,
-                    "confidence": "high",
-                    "status": "suppressed",
-                    # Scope Requirement: Link to static safety policy
-                    "policy_refs": safety_assessment.policy_refs
-                }
-            ],
-            "pipeline_version": PIPELINE_VERSION,
-        }
-
-    # 3. If NOT crisis, proceed with normal execution flow
     emotional_state = extract_emotional_state(
         reflection_id=reflection_id,
         content=content,
         locale=locale,
         recent_context=recent_context,
         graph_extraction=graph_extraction,
+        safety_assessment=safety_assessment,
     )
-
-    cards = generate_reflection_cards(
-        reflection_id, emotional_state, recent_context)
+    cards = generate_reflection_cards(reflection_id, emotional_state, recent_context)
+    if safety_assessment.risk_level == "crisis":
+        cards[0]["body"] = safety_assessment.safe_response
+        cards[0]["policy_refs"] = safety_assessment.policy_refs
 
     return {
         "reflection_id": reflection_id,
+        "status": (
+            "diverted_to_safety"
+            if safety_assessment.risk_level == "crisis"
+            else "complete"
+        ),
         "emotional_state": emotional_state,
         "reflection_cards": cards,
-        # Scope Requirement: Persist safety assessment and reason
         "safety_assessment": safety_assessment.model_dump(),
         "pipeline_version": PIPELINE_VERSION,
     }

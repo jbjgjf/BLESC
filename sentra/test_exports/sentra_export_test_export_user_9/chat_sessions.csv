@@ -1,3 +1,0 @@
-consent_snapshot_json,created_at,id,source_table,subject_id
-"{""anonymized_export"": false, ""app_use"": true, ""consent_version"": ""research-consent-v1"", ""future_fine_tuning"": false, ""research_analysis"": true}",2026-07-05T00:39:41.915631,4,chat_sessions,subject_bc6c9a692c5384a502d39da0
-"{""anonymized_export"": false, ""app_use"": true, ""consent_version"": ""research-consent-v1"", ""future_fine_tuning"": false, ""research_analysis"": true}",2026-07-05T00:44:12.894596,9,chat_sessions,subject_bc6c9a692c5384a502d39da0

@@ -1,4 +1,0 @@
-created_at,entry_session_id,event_type,field_name,id,metadata_json,occurred_at,relative_ms,selection_end,selection_start,source_table,subject_id,value_length
-2026-07-10T10:18:35.147045,7,focus,journal_entry,16,{},2026-06-11T00:00:00,0,,,interaction_events,subject_bc6c9a692c5384a502d39da0,0
-2026-07-10T10:18:35.147217,7,input,journal_entry,17,"{""delta"": 60}",2026-06-11T00:00:02,2000,,,interaction_events,subject_bc6c9a692c5384a502d39da0,60
-2026-07-10T10:18:35.147404,7,input,first_recall_30,18,{},2026-06-11T00:00:04,4000,,,interaction_events,subject_bc6c9a692c5384a502d39da0,50
