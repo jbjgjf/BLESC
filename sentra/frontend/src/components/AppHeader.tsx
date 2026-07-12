@@ -10,6 +10,7 @@ const primaryNav = [
   { href: "/",      label: "Record" },
   { href: "/voice", label: "Voice" },
   { href: "/graph", label: "Graph" },
+  { href: "/support-summary", label: "Summary" },
 ];
 
 export function AppHeader() {

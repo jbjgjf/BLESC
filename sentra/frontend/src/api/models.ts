@@ -77,6 +77,23 @@ export interface SafetyAssessment {
   policy_refs: string[];
 }
 
+export interface CounselorSummarySection {
+  key: "recent_themes" | "recurring_triggers" | "intensity_trend" | "support_needs" | "protective_factors" | "suggested_discussion_points";
+  title: string;
+  items: string[];
+  evidence_event_ids: string[];
+}
+
+export interface CounselorSupportSummary {
+  summary_id: string;
+  date_range: { from: string | null; to: string | null };
+  reflection_count: number;
+  sections: CounselorSummarySection[];
+  safety_flags: Array<{ level: string; reasons: string[]; timestamp: string; event_id: string }>;
+  limitations: string;
+  generated_at: string;
+}
+
 export interface Extraction {
   id: RecordId;
   entry_id: RecordId;

@@ -2,6 +2,7 @@ import {
   AnomalyResult,
   AudioTranscriptionResponse,
   ChatResponse,
+  CounselorSupportSummary,
   ConsentSnapshot,
   ConversationMemoryObject,
   ConversationRecallSummary,
@@ -16,6 +17,7 @@ import {
   RecordId,
 } from "./models";
 import { supabase } from "@/lib/supabase/client";
+import { generateCounselorSummary, type CounselorTimelineEvent } from "@/lib/counselor-summary";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
@@ -48,6 +50,8 @@ type EntryRow = {
   extraction_provider?: string;
   extraction_model?: string;
 };
+
+type SummaryEntryRow = Pick<EntryRow, "id" | "created_at" | "extraction_json">;
 
 type GraphSnapshotRow = {
   id: string;
@@ -107,6 +111,28 @@ function asRecord<T extends Record<string, unknown>>(value: JsonValue | null | u
 function participantCode(row: { participants?: { code: string } | { code: string }[] | null }, fallback: string): string {
   const participant = Array.isArray(row.participants) ? row.participants[0] : row.participants;
   return participant?.code ?? fallback;
+}
+
+function summaryEvent(row: SummaryEntryRow): CounselorTimelineEvent {
+  const extraction = asRecord(row.extraction_json, {} as Record<string, JsonValue>);
+  const emotional = asRecord(extraction.emotional_state_json, {} as Record<string, JsonValue>);
+  const assessment = asRecord(extraction.safety_assessment_json, {} as Record<string, JsonValue>);
+  const nodes = asArray<Record<string, JsonValue>>(extraction.nodes_json);
+  const labels = (values: JsonValue | undefined) => asArray<Record<string, JsonValue>>(values).map((item) => String(item.label ?? "")).filter(Boolean);
+  const nodeLabels = (category: string) => nodes.filter((node) => node.category === category).map((node) => String(node.label ?? "")).filter(Boolean);
+  const unique = (values: string[]) => [...new Set(values)];
+  const primaryEmotion = asArray<Record<string, JsonValue>>(emotional.primary_emotions)[0]?.label;
+  return {
+    event_id: String(row.id),
+    timestamp: row.created_at,
+    primary_emotion: primaryEmotion ? String(primaryEmotion) : undefined,
+    intensity: typeof emotional.intensity === "number" ? emotional.intensity : undefined,
+    triggers: unique([...labels(emotional.trigger_candidates), ...nodeLabels("Trigger")]),
+    support_needs: unique(labels(emotional.support_needs)),
+    protective_factors: unique([...labels(emotional.protective_factors), ...nodeLabels("Protective")]),
+    safety_level: String(assessment.risk_level ?? asRecord(emotional.safety_classification, {} as Record<string, JsonValue>).level ?? "none"),
+    safety_reasons: asArray<string>(assessment.reasons),
+  };
 }
 
 function throwSupabaseError(context: string, error: unknown): never {
@@ -1012,6 +1038,38 @@ export class ApiClient {
 
     if (error) throwSupabaseError("Load timeline failed", error);
     return (data ?? []).map((row) => toAnomaly(row as unknown as InsightRow, userId));
+  }
+
+  static async generateCounselorSummary(userId: string, limit = 10): Promise<CounselorSupportSummary> {
+    const ownerUserId = await this.requireOwnerId();
+    const participant = await this.getParticipant(userId);
+    const { data, error } = await supabase
+      .from("entries")
+      .select("id, extraction_json, created_at")
+      .eq("participant_id", participant.id)
+      .order("created_at", { ascending: false })
+      .limit(Math.max(1, Math.min(limit, 30)));
+    if (error) throwSupabaseError("Generate support summary failed", error);
+
+    const summary = generateCounselorSummary((data ?? []).map((row) => summaryEvent(row as SummaryEntryRow)));
+    const { error: auditError } = await supabase.from("model_runs").insert({
+      owner_user_id: ownerUserId,
+      participant_id: participant.id,
+      artifact_type: "counselor_summary",
+      artifact_id: summary.summary_id,
+      provider: "rules",
+      model: "counselor-summary-v1",
+      prompt_version: "counselor-summary-v1",
+      schema_version: "counselor-summary-v1",
+      pipeline_version: "counselor-summary-v1",
+      temperature: 0,
+      retrieval_config_json: { source: "entries.extraction_json", event_ids: summary.sections.flatMap((section) => section.evidence_event_ids) },
+      input_provenance_json: { reflection_count: summary.reflection_count, date_range: summary.date_range },
+      output_hash: await stableHash(JSON.stringify(summary)),
+      status: "completed",
+    });
+    if (auditError) console.warn("[support-summary] audit insert skipped", auditError);
+    return summary;
   }
 
   static async getExplanation(explanationId: RecordId): Promise<ExplanationPayload> {
