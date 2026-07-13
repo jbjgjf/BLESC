@@ -94,6 +94,42 @@ export interface CounselorSupportSummary {
   generated_at: string;
 }
 
+export interface AiAuditSafetyDecision {
+  risk_level: string;
+  escalation_required: boolean;
+  reasons: string[];
+  policy_refs: string[];
+}
+
+export interface AiAuditEvent {
+  id: string;
+  stage: "extraction" | "safety_assessment" | "counselor_summary" | string;
+  label: string;
+  status: "completed" | "failed" | "suppressed" | string;
+  occurred_at: string;
+  provider: string;
+  model: string;
+  prompt_version: string;
+  schema_version?: string;
+  pipeline_version?: string;
+  temperature?: number;
+  safety_decision?: AiAuditSafetyDecision | null;
+  evidence_refs: string[];
+  output_hash?: string | null;
+  error_message?: string | null;
+}
+
+export interface ReflectionAuditTrail {
+  correlation_id: string;
+  reflection_id: string | null;
+  first_event_at: string;
+  last_event_at: string;
+  event_count: number;
+  has_safety_flag: boolean;
+  has_failure: boolean;
+  events: AiAuditEvent[];
+}
+
 export interface Extraction {
   id: RecordId;
   entry_id: RecordId;
