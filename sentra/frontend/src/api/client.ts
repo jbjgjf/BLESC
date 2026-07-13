@@ -15,9 +15,11 @@ import {
   GraphSnapshotResponse,
   JsonValue,
   RecordId,
+  ReflectionAuditTrail,
 } from "./models";
 import { supabase } from "@/lib/supabase/client";
 import { generateCounselorSummary, type CounselorTimelineEvent } from "@/lib/counselor-summary";
+import { buildAuditTrails, type ModelRunRecord } from "@/lib/audit-trail";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
@@ -1072,6 +1074,26 @@ export class ApiClient {
     });
     if (auditError) console.warn("[support-summary] audit insert skipped", auditError);
     return summary;
+  }
+
+  static async getAuditTrails(userId: string, reflectionId?: string, limit = 200): Promise<ReflectionAuditTrail[]> {
+    const ownerUserId = await this.requireOwnerId();
+    const participant = await this.getParticipant(userId);
+    let query = supabase
+      .from("model_runs")
+      .select(
+        "id, artifact_type, artifact_id, provider, model, prompt_version, schema_version, pipeline_version, temperature, retrieval_config_json, input_provenance_json, output_hash, status, error_message, created_at",
+      )
+      .eq("owner_user_id", ownerUserId)
+      .eq("participant_id", participant.id)
+      .order("created_at", { ascending: false })
+      .limit(Math.max(1, Math.min(limit, 500)));
+    if (reflectionId) {
+      query = query.eq("artifact_id", reflectionId);
+    }
+    const { data, error } = await query;
+    if (error) throwSupabaseError("Load audit trails failed", error);
+    return buildAuditTrails((data ?? []) as unknown as ModelRunRecord[]);
   }
 
   static async getExplanation(explanationId: RecordId): Promise<ExplanationPayload> {

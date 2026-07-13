@@ -11,6 +11,7 @@ const primaryNav = [
   { href: "/voice", label: "Voice" },
   { href: "/graph", label: "Graph" },
   { href: "/support-summary", label: "Summary" },
+  { href: "/audit", label: "Audit" },
 ];
 
 export function AppHeader() {
