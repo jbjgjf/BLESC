@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "test": "node --experimental-strip-types --test tests/counselor-summary.test.mjs",
+    "test": "node --experimental-strip-types --test tests/counselor-summary.test.mjs tests/audit-trail.test.mjs",
     "start": "next start",
     "lint": "eslint"
   },
