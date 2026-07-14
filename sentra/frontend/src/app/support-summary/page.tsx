@@ -36,8 +36,26 @@ export default function SupportSummaryPage() {
 
   const copy = async () => {
     if (!summary) return;
-    await navigator.clipboard.writeText(counselorSummaryToText(summary));
-    setCopied(true);
+    const text = counselorSummaryToText(summary);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+    } catch {
+      // Clipboard API can reject (permission denied, non-secure context); fall back to a hidden textarea.
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const succeeded = document.execCommand("copy");
+      textarea.remove();
+      if (succeeded) {
+        setCopied(true);
+      } else {
+        setError("Copy failed — use Download text instead.");
+      }
+    }
   };
 
   const download = () => {
@@ -47,7 +65,8 @@ export default function SupportSummaryPage() {
     anchor.href = url;
     anchor.download = `blesc-support-summary-${summary.date_range.to?.slice(0, 10) ?? "empty"}.txt`;
     anchor.click();
-    URL.revokeObjectURL(url);
+    // Defer revocation: revoking synchronously can abort the download in Safari.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const range = summary?.date_range.from && summary.date_range.to

@@ -227,7 +227,7 @@ export default function Insights() {
                           fontSize: "0.85rem",
                         }}
                       >
-                        {Number(z).toFixed(2)}
+                        {Number.isFinite(Number(z)) ? Number(z).toFixed(2) : "—"}
                       </span>
                     </div>
                   ))}
