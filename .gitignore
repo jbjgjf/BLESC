@@ -10,3 +10,7 @@ node_modules/
 .vercel
 sentra/test_exports/
 sentra/backend/test_exports/
+
+# macOS system files
+.DS_Store
+**/.DS_Store
