@@ -15,6 +15,7 @@ import {
   GraphSnapshotResponse,
   JsonValue,
   RecordId,
+  OversightRequest,
   ReflectionAuditTrail,
 } from "./models";
 import { supabase } from "@/lib/supabase/client";
@@ -1074,6 +1075,92 @@ export class ApiClient {
     });
     if (auditError) console.warn("[support-summary] audit insert skipped", auditError);
     return summary;
+  }
+
+  static async listOversightRequests(userId: string): Promise<OversightRequest[]> {
+    const participant = await this.getParticipant(userId);
+
+    const [rosterResult, consentResult] = await Promise.all([
+      supabase
+        .from("oversight_roster")
+        .select("id, org_id, status, created_at, organizations(name)")
+        .eq("participant_id", participant.id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("oversight_consents")
+        .select("org_id, status, granted_at, revoked_at")
+        .eq("participant_id", participant.id)
+        .is("educator_user_id", null),
+    ]);
+    if (rosterResult.error) throwSupabaseError("Load oversight requests failed", rosterResult.error);
+    if (consentResult.error) throwSupabaseError("Load oversight consents failed", consentResult.error);
+
+    type RosterRow = { id: string; org_id: string; status: string; organizations?: { name: string } | { name: string }[] | null };
+    type ConsentRow = { org_id: string; status: string; granted_at: string | null; revoked_at: string | null };
+    const consentByOrg = new Map<string, ConsentRow>();
+    for (const consent of (consentResult.data ?? []) as ConsentRow[]) {
+      consentByOrg.set(consent.org_id, consent);
+    }
+
+    // One card per organization; any active roster link outranks revoked ones.
+    const byOrg = new Map<string, OversightRequest>();
+    for (const row of (rosterResult.data ?? []) as RosterRow[]) {
+      const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations;
+      const consent = consentByOrg.get(row.org_id) ?? null;
+      const existing = byOrg.get(row.org_id);
+      const candidate: OversightRequest = {
+        roster_id: row.id,
+        org_id: row.org_id,
+        org_name: org?.name ?? "Unknown organization",
+        roster_status: row.status,
+        consent_status: (consent?.status as OversightRequest["consent_status"]) ?? null,
+        granted_at: consent?.granted_at ?? null,
+        revoked_at: consent?.revoked_at ?? null,
+      };
+      if (!existing || (existing.roster_status !== "active" && row.status === "active")) {
+        byOrg.set(row.org_id, candidate);
+      }
+    }
+    return [...byOrg.values()];
+  }
+
+  static async grantOversightConsent(userId: string, orgId: string): Promise<void> {
+    const ownerUserId = await this.requireOwnerId();
+    const participant = await this.getParticipant(userId);
+    const existing = await supabase
+      .from("oversight_consents")
+      .select("id")
+      .eq("participant_id", participant.id)
+      .eq("org_id", orgId)
+      .is("educator_user_id", null)
+      .maybeSingle();
+    if (existing.error) throwSupabaseError("Load consent failed", existing.error);
+
+    if (existing.data) {
+      const { error } = await supabase
+        .from("oversight_consents")
+        .update({ status: "active" })
+        .eq("id", existing.data.id);
+      if (error) throwSupabaseError("Grant consent failed", error);
+      return;
+    }
+    const { error } = await supabase.from("oversight_consents").insert({
+      participant_id: participant.id,
+      owner_user_id: ownerUserId,
+      org_id: orgId,
+    });
+    if (error) throwSupabaseError("Grant consent failed", error);
+  }
+
+  static async revokeOversightConsent(userId: string, orgId: string): Promise<void> {
+    const participant = await this.getParticipant(userId);
+    const { error } = await supabase
+      .from("oversight_consents")
+      .update({ status: "revoked" })
+      .eq("participant_id", participant.id)
+      .eq("org_id", orgId)
+      .is("educator_user_id", null);
+    if (error) throwSupabaseError("Revoke consent failed", error);
   }
 
   static async getAuditTrails(userId: string, reflectionId?: string, limit = 200): Promise<ReflectionAuditTrail[]> {

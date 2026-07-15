@@ -94,6 +94,16 @@ export interface CounselorSupportSummary {
   generated_at: string;
 }
 
+export interface OversightRequest {
+  roster_id: string;
+  org_id: string;
+  org_name: string;
+  roster_status: "pending" | "active" | "revoked" | string;
+  consent_status: "active" | "revoked" | null;
+  granted_at: string | null;
+  revoked_at: string | null;
+}
+
 export interface AiAuditSafetyDecision {
   risk_level: string;
   escalation_required: boolean;

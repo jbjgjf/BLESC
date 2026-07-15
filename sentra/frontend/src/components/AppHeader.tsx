@@ -12,6 +12,7 @@ const primaryNav = [
   { href: "/graph", label: "Graph" },
   { href: "/support-summary", label: "Summary" },
   { href: "/audit", label: "Audit" },
+  { href: "/sharing", label: "Sharing" },
 ];
 
 export function AppHeader() {
