@@ -192,9 +192,15 @@ do $$
 declare
   visible integer;
 begin
+  -- Transparency: B has a roster row, so B may read the org's NAME (to know
+  -- who is requesting oversight) — but nothing else about the org.
   select count(*) into visible from public.organizations;
+  if visible <> 1 then
+    raise exception 'FAIL: rostered student should see the org name row, saw %', visible;
+  end if;
+  select count(*) into visible from public.organization_members;
   if visible <> 0 then
-    raise exception 'FAIL: outsider sees % organizations', visible;
+    raise exception 'FAIL: student sees % org membership rows', visible;
   end if;
 
   -- Student B still sees their own insight (owner policy) and none of A's.

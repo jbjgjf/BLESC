@@ -116,3 +116,31 @@ as $$
       and r.status = 'active'
   );
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Transparency: a student with a roster row pointing at their participant may
+-- read that organization's name (they must know who is requesting/holding
+-- oversight in order to grant, deny, or revoke consent).
+-- ---------------------------------------------------------------------------
+
+create or replace function public.student_is_rostered_in(target_org uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1
+    from public.oversight_roster r
+    where r.org_id = target_org
+      and r.owner_user_id = (select auth.uid())
+  );
+$$;
+
+revoke execute on function public.student_is_rostered_in(uuid) from public, anon;
+grant execute on function public.student_is_rostered_in(uuid) to authenticated;
+
+create policy "organizations_select_rostered_student" on public.organizations
+  for select to authenticated
+  using (public.student_is_rostered_in(id));
