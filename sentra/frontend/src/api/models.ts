@@ -94,6 +94,50 @@ export interface CounselorSupportSummary {
   generated_at: string;
 }
 
+export interface OversightRequest {
+  roster_id: string;
+  org_id: string;
+  org_name: string;
+  roster_status: "pending" | "active" | "revoked" | string;
+  consent_status: "active" | "revoked" | null;
+  granted_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface EducatorStudentStatus {
+  participant_id: string;
+  org_id: string;
+  owner_user_id: string;
+  code: string;
+  display_name: string | null;
+  last_active_day: string | null;
+  latest_score: number | null;
+  state_band: "settled" | "watch" | "review" | "unknown";
+  safety_level: string | null;
+  safety_at: string | null;
+}
+
+export interface CohortAlert {
+  alert_key: string;
+  type: "safety_crisis" | "safety_elevated" | "anomaly_spike" | "inactivity";
+  severity: 1 | 2 | 3;
+  participant_id: string;
+  org_id: string;
+  owner_user_id: string;
+  code: string;
+  occurred_at: string;
+  detail: string;
+  policy_refs: string[];
+  acknowledged: boolean;
+}
+
+export interface StudentAccessRecord {
+  id: string;
+  view_type: string;
+  occurred_at: string;
+  org_name: string;
+}
+
 export interface AiAuditSafetyDecision {
   risk_level: string;
   escalation_required: boolean;

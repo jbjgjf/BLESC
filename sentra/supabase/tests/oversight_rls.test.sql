@@ -1,4 +1,5 @@
--- RLS policy tests for educator oversight foundations (issue #26).
+-- RLS policy tests for educator oversight foundations (issue #26) and
+-- student-granted consent gating (issue #27).
 --
 -- Run against a local Supabase database with all migrations applied:
 --   supabase db reset   (from sentra/, applies migrations)
@@ -73,7 +74,49 @@ values
    '00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-00000000000b', 'revoked');
 
 -- ---------------------------------------------------------------------------
--- Educator: may read ONLY the actively-rostered student's derived data.
+-- Default-deny (issue #27): roster alone grants NOTHING until the student
+-- consents.
+-- ---------------------------------------------------------------------------
+
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000e", "role": "authenticated"}';
+
+do $$
+declare
+  visible integer;
+begin
+  select count(*) into visible from public.insights;
+  if visible <> 0 then
+    raise exception 'FAIL: educator sees % insights BEFORE consent (default-deny broken)', visible;
+  end if;
+  select count(*) into visible from public.model_runs;
+  if visible <> 0 then
+    raise exception 'FAIL: educator sees % model_runs BEFORE consent', visible;
+  end if;
+end $$;
+
+-- An educator cannot forge a consent on the student's behalf.
+do $$
+begin
+  begin
+    insert into public.oversight_consents (participant_id, owner_user_id, org_id)
+    values ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-00000000000a',
+            '00000000-0000-0000-0000-000000000001');
+    raise exception 'FAIL: educator forged a consent row';
+  exception
+    when insufficient_privilege then null; -- expected
+  end;
+end $$;
+
+-- Student A grants org-wide consent, through RLS.
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000a", "role": "authenticated"}';
+
+insert into public.oversight_consents (participant_id, owner_user_id, org_id)
+values ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-00000000000a',
+        '00000000-0000-0000-0000-000000000001');
+
+-- ---------------------------------------------------------------------------
+-- Educator: may read ONLY the consented, actively-rostered student's
+-- derived data.
 -- ---------------------------------------------------------------------------
 
 set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000e", "role": "authenticated"}';
@@ -149,9 +192,15 @@ do $$
 declare
   visible integer;
 begin
+  -- Transparency: B has a roster row, so B may read the org's NAME (to know
+  -- who is requesting oversight) — but nothing else about the org.
   select count(*) into visible from public.organizations;
+  if visible <> 1 then
+    raise exception 'FAIL: rostered student should see the org name row, saw %', visible;
+  end if;
+  select count(*) into visible from public.organization_members;
   if visible <> 0 then
-    raise exception 'FAIL: outsider sees % organizations', visible;
+    raise exception 'FAIL: student sees % org membership rows', visible;
   end if;
 
   -- Student B still sees their own insight (owner policy) and none of A's.
@@ -169,7 +218,130 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- Revocation cuts educator access immediately.
+-- Access accountability (issue #31) + minimized roster reads (issue #29).
+-- Runs as the educator while consent is ACTIVE.
+-- ---------------------------------------------------------------------------
+
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000e", "role": "authenticated"}';
+
+do $$
+declare
+  visible integer;
+  seen_code text;
+begin
+  -- Column-minimized roster read returns only the consented student.
+  select count(*) into visible from public.overseen_participants();
+  if visible <> 1 then
+    raise exception 'FAIL: overseen_participants should return 1 row, got %', visible;
+  end if;
+  select code into seen_code from public.overseen_participants();
+  if seen_code <> 'STUDENT_A' then
+    raise exception 'FAIL: overseen_participants returned wrong code %', seen_code;
+  end if;
+end $$;
+
+-- Educator logs a view of the overseen student (allowed)...
+insert into public.educator_access_log (educator_user_id, org_id, participant_id, owner_user_id, view_type)
+values ('00000000-0000-0000-0000-00000000000e', '00000000-0000-0000-0000-000000000001',
+        '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-00000000000a', 'roster');
+
+-- ...but cannot log (or fabricate) access to the non-consented student B.
+do $$
+begin
+  begin
+    insert into public.educator_access_log (educator_user_id, org_id, participant_id, owner_user_id, view_type)
+    values ('00000000-0000-0000-0000-00000000000e', '00000000-0000-0000-0000-000000000001',
+            '00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-00000000000b', 'roster');
+    raise exception 'FAIL: educator logged access to a non-overseen student';
+  exception
+    when insufficient_privilege then null; -- expected
+  end;
+end $$;
+
+-- The log is append-only: educators cannot rewrite their trail.
+do $$
+declare
+  touched integer;
+begin
+  update public.educator_access_log set view_type = 'alerts' where true;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: educator mutated % access log rows', touched;
+  end if;
+  delete from public.educator_access_log where true;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: educator deleted % access log rows', touched;
+  end if;
+end $$;
+
+-- The student sees who viewed their data.
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000a", "role": "authenticated"}';
+
+do $$
+declare
+  visible integer;
+begin
+  select count(*) into visible from public.educator_access_log;
+  if visible <> 1 then
+    raise exception 'FAIL: student should see 1 access log row, saw %', visible;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Consent revocation by the student cuts educator access immediately,
+-- and re-granting restores it (issue #27).
+-- ---------------------------------------------------------------------------
+
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000a", "role": "authenticated"}';
+
+update public.oversight_consents set status = 'revoked'
+where participant_id = '00000000-0000-0000-0000-0000000000a1';
+
+do $$
+begin
+  if not exists (select 1 from public.oversight_consents
+                 where participant_id = '00000000-0000-0000-0000-0000000000a1'
+                   and status = 'revoked' and revoked_at is not null) then
+    raise exception 'FAIL: consent revocation did not stamp revoked_at';
+  end if;
+end $$;
+
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000e", "role": "authenticated"}';
+
+do $$
+declare
+  visible integer;
+begin
+  select count(*) into visible from public.insights;
+  if visible <> 0 then
+    raise exception 'FAIL: educator still sees % insights after consent revocation', visible;
+  end if;
+  select count(*) into visible from public.overseen_participants();
+  if visible <> 0 then
+    raise exception 'FAIL: overseen_participants leaks % rows after consent revocation', visible;
+  end if;
+end $$;
+
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000a", "role": "authenticated"}';
+
+update public.oversight_consents set status = 'active'
+where participant_id = '00000000-0000-0000-0000-0000000000a1';
+
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000e", "role": "authenticated"}';
+
+do $$
+declare
+  visible integer;
+begin
+  select count(*) into visible from public.insights;
+  if visible <> 1 then
+    raise exception 'FAIL: educator should see 1 insight after re-grant, saw %', visible;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Roster revocation (by the org admin) also cuts educator access.
 -- ---------------------------------------------------------------------------
 
 set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000d", "role": "authenticated"}';
