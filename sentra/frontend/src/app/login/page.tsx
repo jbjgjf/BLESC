@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Activity, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 
 export default function LoginPage() {
@@ -49,8 +50,11 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-[#08070b] px-4 py-10">
       <section className="w-full max-w-md rounded-lg border border-[#22212c] bg-[#0f0e15] p-6 shadow-2xl shadow-black/80">
         <div className="flex items-center gap-3 text-zinc-100">
-          <img
+          <Image
             src="/logo.svg"
+            width={40}
+            height={40}
+            unoptimized
             className="h-10 w-10 object-contain shrink-0"
             alt="BLESC Logo"
           />

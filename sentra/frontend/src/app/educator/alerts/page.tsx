@@ -26,12 +26,13 @@ function CrisisProtocol() {
         <ShieldAlert className="h-4 w-4" />What to do now
       </div>
       <ol className="list-decimal space-y-1 pl-4">
-        <li><strong>Today, in person if possible:</strong> connect this student with your school&apos;s designated support staff (counselor, nurse, or safeguarding lead).</li>
-        <li>You don&apos;t need to diagnose or investigate — your role is to make sure a trusted, qualified adult follows up.</li>
-        <li>If you believe there is immediate danger, follow your school&apos;s emergency procedure right away.</li>
+        <li><strong>If there may be immediate danger:</strong> contact emergency services now, then follow your school&apos;s emergency procedure.</li>
+        <li><strong>Otherwise, today and in person if possible:</strong> connect this student with your school&apos;s designated support staff (counselor, nurse, or safeguarding lead).</li>
+        <li>You don&apos;t need to judge how serious it is, diagnose, or investigate — when safety is uncertain, err on the side of getting a qualified adult involved now.</li>
       </ol>
       <p className="mt-2" style={{ color: "var(--ink-faint)" }}>
-        BLESC signals are supportive indicators, not a clinical assessment. Acknowledging below records that you have seen this flag.
+        BLESC signals are supportive indicators, not a clinical assessment — they cannot confirm that a student is safe or unsafe.
+        Acknowledging below records that you have seen this flag.
       </p>
     </div>
   );

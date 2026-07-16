@@ -171,7 +171,7 @@ export default function Timeline() {
                 {status}
               </div>
               <div className="mt-1 text-sm" style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}>
-                Latest reflection signal {latest?.anomaly_score.toFixed(2) ?? "—"}
+                Latest reflection signal {Number.isFinite(latest?.anomaly_score) ? latest!.anomaly_score.toFixed(2) : "—"}
               </div>
             </div>
 
