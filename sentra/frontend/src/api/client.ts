@@ -15,8 +15,11 @@ import {
   GraphSnapshotResponse,
   JsonValue,
   RecordId,
+  CohortAlert,
+  EducatorStudentStatus,
   OversightRequest,
   ReflectionAuditTrail,
+  StudentAccessRecord,
 } from "./models";
 import { supabase } from "@/lib/supabase/client";
 import { generateCounselorSummary, type CounselorTimelineEvent } from "@/lib/counselor-summary";
@@ -1161,6 +1164,188 @@ export class ApiClient {
       .eq("org_id", orgId)
       .is("educator_user_id", null);
     if (error) throwSupabaseError("Revoke consent failed", error);
+  }
+
+  // ------------------------------------------------------------------
+  // Educator oversight reads (issues #29/#30/#31). All queries below run
+  // through the educator RLS policies: only actively rostered AND
+  // consented students are ever returned, and raw text is unreachable.
+  // ------------------------------------------------------------------
+
+  private static stateBand(score: number | null): EducatorStudentStatus["state_band"] {
+    if (score === null || !Number.isFinite(score)) return "unknown";
+    if (score >= 2) return "review";
+    if (score >= 1.2) return "watch";
+    return "settled";
+  }
+
+  static async getCohortRoster(): Promise<EducatorStudentStatus[]> {
+    const rosterResult = await supabase.rpc("overseen_participants");
+    if (rosterResult.error) throwSupabaseError("Load cohort roster failed", rosterResult.error);
+    type RosterRow = { participant_id: string; org_id: string; owner_user_id: string; code: string; display_name: string | null };
+    const roster = (rosterResult.data ?? []) as RosterRow[];
+    if (!roster.length) return [];
+    const ids = roster.map((row) => row.participant_id);
+
+    const [insightsResult, safetyResult] = await Promise.all([
+      supabase
+        .from("insights")
+        .select("participant_id, day, anomaly_score")
+        .in("participant_id", ids)
+        .order("day", { ascending: false })
+        .limit(400),
+      supabase
+        .from("model_runs")
+        .select("participant_id, retrieval_config_json, created_at")
+        .eq("artifact_type", "safety_assessment")
+        .in("participant_id", ids)
+        .order("created_at", { ascending: false })
+        .limit(400),
+    ]);
+    if (insightsResult.error) throwSupabaseError("Load cohort insights failed", insightsResult.error);
+    if (safetyResult.error) throwSupabaseError("Load cohort safety failed", safetyResult.error);
+
+    type InsightRowLite = { participant_id: string; day: string; anomaly_score: number | null };
+    type SafetyRowLite = { participant_id: string; retrieval_config_json: Record<string, JsonValue> | null; created_at: string };
+    const latestInsight = new Map<string, InsightRowLite>();
+    for (const row of (insightsResult.data ?? []) as InsightRowLite[]) {
+      if (!latestInsight.has(row.participant_id)) latestInsight.set(row.participant_id, row);
+    }
+    const latestSafety = new Map<string, SafetyRowLite>();
+    for (const row of (safetyResult.data ?? []) as SafetyRowLite[]) {
+      if (!latestSafety.has(row.participant_id)) latestSafety.set(row.participant_id, row);
+    }
+
+    return roster.map((row) => {
+      const insight = latestInsight.get(row.participant_id);
+      const safety = latestSafety.get(row.participant_id);
+      const score = insight?.anomaly_score ?? null;
+      return {
+        participant_id: row.participant_id,
+        org_id: row.org_id,
+        owner_user_id: row.owner_user_id,
+        code: row.code,
+        display_name: row.display_name,
+        last_active_day: insight?.day ?? null,
+        latest_score: score,
+        state_band: this.stateBand(score),
+        safety_level: typeof safety?.retrieval_config_json?.risk_level === "string"
+          ? String(safety.retrieval_config_json.risk_level)
+          : null,
+        safety_at: safety?.created_at ?? null,
+      };
+    });
+  }
+
+  static async getCohortAlerts(): Promise<CohortAlert[]> {
+    const roster = await this.getCohortRoster();
+    if (!roster.length) return [];
+
+    const ackResult = await supabase
+      .from("educator_access_log")
+      .select("metadata")
+      .eq("view_type", "alert_ack")
+      .limit(500);
+    if (ackResult.error) throwSupabaseError("Load alert acknowledgements failed", ackResult.error);
+    const acked = new Set(
+      ((ackResult.data ?? []) as Array<{ metadata: Record<string, JsonValue> | null }>)
+        .map((row) => String(row.metadata?.alert_key ?? ""))
+        .filter(Boolean),
+    );
+
+    const alerts: CohortAlert[] = [];
+    const now = Date.now();
+    for (const student of roster) {
+      const base = {
+        participant_id: student.participant_id,
+        org_id: student.org_id,
+        owner_user_id: student.owner_user_id,
+        code: student.code,
+      };
+      if (student.safety_level === "crisis" || student.safety_level === "elevated") {
+        const type = student.safety_level === "crisis" ? "safety_crisis" as const : "safety_elevated" as const;
+        const key = `${type}:${student.participant_id}:${student.safety_at ?? "latest"}`;
+        alerts.push({
+          ...base,
+          alert_key: key,
+          type,
+          severity: student.safety_level === "crisis" ? 3 : 2,
+          occurred_at: student.safety_at ?? new Date().toISOString(),
+          detail: student.safety_level === "crisis"
+            ? "Crisis-level safety flag on the latest reflection."
+            : "Elevated safety signal on the latest reflection.",
+          policy_refs: [],
+          acknowledged: acked.has(key),
+        });
+      }
+      if (student.state_band === "review" && student.last_active_day) {
+        const key = `anomaly_spike:${student.participant_id}:${student.last_active_day}`;
+        alerts.push({
+          ...base,
+          alert_key: key,
+          type: "anomaly_spike",
+          severity: 2,
+          occurred_at: student.last_active_day,
+          detail: `Reflection signal ${student.latest_score?.toFixed(2) ?? "—"} is above the review threshold (2.0).`,
+          policy_refs: [],
+          acknowledged: acked.has(key),
+        });
+      }
+      const lastActive = student.last_active_day ? new Date(student.last_active_day).getTime() : null;
+      if (lastActive === null || now - lastActive > 7 * 24 * 60 * 60 * 1000) {
+        const key = `inactivity:${student.participant_id}:${student.last_active_day ?? "never"}`;
+        alerts.push({
+          ...base,
+          alert_key: key,
+          type: "inactivity",
+          severity: 1,
+          occurred_at: student.last_active_day ?? new Date(0).toISOString(),
+          detail: lastActive === null ? "No reflections recorded yet." : "No reflections in the last 7 days.",
+          policy_refs: [],
+          acknowledged: acked.has(key),
+        });
+      }
+    }
+    return alerts.sort((a, b) => b.severity - a.severity || a.code.localeCompare(b.code));
+  }
+
+  /** Append-only accountability record (issue #31). Never blocks the view. */
+  static async recordEducatorAccess(
+    student: Pick<EducatorStudentStatus, "participant_id" | "org_id" | "owner_user_id">,
+    viewType: "roster" | "alerts" | "student_overview" | "alert_ack",
+    metadata: Record<string, JsonValue> = {},
+  ): Promise<void> {
+    const educator = await this.requireOwnerId();
+    const { error } = await supabase.from("educator_access_log").insert({
+      educator_user_id: educator,
+      org_id: student.org_id,
+      participant_id: student.participant_id,
+      owner_user_id: student.owner_user_id,
+      view_type: viewType,
+      metadata,
+    });
+    if (error) console.warn("[oversight] access log insert skipped", error);
+  }
+
+  static async acknowledgeAlert(alert: CohortAlert): Promise<void> {
+    await this.recordEducatorAccess(alert, "alert_ack", { alert_key: alert.alert_key, alert_type: alert.type });
+  }
+
+  /** Student-facing view of who looked at their data (issue #31). */
+  static async listEducatorAccess(userId: string, limit = 20): Promise<StudentAccessRecord[]> {
+    const participant = await this.getParticipant(userId);
+    const { data, error } = await supabase
+      .from("educator_access_log")
+      .select("id, view_type, occurred_at, organizations(name)")
+      .eq("participant_id", participant.id)
+      .order("occurred_at", { ascending: false })
+      .limit(limit);
+    if (error) throwSupabaseError("Load educator access log failed", error);
+    type Row = { id: string; view_type: string; occurred_at: string; organizations?: { name: string } | { name: string }[] | null };
+    return ((data ?? []) as Row[]).map((row) => {
+      const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations;
+      return { id: row.id, view_type: row.view_type, occurred_at: row.occurred_at, org_name: org?.name ?? "Organization" };
+    });
   }
 
   static async getAuditTrails(userId: string, reflectionId?: string, limit = 200): Promise<ReflectionAuditTrail[]> {

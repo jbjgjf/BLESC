@@ -4,8 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2, ShieldCheck, ShieldOff } from "lucide-react";
 
 import { ApiClient } from "@/api/client";
-import type { OversightRequest } from "@/api/models";
+import type { OversightRequest, StudentAccessRecord } from "@/api/models";
 import { useAuth } from "@/lib/auth";
+
+const VIEW_LABELS: Record<string, string> = {
+  roster: "viewed your status in their roster",
+  alerts: "viewed alerts that include you",
+  student_overview: "opened your overview",
+  alert_ack: "acknowledged an alert about you",
+};
 
 const panel: React.CSSProperties = {
   backgroundColor: "var(--ivory)",
@@ -23,6 +30,7 @@ function statusChip(request: OversightRequest): { label: string; color: string }
 export default function SharingPage() {
   const { userId } = useAuth();
   const [requests, setRequests] = useState<OversightRequest[] | null>(null);
+  const [accessLog, setAccessLog] = useState<StudentAccessRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [busyOrgId, setBusyOrgId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +39,12 @@ export default function SharingPage() {
     setIsLoading(true);
     setError(null);
     try {
-      setRequests(await ApiClient.listOversightRequests(userId));
+      const [nextRequests, nextAccessLog] = await Promise.all([
+        ApiClient.listOversightRequests(userId),
+        ApiClient.listEducatorAccess(userId),
+      ]);
+      setRequests(nextRequests);
+      setAccessLog(nextAccessLog);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load sharing settings.");
     } finally {
@@ -133,6 +146,23 @@ export default function SharingPage() {
           </section>
         );
       })}
+
+      {!isLoading && accessLog.length > 0 ? (
+        <section style={panel}>
+          <header className="px-7 py-4" style={{ borderBottom: "1px solid var(--limestone)" }}>
+            <div className="inscription mb-1">Accountability</div>
+            <div className="font-semibold" style={{ color: "var(--ink)" }}>Who viewed your data</div>
+          </header>
+          <ul>
+            {accessLog.map((record) => (
+              <li key={record.id} className="flex flex-wrap items-center justify-between gap-2 px-7 py-3 text-sm" style={{ borderBottom: "1px solid var(--limestone)", color: "var(--ink-mid)" }}>
+                <span><strong>{record.org_name}</strong> {VIEW_LABELS[record.view_type] ?? record.view_type}</span>
+                <time className="text-xs" style={{ color: "var(--ink-faint)" }}>{new Date(record.occurred_at).toLocaleString()}</time>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </div>
   );
 }

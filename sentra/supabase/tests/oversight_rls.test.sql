@@ -218,6 +218,77 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
+-- Access accountability (issue #31) + minimized roster reads (issue #29).
+-- Runs as the educator while consent is ACTIVE.
+-- ---------------------------------------------------------------------------
+
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000e", "role": "authenticated"}';
+
+do $$
+declare
+  visible integer;
+  seen_code text;
+begin
+  -- Column-minimized roster read returns only the consented student.
+  select count(*) into visible from public.overseen_participants();
+  if visible <> 1 then
+    raise exception 'FAIL: overseen_participants should return 1 row, got %', visible;
+  end if;
+  select code into seen_code from public.overseen_participants();
+  if seen_code <> 'STUDENT_A' then
+    raise exception 'FAIL: overseen_participants returned wrong code %', seen_code;
+  end if;
+end $$;
+
+-- Educator logs a view of the overseen student (allowed)...
+insert into public.educator_access_log (educator_user_id, org_id, participant_id, owner_user_id, view_type)
+values ('00000000-0000-0000-0000-00000000000e', '00000000-0000-0000-0000-000000000001',
+        '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-00000000000a', 'roster');
+
+-- ...but cannot log (or fabricate) access to the non-consented student B.
+do $$
+begin
+  begin
+    insert into public.educator_access_log (educator_user_id, org_id, participant_id, owner_user_id, view_type)
+    values ('00000000-0000-0000-0000-00000000000e', '00000000-0000-0000-0000-000000000001',
+            '00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-00000000000b', 'roster');
+    raise exception 'FAIL: educator logged access to a non-overseen student';
+  exception
+    when insufficient_privilege then null; -- expected
+  end;
+end $$;
+
+-- The log is append-only: educators cannot rewrite their trail.
+do $$
+declare
+  touched integer;
+begin
+  update public.educator_access_log set view_type = 'alerts' where true;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: educator mutated % access log rows', touched;
+  end if;
+  delete from public.educator_access_log where true;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: educator deleted % access log rows', touched;
+  end if;
+end $$;
+
+-- The student sees who viewed their data.
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000a", "role": "authenticated"}';
+
+do $$
+declare
+  visible integer;
+begin
+  select count(*) into visible from public.educator_access_log;
+  if visible <> 1 then
+    raise exception 'FAIL: student should see 1 access log row, saw %', visible;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
 -- Consent revocation by the student cuts educator access immediately,
 -- and re-granting restores it (issue #27).
 -- ---------------------------------------------------------------------------
@@ -245,6 +316,10 @@ begin
   select count(*) into visible from public.insights;
   if visible <> 0 then
     raise exception 'FAIL: educator still sees % insights after consent revocation', visible;
+  end if;
+  select count(*) into visible from public.overseen_participants();
+  if visible <> 0 then
+    raise exception 'FAIL: overseen_participants leaks % rows after consent revocation', visible;
   end if;
 end $$;
 
