@@ -1331,6 +1331,25 @@ export class ApiClient {
     await this.recordEducatorAccess(alert, "alert_ack", { alert_key: alert.alert_key, alert_type: alert.type });
   }
 
+  /** Batched accountability records for list views (one row per student shown). */
+  static async recordCohortAccess(
+    students: Array<Pick<EducatorStudentStatus, "participant_id" | "org_id" | "owner_user_id">>,
+    viewType: "roster" | "alerts",
+  ): Promise<void> {
+    if (!students.length) return;
+    const educator = await this.requireOwnerId();
+    const { error } = await supabase.from("educator_access_log").insert(
+      students.map((student) => ({
+        educator_user_id: educator,
+        org_id: student.org_id,
+        participant_id: student.participant_id,
+        owner_user_id: student.owner_user_id,
+        view_type: viewType,
+      })),
+    );
+    if (error) console.warn("[oversight] cohort access log insert skipped", error);
+  }
+
   /** Student-facing view of who looked at their data (issue #31). */
   static async listEducatorAccess(userId: string, limit = 20): Promise<StudentAccessRecord[]> {
     const participant = await this.getParticipant(userId);
