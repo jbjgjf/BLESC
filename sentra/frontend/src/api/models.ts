@@ -138,6 +138,27 @@ export interface StudentAccessRecord {
   org_name: string;
 }
 
+export interface SharedSupportSummary {
+  id: string;
+  participant_id: string;
+  org_id: string;
+  org_name?: string;
+  student_code?: string;
+  counselor_user_id: string | null;
+  summary_id: string;
+  summary_json: CounselorSupportSummary;
+  evidence_event_ids: string[];
+  reflection_count: number;
+  status: "active" | "revoked" | string;
+  shared_at: string;
+  revoked_at: string | null;
+}
+
+export interface OrgCounselor {
+  counselor_user_id: string;
+  display_label: string;
+}
+
 export interface AiAuditSafetyDecision {
   risk_level: string;
   escalation_required: boolean;

@@ -345,6 +345,33 @@ begin
   end if;
 end $$;
 
+-- Counselor directory: rostered students may list active counselors of the
+-- requesting org (minimized); users without a roster row get nothing.
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000a", "role": "authenticated"}';
+
+do $$
+declare
+  visible integer;
+begin
+  select count(*) into visible from public.org_counselors('00000000-0000-0000-0000-000000000001');
+  if visible <> 1 then
+    raise exception 'FAIL: rostered student should see 1 counselor, saw %', visible;
+  end if;
+end $$;
+
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000d", "role": "authenticated"}';
+
+do $$
+declare
+  visible integer;
+begin
+  -- The org admin has no roster row as a STUDENT, so the directory is empty.
+  select count(*) into visible from public.org_counselors('00000000-0000-0000-0000-000000000001');
+  if visible <> 0 then
+    raise exception 'FAIL: non-rostered caller sees % counselors', visible;
+  end if;
+end $$;
+
 -- Student revokes the share: counselor loses it immediately (consent intact).
 set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000a", "role": "authenticated"}';
 
