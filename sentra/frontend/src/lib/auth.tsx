@@ -12,12 +12,20 @@ type Participant = {
   display_name: string | null;
 };
 
+export type EducatorMembership = {
+  org_id: string;
+  org_name: string;
+  role: "educator" | "org_admin";
+};
+
 type AuthContextValue = {
   session: Session | null;
   user: User | null;
   participant: Participant | null;
   userId: string;
   isLoading: boolean;
+  educatorMemberships: EducatorMembership[];
+  isEducator: boolean;
   setUserId: (nextUserId: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshParticipant: () => Promise<void>;
@@ -64,9 +72,33 @@ async function ensureParticipant(user: User): Promise<Participant> {
   return created.data;
 }
 
+async function loadEducatorMemberships(user: User): Promise<EducatorMembership[]> {
+  const { data, error } = await supabase
+    .from("organization_members")
+    .select("org_id, role, organizations(name)")
+    .eq("member_user_id", user.id)
+    .eq("status", "active");
+  if (error) {
+    // Non-fatal: before the oversight migrations are applied this table may
+    // not exist; the app then simply has no educator surfaces.
+    console.info("[supabase-auth] educator membership lookup skipped", error.message);
+    return [];
+  }
+  type Row = { org_id: string; role: string; organizations?: { name: string } | { name: string }[] | null };
+  return ((data ?? []) as Row[]).map((row) => {
+    const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations;
+    return {
+      org_id: row.org_id,
+      org_name: org?.name ?? "Organization",
+      role: row.role === "org_admin" ? "org_admin" : "educator",
+    };
+  });
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [participant, setParticipant] = useState<Participant | null>(null);
+  const [educatorMemberships, setEducatorMemberships] = useState<EducatorMembership[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const refreshParticipant = useCallback(async () => {
@@ -91,7 +123,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userId: data.session?.user.id ?? null,
       });
       if (data.session?.user) {
-        setParticipant(await ensureParticipant(data.session.user));
+        const [nextParticipant, memberships] = await Promise.all([
+          ensureParticipant(data.session.user),
+          loadEducatorMemberships(data.session.user),
+        ]);
+        setParticipant(nextParticipant);
+        setEducatorMemberships(memberships);
       }
       setIsLoading(false);
     }).catch(() => {
@@ -99,6 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.info("[supabase-auth] initial session failed");
       setSession(null);
       setParticipant(null);
+      setEducatorMemberships([]);
       setIsLoading(false);
     });
 
@@ -111,12 +149,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(nextSession);
       if (!nextSession?.user) {
         setParticipant(null);
+        setEducatorMemberships([]);
         setIsLoading(false);
         return;
       }
-      ensureParticipant(nextSession.user)
-        .then(setParticipant)
-        .finally(() => setIsLoading(false));
+      Promise.all([
+        ensureParticipant(nextSession.user).then(setParticipant),
+        loadEducatorMemberships(nextSession.user).then(setEducatorMemberships),
+      ]).finally(() => setIsLoading(false));
     });
 
     return () => {
@@ -151,10 +191,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     participant,
     userId: participant?.code ?? DEFAULT_PARTICIPANT_CODE,
     isLoading,
+    educatorMemberships,
+    isEducator: educatorMemberships.length > 0,
     setUserId,
     signOut,
     refreshParticipant,
-  }), [isLoading, participant, refreshParticipant, session, setUserId, signOut]);
+  }), [educatorMemberships, isLoading, participant, refreshParticipant, session, setUserId, signOut]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
