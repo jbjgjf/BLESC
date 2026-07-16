@@ -1350,6 +1350,65 @@ export class ApiClient {
     if (error) console.warn("[oversight] cohort access log insert skipped", error);
   }
 
+  /** Minimized per-student view for educators (issue #36). */
+  static async getStudentOverviewForEducator(participantId: string): Promise<{
+    student: EducatorStudentStatus;
+    signals: Array<{ day: string; score: number | null }>;
+    themes: Array<{ label: string; count: number }>;
+    safetyRuns: Array<{ level: string; occurred_at: string }>;
+  } | null> {
+    const roster = await this.getCohortRoster();
+    const student = roster.find((row) => row.participant_id === participantId);
+    if (!student) return null;
+
+    const [insightsResult, safetyResult] = await Promise.all([
+      supabase
+        .from("insights")
+        .select("day, anomaly_score, graph_summary_json")
+        .eq("participant_id", participantId)
+        .order("day", { ascending: false })
+        .limit(30),
+      supabase
+        .from("model_runs")
+        .select("retrieval_config_json, created_at")
+        .eq("artifact_type", "safety_assessment")
+        .eq("participant_id", participantId)
+        .order("created_at", { ascending: false })
+        .limit(10),
+    ]);
+    if (insightsResult.error) throwSupabaseError("Load student signals failed", insightsResult.error);
+    if (safetyResult.error) throwSupabaseError("Load student safety failed", safetyResult.error);
+
+    type InsightRowLite = { day: string; anomaly_score: number | null; graph_summary_json: Record<string, JsonValue> | null };
+    const rows = (insightsResult.data ?? []) as InsightRowLite[];
+    const themeCounts = new Map<string, number>();
+    for (const row of rows) {
+      const keyNodes = Array.isArray(row.graph_summary_json?.key_nodes) ? row.graph_summary_json.key_nodes : [];
+      for (const node of keyNodes as Array<Record<string, JsonValue>>) {
+        const label = typeof node?.label === "string" ? node.label : null;
+        if (label) themeCounts.set(label, (themeCounts.get(label) ?? 0) + 1);
+      }
+    }
+    const themes = [...themeCounts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 5)
+      .map(([label, count]) => ({ label, count }));
+
+    void this.recordEducatorAccess(student, "student_overview");
+
+    return {
+      student,
+      signals: rows.map((row) => ({ day: row.day, score: row.anomaly_score })),
+      themes,
+      safetyRuns: ((safetyResult.data ?? []) as Array<{ retrieval_config_json: Record<string, JsonValue> | null; created_at: string }>)
+        .map((row) => ({
+          level: typeof row.retrieval_config_json?.risk_level === "string" ? String(row.retrieval_config_json.risk_level) : "unknown",
+          occurred_at: row.created_at,
+        }))
+        .filter((run) => run.level !== "none" && run.level !== "low"),
+    };
+  }
+
   /** Student-facing view of who looked at their data (issue #31). */
   static async listEducatorAccess(userId: string, limit = 20): Promise<StudentAccessRecord[]> {
     const participant = await this.getParticipant(userId);
