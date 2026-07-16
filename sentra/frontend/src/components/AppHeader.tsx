@@ -15,9 +15,11 @@ const primaryNav = [
   { href: "/sharing", label: "Sharing" },
 ];
 
+const educatorNav = { href: "/educator", label: "Dashboard" };
+
 export function AppHeader() {
   const pathname = usePathname();
-  const { userId, setUserId, signOut, user } = useAuth();
+  const { userId, setUserId, signOut, user, isEducator } = useAuth();
   const [draftUserId, setDraftUserId] = useState(userId);
   const [cohortOpen, setCohortOpen] = useState(false);
 
@@ -82,7 +84,7 @@ export function AppHeader() {
 
         {/* Nav — 2 items */}
         <nav className="flex items-stretch flex-1">
-          {primaryNav.map((item) => {
+          {(isEducator ? [...primaryNav, educatorNav] : primaryNav).map((item) => {
             const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             return (
               <Link
