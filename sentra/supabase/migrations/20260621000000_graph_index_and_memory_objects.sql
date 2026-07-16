@@ -92,19 +92,19 @@ alter table public.conversation_recall_summaries
 create index if not exists graph_nodes_owner_participant_category_idx
   on public.graph_nodes(owner_user_id, participant_id, category);
 create index if not exists graph_nodes_embedding_hnsw_idx
-  on public.graph_nodes using hnsw (embedding vector_cosine_ops);
+  on public.graph_nodes using hnsw (embedding extensions.vector_cosine_ops);
 create index if not exists graph_edges_owner_participant_type_idx
   on public.graph_edges(owner_user_id, participant_id, relation_type);
 create index if not exists graph_edges_source_node_idx on public.graph_edges(source_node_id);
 create index if not exists graph_edges_target_node_idx on public.graph_edges(target_node_id);
 create index if not exists graph_edges_embedding_hnsw_idx
-  on public.graph_edges using hnsw (embedding vector_cosine_ops);
+  on public.graph_edges using hnsw (embedding extensions.vector_cosine_ops);
 create index if not exists conversation_memory_objects_owner_participant_created_idx
   on public.conversation_memory_objects(owner_user_id, participant_id, created_at desc);
 create index if not exists conversation_memory_objects_window_idx
   on public.conversation_memory_objects(window_id);
 create index if not exists conversation_memory_objects_embedding_hnsw_idx
-  on public.conversation_memory_objects using hnsw (embedding vector_cosine_ops);
+  on public.conversation_memory_objects using hnsw (embedding extensions.vector_cosine_ops);
 
 create or replace function public.match_graph_nodes(
   query_embedding extensions.vector(1536),
