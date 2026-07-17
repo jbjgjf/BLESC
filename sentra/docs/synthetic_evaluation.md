@@ -34,6 +34,19 @@ evaluation_access` (reviewer-only read; runner-only write; see
 Keys: product traffic uses `OPENAI_API_KEY`; the simulator/judge/traces use
 `BLESC_EVAL_RUNNER_OPENAI_API_KEY`. Never print or persist either.
 
+**Build gotcha:** the app under evaluation must be BUILT with
+`NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` pointing at the
+evaluation Supabase project and with `NEXT_PUBLIC_API_URL` EMPTY (so
+`ApiClient` falls back to the app's own `/api` routes). A stale
+`NEXT_PUBLIC_API_URL` from `.env.local` gets inlined at build time and sends
+chat/entries to the offline research backend — every case then times out.
+
+```bash
+cd sentra/frontend
+NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... NEXT_PUBLIC_API_URL= npm run build
+NEXT_PUBLIC_API_URL= npx next start -p 3940
+```
+
 ## Commands (from `sentra/eval`)
 
 ```bash

@@ -9,7 +9,7 @@ import {
 } from "./artifacts.ts";
 import {
   closeSession, counselorReadOversight, grantConsentIfRequested, loginThroughUi, openSession,
-  revokeAllSharesThroughUi, screenshot, sendChatAndRead, shareSummaryThroughUi, submitJournal,
+  reviewerReadEvaluation, revokeAllSharesThroughUi, screenshot, sendChatAndRead, shareSummaryThroughUi, submitJournal,
 } from "./browser.ts";
 import { DATA_CLASSIFICATION, MATRIX, MODELS, SYNTHETIC_ACCOUNTS, type EvalEnv } from "./config.ts";
 import type { CaseResult, ScenarioCase, TurnRecord } from "./contracts.ts";
@@ -234,6 +234,28 @@ export async function executeRun(options: RunOptions): Promise<{ runId: string; 
     }
   }
 
+  // 7) Reviewer pass through /evaluation (normal login) — proves the reviewer
+  //    path end-to-end before the report is generated.
+  let reviewerCheckPassed = false;
+  try {
+    const reviewerPassword = accounts.passwords.get(SYNTHETIC_ACCOUNTS.reviewer)!;
+    const reviewerSession = await openSession(env.appBaseUrl);
+    try {
+      await loginThroughUi(reviewerSession.page, SYNTHETIC_ACCOUNTS.reviewer, reviewerPassword);
+      const surface = await reviewerReadEvaluation(reviewerSession.page);
+      reviewerCheckPassed = surface.includes(label) || surface.includes("Is BLESC safe to ship?");
+      if (options.captureMedia) {
+        mkdirSync(join(options.artifactsDir, "media"), { recursive: true });
+        await screenshot(reviewerSession.page, join(options.artifactsDir, "media", "reviewer-evaluation.png"));
+      }
+    } finally {
+      await closeSession(reviewerSession);
+    }
+  } catch (error) {
+    console.warn("[run] reviewer /evaluation pass failed:", error instanceof Error ? error.message : String(error));
+  }
+  console.log(`[run] reviewer /evaluation check: ${reviewerCheckPassed ? "ok" : "FAILED"}`);
+
   // OpenAI Evals registration (testing criteria; references stored on the run).
   const evalRefsResult = await registerOpenAiEval(openai, label, results.map((result) => ({
     caseKey: result.scenario.caseKey,
@@ -243,7 +265,10 @@ export async function executeRun(options: RunOptions): Promise<{ runId: string; 
   })));
 
   const gates = computeGates(results);
-  const verdict = computeVerdict(results);
+  const computed = computeVerdict(results);
+  // A broken reviewer path means the report cannot be trusted to reach its
+  // audience — never "ready" in that state.
+  const verdict = reviewerCheckPassed || computed !== "ready" ? computed : "needs_attention";
   const totals = {
     users: new Set(results.map((result) => result.scenario.personaId)).size,
     scenarios: new Set(results.map((result) => `${result.scenario.personaId}:${result.scenario.family}`)).size,
@@ -253,6 +278,9 @@ export async function executeRun(options: RunOptions): Promise<{ runId: string; 
     incomplete: results.filter((result) => result.status === "incomplete" || result.status === "error").length,
   };
   const findings = buildFindings(results, gates);
+  if (!reviewerCheckPassed) {
+    findings.unshift("Reviewer could not open /evaluation through the normal frontend — the boss-facing dashboard is unreachable for this run.");
+  }
   const summary: RunSummary = {
     label, mode, verdict, totals, gates, findings,
     recommendedActions: buildActions(verdict, gates),

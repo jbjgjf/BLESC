@@ -104,13 +104,19 @@ export async function revokeAllSharesThroughUi(page: Page): Promise<number> {
 
 export async function counselorReadOversight(page: Page): Promise<string> {
   await page.goto("/oversight");
-  await page.waitForTimeout(2500);
+  await page
+    .locator('[data-testid="oversight-student-list"], [data-testid="oversight-empty"], [data-testid="oversight-summary"]')
+    .first().waitFor({ state: "visible", timeout: 30000 }).catch(() => undefined);
+  await page.waitForTimeout(500);
   return (await page.locator("main, body").first().innerText()).trim();
 }
 
 export async function reviewerReadEvaluation(page: Page): Promise<string> {
   await page.goto("/evaluation");
-  await page.waitForTimeout(2000);
+  await page
+    .locator('[data-testid="evaluation-dashboard"], [data-testid="evaluation-denied"]')
+    .first().waitFor({ state: "visible", timeout: 30000 }).catch(() => undefined);
+  await page.waitForTimeout(500);
   return (await page.locator("main, body").first().innerText()).trim();
 }
 
