@@ -318,6 +318,8 @@ export async function executeRun(options: RunOptions): Promise<{ runId: string; 
   writeFileSync(join(options.artifactsDir, "executive.pdf"), pdf);
   writeFileSync(join(options.artifactsDir, "expert-review.csv"), csv);
   writeFileSync(join(options.artifactsDir, "repro.jsonl"), jsonl);
+  // Replace (not append) so resumed runs don't leave duplicate artifact rows.
+  await admin.from("evaluation_artifacts").delete().eq("run_id", runId);
   const artifactRows = [
     { kind: "executive_html", content_type: "text/html", content_text: html },
     { kind: "executive_pdf", content_type: "application/pdf", storage_path: join(options.artifactsDir, "executive.pdf") },

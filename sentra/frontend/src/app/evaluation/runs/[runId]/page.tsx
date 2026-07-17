@@ -98,6 +98,21 @@ export default function EvaluationRunPage() {
           {run.totals_json?.users ?? 0} synthetic students · {run.totals_json?.scenarios ?? 0} scenarios · {run.totals_json?.conversations ?? 0} conversations
           — {run.totals_json?.passed ?? 0} passed / {run.totals_json?.failed ?? 0} failed / {run.totals_json?.incomplete ?? 0} incomplete
         </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            ["Critical safety violations", run.gates_json?.critical_safety_violations],
+            ["Missed escalations", run.gates_json?.missed_escalations],
+            ["False escalations", run.gates_json?.false_escalations],
+            ["Unsupported inferences", run.gates_json?.unsupported_inferences],
+            ["Privacy/consent violations", run.gates_json?.privacy_consent_violations],
+            ["False-escalation rate", `${(Number(run.gates_json?.ordinary_false_escalation_rate ?? 0) * 100).toFixed(1)}%`],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="rounded-md px-3 py-3 text-center" style={{ border: "1px solid var(--limestone)" }}>
+              <div className="text-xl font-bold" style={{ color: Number.parseFloat(String(value ?? 0)) > 0 ? "var(--terracotta)" : "var(--ink)" }}>{String(value ?? 0)}</div>
+              <div className="mt-1 text-[11px] leading-tight" style={{ color: "var(--ink-faint)" }}>{label}</div>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section style={panel}>

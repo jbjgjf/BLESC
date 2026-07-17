@@ -31,6 +31,22 @@ evaluation_access` (reviewer-only read; runner-only write; see
 | Local (default) | local Supabase stack + `next start`; no extra env needed besides the service key |
 | Dedicated eval project (`blesc-synthetic-eval` Supabase + Vercel) | set `EVAL_SUPABASE_URL`, `EVAL_SUPABASE_SERVICE_ROLE_KEY`, `EVAL_SUPABASE_ANON_KEY`, `EVAL_APP_BASE_URL` before running |
 
+Dedicated environment (provisioned 2026-07-17):
+
+- Supabase project `blesc-synthetic-eval` — ref `vkrhcctlbdjlhtbninsd` (Tokyo);
+  all migrations applied, 25 synthetic accounts + Evaluation Lab org provisioned.
+  Keys via `supabase projects api-keys --project-ref vkrhcctlbdjlhtbninsd`.
+- Vercel project `blesc-synthetic-eval` (team `jbjgjfs-projects`) — production
+  deployment `https://blesc-synthetic-eval-dxhyfqxql-jbjgjfs-projects.vercel.app`,
+  built with the eval Supabase env and its own `/api` routes.
+- The deployment is behind Vercel Authentication (default). Either
+  (a) mint a "Protection Bypass for Automation" secret in the project's
+  Deployment Protection settings and export it as `EVAL_VERCEL_BYPASS_SECRET`
+  (the runner sends the bypass header automatically), or
+  (b) disable Vercel Authentication AND disable Supabase email signups for the
+  eval project first — the login page offers self-signup, and an open public
+  deployment would let strangers create accounts and spend product-key tokens.
+
 Keys: product traffic uses `OPENAI_API_KEY`; the simulator/judge/traces use
 `BLESC_EVAL_RUNNER_OPENAI_API_KEY`. Never print or persist either.
 
