@@ -10,12 +10,17 @@ export interface BrowserSession {
   page: Page;
 }
 
-export async function openSession(baseUrl: string, options?: { video?: string }): Promise<BrowserSession> {
+export async function openSession(baseUrl: string, options?: { video?: string; bypassSecret?: string }): Promise<BrowserSession> {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     baseURL: baseUrl,
     viewport: { width: 1280, height: 900 },
     recordVideo: options?.video ? { dir: options.video } : undefined,
+    // Vercel "Protection Bypass for Automation": lets the runner through the
+    // deployment-protection wall while the eval deployment stays non-public.
+    extraHTTPHeaders: options?.bypassSecret
+      ? { "x-vercel-protection-bypass": options.bypassSecret, "x-vercel-set-bypass-cookie": "true" }
+      : undefined,
   });
   const page = await context.newPage();
   return { browser, context, page };

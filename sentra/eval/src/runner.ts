@@ -12,7 +12,7 @@ import {
   reviewerReadEvaluation, revokeAllSharesThroughUi, screenshot, sendChatAndRead, shareSummaryThroughUi, submitJournal,
 } from "./browser.ts";
 import { DATA_CLASSIFICATION, MATRIX, MODELS, SYNTHETIC_ACCOUNTS, type EvalEnv } from "./config.ts";
-import type { CaseResult, ScenarioCase, TurnRecord } from "./contracts.ts";
+import type { CaseResult, DeterministicResult, ScenarioCase, TurnRecord } from "./contracts.ts";
 import { CostGuard, CostHardStop, estimateRunUsd } from "./cost.ts";
 import { failureKinds, gradeDeterministic, rawSentinel } from "./graders/deterministic.ts";
 import { judgeCase, registerOpenAiEval } from "./graders/judge.ts";
@@ -75,10 +75,30 @@ export async function executeRun(options: RunOptions): Promise<{ runId: string; 
   // Create or resume the run row (service-role writer).
   let runId = options.resumeRunId ?? "";
   const doneKeys = new Set<string>();
+  const results: CaseResult[] = [];
   if (runId) {
-    const prior = await admin.from("evaluation_cases").select("case_key,status").eq("run_id", runId);
+    // Restore graded cases into the result set so the resumed run's summary,
+    // gates, and artifacts cover the WHOLE run, not just the re-run tail.
+    const prior = await admin.from("evaluation_cases")
+      .select("case_key,status,transcript_json,deterministic_json,judge_json,failure_kinds,human_review,human_review_reason,trace_ref")
+      .eq("run_id", runId);
     for (const row of prior.data ?? []) {
-      if (row.status === "passed" || row.status === "failed") doneKeys.add(row.case_key);
+      if (row.status !== "passed" && row.status !== "failed") continue;
+      doneKeys.add(row.case_key);
+      const scenario = scenarios.find((candidate) => candidate.caseKey === row.case_key);
+      if (!scenario || !row.deterministic_json) continue;
+      results.push({
+        scenario,
+        transcript: (row.transcript_json ?? []) as TurnRecord[],
+        deterministic: row.deterministic_json as DeterministicResult,
+        judge: (row.judge_json ?? undefined) as CaseResult["judge"],
+        status: row.status,
+        failureKinds: (row.failure_kinds ?? []) as string[],
+        humanReview: Boolean(row.human_review),
+        humanReviewReason: row.human_review_reason ?? undefined,
+        traceRef: row.trace_ref ?? undefined,
+        usage: { inputTokens: 0, outputTokens: 0 },
+      });
     }
     console.log(`[run] resuming ${runId}: ${doneKeys.size} cases already graded`);
   } else {
@@ -91,7 +111,6 @@ export async function executeRun(options: RunOptions): Promise<{ runId: string; 
     runId = created.data.id;
   }
 
-  const results: CaseResult[] = [];
   for (const scenario of scenarios) {
     if (doneKeys.has(scenario.caseKey)) continue;
     const persona = personaById(scenario.personaId);
@@ -122,7 +141,7 @@ export async function executeRun(options: RunOptions): Promise<{ runId: string; 
         `blesc-eval:${scenario.caseKey}`,
         async (trace) => {
           traceRefCaptured = trace.traceId;
-          const session = await openSession(env.appBaseUrl, mediaDir ? { video: mediaDir } : undefined);
+          const session = await openSession(env.appBaseUrl, { video: mediaDir, bypassSecret: env.protectionBypassSecret });
           try {
             // 1) Student logs in through /login like any user.
             await loginThroughUi(session.page, email, password);
@@ -165,7 +184,7 @@ export async function executeRun(options: RunOptions): Promise<{ runId: string; 
           // 6) Counselor pass through /oversight (normal login).
           const counselorEmail = SYNTHETIC_ACCOUNTS.counselors[persona.accountIndex % SYNTHETIC_ACCOUNTS.counselors.length];
           const counselorPassword = accounts.passwords.get(counselorEmail)!;
-          const counselorSession = await openSession(env.appBaseUrl);
+          const counselorSession = await openSession(env.appBaseUrl, { bypassSecret: env.protectionBypassSecret });
           try {
             await loginThroughUi(counselorSession.page, counselorEmail, counselorPassword);
             counselorSurfaceText = await counselorReadOversight(counselorSession.page);
@@ -239,7 +258,7 @@ export async function executeRun(options: RunOptions): Promise<{ runId: string; 
   let reviewerCheckPassed = false;
   try {
     const reviewerPassword = accounts.passwords.get(SYNTHETIC_ACCOUNTS.reviewer)!;
-    const reviewerSession = await openSession(env.appBaseUrl);
+    const reviewerSession = await openSession(env.appBaseUrl, { bypassSecret: env.protectionBypassSecret });
     try {
       await loginThroughUi(reviewerSession.page, SYNTHETIC_ACCOUNTS.reviewer, reviewerPassword);
       const surface = await reviewerReadEvaluation(reviewerSession.page);
@@ -347,7 +366,7 @@ function buildFindings(results: CaseResult[], gates: Record<string, number>): st
   if (incomplete > 0) findings.push(`${incomplete} conversation(s) could not be completed (infrastructure or provider issues) — not counted as passes.`);
   if (!findings.length) findings.push("All safety, privacy, and consent gates passed across the matrix; escalation behavior matched expectations in every family.");
   const chat = results.find((result) => result.judge)?.judge;
-  if (chat) findings.push(`Judge quality signal — safety ${chat.safetyScore}/5, empathy ${chat.empathyScore}/5, boundaries ${chat.boundaryScore}/5 (sample).`);
+  if (chat) findings.push(`Judge quality signal (0-1 scale) — safety ${chat.safetyScore}, empathy ${chat.empathyScore}, boundaries ${chat.boundaryScore} (sample).`);
   return findings;
 }
 
