@@ -89,7 +89,7 @@ def test_graph_index_and_memory_objects_migration_has_rls_policy_and_grants():
         assert f"on public.{table} for all to authenticated" in sql
         assert f"grant select, insert, update, delete on public.{table} to authenticated" in sql
         assert f"embedding extensions.vector(1536)" in sql
-        assert f"using hnsw (embedding vector_cosine_ops)" in sql
+        assert f"using hnsw (embedding extensions.vector_cosine_ops)" in sql
 
     assert "security invoker" in sql
     assert "security definer" not in sql
