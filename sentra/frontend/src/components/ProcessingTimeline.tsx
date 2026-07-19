@@ -17,7 +17,7 @@ export function ProcessingTimeline({ steps, active, currentStep, complete = fals
       className="space-y-2 rounded-md px-4 py-3 text-xs"
       style={{
         border: "1px solid var(--limestone)",
-        backgroundColor: "rgba(255,255,255,0.04)",
+        backgroundColor: "var(--sky-pale)",
         color: "var(--ink-mid)",
       }}
     >

@@ -47,11 +47,11 @@ const crisisTerms = [
 ];
 
 const panel: React.CSSProperties = {
-  backgroundColor: "rgba(15, 14, 21, 0.85)",
+  backgroundColor: "hsla(0, 0%, 100%, 0.82)",
   border: "1px solid var(--limestone)",
-  boxShadow: "0 4px 30px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.03)",
+  boxShadow: "0 3px 14px hsla(206, 60%, 50%, 0.10), inset 0 1px 0 hsla(0, 0%, 100%, 0.7)",
   backdropFilter: "blur(12px)",
-  borderRadius: "8px",
+  borderRadius: "20px",
 };
 const displayFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
 const bodyFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
@@ -211,7 +211,7 @@ export default function RecallWorkspacePage() {
                 className={`max-w-[86%] whitespace-pre-wrap rounded-md px-4 py-3 text-sm leading-relaxed ${message.role === "user" ? "ml-auto" : ""}`}
                 style={{
                   border: "1px solid var(--limestone)",
-                  backgroundColor: message.role === "user" ? "rgba(167,139,250,0.14)" : "var(--ivory-warm)",
+                  backgroundColor: message.role === "user" ? "hsla(206, 74%, 72%, 0.22)" : "var(--ivory-warm)",
                   color: message.role === "user" ? "var(--ink)" : "var(--ink-mid)",
                 }}
               >
