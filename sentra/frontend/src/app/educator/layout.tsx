@@ -35,10 +35,17 @@ export default function EducatorLayout({ children }: { children: React.ReactNode
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="blesc-aqua mx-auto max-w-5xl space-y-6">
       <div
         className="flex flex-wrap items-center justify-between gap-3 px-6 py-4"
-        style={{ backgroundColor: "var(--ivory-warm)", border: "1px solid var(--limestone)" }}
+        style={{
+          backgroundColor: "hsla(0, 0%, 100%, 0.75)",
+          border: "1px solid hsla(206, 74%, 72%, 0.45)",
+          borderRadius: "22px",
+          backdropFilter: "blur(14px)",
+          WebkitBackdropFilter: "blur(14px)",
+          boxShadow: "0 6px 24px hsla(206, 60%, 50%, 0.12), inset 0 1px 0 hsla(0, 0%, 100%, 0.7)",
+        }}
       >
         <div>
           <div className="inscription">Educator dashboard</div>
@@ -46,7 +53,7 @@ export default function EducatorLayout({ children }: { children: React.ReactNode
             {educatorMemberships.map((membership) => membership.org_name).join(" · ")}
           </div>
         </div>
-        <nav className="flex gap-1">
+        <nav className="flex gap-1.5">
           {sections.map((section) => {
             const isActive = section.href === "/educator"
               ? pathname === "/educator"
@@ -55,11 +62,15 @@ export default function EducatorLayout({ children }: { children: React.ReactNode
               <Link
                 key={section.href}
                 href={section.href}
-                className="rounded-md px-3 py-1.5 text-sm font-semibold"
+                className="rounded-full px-4 py-1.5 text-sm font-semibold transition-all"
                 style={{
-                  color: isActive ? "var(--ink)" : "var(--ink-faint)",
-                  backgroundColor: isActive ? "var(--ivory)" : "transparent",
-                  border: isActive ? "1px solid var(--limestone)" : "1px solid transparent",
+                  color: isActive ? "#ffffff" : "var(--ink-mid)",
+                  background: isActive
+                    ? "linear-gradient(160deg, hsl(206, 74%, 60%), hsl(206, 72%, 46%))"
+                    : "transparent",
+                  border: isActive ? "1px solid transparent" : "1px solid var(--limestone)",
+                  boxShadow: isActive ? "0 3px 12px hsla(206, 74%, 55%, 0.4)" : "none",
+                  textDecoration: "none",
                 }}
               >
                 {section.label}

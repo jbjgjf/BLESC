@@ -93,9 +93,10 @@ html {
 body {
   min-height: 100vh;
   background:
-    radial-gradient(circle at 18% 0%, rgba(124, 58, 237, 0.22), transparent 34rem),
-    radial-gradient(circle at 88% 12%, rgba(217, 70, 239, 0.16), transparent 30rem),
-    linear-gradient(180deg, #090414 0%, var(--ivory) 48%, #05030a 100%);
+    radial-gradient(circle at 20% 0%, hsla(206, 74%, 72%, 0.20), transparent 30rem),
+    radial-gradient(circle at 85% 15%, hsla(206, 74%, 80%, 0.16), transparent 26rem),
+    linear-gradient(180deg, #ffffff 0%, hsl(206, 80%, 96%) 100%);
+  background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: 15px;
@@ -553,4 +554,42 @@ summary::-webkit-details-marker { display: none; }
   .voice-transcript {
     min-height: 68vh;
   }
+}
+
+/* ================================================================
+   BLESC aqua — light Skype-friendly theme, scoped.
+   Wrap a subtree in .blesc-aqua to remap the semantic tokens from
+   the dark purple palette to the aqua brand (hue 206).
+   ================================================================ */
+.blesc-aqua {
+  --hue: 206;
+  --blue-base: hsl(var(--hue), 74%, 72%); /* Exact logo blue color */
+
+  --ivory:          #ffffff;
+  --ivory-warm:     hsl(206, 80%, 97%);
+  --ivory-aged:     hsl(206, 72%, 94%);
+  --limestone:      hsl(206, 62%, 86%);
+  --sandstone:      hsl(206, 48%, 55%);
+  --marble-vein:    hsl(206, 42%, 76%);
+
+  --gold:           hsl(206, 74%, 56%);
+  --gold-light:     hsl(206, 74%, 72%);
+  --gold-deep:      hsl(206, 72%, 38%);
+  --bronze:         hsl(180, 55%, 42%);
+
+  --aegean:         hsl(172, 55%, 34%);
+  --aegean-dark:    hsl(172, 55%, 26%);
+  --cerulean:       hsl(206, 74%, 50%);
+  --sky-pale:       hsla(206, 74%, 56%, 0.10);
+
+  --terracotta:     hsl(6, 72%, 52%);
+  --ochre:          hsl(36, 90%, 38%);
+  --sienna:         hsl(6, 65%, 40%);
+
+  --ink:            hsl(206, 60%, 18%);
+  --ink-soft:       hsl(206, 46%, 27%);
+  --ink-mid:        hsl(206, 32%, 36%);
+  --ink-faint:      hsl(206, 22%, 50%);
+
+  color: var(--ink);
 }

@@ -3,7 +3,9 @@ import type { EducatorStudentStatus } from "@/api/models";
 export const panel: React.CSSProperties = {
   backgroundColor: "var(--ivory)",
   border: "1px solid var(--limestone)",
-  boxShadow: "0 1px 3px rgba(42,32,24,0.09), 0 6px 24px rgba(42,32,24,0.05)",
+  borderRadius: "20px",
+  overflow: "hidden",
+  boxShadow: "0 3px 14px hsla(206, 60%, 50%, 0.10), 0 10px 32px hsla(206, 60%, 50%, 0.06)",
 };
 
 const BAND_STYLES: Record<EducatorStudentStatus["state_band"], { label: string; color: string }> = {

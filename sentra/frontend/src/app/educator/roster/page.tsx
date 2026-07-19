@@ -74,11 +74,15 @@ export default function EducatorRosterPage() {
             key={option}
             type="button"
             onClick={() => setFilter(option)}
-            className="rounded-full px-4 py-1.5 text-xs font-semibold"
+            className="rounded-full px-4 py-1.5 text-xs font-semibold transition-all"
             style={{
-              border: "1px solid var(--limestone)",
-              backgroundColor: filter === option ? "var(--gold)" : "transparent",
-              color: filter === option ? "#000" : "var(--ink-mid)",
+              border: filter === option ? "1px solid transparent" : "1px solid var(--limestone)",
+              background: filter === option
+                ? "linear-gradient(160deg, hsl(206, 74%, 60%), hsl(206, 72%, 46%))"
+                : "transparent",
+              color: filter === option ? "#ffffff" : "var(--ink-mid)",
+              boxShadow: filter === option ? "0 3px 12px hsla(206, 74%, 55%, 0.4)" : "none",
+              cursor: "pointer",
             }}
           >
             {option === "all" ? `All (${roster.length})` : option === "flagged" ? "Needs attention" : "Inactive"}
