@@ -8,7 +8,7 @@
   --blue-mist: hsl(var(--hue), 80%, 96%);
   --aqua-glass: hsla(var(--hue), 74%, 85%, 0.45);
 
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Helvetica, Arial, sans-serif;
   position: fixed;
   inset: 0;
   z-index: 60;

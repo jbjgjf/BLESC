@@ -45,7 +45,7 @@
   --foreground:     var(--ink);
 
   /* Map display and body fonts to Helvetica Neue */
-  --font-sans:      "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-sans:      "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Helvetica, Arial, sans-serif;
   --font-cinzel:    var(--font-sans);
   --font-garamond:  var(--font-sans);
 }
