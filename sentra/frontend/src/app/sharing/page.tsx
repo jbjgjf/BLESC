@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2, ShieldCheck, ShieldOff } from "lucide-react";
 
 import { ApiClient } from "@/api/client";
-import type { OversightRequest, StudentAccessRecord } from "@/api/models";
+import type { OversightRequest, SharedSupportSummary, StudentAccessRecord } from "@/api/models";
 import { useAuth } from "@/lib/auth";
 
 const VIEW_LABELS: Record<string, string> = {
@@ -31,6 +31,8 @@ export default function SharingPage() {
   const { userId } = useAuth();
   const [requests, setRequests] = useState<OversightRequest[] | null>(null);
   const [accessLog, setAccessLog] = useState<StudentAccessRecord[]>([]);
+  const [shares, setShares] = useState<SharedSupportSummary[]>([]);
+  const [busyShareId, setBusyShareId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [busyOrgId, setBusyOrgId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,12 +41,14 @@ export default function SharingPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const [nextRequests, nextAccessLog] = await Promise.all([
+      const [nextRequests, nextAccessLog, nextShares] = await Promise.all([
         ApiClient.listOversightRequests(userId),
         ApiClient.listEducatorAccess(userId),
+        ApiClient.listMySummaryShares(userId).catch(() => []),
       ]);
       setRequests(nextRequests);
       setAccessLog(nextAccessLog);
+      setShares(nextShares);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load sharing settings.");
     } finally {
@@ -55,6 +59,19 @@ export default function SharingPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const revokeShare = async (shareId: string) => {
+    setBusyShareId(shareId);
+    setError(null);
+    try {
+      await ApiClient.revokeSummaryShare(shareId);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Revoking the shared summary failed.");
+    } finally {
+      setBusyShareId(null);
+    }
+  };
 
   const setConsent = async (orgId: string, grant: boolean) => {
     setBusyOrgId(orgId);
@@ -124,6 +141,7 @@ export default function SharingPage() {
                   type="button"
                   disabled={busy}
                   onClick={() => setConsent(request.org_id, false)}
+                  data-testid={`revoke-consent-${request.org_id}`}
                   className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-60"
                   style={{ border: "1px solid var(--sienna)", color: "var(--sienna)" }}
                 >
@@ -135,6 +153,7 @@ export default function SharingPage() {
                   type="button"
                   disabled={busy}
                   onClick={() => setConsent(request.org_id, true)}
+                  data-testid={`grant-consent-${request.org_id}`}
                   className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-60"
                   style={{ backgroundColor: "var(--gold)", color: "#000" }}
                 >
@@ -146,6 +165,42 @@ export default function SharingPage() {
           </section>
         );
       })}
+
+      {!isLoading && shares.length > 0 ? (
+        <section style={panel} data-testid="summary-shares">
+          <header className="px-7 py-4" style={{ borderBottom: "1px solid var(--limestone)" }}>
+            <div className="inscription mb-1">Shared summaries</div>
+            <div className="font-semibold" style={{ color: "var(--ink)" }}>Support summaries you shared</div>
+          </header>
+          <ul>
+            {shares.map((share) => (
+              <li key={share.id} className="flex flex-wrap items-center justify-between gap-3 px-7 py-3 text-sm" style={{ borderBottom: "1px solid var(--limestone)", color: "var(--ink-mid)" }}>
+                <span>
+                  <strong>{share.org_name}</strong>
+                  {share.counselor_user_id ? " · one counselor" : " · all counselors"}
+                  {" · "}{new Date(share.shared_at).toLocaleDateString()}
+                  {" · "}{share.reflection_count} reflection{share.reflection_count === 1 ? "" : "s"}
+                </span>
+                {share.status === "active" ? (
+                  <button
+                    type="button"
+                    disabled={busyShareId === share.id}
+                    onClick={() => revokeShare(share.id)}
+                    data-testid={`revoke-share-${share.id}`}
+                    className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-60"
+                    style={{ border: "1px solid var(--sienna)", color: "var(--sienna)" }}
+                  >
+                    {busyShareId === share.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldOff className="h-3.5 w-3.5" />}
+                    Revoke
+                  </button>
+                ) : (
+                  <span className="text-xs font-semibold" style={{ color: "var(--ink-faint)" }}>Revoked</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {!isLoading && accessLog.length > 0 ? (
         <section style={panel}>

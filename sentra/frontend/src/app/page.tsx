@@ -458,6 +458,7 @@ export default function Home() {
                 color: "var(--ink)",
                 fontSize: "1rem",
               }}
+              data-testid="journal-input"
               placeholder="Write what happened today, how it felt, or what stood out."
               value={journalText}
               onFocus={() => handleFieldFocus("journal_entry", journalText.length)}
@@ -518,6 +519,7 @@ export default function Home() {
 
             <button
               type="submit"
+              data-testid="journal-submit"
               disabled={isSubmitting || !(journalText.trim() || recallText.trim())}
               className="inline-flex items-center gap-2 px-6 py-2.5 transition-all disabled:cursor-not-allowed rounded-md font-semibold cursor-pointer"
               style={{
@@ -838,6 +840,7 @@ export default function Home() {
               color: "var(--ink)",
               fontSize: "1rem",
             }}
+            data-testid="chat-input"
             placeholder="Ask BLESC to reflect on recent patterns."
             value={chatText}
             onChange={(event) => setChatText(event.target.value)}
@@ -854,6 +857,7 @@ export default function Home() {
               />
               <button
                 type="submit"
+                data-testid="chat-submit"
                 disabled={isChatSubmitting || !chatText.trim()}
                 className="inline-flex items-center gap-2 px-5 py-2.5 transition-all disabled:cursor-not-allowed rounded-md font-semibold cursor-pointer"
                 style={{
@@ -894,6 +898,7 @@ export default function Home() {
           )}
           {chatResponse?.answer && (
             <div
+              data-testid="chat-response"
               className="p-4 text-sm leading-relaxed"
               style={{ border: "1px solid var(--limestone)", backgroundColor: "var(--ivory-warm)", color: "var(--ink-mid)" }}
             >

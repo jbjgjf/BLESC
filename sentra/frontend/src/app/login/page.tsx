@@ -69,6 +69,7 @@ export default function LoginPage() {
             <label className="block text-sm font-medium text-zinc-300" htmlFor="email">Email</label>
             <input
               id="email"
+              data-testid="login-email"
               type="email"
               autoComplete="email"
               required
@@ -82,6 +83,7 @@ export default function LoginPage() {
             <label className="block text-sm font-medium text-zinc-300" htmlFor="password">Password</label>
             <input
               id="password"
+              data-testid="login-password"
               type="password"
               autoComplete={mode === "signin" ? "current-password" : "new-password"}
               required
@@ -100,6 +102,7 @@ export default function LoginPage() {
 
           <button
             type="submit"
+            data-testid="login-submit"
             disabled={isSubmitting}
             className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-cyan-500 px-4 text-sm font-semibold text-black transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-500 cursor-pointer"
             style={{ boxShadow: isSubmitting ? "none" : "0 0 14px rgba(6, 182, 212, 0.3)" }}

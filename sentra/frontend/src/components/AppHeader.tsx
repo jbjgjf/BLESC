@@ -15,7 +15,10 @@ const primaryNav = [
   { href: "/sharing", label: "Sharing" },
 ];
 
-const educatorNav = { href: "/educator", label: "Dashboard" };
+const educatorNav = [
+  { href: "/educator", label: "Dashboard" },
+  { href: "/oversight", label: "Oversight" },
+];
 
 export function AppHeader() {
   const pathname = usePathname();
@@ -84,7 +87,7 @@ export function AppHeader() {
 
         {/* Nav — 2 items */}
         <nav className="flex items-stretch flex-1">
-          {(isEducator ? [...primaryNav, educatorNav] : primaryNav).map((item) => {
+          {(isEducator ? [...primaryNav, ...educatorNav] : primaryNav).map((item) => {
             const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             return (
               <Link
