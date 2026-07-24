@@ -289,6 +289,96 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
+-- Support-summary sharing: counselor read requires all four gates
+-- (membership + roster + consent + ACTIVE share).
+-- ---------------------------------------------------------------------------
+
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000a", "role": "authenticated"}';
+
+insert into public.shared_support_summaries
+  (id, participant_id, owner_user_id, org_id, summary_id, summary_json, evidence_event_ids, reflection_count)
+values
+  ('00000000-0000-0000-0000-0000000000f1',
+   '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-00000000000a',
+   '00000000-0000-0000-0000-000000000001', 'summary-1',
+   '{"sections": [{"key": "recent_themes", "items": ["anxious (2 reflections)"]}]}',
+   '["event-1", "event-2"]', 2);
+
+-- A share scoped to a DIFFERENT counselor must stay invisible to educator E.
+insert into public.shared_support_summaries
+  (participant_id, owner_user_id, org_id, counselor_user_id, summary_id, summary_json)
+values
+  ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-00000000000a',
+   '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000d',
+   'summary-2', '{}');
+
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000e", "role": "authenticated"}';
+
+do $$
+declare
+  visible integer;
+  touched integer;
+begin
+  -- Sees the org-wide share, not the one scoped to another counselor.
+  select count(*) into visible from public.shared_support_summaries;
+  if visible <> 1 then
+    raise exception 'FAIL: counselor should see exactly 1 share, saw %', visible;
+  end if;
+  if not exists (select 1 from public.shared_support_summaries where summary_id = 'summary-1') then
+    raise exception 'FAIL: counselor cannot see the org-wide share';
+  end if;
+
+  -- Counselors cannot create or mutate shares.
+  begin
+    insert into public.shared_support_summaries
+      (participant_id, owner_user_id, org_id, summary_id, summary_json)
+    values ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-00000000000a',
+            '00000000-0000-0000-0000-000000000001', 'forged', '{}');
+    raise exception 'FAIL: counselor forged a summary share';
+  exception
+    when insufficient_privilege then null; -- expected
+  end;
+  update public.shared_support_summaries set status = 'active' where true;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: counselor mutated % share rows', touched;
+  end if;
+end $$;
+
+-- Student revokes the share: counselor loses it immediately (consent intact).
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000a", "role": "authenticated"}';
+
+update public.shared_support_summaries set status = 'revoked'
+where id = '00000000-0000-0000-0000-0000000000f1';
+
+do $$
+begin
+  if not exists (select 1 from public.shared_support_summaries
+                 where id = '00000000-0000-0000-0000-0000000000f1'
+                   and status = 'revoked' and revoked_at is not null) then
+    raise exception 'FAIL: share revocation did not stamp revoked_at';
+  end if;
+end $$;
+
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000e", "role": "authenticated"}';
+
+do $$
+declare
+  visible integer;
+begin
+  select count(*) into visible from public.shared_support_summaries;
+  if visible <> 0 then
+    raise exception 'FAIL: counselor still sees % shares after share revocation', visible;
+  end if;
+end $$;
+
+-- Re-activate so the consent-revocation stage below can prove that consent
+-- revocation ALSO hides an active share.
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-00000000000a", "role": "authenticated"}';
+update public.shared_support_summaries set status = 'active'
+where id = '00000000-0000-0000-0000-0000000000f1';
+
+-- ---------------------------------------------------------------------------
 -- Consent revocation by the student cuts educator access immediately,
 -- and re-granting restores it (issue #27).
 -- ---------------------------------------------------------------------------
@@ -320,6 +410,11 @@ begin
   select count(*) into visible from public.overseen_participants();
   if visible <> 0 then
     raise exception 'FAIL: overseen_participants leaks % rows after consent revocation', visible;
+  end if;
+  -- The still-active share must also disappear once consent is revoked.
+  select count(*) into visible from public.shared_support_summaries;
+  if visible <> 0 then
+    raise exception 'FAIL: consent revocation left % shares visible', visible;
   end if;
 end $$;
 
