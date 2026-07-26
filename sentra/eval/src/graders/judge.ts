@@ -25,6 +25,8 @@ export async function judgeCase(
 ): Promise<JudgeResult> {
   const response = await client.chat.completions.create({
     model: MODELS.judge,
+    // store is required for metadata tagging; judge inputs are synthetic by construction.
+    store: true,
     metadata: { data_classification: DATA_CLASSIFICATION, blesc_eval_case: scenario.caseKey },
     response_format: {
       type: "json_schema",
