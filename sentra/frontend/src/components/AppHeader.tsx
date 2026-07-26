@@ -23,7 +23,7 @@ const aqua = {
   inkMid: "hsl(206, 32%, 36%)",
   inkFaint: "hsl(206, 22%, 50%)",
   border: "hsla(206, 74%, 72%, 0.4)",
-  accent: "hsl(206, 72%, 40%)",
+  blue: "hsl(206, 74%, 72%)",
 };
 
 export function AppHeader() {
@@ -46,7 +46,6 @@ export function AppHeader() {
       style={{
         backgroundColor: "hsla(0, 0%, 100%, 0.78)",
         borderBottom: `1px solid ${aqua.border}`,
-        boxShadow: "0 4px 20px hsla(206, 60%, 50%, 0.10)",
       }}
     >
       <div className="mx-auto flex min-h-[56px] max-w-4xl flex-wrap items-stretch justify-between gap-0 px-0">
@@ -90,11 +89,11 @@ export function AppHeader() {
                 style={{
                   fontFamily: "var(--font-sans), sans-serif",
                   fontSize: "0.68rem",
-                  fontWeight: 600,
                   letterSpacing: "0.14em",
                   textTransform: "uppercase",
-                  color: isActive ? aqua.accent : aqua.inkMid,
-                  borderBottom: isActive ? `2px solid ${aqua.accent}` : "2px solid transparent",
+                  color: isActive ? aqua.ink : aqua.inkMid,
+                  fontWeight: isActive ? 700 : 600,
+                  borderBottom: isActive ? `2px solid ${aqua.blue}` : "2px solid transparent",
                   textDecoration: "none",
                 }}
               >
@@ -114,10 +113,10 @@ export function AppHeader() {
               fontSize: "0.6rem",
               letterSpacing: "0.15em",
               textTransform: "uppercase",
-              color: cohortOpen ? aqua.accent : aqua.inkFaint,
-              border: `1px solid ${aqua.border}`,
+              color: aqua.ink,
+              border: `1px solid ${aqua.blue}`,
               borderRadius: "999px",
-              backgroundColor: "hsla(206, 74%, 90%, 0.4)",
+              backgroundColor: cohortOpen ? "hsl(206, 80%, 96%)" : "#ffffff",
               cursor: "pointer",
             }}
           >
@@ -128,12 +127,9 @@ export function AppHeader() {
             <div
               className="absolute right-0 top-full z-50 mt-2 w-64"
               style={{
-                backgroundColor: "hsla(0, 0%, 100%, 0.92)",
-                backdropFilter: "blur(14px)",
-                WebkitBackdropFilter: "blur(14px)",
-                border: `1px solid ${aqua.border}`,
-                borderRadius: "18px",
-                boxShadow: "0 10px 32px hsla(206, 60%, 45%, 0.18)",
+                backgroundColor: "#ffffff",
+                border: `1px solid ${aqua.blue}`,
+                borderRadius: "16px",
               }}
             >
               <div className="p-4">
@@ -154,7 +150,7 @@ export function AppHeader() {
                   className="w-full px-3 py-2 text-sm outline-none"
                   style={{
                     border: `1px solid ${aqua.border}`,
-                    borderRadius: "12px",
+                    borderRadius: "999px",
                     backgroundColor: "hsl(206, 80%, 97%)",
                     color: aqua.ink,
                     fontFamily: "var(--font-sans), sans-serif",

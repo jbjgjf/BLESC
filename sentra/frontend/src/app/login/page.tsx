@@ -47,20 +47,18 @@ export default function LoginPage() {
   };
 
   const inputClass =
-    "mt-2 h-11 w-full rounded-2xl border px-4 text-sm outline-none transition " +
+    "mt-2 h-11 w-full rounded-full border px-4 text-sm outline-none transition " +
     "border-[hsl(206,62%,86%)] bg-[hsl(206,80%,97%)] text-[hsl(206,60%,18%)] " +
-    "focus:border-[hsl(206,74%,56%)] focus:bg-white";
+    "focus:border-[hsl(206,74%,72%)] focus:bg-white";
 
   return (
     <main className="flex min-h-screen items-center justify-center px-4 py-10">
       <section
-        className="w-full max-w-md rounded-3xl border p-7"
+        className="w-full max-w-md border p-7"
         style={{
-          borderColor: "hsla(206, 74%, 72%, 0.45)",
-          backgroundColor: "hsla(0, 0%, 100%, 0.8)",
-          backdropFilter: "blur(14px)",
-          WebkitBackdropFilter: "blur(14px)",
-          boxShadow: "0 10px 40px hsla(206, 60%, 50%, 0.15), inset 0 1px 0 hsla(0, 0%, 100%, 0.7)",
+          borderColor: "var(--limestone)",
+          borderRadius: "var(--radius)",
+          backgroundColor: "#ffffff",
         }}
       >
         <div className="flex items-center gap-3">
@@ -107,7 +105,7 @@ export default function LoginPage() {
           </div>
 
           {message && (
-            <div className="rounded-2xl border px-3 py-2 text-sm" style={{ borderColor: "hsl(36, 80%, 75%)", backgroundColor: "hsl(36, 90%, 95%)", color: "hsl(36, 85%, 26%)" }}>
+            <div className="border px-3 py-2 text-sm" style={{ borderRadius: "var(--radius)", borderColor: "hsl(36, 80%, 75%)", backgroundColor: "hsl(36, 90%, 95%)", color: "hsl(36, 85%, 26%)" }}>
               {message}
             </div>
           )}
@@ -115,10 +113,10 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold transition hover:bg-[hsl(206,74%,78%)] disabled:cursor-not-allowed disabled:opacity-50"
             style={{
-              background: "linear-gradient(160deg, hsl(206, 74%, 60%), hsl(206, 72%, 46%))",
-              boxShadow: isSubmitting ? "none" : "0 4px 14px hsla(206, 74%, 55%, 0.4)",
+              background: "hsl(206, 74%, 72%)",
+              color: "hsl(206, 60%, 18%)",
             }}
           >
             {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -133,7 +131,7 @@ export default function LoginPage() {
             setMessage(null);
           }}
           className="mt-4 w-full cursor-pointer rounded-full px-3 py-2 text-sm font-medium transition hover:bg-[hsla(206,74%,72%,0.15)]"
-          style={{ color: "hsl(206, 72%, 40%)" }}
+          style={{ color: "hsl(206, 60%, 18%)" }}
         >
           {mode === "signin" ? "Create an email/password account" : "Use an existing account"}
         </button>

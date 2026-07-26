@@ -47,11 +47,9 @@ const crisisTerms = [
 ];
 
 const panel: React.CSSProperties = {
-  backgroundColor: "hsla(0, 0%, 100%, 0.82)",
+  backgroundColor: "#ffffff",
   border: "1px solid var(--limestone)",
-  boxShadow: "0 3px 14px hsla(206, 60%, 50%, 0.10), inset 0 1px 0 hsla(0, 0%, 100%, 0.7)",
-  backdropFilter: "blur(12px)",
-  borderRadius: "20px",
+  borderRadius: "var(--radius)",
 };
 const displayFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
 const bodyFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
@@ -190,7 +188,7 @@ export default function RecallWorkspacePage() {
             A guided, non-diagnostic interview that records chat turns as user data and summarizes recurring patterns after enough history exists.
           </p>
         </div>
-        <div className="rounded-md px-4 py-2 text-xs" style={{ border: "1px solid var(--limestone)", color: "var(--ink-faint)" }}>
+        <div className="rounded-2xl px-4 py-2 text-xs" style={{ border: "1px solid var(--limestone)", color: "var(--ink-faint)" }}>
           {progressLabel}
         </div>
       </header>
@@ -208,7 +206,7 @@ export default function RecallWorkspacePage() {
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={`max-w-[86%] whitespace-pre-wrap rounded-md px-4 py-3 text-sm leading-relaxed ${message.role === "user" ? "ml-auto" : ""}`}
+                className={`max-w-[86%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-relaxed ${message.role === "user" ? "ml-auto" : ""}`}
                 style={{
                   border: "1px solid var(--limestone)",
                   backgroundColor: message.role === "user" ? "hsla(206, 74%, 72%, 0.22)" : "var(--ivory-warm)",
@@ -222,7 +220,7 @@ export default function RecallWorkspacePage() {
 
           <form onSubmit={handleSubmit} className="space-y-3 border-t px-5 py-4" style={{ borderColor: "var(--limestone)" }}>
             <textarea
-              className="w-full resize-none rounded-md p-4 text-base leading-relaxed outline-none"
+              className="w-full resize-none rounded-2xl p-4 text-base leading-relaxed outline-none"
               rows={3}
               style={{ ...bodyFont, border: "1px solid var(--limestone)", backgroundColor: "var(--ivory-warm)", color: "var(--ink)" }}
               value={input}
@@ -235,7 +233,7 @@ export default function RecallWorkspacePage() {
               <button
                 type="submit"
                 disabled={!canSend}
-                className="inline-flex items-center gap-2 rounded-md px-5 py-2.5 text-xs font-semibold transition-all disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-xs font-semibold transition-all disabled:cursor-not-allowed"
                 style={{
                   ...displayFont,
                   backgroundColor: canSend ? "var(--gold)" : "var(--limestone)",
@@ -250,7 +248,7 @@ export default function RecallWorkspacePage() {
             </div>
             <ProcessingTimeline steps={recallSteps} active={isSubmitting} currentStep={step} complete={complete && !error} />
             {error && (
-              <div className="flex items-center gap-2 rounded-md p-3 text-sm" style={{ border: "1px solid var(--terracotta)", color: "var(--sienna)" }}>
+              <div className="flex items-center gap-2 rounded-2xl p-3 text-sm" style={{ border: "1px solid var(--terracotta)", color: "var(--sienna)" }}>
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 {error}
               </div>
@@ -282,7 +280,7 @@ export default function RecallWorkspacePage() {
             <button
               type="button"
               onClick={() => void refreshSummary(true)}
-              className="mt-4 rounded-md px-4 py-2 text-xs font-semibold"
+              className="mt-4 rounded-2xl px-4 py-2 text-xs font-semibold"
               style={{ ...displayFont, border: "1px solid var(--limestone)", color: "var(--ink)", letterSpacing: "0.12em", textTransform: "uppercase" }}
             >
               Refresh Summary

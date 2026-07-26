@@ -39,12 +39,9 @@ export default function EducatorLayout({ children }: { children: React.ReactNode
       <div
         className="flex flex-wrap items-center justify-between gap-3 px-6 py-4"
         style={{
-          backgroundColor: "hsla(0, 0%, 100%, 0.75)",
-          border: "1px solid hsla(206, 74%, 72%, 0.45)",
-          borderRadius: "22px",
-          backdropFilter: "blur(14px)",
-          WebkitBackdropFilter: "blur(14px)",
-          boxShadow: "0 6px 24px hsla(206, 60%, 50%, 0.12), inset 0 1px 0 hsla(0, 0%, 100%, 0.7)",
+          backgroundColor: "#ffffff",
+          border: "1px solid var(--limestone)",
+          borderRadius: "var(--radius)",
         }}
       >
         <div>
@@ -64,12 +61,9 @@ export default function EducatorLayout({ children }: { children: React.ReactNode
                 href={section.href}
                 className="rounded-full px-4 py-1.5 text-sm font-semibold transition-all"
                 style={{
-                  color: isActive ? "#ffffff" : "var(--ink-mid)",
-                  background: isActive
-                    ? "linear-gradient(160deg, hsl(206, 74%, 60%), hsl(206, 72%, 46%))"
-                    : "transparent",
-                  border: isActive ? "1px solid transparent" : "1px solid var(--limestone)",
-                  boxShadow: isActive ? "0 3px 12px hsla(206, 74%, 55%, 0.4)" : "none",
+                  color: "var(--ink)",
+                  background: isActive ? "var(--blue-base)" : "#ffffff",
+                  border: isActive ? "1px solid transparent" : "1px solid var(--blue-base)",
                   textDecoration: "none",
                 }}
               >

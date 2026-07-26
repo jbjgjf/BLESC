@@ -1,12 +1,13 @@
-/* blesc chat — Skype-inspired, aqua, bubbly */
+/* blesc chat — Skype-inspired, aqua, bubbly, flat */
 
 .root {
   --hue: 206;
   --blue-base: hsl(var(--hue), 74%, 72%); /* Exact logo blue color */
-  --blue-deep: hsl(var(--hue), 70%, 42%);
-  --blue-ink: hsl(var(--hue), 60%, 22%);
+  --blue-hover: hsl(var(--hue), 74%, 78%); /* Lighter only */
   --blue-mist: hsl(var(--hue), 80%, 96%);
+  --blue-ink: hsl(var(--hue), 60%, 22%);
   --aqua-glass: hsla(var(--hue), 74%, 85%, 0.45);
+  --radius: 16px;
 
   font-family: "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Helvetica, Arial, sans-serif;
   position: fixed;
@@ -14,7 +15,7 @@
   z-index: 60;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, #ffffff 0%, var(--blue-mist) 100%);
+  background: #ffffff;
   color: var(--blue-ink);
   overflow: hidden;
 }
@@ -37,11 +38,11 @@
   align-items: center;
   gap: 12px;
   text-decoration: none;
-  border-radius: 12px;
+  border-radius: 999px;
 }
 
 .headerHome:focus-visible {
-  outline: 2px solid var(--blue-deep);
+  outline: 2px solid var(--blue-base);
   outline-offset: 3px;
 }
 
@@ -56,34 +57,6 @@
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--blue-ink);
-}
-
-.headerStatus {
-  font-size: 0.78rem;
-  color: var(--blue-deep);
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.statusDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: hsl(150, 65%, 42%);
-  box-shadow: 0 0 6px hsla(150, 65%, 45%, 0.7);
-}
-
-.statusDot[data-thinking] {
-  background: var(--blue-deep);
-  box-shadow: 0 0 6px hsla(var(--hue), 70%, 46%, 0.8);
-  animation: pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50%      { transform: scale(1.35); opacity: 0.6; }
 }
 
 /* ── Messages ───────────────────────────────────────── */
@@ -123,7 +96,6 @@
   height: 32px;
   flex-shrink: 0;
   object-fit: contain;
-  filter: drop-shadow(0 2px 4px hsla(var(--hue), 74%, 50%, 0.25));
 }
 
 .bubble {
@@ -131,7 +103,7 @@
   padding: 12px 17px;
   font-size: 0.98rem;
   line-height: 1.55;
-  border-radius: 22px;
+  border-radius: var(--radius);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -139,16 +111,12 @@
 .bubbleAi {
   background: #ffffff;
   color: var(--blue-ink);
-  border-bottom-left-radius: 6px;
-  box-shadow: 0 3px 14px hsla(var(--hue), 60%, 50%, 0.12);
+  border: 1px solid hsla(var(--hue), 74%, 72%, 0.45);
 }
 
-/* Deep enough for readable white text (bubbles darken toward the tail). */
 .bubbleUser {
-  background: linear-gradient(160deg, hsl(var(--hue), 74%, 60%), hsl(var(--hue), 72%, 46%));
-  color: #ffffff;
-  border-bottom-right-radius: 6px;
-  box-shadow: 0 3px 14px hsla(var(--hue), 74%, 55%, 0.35);
+  background: var(--blue-base);
+  color: var(--blue-ink);
 }
 
 .bubbleError {
@@ -165,15 +133,19 @@
   font-size: 0.82rem;
   font-weight: 600;
   color: hsl(6, 65%, 34%);
-  background: hsla(6, 70%, 90%, 0.6);
+  background: hsl(6, 70%, 92%);
   border: 1px solid hsl(6, 70%, 80%);
   border-radius: 999px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, transform 0.1s ease;
 }
 
 .retry:hover {
-  background: hsl(6, 70%, 88%);
+  background: hsl(6, 70%, 95%);
+}
+
+.retry:active {
+  transform: scale(0.97);
 }
 
 /* Typing indicator */
@@ -227,7 +199,7 @@
 .emptySub {
   margin-top: 8px;
   font-size: 0.95rem;
-  color: var(--blue-deep);
+  color: var(--blue-ink);
 }
 
 .starters {
@@ -238,31 +210,33 @@
   gap: 10px;
 }
 
+/* Secondary button: white pill, logo-blue border, ink text */
 .starter {
   padding: 10px 18px;
   font-family: inherit;
   font-size: 0.9rem;
-  color: var(--blue-deep);
-  background: hsla(0, 0%, 100%, 0.75);
-  border: 1px solid hsla(var(--hue), 74%, 72%, 0.55);
+  color: var(--blue-ink);
+  background: #ffffff;
+  border: 1px solid var(--blue-base);
   border-radius: 999px;
   cursor: pointer;
-  box-shadow: 0 2px 10px hsla(var(--hue), 60%, 50%, 0.1);
-  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.15s ease, transform 0.1s ease;
 }
 
 .starter:hover {
-  background: #ffffff;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 14px hsla(var(--hue), 60%, 50%, 0.18);
+  background: var(--blue-mist);
+}
+
+.starter:active {
+  transform: scale(0.97);
 }
 
 .starter:focus-visible {
-  outline: 2px solid var(--blue-deep);
+  outline: 2px solid var(--blue-base);
   outline-offset: 2px;
 }
 
-/* ── Bottom gradient + waves ────────────────────────── */
+/* ── Bottom blue→clear fade + waves ─────────────────── */
 .gradient {
   position: absolute;
   left: 0;
@@ -324,6 +298,7 @@
   justify-content: center;
 }
 
+/* One-line by default → pill; stays a stadium as it grows */
 .inputBox {
   display: flex;
   align-items: flex-end;
@@ -331,22 +306,16 @@
   width: 100%;
   max-width: 680px;
   padding: 9px 9px 9px 20px;
-  border-radius: 28px;
+  border-radius: 999px;
   background: var(--aqua-glass);
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
   border: 1px solid hsla(0, 0%, 100%, 0.65);
-  box-shadow:
-    0 8px 32px hsla(var(--hue), 70%, 40%, 0.22),
-    inset 0 1px 0 hsla(0, 0%, 100%, 0.7);
-  transition: box-shadow 0.25s ease;
+  transition: border-color 0.2s ease;
 }
 
 .inputBox:focus-within {
-  box-shadow:
-    0 8px 36px hsla(var(--hue), 70%, 40%, 0.32),
-    inset 0 1px 0 hsla(0, 0%, 100%, 0.7),
-    0 0 0 3px hsla(var(--hue), 74%, 72%, 0.4);
+  border-color: var(--blue-base);
 }
 
 .textarea {
@@ -373,10 +342,16 @@
   width: 44px;
   height: 44px;
   flex-basis: 44px;
-  background: hsla(0, 0%, 100%, 0.7);
-  color: var(--blue-deep);
+  background: #ffffff;
+  color: var(--blue-ink);
   box-shadow: none;
-  border: 1px solid hsla(var(--hue), 74%, 72%, 0.5);
+  border: 1px solid var(--blue-base);
+}
+
+.voiceSlot :global(.voice-orb:hover:not(:disabled)) {
+  background: var(--blue-mist);
+  transform: none;
+  box-shadow: none;
 }
 
 .voiceSlot :global(.voice-orb) svg {
@@ -387,6 +362,7 @@
 .voiceSlot :global(.voice-orb[data-state="recording"]) {
   background: hsl(6, 75%, 92%);
   color: hsl(6, 65%, 40%);
+  box-shadow: none;
 }
 
 .voiceSlot :global(.voice-input__label) {
@@ -403,40 +379,35 @@
   display: flex;
 }
 
-/* Pentagon send button — five sides, like the five petals. */
-.sendWrap {
-  display: inline-flex;
-  filter: drop-shadow(0 4px 10px hsla(var(--hue), 74%, 45%, 0.45));
-  transition: transform 0.15s ease, filter 0.15s ease;
-}
-
-.sendWrap:has(.send:hover:not(:disabled)) {
-  transform: scale(1.08);
-  filter: drop-shadow(0 6px 14px hsla(var(--hue), 74%, 45%, 0.55));
-}
-
-.sendWrap:has(.send:active:not(:disabled)) {
-  transform: scale(0.94);
-}
-
-.sendWrap:has(.send:focus-visible) {
-  filter: drop-shadow(0 0 0 hsla(var(--hue), 74%, 45%, 0))
-          drop-shadow(0 0 6px hsla(var(--hue), 74%, 45%, 0.9));
-}
-
+/* Pentagon send button — five sides, like the five petals.
+   Flat logo blue, rounded corners via SVG stroke join. */
 .send {
+  position: relative;
   width: 48px;
   height: 46px;
+  padding: 0;
   border: none;
+  background: transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
-  background: linear-gradient(160deg, var(--blue-base), var(--blue-deep));
-  clip-path: polygon(50% 0%, 100% 38.2%, 81.6% 100%, 18.4% 100%, 0% 38.2%);
-  outline: none;
-  transition: opacity 0.2s ease;
+  color: var(--blue-base);
+  transition: color 0.15s ease, transform 0.1s ease, opacity 0.2s ease;
+}
+
+.send:hover:not(:disabled) {
+  color: var(--blue-hover);
+}
+
+.send:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.send:focus-visible {
+  outline: 2px solid var(--blue-base);
+  outline-offset: 2px;
+  border-radius: 999px;
 }
 
 .send:disabled {
@@ -444,10 +415,20 @@
   cursor: not-allowed;
 }
 
+.sendShape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
 .sendIcon {
+  position: relative;
+  z-index: 1;
+  color: var(--blue-ink);
   /* Optically center inside the point-up pentagon. */
-  margin-top: 6px;
-  margin-left: -2px;
+  margin-top: 5px;
+  margin-left: -1px;
 }
 
 .disclaimer {
@@ -467,7 +448,6 @@
   .row,
   .empty,
   .emptyFlower,
-  .statusDot[data-thinking],
   .wave1,
   .wave2,
   .wave3 {
@@ -488,9 +468,5 @@
 
   .scroll {
     padding-bottom: 170px;
-  }
-
-  .headerStatus {
-    font-size: 0.72rem;
   }
 }

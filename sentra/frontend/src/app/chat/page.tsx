@@ -139,10 +139,6 @@ export default function ChatPage() {
           <Image src="/flower.png" alt="blesc" width={34} height={34} className={styles.headerFlower} />
           <span className={styles.headerTitle}>blesc</span>
         </Link>
-        <span className={styles.headerStatus}>
-          <span className={styles.statusDot} data-thinking={isThinking || undefined} />
-          {isThinking ? "thinking…" : "here for you"}
-        </span>
       </header>
 
       <div ref={scrollRef} className={styles.scroll} onScroll={handleScroll}>
@@ -228,17 +224,24 @@ export default function ChatPage() {
           <div className={styles.voiceSlot}>
             <VoiceInputButton disabled={isThinking} onTranscript={insertTranscript} />
           </div>
-          <span className={styles.sendWrap}>
-            <button
-              type="button"
-              className={styles.send}
-              onClick={sendFromInput}
-              disabled={isThinking || !input.trim()}
-              aria-label="Send message"
-            >
-              <Send size={17} className={styles.sendIcon} />
-            </button>
-          </span>
+          <button
+            type="button"
+            className={styles.send}
+            onClick={sendFromInput}
+            disabled={isThinking || !input.trim()}
+            aria-label="Send message"
+          >
+            <svg viewBox="0 0 100 100" className={styles.sendShape} aria-hidden="true">
+              <path
+                d="M50 10 L90 41 L74 90 L26 90 L10 41 Z"
+                fill="currentColor"
+                stroke="currentColor"
+                strokeWidth="16"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <Send size={16} className={styles.sendIcon} />
+          </button>
         </div>
       </div>
       <div className={styles.disclaimer}>blesc is not a clinical assessment or an emergency service.</div>

@@ -11,7 +11,6 @@ import { counselorSummaryToText } from "@/lib/counselor-summary";
 const panel: React.CSSProperties = {
   backgroundColor: "var(--ivory)",
   border: "1px solid var(--limestone)",
-  boxShadow: "0 1px 3px rgba(42,32,24,0.09), 0 6px 24px rgba(42,32,24,0.05)",
 };
 
 export default function SupportSummaryPage() {
@@ -85,8 +84,8 @@ export default function SupportSummaryPage() {
           type="button"
           onClick={generate}
           disabled={isLoading}
-          className="mt-5 inline-flex items-center gap-2 rounded-md px-5 py-2.5 font-semibold disabled:opacity-60"
-          style={{ backgroundColor: "var(--gold)", color: "#000" }}
+          className="mt-5 inline-flex items-center gap-2 rounded-full px-5 py-2.5 font-semibold disabled:opacity-60"
+          style={{ backgroundColor: "var(--blue-base)", color: "var(--ink)" }}
         >
           {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {summary ? "Regenerate preview" : "Generate preview"}
@@ -103,10 +102,10 @@ export default function SupportSummaryPage() {
               <div className="mt-1 text-xs" style={{ color: "var(--ink-faint)" }}>{summary.reflection_count} structured reflection{summary.reflection_count === 1 ? "" : "s"}</div>
             </div>
             <div className="flex gap-2">
-              <button type="button" onClick={copy} className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm" style={{ border: "1px solid var(--limestone)" }}>
+              <button type="button" onClick={copy} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm" style={{ border: "1px solid var(--limestone)" }}>
                 {copied ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}{copied ? "Copied" : "Copy"}
               </button>
-              <button type="button" onClick={download} className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm" style={{ border: "1px solid var(--limestone)" }}>
+              <button type="button" onClick={download} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm" style={{ border: "1px solid var(--limestone)" }}>
                 <Download className="h-4 w-4" />Download text
               </button>
             </div>

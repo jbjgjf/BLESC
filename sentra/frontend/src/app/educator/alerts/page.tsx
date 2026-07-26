@@ -21,7 +21,7 @@ const TYPE_META: Record<CohortAlert["type"], { label: string; color: string }> =
  */
 function CrisisProtocol() {
   return (
-    <div className="rounded-md px-4 py-3 text-xs leading-relaxed" style={{ backgroundColor: "rgba(244,63,94,0.06)", border: "1px solid var(--terracotta)", color: "var(--ink-mid)" }}>
+    <div className="rounded-2xl px-4 py-3 text-xs leading-relaxed" style={{ backgroundColor: "rgba(244,63,94,0.06)", border: "1px solid var(--terracotta)", color: "var(--ink-mid)" }}>
       <div className="mb-1 flex items-center gap-2 font-semibold" style={{ color: "var(--sienna)" }}>
         <ShieldAlert className="h-4 w-4" />What to do now
       </div>
@@ -121,7 +121,7 @@ export default function EducatorAlertsPage() {
                   type="button"
                   disabled={busyKey === alert.alert_key}
                   onClick={() => acknowledge(alert)}
-                  className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-60"
                   style={isCrisis
                     ? { backgroundColor: "var(--terracotta)", color: "#fff" }
                     : { border: "1px solid var(--limestone)", color: "var(--ink-mid)" }}

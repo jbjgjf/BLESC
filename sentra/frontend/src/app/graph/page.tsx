@@ -11,7 +11,6 @@ const S = {
   panel: {
     backgroundColor: "var(--ivory)",
     border: "1px solid var(--limestone)",
-    boxShadow: "0 1px 3px rgba(42,32,24,0.09), 0 6px 24px rgba(42,32,24,0.05), inset 0 1px 0 rgba(252,244,228,0.85)",
   } as React.CSSProperties,
   displayFont: { fontFamily: "var(--font-sans), sans-serif" } as React.CSSProperties,
   bodyFont:    { fontFamily: "var(--font-sans), sans-serif" } as React.CSSProperties,

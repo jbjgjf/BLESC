@@ -30,11 +30,10 @@ const categoryColor: Record<string, { bg: string; text: string; border: string }
 
 /* ── styles ─────────────────────────────────────────────────── */
 const panel: React.CSSProperties = {
-  backgroundColor: "hsla(0, 0%, 100%, 0.82)",
+  backgroundColor: "#ffffff",
   border: "1px solid var(--limestone)",
-  boxShadow: "0 3px 14px hsla(206, 60%, 50%, 0.10), inset 0 1px 0 hsla(0, 0%, 100%, 0.7)",
-  backdropFilter: "blur(12px)",
-  borderRadius: "20px",
+  borderRadius: "var(--radius)",
+  overflow: "hidden",
 };
 const displayFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
 const bodyFont: React.CSSProperties    = { fontFamily: "var(--font-sans), sans-serif" };
@@ -454,6 +453,7 @@ export default function Home() {
               style={{
                 ...bodyFont,
                 border: "1px solid var(--limestone)",
+                borderRadius: "var(--radius)",
                 backgroundColor: "var(--ivory-warm)",
                 color: "var(--ink)",
                 fontSize: "1rem",
@@ -483,6 +483,7 @@ export default function Home() {
               style={{
                 ...bodyFont,
                 border: "1px solid var(--limestone)",
+                borderRadius: "var(--radius)",
                 backgroundColor: "var(--ivory-warm)",
                 color: "var(--ink)",
                 fontSize: "1rem",
@@ -519,15 +520,14 @@ export default function Home() {
             <button
               type="submit"
               disabled={isSubmitting || !(journalText.trim() || recallText.trim())}
-              className="inline-flex items-center gap-2 px-6 py-2.5 transition-all disabled:cursor-not-allowed rounded-md font-semibold cursor-pointer"
+              className="inline-flex items-center gap-2 px-6 py-2.5 transition-all disabled:cursor-not-allowed rounded-full font-semibold cursor-pointer"
               style={{
                 ...displayFont,
                 background: isSubmitting || !(journalText.trim() || recallText.trim())
-                  ? "var(--limestone)"
-                  : "linear-gradient(160deg, hsl(206, 74%, 60%), hsl(206, 72%, 46%))",
-                color: isSubmitting || !(journalText.trim() || recallText.trim()) ? "var(--ink-faint)" : "#ffffff",
+                  ? "var(--ivory-aged)"
+                  : "var(--blue-base)",
+                color: isSubmitting || !(journalText.trim() || recallText.trim()) ? "var(--ink-faint)" : "var(--ink)",
                 border: "1px solid transparent",
-                boxShadow: isSubmitting || !(journalText.trim() || recallText.trim()) ? "none" : "0 3px 12px hsla(206, 74%, 55%, 0.4)",
                 letterSpacing: "0.14em",
                 textTransform: "uppercase",
                 fontSize: "0.62rem",
@@ -550,7 +550,7 @@ export default function Home() {
 
           {error && (
             <div
-              className="flex items-center gap-2 p-3 text-sm rounded-md"
+              className="flex items-center gap-2 p-3 text-sm rounded-2xl"
               style={{
                 border: "1px solid var(--terracotta)",
                 backgroundColor: "rgba(244, 63, 94, 0.08)",
@@ -796,12 +796,12 @@ export default function Home() {
             href="/recall"
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-4 inline-flex items-center gap-2 rounded-md px-4 py-2 text-xs font-semibold transition-all"
+            className="mt-4 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition-all"
             style={{
               ...displayFont,
-              border: "1px solid var(--gold)",
+              border: "1px solid var(--blue-base)",
               color: "var(--ink)",
-              backgroundColor: "hsla(206, 74%, 56%, 0.12)",
+              backgroundColor: "#ffffff",
               letterSpacing: "0.12em",
               textTransform: "uppercase",
               textDecoration: "none",
@@ -814,12 +814,12 @@ export default function Home() {
             href="/voice"
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-3 mt-4 inline-flex items-center gap-2 rounded-md px-4 py-2 text-xs font-semibold transition-all"
+            className="ml-3 mt-4 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition-all"
             style={{
               ...displayFont,
-              border: "1px solid hsla(180, 55%, 42%, 0.55)",
+              border: "1px solid var(--blue-base)",
               color: "var(--ink)",
-              backgroundColor: "hsla(180, 55%, 42%, 0.10)",
+              backgroundColor: "#ffffff",
               letterSpacing: "0.12em",
               textTransform: "uppercase",
               textDecoration: "none",
@@ -836,6 +836,7 @@ export default function Home() {
             style={{
               ...bodyFont,
               border: "1px solid var(--limestone)",
+              borderRadius: "var(--radius)",
               backgroundColor: "var(--ivory-warm)",
               color: "var(--ink)",
               fontSize: "1rem",
@@ -857,13 +858,13 @@ export default function Home() {
               <button
                 type="submit"
                 disabled={isChatSubmitting || !chatText.trim()}
-                className="inline-flex items-center gap-2 px-5 py-2.5 transition-all disabled:cursor-not-allowed rounded-md font-semibold cursor-pointer"
+                className="inline-flex items-center gap-2 px-5 py-2.5 transition-all disabled:cursor-not-allowed rounded-full font-semibold cursor-pointer"
                 style={{
                   ...displayFont,
                   background: isChatSubmitting || !chatText.trim()
-                    ? "var(--limestone)"
-                    : "linear-gradient(160deg, hsl(206, 74%, 60%), hsl(206, 72%, 46%))",
-                  color: isChatSubmitting || !chatText.trim() ? "var(--ink-faint)" : "#ffffff",
+                    ? "var(--ivory-aged)"
+                    : "var(--blue-base)",
+                  color: isChatSubmitting || !chatText.trim() ? "var(--ink-faint)" : "var(--ink)",
                   border: "1px solid transparent",
                   letterSpacing: "0.14em",
                   textTransform: "uppercase",
@@ -883,7 +884,7 @@ export default function Home() {
           />
           {chatError && (
             <div
-              className="flex items-center gap-2 p-3 text-sm rounded-md"
+              className="flex items-center gap-2 p-3 text-sm rounded-2xl"
               style={{
                 border: "1px solid var(--terracotta)",
                 backgroundColor: "rgba(244, 63, 94, 0.08)",

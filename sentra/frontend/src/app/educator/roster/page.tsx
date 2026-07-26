@@ -76,12 +76,9 @@ export default function EducatorRosterPage() {
             onClick={() => setFilter(option)}
             className="rounded-full px-4 py-1.5 text-xs font-semibold transition-all"
             style={{
-              border: filter === option ? "1px solid transparent" : "1px solid var(--limestone)",
-              background: filter === option
-                ? "linear-gradient(160deg, hsl(206, 74%, 60%), hsl(206, 72%, 46%))"
-                : "transparent",
-              color: filter === option ? "#ffffff" : "var(--ink-mid)",
-              boxShadow: filter === option ? "0 3px 12px hsla(206, 74%, 55%, 0.4)" : "none",
+              border: filter === option ? "1px solid transparent" : "1px solid var(--blue-base)",
+              background: filter === option ? "var(--blue-base)" : "#ffffff",
+              color: "var(--ink)",
               cursor: "pointer",
             }}
           >
