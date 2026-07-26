@@ -17,8 +17,10 @@ import {
   RecordId,
   CohortAlert,
   EducatorStudentStatus,
+  OrgCounselor,
   OversightRequest,
   ReflectionAuditTrail,
+  SharedSupportSummary,
   StudentAccessRecord,
 } from "./models";
 import { supabase } from "@/lib/supabase/client";
@@ -1424,6 +1426,79 @@ export class ApiClient {
       const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations;
       return { id: row.id, view_type: row.view_type, occurred_at: row.occurred_at, org_name: org?.name ?? "Organization" };
     });
+  }
+
+  // ------------------------------------------------------------------
+  // Student-controlled support-summary sharing (counselor handoff).
+  // ------------------------------------------------------------------
+
+  static async listOrgCounselors(orgId: string): Promise<OrgCounselor[]> {
+    const { data, error } = await supabase.rpc("org_counselors", { target_org: orgId });
+    if (error) throwSupabaseError("Load counselors failed", error);
+    return (data ?? []) as OrgCounselor[];
+  }
+
+  static async shareSupportSummary(
+    userId: string,
+    summary: CounselorSupportSummary,
+    orgId: string,
+    counselorUserId?: string | null,
+  ): Promise<void> {
+    const ownerUserId = await this.requireOwnerId();
+    const participant = await this.getParticipant(userId);
+    const { error } = await supabase.from("shared_support_summaries").insert({
+      participant_id: participant.id,
+      owner_user_id: ownerUserId,
+      org_id: orgId,
+      counselor_user_id: counselorUserId ?? null,
+      summary_id: summary.summary_id,
+      summary_json: summary as unknown as Record<string, JsonValue>,
+      evidence_event_ids: [...new Set(summary.sections.flatMap((section) => section.evidence_event_ids))],
+      date_range_from: summary.date_range.from,
+      date_range_to: summary.date_range.to,
+      reflection_count: summary.reflection_count,
+    });
+    if (error) throwSupabaseError("Share summary failed", error);
+  }
+
+  static async listMySummaryShares(userId: string): Promise<SharedSupportSummary[]> {
+    const participant = await this.getParticipant(userId);
+    const { data, error } = await supabase
+      .from("shared_support_summaries")
+      .select("id, participant_id, org_id, counselor_user_id, summary_id, summary_json, evidence_event_ids, reflection_count, status, shared_at, revoked_at, organizations(name)")
+      .eq("participant_id", participant.id)
+      .order("shared_at", { ascending: false });
+    if (error) throwSupabaseError("Load summary shares failed", error);
+    type Row = SharedSupportSummary & { organizations?: { name: string } | { name: string }[] | null };
+    return ((data ?? []) as Row[]).map((row) => {
+      const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations;
+      return { ...row, org_name: org?.name ?? "Organization" };
+    });
+  }
+
+  static async revokeSummaryShare(shareId: string): Promise<void> {
+    const { error } = await supabase
+      .from("shared_support_summaries")
+      .update({ status: "revoked" })
+      .eq("id", shareId);
+    if (error) throwSupabaseError("Revoke summary share failed", error);
+  }
+
+  /** Counselor view: active shares for students passing all four gates. */
+  static async counselorListSharedSummaries(): Promise<SharedSupportSummary[]> {
+    const [sharesResult, roster] = await Promise.all([
+      supabase
+        .from("shared_support_summaries")
+        .select("id, participant_id, org_id, counselor_user_id, summary_id, summary_json, evidence_event_ids, reflection_count, status, shared_at, revoked_at")
+        .order("shared_at", { ascending: false }),
+      this.getCohortRoster(),
+    ]);
+    if (sharesResult.error) throwSupabaseError("Load shared summaries failed", sharesResult.error);
+    const codeByParticipant = new Map(roster.map((student) => [student.participant_id, student.code]));
+    return ((sharesResult.data ?? []) as SharedSupportSummary[]).map((share) => ({
+      ...share,
+      student_code: codeByParticipant.get(share.participant_id) ?? share.participant_id,
+    }));
   }
 
   static async getAuditTrails(userId: string, reflectionId?: string, limit = 200): Promise<ReflectionAuditTrail[]> {

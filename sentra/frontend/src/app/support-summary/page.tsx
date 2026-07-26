@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle2, Copy, Download, Loader2, ShieldAlert } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CheckCircle2, Copy, Download, Loader2, Send, ShieldAlert } from "lucide-react";
 
 import { ApiClient } from "@/api/client";
-import type { CounselorSupportSummary } from "@/api/models";
+import type { CounselorSupportSummary, OrgCounselor, OversightRequest } from "@/api/models";
 import { useAuth } from "@/lib/auth";
 import { counselorSummaryToText } from "@/lib/counselor-summary";
 
@@ -20,11 +20,54 @@ export default function SupportSummaryPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [orgs, setOrgs] = useState<OversightRequest[]>([]);
+  const [counselors, setCounselors] = useState<OrgCounselor[]>([]);
+  const [shareOrgId, setShareOrgId] = useState("");
+  const [shareCounselorId, setShareCounselorId] = useState("");
+  const [isSharing, setIsSharing] = useState(false);
+  const [shared, setShared] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    ApiClient.listOversightRequests(userId)
+      .then((requests) => {
+        if (cancelled) return;
+        const active = requests.filter((request) => request.roster_status === "active");
+        setOrgs(active);
+        if (active.length === 1) setShareOrgId(active[0].org_id);
+      })
+      .catch(() => undefined); // sharing picker is optional; preview still works
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!shareOrgId) { setCounselors([]); return; }
+    let cancelled = false;
+    ApiClient.listOrgCounselors(shareOrgId)
+      .then((next) => { if (!cancelled) setCounselors(next); })
+      .catch(() => { if (!cancelled) setCounselors([]); });
+    return () => { cancelled = true; };
+  }, [shareOrgId]);
+
+  const share = async () => {
+    if (!summary || !shareOrgId) return;
+    setIsSharing(true);
+    setError(null);
+    try {
+      await ApiClient.shareSupportSummary(userId, summary, shareOrgId, shareCounselorId || null);
+      setShared(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sharing the summary failed.");
+    } finally {
+      setIsSharing(false);
+    }
+  };
 
   const generate = async () => {
     setIsLoading(true);
     setError(null);
     setCopied(false);
+    setShared(false);
     try {
       setSummary(await ApiClient.generateCounselorSummary(userId, 10));
     } catch (err) {
@@ -85,6 +128,7 @@ export default function SupportSummaryPage() {
           type="button"
           onClick={generate}
           disabled={isLoading}
+          data-testid="generate-summary"
           className="mt-5 inline-flex items-center gap-2 rounded-md px-5 py-2.5 font-semibold disabled:opacity-60"
           style={{ backgroundColor: "var(--gold)", color: "#000" }}
         >
@@ -103,10 +147,10 @@ export default function SupportSummaryPage() {
               <div className="mt-1 text-xs" style={{ color: "var(--ink-faint)" }}>{summary.reflection_count} structured reflection{summary.reflection_count === 1 ? "" : "s"}</div>
             </div>
             <div className="flex gap-2">
-              <button type="button" onClick={copy} className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm" style={{ border: "1px solid var(--limestone)" }}>
+              <button type="button" onClick={copy} data-testid="copy-summary" className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm" style={{ border: "1px solid var(--limestone)" }}>
                 {copied ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}{copied ? "Copied" : "Copy"}
               </button>
-              <button type="button" onClick={download} className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm" style={{ border: "1px solid var(--limestone)" }}>
+              <button type="button" onClick={download} data-testid="download-summary" className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm" style={{ border: "1px solid var(--limestone)" }}>
                 <Download className="h-4 w-4" />Download text
               </button>
             </div>
@@ -128,6 +172,59 @@ export default function SupportSummaryPage() {
             ))}
           </div>
           <p className="px-7 py-5 text-xs leading-relaxed" style={{ color: "var(--ink-faint)" }}>{summary.limitations}</p>
+
+          {orgs.length ? (
+            <div className="px-7 py-5" style={{ borderTop: "1px solid var(--limestone)", backgroundColor: "var(--ivory-warm)" }}>
+              <div className="inscription mb-2">Share this exact snapshot</div>
+              <p className="mb-3 text-xs leading-relaxed" style={{ color: "var(--ink-mid)" }}>
+                Sharing sends only this structured summary (never your journal or chat text) to the counselor(s) you
+                choose. You can revoke it any time from your Sharing page.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={shareOrgId}
+                  onChange={(event) => { setShareOrgId(event.target.value); setShareCounselorId(""); setShared(false); }}
+                  data-testid="share-org-select"
+                  aria-label="Organization to share with"
+                  className="rounded-md px-3 py-2 text-sm"
+                  style={{ border: "1px solid var(--limestone)", backgroundColor: "var(--ivory)", color: "var(--ink)" }}
+                >
+                  <option value="">Choose organization…</option>
+                  {orgs.map((org) => <option key={org.org_id} value={org.org_id}>{org.org_name}</option>)}
+                </select>
+                <select
+                  value={shareCounselorId}
+                  onChange={(event) => { setShareCounselorId(event.target.value); setShared(false); }}
+                  data-testid="share-counselor-select"
+                  aria-label="Counselor to share with"
+                  disabled={!shareOrgId}
+                  className="rounded-md px-3 py-2 text-sm disabled:opacity-50"
+                  style={{ border: "1px solid var(--limestone)", backgroundColor: "var(--ivory)", color: "var(--ink)" }}
+                >
+                  <option value="">All counselors in this organization</option>
+                  {counselors.map((counselor) => (
+                    <option key={counselor.counselor_user_id} value={counselor.counselor_user_id}>{counselor.display_label}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={share}
+                  disabled={!shareOrgId || isSharing || shared}
+                  data-testid="share-summary-submit"
+                  className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-60"
+                  style={{ backgroundColor: "var(--gold)", color: "#000" }}
+                >
+                  {isSharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  {shared ? "Shared" : "Share summary"}
+                </button>
+                {shared ? (
+                  <span data-testid="share-confirmation" className="inline-flex items-center gap-1 text-sm font-semibold" style={{ color: "var(--aegean)" }}>
+                    <CheckCircle2 className="h-4 w-4" />Shared — manage or revoke from Sharing
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </section>
       ) : null}
     </div>
