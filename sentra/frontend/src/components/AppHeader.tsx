@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { supabase } from "@/lib/supabase/client";
 
 const primaryNav = [
   { href: "/",      label: "Record" },
@@ -16,7 +17,14 @@ const primaryNav = [
   { href: "/sharing", label: "Sharing" },
 ];
 
-const educatorNav = { href: "/educator", label: "Dashboard" };
+const educatorNav = [
+  { href: "/educator", label: "Dashboard" },
+  { href: "/oversight", label: "Oversight" },
+];
+
+const reviewerNav = [
+  { href: "/evaluation", label: "Evaluation" },
+];
 
 const aqua = {
   ink: "hsl(206, 60%, 18%)",
@@ -31,8 +39,22 @@ export function AppHeader() {
   const { userId, setUserId, signOut, user, isEducator } = useAuth();
   const [draftUserId, setDraftUserId] = useState(userId);
   const [cohortOpen, setCohortOpen] = useState(false);
+  const [isReviewer, setIsReviewer] = useState(false);
 
   useEffect(() => { setDraftUserId(userId); }, [userId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from("evaluation_access")
+      .select("id")
+      .eq("status", "active")
+      .limit(1)
+      .then(({ data }) => {
+        if (!cancelled) setIsReviewer(Boolean(data?.length));
+      });
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   const saveParticipantCode = () => {
     if (draftUserId.trim() !== userId) {
@@ -79,7 +101,7 @@ export function AppHeader() {
 
         {/* Nav */}
         <nav className="flex flex-1 items-stretch justify-center">
-          {(isEducator ? [...primaryNav, educatorNav] : primaryNav).map((item) => {
+          {[...primaryNav, ...(isEducator ? educatorNav : []), ...(isReviewer ? reviewerNav : [])].map((item) => {
             const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             return (
               <Link

@@ -81,6 +81,7 @@ export default function LoginPage() {
             <label className="block text-sm font-medium" style={{ color: "hsl(206, 46%, 27%)" }} htmlFor="email">Email</label>
             <input
               id="email"
+              data-testid="login-email"
               type="email"
               autoComplete="email"
               required
@@ -94,6 +95,7 @@ export default function LoginPage() {
             <label className="block text-sm font-medium" style={{ color: "hsl(206, 46%, 27%)" }} htmlFor="password">Password</label>
             <input
               id="password"
+              data-testid="login-password"
               type="password"
               autoComplete={mode === "signin" ? "current-password" : "new-password"}
               required
@@ -112,6 +114,7 @@ export default function LoginPage() {
 
           <button
             type="submit"
+            data-testid="login-submit"
             disabled={isSubmitting}
             className="inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold transition hover:bg-[hsl(206,74%,78%)] disabled:cursor-not-allowed disabled:opacity-50"
             style={{
