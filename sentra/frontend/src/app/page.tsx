@@ -21,20 +21,19 @@ import { ProcessingTimeline } from "@/components/ProcessingTimeline";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
 
 const categoryColor: Record<string, { bg: string; text: string; border: string }> = {
-  Protective: { bg: "rgba(6,182,212,0.12)", text: "#22d3ee", border: "rgba(6,182,212,0.30)" },
-  Event:      { bg: "rgba(244,63,94,0.12)",  text: "#fb7185", border: "rgba(244,63,94,0.30)"  },
-  Behavior:   { bg: "rgba(139,92,246,0.12)", text: "#a78bfa", border: "rgba(139,92,246,0.30)" },
-  Trigger:    { bg: "rgba(236,72,153,0.12)", text: "#f472b6", border: "rgba(236,72,153,0.30)" },
-  State:      { bg: "rgba(245,158,11,0.12)", text: "#fbbf24", border: "rgba(245,158,11,0.30)" },
+  Protective: { bg: "hsla(190, 70%, 50%, 0.12)", text: "hsl(190, 75%, 28%)", border: "hsla(190, 70%, 45%, 0.35)" },
+  Event:      { bg: "hsla(346, 70%, 55%, 0.10)", text: "hsl(346, 65%, 38%)", border: "hsla(346, 70%, 50%, 0.30)" },
+  Behavior:   { bg: "hsla(258, 65%, 60%, 0.10)", text: "hsl(258, 55%, 42%)", border: "hsla(258, 65%, 55%, 0.30)" },
+  Trigger:    { bg: "hsla(326, 65%, 55%, 0.10)", text: "hsl(326, 60%, 38%)", border: "hsla(326, 65%, 50%, 0.30)" },
+  State:      { bg: "hsla(38, 90%, 50%, 0.12)",  text: "hsl(38, 85%, 30%)",  border: "hsla(38, 90%, 40%, 0.35)" },
 };
 
 /* ── styles ─────────────────────────────────────────────────── */
 const panel: React.CSSProperties = {
-  backgroundColor: "rgba(15, 14, 21, 0.85)",
+  backgroundColor: "#ffffff",
   border: "1px solid var(--limestone)",
-  boxShadow: "0 4px 30px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.03)",
-  backdropFilter: "blur(12px)",
-  borderRadius: "8px",
+  borderRadius: "var(--radius)",
+  overflow: "hidden",
 };
 const displayFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
 const bodyFont: React.CSSProperties    = { fontFamily: "var(--font-sans), sans-serif" };
@@ -454,6 +453,7 @@ export default function Home() {
               style={{
                 ...bodyFont,
                 border: "1px solid var(--limestone)",
+                borderRadius: "var(--radius)",
                 backgroundColor: "var(--ivory-warm)",
                 color: "var(--ink)",
                 fontSize: "1rem",
@@ -484,6 +484,7 @@ export default function Home() {
               style={{
                 ...bodyFont,
                 border: "1px solid var(--limestone)",
+                borderRadius: "var(--radius)",
                 backgroundColor: "var(--ivory-warm)",
                 color: "var(--ink)",
                 fontSize: "1rem",
@@ -521,13 +522,14 @@ export default function Home() {
               type="submit"
               data-testid="journal-submit"
               disabled={isSubmitting || !(journalText.trim() || recallText.trim())}
-              className="inline-flex items-center gap-2 px-6 py-2.5 transition-all disabled:cursor-not-allowed rounded-md font-semibold cursor-pointer"
+              className="inline-flex items-center gap-2 px-6 py-2.5 transition-all disabled:cursor-not-allowed rounded-full font-semibold cursor-pointer"
               style={{
                 ...displayFont,
-                backgroundColor: isSubmitting || !(journalText.trim() || recallText.trim()) ? "var(--limestone)" : "var(--gold)",
-                color: isSubmitting || !(journalText.trim() || recallText.trim()) ? "var(--ink-faint)" : "#000000",
-                border: `1px solid ${isSubmitting || !(journalText.trim() || recallText.trim()) ? "var(--limestone)" : "var(--gold)"}`,
-                boxShadow: isSubmitting || !(journalText.trim() || recallText.trim()) ? "none" : "0 0 14px rgba(6, 182, 212, 0.4)",
+                background: isSubmitting || !(journalText.trim() || recallText.trim())
+                  ? "var(--ivory-aged)"
+                  : "var(--blue-base)",
+                color: isSubmitting || !(journalText.trim() || recallText.trim()) ? "var(--ink-faint)" : "var(--ink)",
+                border: "1px solid transparent",
                 letterSpacing: "0.14em",
                 textTransform: "uppercase",
                 fontSize: "0.62rem",
@@ -550,7 +552,7 @@ export default function Home() {
 
           {error && (
             <div
-              className="flex items-center gap-2 p-3 text-sm rounded-md"
+              className="flex items-center gap-2 p-3 text-sm rounded-2xl"
               style={{
                 border: "1px solid var(--terracotta)",
                 backgroundColor: "rgba(244, 63, 94, 0.08)",
@@ -684,7 +686,7 @@ export default function Home() {
                       ...displayFont,
                       border: "1px solid var(--limestone)",
                       color: emotionalState.safety_classification.level === "crisis" ? "var(--sienna)" : "var(--ink-faint)",
-                      backgroundColor: "rgba(255,255,255,0.04)",
+                      backgroundColor: "var(--sky-pale)",
                       fontSize: "0.5rem",
                       letterSpacing: "0.14em",
                       textTransform: "uppercase",
@@ -777,7 +779,7 @@ export default function Home() {
                   style={{
                     border: "1px solid var(--limestone)",
                     color: "var(--ink-mid)",
-                    backgroundColor: "rgba(255,255,255,0.04)",
+                    backgroundColor: "var(--sky-pale)",
                     ...displayFont,
                   }}
                 >
@@ -796,12 +798,12 @@ export default function Home() {
             href="/recall"
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-4 inline-flex items-center gap-2 rounded-md px-4 py-2 text-xs font-semibold transition-all"
+            className="mt-4 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition-all"
             style={{
               ...displayFont,
-              border: "1px solid var(--gold)",
+              border: "1px solid var(--blue-base)",
               color: "var(--ink)",
-              backgroundColor: "rgba(167,139,250,0.12)",
+              backgroundColor: "#ffffff",
               letterSpacing: "0.12em",
               textTransform: "uppercase",
               textDecoration: "none",
@@ -814,12 +816,12 @@ export default function Home() {
             href="/voice"
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-3 mt-4 inline-flex items-center gap-2 rounded-md px-4 py-2 text-xs font-semibold transition-all"
+            className="ml-3 mt-4 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition-all"
             style={{
               ...displayFont,
-              border: "1px solid rgba(34,211,238,0.55)",
+              border: "1px solid var(--blue-base)",
               color: "var(--ink)",
-              backgroundColor: "rgba(34,211,238,0.10)",
+              backgroundColor: "#ffffff",
               letterSpacing: "0.12em",
               textTransform: "uppercase",
               textDecoration: "none",
@@ -836,6 +838,7 @@ export default function Home() {
             style={{
               ...bodyFont,
               border: "1px solid var(--limestone)",
+              borderRadius: "var(--radius)",
               backgroundColor: "var(--ivory-warm)",
               color: "var(--ink)",
               fontSize: "1rem",
@@ -859,12 +862,14 @@ export default function Home() {
                 type="submit"
                 data-testid="chat-submit"
                 disabled={isChatSubmitting || !chatText.trim()}
-                className="inline-flex items-center gap-2 px-5 py-2.5 transition-all disabled:cursor-not-allowed rounded-md font-semibold cursor-pointer"
+                className="inline-flex items-center gap-2 px-5 py-2.5 transition-all disabled:cursor-not-allowed rounded-full font-semibold cursor-pointer"
                 style={{
                   ...displayFont,
-                  backgroundColor: isChatSubmitting || !chatText.trim() ? "var(--limestone)" : "var(--gold)",
-                  color: isChatSubmitting || !chatText.trim() ? "var(--ink-faint)" : "#000000",
-                  border: `1px solid ${isChatSubmitting || !chatText.trim() ? "var(--limestone)" : "var(--gold)"}`,
+                  background: isChatSubmitting || !chatText.trim()
+                    ? "var(--ivory-aged)"
+                    : "var(--blue-base)",
+                  color: isChatSubmitting || !chatText.trim() ? "var(--ink-faint)" : "var(--ink)",
+                  border: "1px solid transparent",
                   letterSpacing: "0.14em",
                   textTransform: "uppercase",
                   fontSize: "0.62rem",
@@ -883,7 +888,7 @@ export default function Home() {
           />
           {chatError && (
             <div
-              className="flex items-center gap-2 p-3 text-sm rounded-md"
+              className="flex items-center gap-2 p-3 text-sm rounded-2xl"
               style={{
                 border: "1px solid var(--terracotta)",
                 backgroundColor: "rgba(244, 63, 94, 0.08)",

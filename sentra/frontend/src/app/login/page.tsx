@@ -46,27 +46,39 @@ export default function LoginPage() {
     router.replace(searchParams.get("next") || "/");
   };
 
+  const inputClass =
+    "mt-2 h-11 w-full rounded-full border px-4 text-sm outline-none transition " +
+    "border-[hsl(206,62%,86%)] bg-[hsl(206,80%,97%)] text-[hsl(206,60%,18%)] " +
+    "focus:border-[hsl(206,74%,72%)] focus:bg-white";
+
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#08070b] px-4 py-10">
-      <section className="w-full max-w-md rounded-lg border border-[#22212c] bg-[#0f0e15] p-6 shadow-2xl shadow-black/80">
-        <div className="flex items-center gap-3 text-zinc-100">
+    <main className="flex min-h-screen items-center justify-center px-4 py-10">
+      <section
+        className="w-full max-w-md border p-7"
+        style={{
+          borderColor: "var(--limestone)",
+          borderRadius: "var(--radius)",
+          backgroundColor: "#ffffff",
+        }}
+      >
+        <div className="flex items-center gap-3">
           <Image
-            src="/logo.svg"
+            src="/flower.png"
             width={40}
             height={40}
             unoptimized
-            className="h-10 w-10 object-contain shrink-0"
-            alt="BLESC Logo"
+            className="h-10 w-10 shrink-0 object-contain"
+            alt="blesc logo"
           />
           <div>
-            <h1 className="text-lg font-semibold text-zinc-100">BLESC</h1>
-            <p className="text-sm text-zinc-400">Sign in to continue monitoring</p>
+            <h1 className="text-lg font-bold" style={{ color: "hsl(206, 60%, 18%)" }}>blesc</h1>
+            <p className="text-sm" style={{ color: "hsl(206, 32%, 36%)" }}>Sign in to continue</p>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-zinc-300" htmlFor="email">Email</label>
+            <label className="block text-sm font-medium" style={{ color: "hsl(206, 46%, 27%)" }} htmlFor="email">Email</label>
             <input
               id="email"
               data-testid="login-email"
@@ -75,12 +87,12 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="mt-2 h-11 w-full rounded-md border border-[#22212c] bg-[#14131d] px-3 text-sm text-white outline-none transition focus:border-cyan-500 focus:bg-[#1b1a26]"
+              className={inputClass}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-zinc-300" htmlFor="password">Password</label>
+            <label className="block text-sm font-medium" style={{ color: "hsl(206, 46%, 27%)" }} htmlFor="password">Password</label>
             <input
               id="password"
               data-testid="login-password"
@@ -90,12 +102,12 @@ export default function LoginPage() {
               minLength={6}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="mt-2 h-11 w-full rounded-md border border-[#22212c] bg-[#14131d] px-3 text-sm text-white outline-none transition focus:border-cyan-500 focus:bg-[#1b1a26]"
+              className={inputClass}
             />
           </div>
 
           {message && (
-            <div className="rounded-md border border-amber-900 bg-amber-950/40 px-3 py-2 text-sm text-amber-200">
+            <div className="border px-3 py-2 text-sm" style={{ borderRadius: "var(--radius)", borderColor: "hsl(36, 80%, 75%)", backgroundColor: "hsl(36, 90%, 95%)", color: "hsl(36, 85%, 26%)" }}>
               {message}
             </div>
           )}
@@ -104,8 +116,11 @@ export default function LoginPage() {
             type="submit"
             data-testid="login-submit"
             disabled={isSubmitting}
-            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-cyan-500 px-4 text-sm font-semibold text-black transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-500 cursor-pointer"
-            style={{ boxShadow: isSubmitting ? "none" : "0 0 14px rgba(6, 182, 212, 0.3)" }}
+            className="inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold transition hover:bg-[hsl(206,74%,78%)] disabled:cursor-not-allowed disabled:opacity-50"
+            style={{
+              background: "hsl(206, 74%, 72%)",
+              color: "hsl(206, 60%, 18%)",
+            }}
           >
             {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {mode === "signin" ? "Sign in" : "Create account"}
@@ -118,7 +133,8 @@ export default function LoginPage() {
             setMode(mode === "signin" ? "signup" : "signin");
             setMessage(null);
           }}
-          className="mt-4 w-full rounded-md px-3 py-2 text-sm font-medium text-cyan-400 transition hover:bg-cyan-950/30 cursor-pointer"
+          className="mt-4 w-full cursor-pointer rounded-full px-3 py-2 text-sm font-medium transition hover:bg-[hsla(206,74%,72%,0.15)]"
+          style={{ color: "hsl(206, 60%, 18%)" }}
         >
           {mode === "signin" ? "Create an email/password account" : "Use an existing account"}
         </button>

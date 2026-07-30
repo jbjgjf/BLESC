@@ -1,0 +1,472 @@
+/* blesc chat — Skype-inspired, aqua, bubbly, flat */
+
+.root {
+  --hue: 206;
+  --blue-base: hsl(var(--hue), 74%, 72%); /* Exact logo blue color */
+  --blue-hover: hsl(var(--hue), 74%, 78%); /* Lighter only */
+  --blue-mist: hsl(var(--hue), 80%, 96%);
+  --blue-ink: hsl(var(--hue), 60%, 22%);
+  --aqua-glass: hsla(var(--hue), 74%, 85%, 0.45);
+  --radius: 16px;
+
+  font-family: "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Helvetica, Arial, sans-serif;
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  color: var(--blue-ink);
+  overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 22px;
+  background: hsla(0, 0%, 100%, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid hsla(var(--hue), 74%, 72%, 0.35);
+  z-index: 4;
+}
+
+.headerHome {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  border-radius: 999px;
+}
+
+.headerHome:focus-visible {
+  outline: 2px solid var(--blue-base);
+  outline-offset: 3px;
+}
+
+.headerFlower {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+
+.headerTitle {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--blue-ink);
+}
+
+/* ── Messages ───────────────────────────────────────── */
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 26px 18px 190px;
+  z-index: 2;
+}
+
+.thread {
+  max-width: 680px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  animation: pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.rowUser {
+  flex-direction: row-reverse;
+}
+
+@keyframes pop {
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.bubble {
+  max-width: 78%;
+  padding: 12px 17px;
+  font-size: 0.98rem;
+  line-height: 1.55;
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bubbleAi {
+  background: #ffffff;
+  color: var(--blue-ink);
+  border: 1px solid hsla(var(--hue), 74%, 72%, 0.45);
+}
+
+.bubbleUser {
+  background: var(--blue-base);
+  color: var(--blue-ink);
+}
+
+.bubbleError {
+  background: hsl(6, 80%, 97%);
+  color: hsl(6, 65%, 34%);
+  border: 1px solid hsl(6, 70%, 85%);
+}
+
+.retry {
+  display: block;
+  margin-top: 8px;
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: hsl(6, 65%, 34%);
+  background: hsl(6, 70%, 92%);
+  border: 1px solid hsl(6, 70%, 80%);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.retry:hover {
+  background: hsl(6, 70%, 95%);
+}
+
+.retry:active {
+  transform: scale(0.97);
+}
+
+/* Typing indicator */
+.typing {
+  display: inline-flex;
+  gap: 5px;
+  padding: 16px 18px;
+}
+
+.typing span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--blue-base);
+  animation: bounce 1.2s infinite ease-in-out;
+}
+.typing span:nth-child(2) { animation-delay: 0.15s; }
+.typing span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30%           { transform: translateY(-7px); opacity: 1; }
+}
+
+/* Empty state */
+.empty {
+  text-align: center;
+  margin-top: 10vh;
+  animation: pop 0.5s ease;
+}
+
+.emptyFlower {
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+  margin: 0 auto 18px;
+  animation: floaty 4s ease-in-out infinite;
+}
+
+@keyframes floaty {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50%      { transform: translateY(-9px) rotate(3deg); }
+}
+
+.emptyTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--blue-ink);
+}
+
+.emptySub {
+  margin-top: 8px;
+  font-size: 0.95rem;
+  color: var(--blue-ink);
+}
+
+.starters {
+  margin-top: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* Secondary button: white pill, logo-blue border, ink text */
+.starter {
+  padding: 10px 18px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: var(--blue-ink);
+  background: #ffffff;
+  border: 1px solid var(--blue-base);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.starter:hover {
+  background: var(--blue-mist);
+}
+
+.starter:active {
+  transform: scale(0.97);
+}
+
+.starter:focus-visible {
+  outline: 2px solid var(--blue-base);
+  outline-offset: 2px;
+}
+
+/* ── Bottom blue→clear fade + waves ─────────────────── */
+.gradient {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 34vh;
+  pointer-events: none;
+  z-index: 1;
+  background: linear-gradient(
+    to top,
+    hsla(var(--hue), 74%, 72%, 0.85) 0%,
+    hsla(var(--hue), 74%, 72%, 0.45) 40%,
+    hsla(var(--hue), 74%, 72%, 0) 100%
+  );
+}
+
+.waves {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 30vh;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.wavesActive {
+  opacity: 1;
+}
+
+.wave {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 200%;
+  height: 100%;
+}
+
+.wave1 { animation: drift 7s linear infinite; opacity: 0.55; }
+.wave2 { animation: drift 11s linear infinite reverse; opacity: 0.4; }
+.wave3 { animation: drift 17s linear infinite; opacity: 0.3; }
+
+@keyframes drift {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* ── Input bar ──────────────────────────────────────── */
+.inputWrap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 18px 18px calc(24px + env(safe-area-inset-bottom));
+  z-index: 5;
+  display: flex;
+  justify-content: center;
+}
+
+/* One-line by default → pill; stays a stadium as it grows */
+.inputBox {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+  max-width: 680px;
+  padding: 9px 9px 9px 20px;
+  border-radius: 999px;
+  background: var(--aqua-glass);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid hsla(0, 0%, 100%, 0.65);
+  transition: border-color 0.2s ease;
+}
+
+.inputBox:focus-within {
+  border-color: var(--blue-base);
+}
+
+.textarea {
+  flex: 1;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--blue-ink);
+  max-height: 130px;
+  padding: 9px 0;
+}
+
+.textarea::placeholder {
+  color: hsla(var(--hue), 50%, 30%, 0.7);
+}
+
+/* Shrink the app's 4rem voice orb to fit the bar; keep its state label for
+   screen readers only. */
+.voiceSlot :global(.voice-orb) {
+  width: 44px;
+  height: 44px;
+  flex-basis: 44px;
+  background: #ffffff;
+  color: var(--blue-ink);
+  box-shadow: none;
+  border: 1px solid var(--blue-base);
+}
+
+.voiceSlot :global(.voice-orb:hover:not(:disabled)) {
+  background: var(--blue-mist);
+  transform: none;
+  box-shadow: none;
+}
+
+.voiceSlot :global(.voice-orb) svg {
+  width: 19px;
+  height: 19px;
+}
+
+.voiceSlot :global(.voice-orb[data-state="recording"]) {
+  background: hsl(6, 75%, 92%);
+  color: hsl(6, 65%, 40%);
+  box-shadow: none;
+}
+
+.voiceSlot :global(.voice-input__label) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.voiceSlot :global(.voice-input) {
+  position: relative;
+  display: flex;
+}
+
+/* Pentagon send button — five sides, like the five petals.
+   Flat logo blue, rounded corners via SVG stroke join. */
+.send {
+  position: relative;
+  width: 48px;
+  height: 46px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--blue-base);
+  transition: color 0.15s ease, transform 0.1s ease, opacity 0.2s ease;
+}
+
+.send:hover:not(:disabled) {
+  color: var(--blue-hover);
+}
+
+.send:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.send:focus-visible {
+  outline: 2px solid var(--blue-base);
+  outline-offset: 2px;
+  border-radius: 999px;
+}
+
+.send:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sendShape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.sendIcon {
+  position: relative;
+  z-index: 1;
+  color: var(--blue-ink);
+  /* Optically center inside the point-up pentagon. */
+  margin-top: 5px;
+  margin-left: -1px;
+}
+
+.disclaimer {
+  position: absolute;
+  bottom: 5px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.65rem;
+  color: hsla(var(--hue), 50%, 25%, 0.65);
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* ── Motion preferences ─────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .row,
+  .empty,
+  .emptyFlower,
+  .wave1,
+  .wave2,
+  .wave3 {
+    animation: none;
+  }
+
+  .typing span {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* ── Small screens ──────────────────────────────────── */
+@media (max-width: 480px) {
+  .bubble {
+    max-width: 86%;
+  }
+
+  .scroll {
+    padding-bottom: 170px;
+  }
+}

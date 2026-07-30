@@ -22,7 +22,7 @@ export function MemoryObjectCard({ memoryObject }: { memoryObject: ConversationM
 
   return (
     <div
-      className="space-y-2 rounded-md p-4"
+      className="space-y-2 rounded-2xl p-4"
       style={{
         border: "1px solid var(--limestone)",
         backgroundColor: "var(--ivory-warm)",
@@ -62,7 +62,7 @@ export function MemoryObjectCard({ memoryObject }: { memoryObject: ConversationM
 
       {(isSuperseded || isFlagged) && (
         <div
-          className="flex items-center gap-2 rounded-md px-3 py-2 text-[11px]"
+          className="flex items-center gap-2 rounded-2xl px-3 py-2 text-[11px]"
           style={{ border: "1px solid var(--terracotta)", color: "var(--sienna)" }}
         >
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />

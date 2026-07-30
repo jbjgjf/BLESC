@@ -14,10 +14,10 @@ export function ProcessingTimeline({ steps, active, currentStep, complete = fals
 
   return (
     <div
-      className="space-y-2 rounded-md px-4 py-3 text-xs"
+      className="space-y-2 rounded-2xl px-4 py-3 text-xs"
       style={{
         border: "1px solid var(--limestone)",
-        backgroundColor: "rgba(255,255,255,0.04)",
+        backgroundColor: "var(--sky-pale)",
         color: "var(--ink-mid)",
       }}
     >

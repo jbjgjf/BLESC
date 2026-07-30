@@ -10,7 +10,6 @@ import { useAuth } from "@/lib/auth";
 const panel: React.CSSProperties = {
   backgroundColor: "var(--ivory)",
   border: "1px solid var(--limestone)",
-  boxShadow: "0 1px 3px rgba(42,32,24,0.09), 0 6px 24px rgba(42,32,24,0.05)",
 };
 
 const STATUS_STYLES: Record<string, { color: string; label: string }> = {
@@ -52,7 +51,7 @@ function AuditEventRow({ event }: { event: AiAuditEvent }) {
       </dl>
 
       {event.safety_decision ? (
-        <div className="mt-3 rounded-md px-4 py-3 text-xs" style={{ backgroundColor: "rgba(244,63,94,0.06)", border: "1px solid var(--terracotta)" }}>
+        <div className="mt-3 rounded-2xl px-4 py-3 text-xs" style={{ backgroundColor: "rgba(244,63,94,0.06)", border: "1px solid var(--terracotta)" }}>
           <div className="flex items-center gap-2 font-semibold" style={{ color: "var(--sienna)" }}>
             <ShieldAlert className="h-4 w-4" />Safety decision · {event.safety_decision.risk_level}
             {event.safety_decision.escalation_required ? " · escalation required" : ""}
@@ -152,10 +151,10 @@ export default function AuditPage() {
             onChange={(event) => setFilter(event.target.value)}
             placeholder="Filter by reflection id (optional)"
             aria-label="Filter by reflection id"
-            className="min-w-0 flex-1 rounded-md px-3 py-2 text-sm"
+            className="min-w-0 flex-1 rounded-2xl px-3 py-2 text-sm"
             style={{ border: "1px solid var(--limestone)", backgroundColor: "var(--ivory)", color: "var(--ink)" }}
           />
-          <button type="submit" disabled={isLoading} className="inline-flex items-center gap-2 rounded-md px-5 py-2 font-semibold disabled:opacity-60" style={{ backgroundColor: "var(--gold)", color: "#000" }}>
+          <button type="submit" disabled={isLoading} className="inline-flex items-center gap-2 rounded-full px-5 py-2 font-semibold disabled:opacity-60" style={{ backgroundColor: "var(--blue-base)", color: "var(--ink)" }}>
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {appliedFilter ? "Search" : "Refresh"}
           </button>

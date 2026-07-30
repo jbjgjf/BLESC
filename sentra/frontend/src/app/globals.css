@@ -6,43 +6,48 @@
    ================================================================ */
 
 :root {
-  /* Minimal dark neon palette */
-  --ivory:          #07040d; /* Violet-black background */
-  --ivory-warm:     #120a1f; /* Purple panel fill */
-  --ivory-aged:     #1a102b; /* Raised purple panel fill */
-  --limestone:      #2c2040; /* Purple border color */
-  --sandstone:      #8b7aa8;
-  --marble-vein:    #5b4a78;
+  /* blesc aqua light palette (hue 206, Skype-friendly) */
+  --hue:            206;
+  --blue-base:      hsl(var(--hue), 74%, 72%); /* Exact logo blue color */
 
-  /* Purple-first brand accents */
-  --gold:           #a78bfa; /* Primary purple accent */
-  --gold-light:     #c4b5fd; /* Lavender highlight */
-  --gold-deep:      #7c3aed; /* Saturated purple */
-  --bronze:         #d946ef; /* Magenta secondary accent */
+  --ivory:          #ffffff; /* Card background */
+  --ivory-warm:     hsl(206, 80%, 97%); /* Soft aqua panel fill */
+  --ivory-aged:     hsl(206, 72%, 94%); /* Raised aqua panel fill */
+  --limestone:      hsl(206, 62%, 86%); /* Light blue border */
+  --sandstone:      hsl(206, 62%, 80%);
+  --marble-vein:    hsl(206, 42%, 76%);
+
+  /* Blue-first brand accents */
+  --gold:           hsl(206, 74%, 72%); /* Primary accent = logo blue */
+  --gold-light:     hsl(206, 74%, 72%); /* Logo-blue highlight */
+  --gold-deep:      hsl(206, 60%, 22%); /* Accent text = ink (readable) */
+  --bronze:         hsl(180, 55%, 42%); /* Teal secondary accent */
 
   /* Cool support tones */
-  --aegean:         #a78bfa;
-  --aegean-dark:    #7c3aed;
-  --cerulean:       #ec4899;
-  --sky-pale:       rgba(167, 139, 250, 0.12);
+  --aegean:         hsl(172, 55%, 34%);
+  --aegean-dark:    hsl(172, 55%, 26%);
+  --cerulean:       hsl(206, 74%, 72%);
+  --sky-pale:       hsla(206, 74%, 72%, 0.18);
 
   /* Alert / state colors */
-  --terracotta:     #f43f5e; /* Neon rose */
-  --ochre:          #fbbf24; /* Amber warning */
-  --sienna:         #e11d48; /* Red alert */
+  --terracotta:     hsl(6, 72%, 52%);
+  --ochre:          hsl(36, 90%, 38%);
+  --sienna:         hsl(6, 65%, 40%);
 
-  /* Text (crisp white & light zinc) */
-  --ink:            #f4f4f5; /* Off-white headings */
-  --ink-soft:       #e4e4e7;
-  --ink-mid:        #a1a1aa; /* Light gray body text */
-  --ink-faint:      #71717a;
+  /* Text (deep blue inks) */
+  --ink:            hsl(206, 60%, 18%);
+  --ink-soft:       hsl(206, 46%, 27%);
+  --ink-mid:        hsl(206, 32%, 36%);
+  --ink-faint:      hsl(206, 22%, 50%);
 
   /* System */
   --background:     var(--ivory);
   --foreground:     var(--ink);
 
   /* Map display and body fonts to Helvetica Neue */
-  --font-sans:      "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --radius:         16px;
+
+  --font-sans:      "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Helvetica, Arial, sans-serif;
   --font-cinzel:    var(--font-sans);
   --font-garamond:  var(--font-sans);
 }
@@ -92,10 +97,7 @@ html {
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 18% 0%, rgba(124, 58, 237, 0.22), transparent 34rem),
-    radial-gradient(circle at 88% 12%, rgba(217, 70, 239, 0.16), transparent 30rem),
-    linear-gradient(180deg, #090414 0%, var(--ivory) 48%, #05030a 100%);
+  background: #ffffff;
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: 15px;
@@ -130,20 +132,16 @@ summary::-webkit-details-marker { display: none; }
 
 /* Minimal glassmorphic card panel */
 .museum-panel {
-  background-color: rgba(15, 14, 21, 0.85);
+  background-color: #ffffff;
   border: 1px solid var(--limestone);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(12px);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 /* Minimal side/warm panel */
 .stele {
-  background-color: rgba(20, 19, 29, 0.85);
+  background-color: var(--ivory-warm);
   border: 1px solid var(--limestone);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(12px);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 /* Minimal flat hero background */
@@ -174,7 +172,7 @@ summary::-webkit-details-marker { display: none; }
 ::-webkit-scrollbar-thumb:hover { background: var(--marble-vein); }
 
 ::selection {
-  background-color: rgba(167, 139, 250, 0.24);
+  background-color: hsla(206, 74%, 72%, 0.35);
   color: var(--ink);
 }
 
@@ -195,25 +193,18 @@ summary::-webkit-details-marker { display: none; }
   justify-content: center;
   border: 0;
   border-radius: 9999px;
-  background: #0a84ff;
-  color: #ffffff;
+  background: var(--blue-base);
+  color: var(--ink);
   cursor: pointer;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.16) inset,
-    0 12px 28px rgba(10, 132, 255, 0.28);
   transition: transform 160ms ease, background-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
 }
 
 .voice-orb:hover:not(:disabled) {
-  transform: translateY(-1px) scale(1.02);
-  background: #2596ff;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.2) inset,
-    0 16px 34px rgba(10, 132, 255, 0.34);
+  background: hsl(206, 74%, 78%);
 }
 
 .voice-orb:focus-visible {
-  outline: 2px solid #9fd0ff;
+  outline: 2px solid var(--blue-base);
   outline-offset: 4px;
 }
 
@@ -223,25 +214,19 @@ summary::-webkit-details-marker { display: none; }
 }
 
 .voice-orb[data-state="recording"] {
-  background: #0a84ff;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.18) inset,
-    0 0 0 8px rgba(10, 132, 255, 0.16),
-    0 18px 38px rgba(10, 132, 255, 0.38);
+  background: var(--blue-base);
 }
 
 .voice-orb[data-state="error"] {
   background: var(--sienna);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.12) inset,
-    0 12px 26px rgba(225, 29, 72, 0.26);
+  color: #ffffff;
 }
 
 .voice-orb__halo {
   position: absolute;
   inset: -0.5rem;
   border-radius: inherit;
-  border: 1px solid rgba(10, 132, 255, 0.28);
+  border: 1px solid hsla(206, 74%, 72%, 0.6);
   opacity: 0;
   pointer-events: none;
 }
@@ -272,7 +257,7 @@ summary::-webkit-details-marker { display: none; }
 .voice-input__label[data-state="recording"],
 .voice-input__label[data-state="transcribing"],
 .voice-input__label[data-state="permission"] {
-  color: #9fd0ff;
+  color: var(--ink-mid);
 }
 
 .voice-input__label[data-state="error"] {
@@ -328,11 +313,9 @@ summary::-webkit-details-marker { display: none; }
   justify-items: center;
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(39, 48, 65, 0.92);
-  border-radius: 8px;
-  background:
-    linear-gradient(180deg, rgba(4, 18, 31, 0.92) 0%, rgba(6, 12, 18, 0.96) 54%, rgba(4, 8, 12, 0.98) 100%);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.32);
+  border: 1px solid var(--limestone);
+  border-radius: var(--radius);
+  background: var(--ivory-warm);
 }
 
 .voice-stage__status {
@@ -341,7 +324,7 @@ summary::-webkit-details-marker { display: none; }
   align-items: center;
   gap: 0.5rem;
   padding: 1rem 1.25rem;
-  color: #a7f3d0;
+  color: var(--ink-mid);
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -355,18 +338,15 @@ summary::-webkit-details-marker { display: none; }
   justify-content: center;
   gap: clamp(0.6rem, 1.6vw, 1rem);
   border-radius: 999px;
-  background: rgba(8, 31, 48, 0.72);
-  border: 1px solid rgba(34, 211, 238, 0.26);
-  box-shadow:
-    inset 0 0 42px rgba(34, 211, 238, 0.11),
-    0 24px 68px rgba(14, 165, 233, 0.16);
+  background: #ffffff;
+  border: 1px solid var(--limestone);
 }
 
 .voice-stage__meter span {
   width: clamp(0.45rem, 1.1vw, 0.7rem);
   height: clamp(3.3rem, 12vw, 8rem);
   border-radius: 999px;
-  background: #67e8f9;
+  background: var(--blue-base);
   opacity: 0.52;
   transform-origin: center;
 }
@@ -378,11 +358,11 @@ summary::-webkit-details-marker { display: none; }
 }
 
 .voice-stage[data-phase="speaking"] .voice-stage__meter span {
-  background: #a7f3d0;
+  background: hsl(172, 55%, 62%);
 }
 
 .voice-stage[data-phase="thinking"] .voice-stage__meter span {
-  background: #fde68a;
+  background: hsl(206, 74%, 80%);
 }
 
 .voice-stage__meter span:nth-child(2) { animation-delay: 90ms; }
@@ -419,7 +399,7 @@ summary::-webkit-details-marker { display: none; }
   border: 1px solid rgba(244, 63, 94, 0.55);
   background: rgba(88, 28, 46, 0.78);
   color: #fecdd3;
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 0.85rem 1rem;
   font-size: 0.86rem;
 }
@@ -476,7 +456,7 @@ summary::-webkit-details-marker { display: none; }
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 1rem;
   border: 1px solid var(--limestone);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: rgba(15, 14, 21, 0.85);
   padding: 1rem;
 }
@@ -497,17 +477,17 @@ summary::-webkit-details-marker { display: none; }
 
 .voice-transcript__item {
   border: 1px solid var(--limestone);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 0.8rem;
-  background: rgba(18, 10, 31, 0.86);
+  background: #ffffff;
 }
 
 .voice-transcript__item[data-role="user"] {
-  border-color: rgba(34, 211, 238, 0.28);
+  border-color: var(--blue-base);
 }
 
 .voice-transcript__item[data-role="assistant"] {
-  border-color: rgba(167, 243, 208, 0.26);
+  border-color: var(--limestone);
 }
 
 .voice-transcript__item span {
@@ -553,4 +533,42 @@ summary::-webkit-details-marker { display: none; }
   .voice-transcript {
     min-height: 68vh;
   }
+}
+
+/* ================================================================
+   BLESC aqua — light Skype-friendly theme, scoped.
+   Wrap a subtree in .blesc-aqua to remap the semantic tokens from
+   the dark purple palette to the aqua brand (hue 206).
+   ================================================================ */
+.blesc-aqua {
+  --hue: 206;
+  --blue-base: hsl(var(--hue), 74%, 72%); /* Exact logo blue color */
+
+  --ivory:          #ffffff;
+  --ivory-warm:     hsl(206, 80%, 97%);
+  --ivory-aged:     hsl(206, 72%, 94%);
+  --limestone:      hsl(206, 62%, 86%);
+  --sandstone:      hsl(206, 62%, 80%);
+  --marble-vein:    hsl(206, 42%, 76%);
+
+  --gold:           hsl(206, 74%, 72%);
+  --gold-light:     hsl(206, 74%, 72%);
+  --gold-deep:      hsl(206, 60%, 22%);
+  --bronze:         hsl(180, 55%, 42%);
+
+  --aegean:         hsl(172, 55%, 34%);
+  --aegean-dark:    hsl(172, 55%, 26%);
+  --cerulean:       hsl(206, 74%, 72%);
+  --sky-pale:       hsla(206, 74%, 72%, 0.18);
+
+  --terracotta:     hsl(6, 72%, 52%);
+  --ochre:          hsl(36, 90%, 38%);
+  --sienna:         hsl(6, 65%, 40%);
+
+  --ink:            hsl(206, 60%, 18%);
+  --ink-soft:       hsl(206, 46%, 27%);
+  --ink-mid:        hsl(206, 32%, 36%);
+  --ink-faint:      hsl(206, 22%, 50%);
+
+  color: var(--ink);
 }

@@ -294,7 +294,7 @@ export function GraphViewer3D({
   }, []);
 
   return (
-    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
       {/* ── Header ── */}
       <div className="border-b border-slate-200 bg-slate-50/80 p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -311,7 +311,7 @@ export function GraphViewer3D({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-1">
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1">
             {ENABLE_GRAPH_DEBUG && (
               <button
                 type="button"
@@ -444,7 +444,7 @@ export function GraphViewer3D({
             <div className="pointer-events-none absolute right-4 top-4 z-10 flex flex-col gap-1.5 rounded border border-white/10 bg-black/40 px-3 py-2.5 backdrop-blur">
               {CATEGORY_LEGEND.map((cat) => (
                 <div key={cat.label} className="flex items-center gap-2 text-[11px] text-white/60">
-                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: cat.color, boxShadow: `0 0 4px ${cat.color}` }} />
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: cat.color }} />
                   {cat.label}
                 </div>
               ))}
@@ -457,7 +457,7 @@ export function GraphViewer3D({
           <aside className="space-y-4 border-l border-slate-200 bg-slate-50 p-5 max-h-[680px] overflow-y-auto">
 
             {/* Selected node / Entity Inspector — ALWAYS at the top */}
-            <div className="rounded-lg border border-slate-200 bg-white">
+            <div className="rounded-2xl border border-slate-200 bg-white">
               <button
                 type="button"
                 onClick={() => toggleSection("inspector")}
@@ -492,7 +492,7 @@ export function GraphViewer3D({
                         </button>
                       </div>
 
-                      <div className="rounded-md bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
+                      <div className="rounded-2xl bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
                         <div>Category: {selection.node.category}</div>
                         <div>Intensity: {selection.node.intensity.toFixed(2)}</div>
                         <div>Confidence: {selection.node.confidence.toFixed(2)}</div>
@@ -540,7 +540,7 @@ export function GraphViewer3D({
             </div>
 
             {/* Overview */}
-            <div className="rounded-lg border border-slate-200 bg-white">
+            <div className="rounded-2xl border border-slate-200 bg-white">
               <button
                 type="button"
                 onClick={() => toggleSection("overview")}
@@ -574,7 +574,7 @@ export function GraphViewer3D({
             </div>
 
             {/* Ontology basis / top concepts */}
-            <div className="rounded-lg border border-slate-200 bg-white">
+            <div className="rounded-2xl border border-slate-200 bg-white">
               <button
                 type="button"
                 onClick={() => toggleSection("ontology")}
@@ -623,7 +623,7 @@ export function GraphViewer3D({
             </div>
 
             {/* Edge Semantics */}
-            <div className="rounded-lg border border-slate-200 bg-white">
+            <div className="rounded-2xl border border-slate-200 bg-white">
               <button
                 type="button"
                 onClick={() => toggleSection("edges")}
@@ -645,7 +645,7 @@ export function GraphViewer3D({
             </div>
 
             {/* Construction Pipeline */}
-            <div className="rounded-lg border border-slate-200 bg-white">
+            <div className="rounded-2xl border border-slate-200 bg-white">
               <button
                 type="button"
                 onClick={() => toggleSection("pipeline")}
@@ -668,7 +668,7 @@ export function GraphViewer3D({
             </div>
 
             {/* How to read */}
-            <div className="rounded-lg border border-slate-200 bg-white">
+            <div className="rounded-2xl border border-slate-200 bg-white">
               <button
                 type="button"
                 onClick={() => toggleSection("howToRead")}
@@ -701,7 +701,7 @@ export function GraphViewer3D({
             </div>
 
             {/* Precision Boundary */}
-            <div className="rounded-lg border border-amber-200 bg-amber-50">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50">
               <button
                 type="button"
                 onClick={() => toggleSection("precision")}

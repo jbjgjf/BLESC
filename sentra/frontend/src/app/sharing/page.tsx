@@ -17,7 +17,6 @@ const VIEW_LABELS: Record<string, string> = {
 const panel: React.CSSProperties = {
   backgroundColor: "var(--ivory)",
   border: "1px solid var(--limestone)",
-  boxShadow: "0 1px 3px rgba(42,32,24,0.09), 0 6px 24px rgba(42,32,24,0.05)",
 };
 
 function statusChip(request: OversightRequest): { label: string; color: string } {
@@ -142,7 +141,7 @@ export default function SharingPage() {
                   disabled={busy}
                   onClick={() => setConsent(request.org_id, false)}
                   data-testid={`revoke-consent-${request.org_id}`}
-                  className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-60"
                   style={{ border: "1px solid var(--sienna)", color: "var(--sienna)" }}
                 >
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldOff className="h-4 w-4" />}
@@ -154,8 +153,8 @@ export default function SharingPage() {
                   disabled={busy}
                   onClick={() => setConsent(request.org_id, true)}
                   data-testid={`grant-consent-${request.org_id}`}
-                  className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-60"
-                  style={{ backgroundColor: "var(--gold)", color: "#000" }}
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-60"
+                  style={{ backgroundColor: "var(--blue-base)", color: "var(--ink)" }}
                 >
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
                   Allow derived signals

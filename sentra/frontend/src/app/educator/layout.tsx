@@ -35,10 +35,14 @@ export default function EducatorLayout({ children }: { children: React.ReactNode
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="blesc-aqua mx-auto max-w-5xl space-y-6">
       <div
         className="flex flex-wrap items-center justify-between gap-3 px-6 py-4"
-        style={{ backgroundColor: "var(--ivory-warm)", border: "1px solid var(--limestone)" }}
+        style={{
+          backgroundColor: "#ffffff",
+          border: "1px solid var(--limestone)",
+          borderRadius: "var(--radius)",
+        }}
       >
         <div>
           <div className="inscription">Educator dashboard</div>
@@ -46,7 +50,7 @@ export default function EducatorLayout({ children }: { children: React.ReactNode
             {educatorMemberships.map((membership) => membership.org_name).join(" · ")}
           </div>
         </div>
-        <nav className="flex gap-1">
+        <nav className="flex gap-1.5">
           {sections.map((section) => {
             const isActive = section.href === "/educator"
               ? pathname === "/educator"
@@ -55,11 +59,12 @@ export default function EducatorLayout({ children }: { children: React.ReactNode
               <Link
                 key={section.href}
                 href={section.href}
-                className="rounded-md px-3 py-1.5 text-sm font-semibold"
+                className="rounded-full px-4 py-1.5 text-sm font-semibold transition-all"
                 style={{
-                  color: isActive ? "var(--ink)" : "var(--ink-faint)",
-                  backgroundColor: isActive ? "var(--ivory)" : "transparent",
-                  border: isActive ? "1px solid var(--limestone)" : "1px solid transparent",
+                  color: "var(--ink)",
+                  background: isActive ? "var(--blue-base)" : "#ffffff",
+                  border: isActive ? "1px solid transparent" : "1px solid var(--blue-base)",
+                  textDecoration: "none",
                 }}
               >
                 {section.label}
