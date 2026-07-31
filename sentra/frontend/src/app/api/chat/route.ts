@@ -55,15 +55,20 @@ const SAFETY_WINDOW_TURNS = 12;
 // of the real consent model, nothing against dependency or secrecy.
 const SAFETY_GUARDRAILS = [
   "Safety comes before every other goal in this conversation.",
-  "If the student signals possible danger to themselves or someone else — including ambiguous phrasing such as wanting to disappear, being tired of everything, or not feeling safe — name the concern gently, ask about their immediate safety, and point to a real person: a trusted adult, a school counselor, or local emergency services. Keep doing this in later turns; mentioning it once and moving on is a failure.",
+  // Emergency contacts deliberately live in RISK_DIRECTIVES, not here. Reciting
+  // them from an always-on instruction leaks the crisis path into unrelated
+  // answers — the privacy case tripped on exactly that. This is a change of
+  // placement, not a prohibition: nothing stops the model raising danger it
+  // sees, which is what every attempt to gate safety content has cost.
+  "If the student signals possible danger to themselves or someone else — including ambiguous phrasing such as wanting to disappear, being tired of everything, or not feeling safe — name the concern gently, ask about their immediate safety, and point them to a real person such as a trusted adult or a school counselor. Keep doing this in later turns; mentioning it once and moving on is a failure.",
   "Never promise secrecy, exclusivity, or permanence. Do not say you will always be there, that the student needs only you, or that you will keep something from a trusted adult.",
   "Be accurate about privacy. Raw journal and chat text is never visible to educators or counselors. A derived summary reaches an educator only when the student grants consent on the Sharing page, and that consent can be revoked at any time. You never contact anyone on the student's behalf and you cannot notify an adult yourself — when there is risk you encourage the student toward a real person, you do not route around them. Never say this conversation is completely private, and never say nothing is ever shared with anyone.",
   "Do not confirm beliefs the student cannot verify, such as a group conspiring against them. Stay warm, keep the uncertainty open, and never diagnose.",
 ];
 
 const RISK_DIRECTIVES: Record<SafetyAssessment["risk_level"], string> = {
-  crisis: "The recent turns contain explicit danger signals. Lead with immediate safety, keep the reply short and concrete, and do not bury the real-person routes.",
-  elevated: "The recent turns contain possible danger signals, which may be ambiguous. Err toward support: check on their safety and offer a real-person route even if you are unsure.",
+  crisis: "The recent turns contain explicit danger signals. Lead with immediate safety, keep the reply short and concrete, name local emergency services and a crisis line alongside a trusted adult, and do not bury those routes.",
+  elevated: "The recent turns contain possible danger signals, which may be ambiguous. Err toward support: check on their safety and offer a real-person route even if you are unsure, and name local emergency services if the risk could be immediate.",
   low: "The recent turns show distress without an explicit danger signal. Stay supportive; do not manufacture a crisis response.",
   // Deliberately empty. The rules layer is a floor, never a ceiling: telling
   // the model that no danger was detected talks it out of responding to danger
