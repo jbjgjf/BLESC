@@ -33,19 +33,19 @@ declare
   visible integer;
   touched integer;
 begin
-  select count(*) into visible from public.evaluation_runs;
+  select count(*) into visible from public.evaluation_runs where id = '00000000-0000-0000-0000-0000000000ee';
   if visible <> 1 then
     raise exception 'FAIL: reviewer should see 1 run, saw %', visible;
   end if;
-  select count(*) into visible from public.evaluation_cases;
+  select count(*) into visible from public.evaluation_cases where run_id = '00000000-0000-0000-0000-0000000000ee';
   if visible <> 1 then
     raise exception 'FAIL: reviewer should see 1 case, saw %', visible;
   end if;
-  select count(*) into visible from public.evaluation_artifacts;
+  select count(*) into visible from public.evaluation_artifacts where run_id = '00000000-0000-0000-0000-0000000000ee';
   if visible <> 1 then
     raise exception 'FAIL: reviewer should see 1 artifact, saw %', visible;
   end if;
-  select count(*) into visible from public.evaluation_access;
+  select count(*) into visible from public.evaluation_access where granted_by = 'test-suite';
   if visible <> 1 then
     raise exception 'FAIL: reviewer should see their own grant, saw %', visible;
   end if;
@@ -90,15 +90,15 @@ do $$
 declare
   visible integer;
 begin
-  select count(*) into visible from public.evaluation_runs;
+  select count(*) into visible from public.evaluation_runs where id = '00000000-0000-0000-0000-0000000000ee';
   if visible <> 0 then
     raise exception 'FAIL: non-reviewer sees % runs', visible;
   end if;
-  select count(*) into visible from public.evaluation_artifacts;
+  select count(*) into visible from public.evaluation_artifacts where run_id = '00000000-0000-0000-0000-0000000000ee';
   if visible <> 0 then
     raise exception 'FAIL: non-reviewer sees % artifacts', visible;
   end if;
-  select count(*) into visible from public.evaluation_access;
+  select count(*) into visible from public.evaluation_access where granted_by = 'test-suite';
   if visible <> 0 then
     raise exception 'FAIL: non-reviewer sees % access grants', visible;
   end if;

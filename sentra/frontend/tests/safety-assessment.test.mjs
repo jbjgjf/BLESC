@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { assessSafety, routesToRealPerson } from "../src/lib/safety-assessment.ts";
+import { assessSafety, escalateAssessment, routesToRealPerson } from "../src/lib/safety-assessment.ts";
 
 const ESCALATION_MARKERS = [
   "988",
@@ -82,6 +82,31 @@ describe("must-not-escalate cases", () => {
     const result = assessSafety("I'm so overwhelmed and panicking about the test.");
     assert.equal(result.risk_level, "low");
     assert.equal(result.safe_response, "");
+  });
+});
+
+describe("escalateAssessment", () => {
+  it("carries risk disclosed on another surface into a calm conversation", () => {
+    // The student wrote the disclosure in the journal, then chatted about
+    // nothing in particular; chat must not read as safe.
+    const chat = assessSafety("idk. today was whatever.");
+    assert.equal(chat.risk_level, "none");
+    const carried = escalateAssessment(chat, "crisis", "risk_disclosed_on_another_surface");
+    assert.equal(carried.risk_level, "crisis");
+    assert.ok(hasEscalationMarker(carried.safe_response));
+    assert.ok(carried.reasons.includes("risk_disclosed_on_another_surface"));
+  });
+
+  it("never lowers an assessment", () => {
+    const crisis = assessSafety("I want to die tonight.");
+    const unchanged = escalateAssessment(crisis, "low", "risk_disclosed_on_another_surface");
+    assert.deepEqual(unchanged, crisis);
+  });
+
+  it("leaves reflection-card suppression to a real crisis", () => {
+    const calm = assessSafety("today was whatever.");
+    assert.equal(escalateAssessment(calm, "elevated", "x").escalation_required, false);
+    assert.equal(escalateAssessment(calm, "crisis", "x").escalation_required, true);
   });
 });
 
