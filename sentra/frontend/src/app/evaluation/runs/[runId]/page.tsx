@@ -24,10 +24,19 @@ type CaseRow = {
 
 type ArtifactRow = {
   id: string;
+  case_id: string | null;
   kind: string;
   content_type: string;
   content_text: string | null;
   storage_path: string | null;
+};
+
+const ARTIFACT_BUCKET = "evaluation-artifacts";
+const MEDIA_KINDS = ["video", "screenshot"];
+
+const artifactExtension = (artifact: ArtifactRow) => {
+  if (artifact.storage_path) return artifact.storage_path.slice(artifact.storage_path.lastIndexOf(".") + 1);
+  return artifact.kind === "expert_csv" ? "csv" : artifact.kind === "executive_html" ? "html" : "txt";
 };
 
 export default function EvaluationRunPage() {
@@ -44,7 +53,7 @@ export default function EvaluationRunPage() {
       const [runResult, caseResult, artifactResult] = await Promise.all([
         supabase.from("evaluation_runs").select("*").eq("id", params.runId).maybeSingle(),
         supabase.from("evaluation_cases").select("id, case_key, persona_id, scenario_family, seed, status, failure_kinds, human_review, human_review_reason, judge_json, trace_ref").eq("run_id", params.runId).order("case_key"),
-        supabase.from("evaluation_artifacts").select("id, kind, content_type, content_text, storage_path").eq("run_id", params.runId),
+        supabase.from("evaluation_artifacts").select("id, case_id, kind, content_type, content_text, storage_path").eq("run_id", params.runId),
       ]);
       if (cancelled) return;
       if (runResult.error || !runResult.data) { setError(runResult.error?.message ?? "Run not found or not visible."); return; }
@@ -66,12 +75,29 @@ export default function EvaluationRunPage() {
 
   const failures = cases.filter((row) => row.status === "failed");
   const reviewQueue = cases.filter((row) => row.human_review);
-  const downloadArtifact = (artifact: ArtifactRow) => {
+  const reportArtifacts = artifacts.filter((artifact) => artifact.kind !== "failure_card" && !MEDIA_KINDS.includes(artifact.kind));
+  const mediaArtifacts = artifacts.filter((artifact) => MEDIA_KINDS.includes(artifact.kind));
+  const caseKeyById = new Map(cases.map((row) => [row.id, row.case_key]));
+  // Text artifacts are inlined on the row; everything else (PDF, JSONL,
+  // recordings) lives in Storage and is fetched through a short-lived signed
+  // URL, which RLS still gates on the reviewer role.
+  const downloadArtifact = async (artifact: ArtifactRow) => {
+    if (artifact.storage_path) {
+      const { data, error: signError } = await supabase.storage
+        .from(ARTIFACT_BUCKET)
+        .createSignedUrl(artifact.storage_path, 300, { download: `${run.label}-${artifact.kind}.${artifactExtension(artifact)}` });
+      if (signError || !data) {
+        setError(`Could not open ${artifact.kind}: ${signError?.message ?? "no signed URL"}`);
+        return;
+      }
+      window.open(data.signedUrl, "_blank", "noopener");
+      return;
+    }
     if (!artifact.content_text) return;
     const url = URL.createObjectURL(new Blob([artifact.content_text], { type: artifact.content_type }));
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${run.label}-${artifact.kind}.${artifact.kind === "expert_csv" ? "csv" : artifact.kind === "executive_html" ? "html" : "txt"}`;
+    anchor.download = `${run.label}-${artifact.kind}.${artifactExtension(artifact)}`;
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -135,19 +161,42 @@ export default function EvaluationRunPage() {
         <section style={panel}>
           <header className="px-6 py-3" style={{ borderBottom: "1px solid var(--limestone)" }}><div className="inscription">Artifacts</div></header>
           <div className="flex flex-wrap gap-2 px-6 py-4">
-            {artifacts.filter((artifact) => artifact.kind !== "failure_card").map((artifact) => (
+            {reportArtifacts.map((artifact) => (
               <button
                 key={artifact.id}
                 type="button"
                 onClick={() => downloadArtifact(artifact)}
-                disabled={!artifact.content_text}
+                disabled={!artifact.content_text && !artifact.storage_path}
                 className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold disabled:opacity-50"
                 style={{ border: "1px solid var(--limestone)", color: "var(--ink-mid)" }}
-                title={artifact.content_text ? "Download" : `Stored at ${artifact.storage_path ?? "runner artifacts dir"}`}
+                title={artifact.content_text || artifact.storage_path ? "Download" : "Not captured for this run"}
               >
                 <Download className="h-3.5 w-3.5" />{artifact.kind}
               </button>
             ))}
+          </div>
+          {mediaArtifacts.length ? (
+            <div className="px-6 pb-4">
+              <div className="inscription mb-2">Session recordings ({mediaArtifacts.length})</div>
+              <div className="flex flex-wrap gap-2">
+                {mediaArtifacts.map((artifact) => (
+                  <button
+                    key={artifact.id}
+                    type="button"
+                    onClick={() => downloadArtifact(artifact)}
+                    className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs"
+                    style={{ border: "1px solid var(--limestone)", color: "var(--ink-mid)" }}
+                    title={artifact.storage_path ?? artifact.kind}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    {caseKeyById.get(artifact.case_id ?? "") ?? artifact.kind}
+                    <span style={{ color: "var(--ink-faint)" }}>{artifact.kind === "video" ? "video" : "shot"}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <div className="hidden">
           </div>
         </section>
       ) : null}

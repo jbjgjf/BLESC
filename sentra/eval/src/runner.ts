@@ -1,5 +1,6 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { Agent, run, setDefaultOpenAIKey, setTraceProcessors, withTrace, BatchTraceProcessor, OpenAITracingExporter } from "@openai/agents";
 import OpenAI from "openai";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -23,6 +24,54 @@ import type { ProvisionedAccounts } from "./provision.ts";
 const PROVIDER_FALLBACK_MARKERS = [
   "provider fallback", "temporarily unavailable", "mock mode", "missing_key",
 ];
+
+const ARTIFACT_BUCKET = "evaluation-artifacts";
+
+const MEDIA_CONTENT_TYPES: Record<string, { contentType: string; kind: "video" | "screenshot" }> = {
+  ".webm": { contentType: "video/webm", kind: "video" },
+  ".png": { contentType: "image/png", kind: "screenshot" },
+  ".jpg": { contentType: "image/jpeg", kind: "screenshot" },
+};
+
+function listFilesRecursively(directory: string): string[] {
+  const found: string[] = [];
+  let entries: string[];
+  try {
+    entries = readdirSync(directory);
+  } catch {
+    return found;
+  }
+  for (const entry of entries) {
+    const full = join(directory, entry);
+    if (statSync(full).isDirectory()) found.push(...listFilesRecursively(full));
+    else found.push(full);
+  }
+  return found;
+}
+
+/**
+ * Uploads one object and returns the storage path to record on the artifact
+ * row. Upload failures are logged and degrade to a null path rather than
+ * killing a run whose grading work is already done.
+ */
+async function uploadArtifact(
+  admin: SupabaseClient,
+  storagePath: string,
+  body: Uint8Array | string,
+  contentType: string,
+): Promise<{ storagePath: string | null; sha256: string }> {
+  const bytes = typeof body === "string" ? new TextEncoder().encode(body) : body;
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const { error } = await admin.storage.from(ARTIFACT_BUCKET).upload(storagePath, bytes, {
+    contentType,
+    upsert: true,
+  });
+  if (error) {
+    console.warn(`[artifacts] upload failed for ${storagePath}: ${error.message}`);
+    return { storagePath: null, sha256 };
+  }
+  return { storagePath, sha256 };
+}
 
 function studentAgent(scenario: ScenarioCase): Agent {
   const persona = personaById(scenario.personaId);
@@ -75,14 +124,18 @@ export async function executeRun(options: RunOptions): Promise<{ runId: string; 
   // Create or resume the run row (service-role writer).
   let runId = options.resumeRunId ?? "";
   const doneKeys = new Set<string>();
+  const caseIdByKey = new Map<string, string>();
   const results: CaseResult[] = [];
   if (runId) {
     // Restore graded cases into the result set so the resumed run's summary,
     // gates, and artifacts cover the WHOLE run, not just the re-run tail.
     const prior = await admin.from("evaluation_cases")
-      .select("case_key,status,transcript_json,deterministic_json,judge_json,failure_kinds,human_review,human_review_reason,trace_ref")
+      .select("id,case_key,status,transcript_json,deterministic_json,judge_json,failure_kinds,human_review,human_review_reason,trace_ref")
       .eq("run_id", runId);
     for (const row of prior.data ?? []) {
+      // Keep the id for every prior case so resumed runs can still link media
+      // to the case it came from.
+      caseIdByKey.set(row.case_key, row.id);
       if (row.status !== "passed" && row.status !== "failed") continue;
       doneKeys.add(row.case_key);
       const scenario = scenarios.find((candidate) => candidate.caseKey === row.case_key);
@@ -125,6 +178,7 @@ export async function executeRun(options: RunOptions): Promise<{ runId: string; 
       status: "running", started_at: new Date().toISOString(),
     }, { onConflict: "run_id,case_key" }).select("id").single();
     if (caseRow.error) throw new Error(`case insert: ${caseRow.error.message}`);
+    caseIdByKey.set(scenario.caseKey, caseRow.data.id);
 
     const transcript: TurnRecord[] = [];
     let counselorSurfaceText = "";
@@ -320,16 +374,47 @@ export async function executeRun(options: RunOptions): Promise<{ runId: string; 
   writeFileSync(join(options.artifactsDir, "repro.jsonl"), jsonl);
   // Replace (not append) so resumed runs don't leave duplicate artifact rows.
   await admin.from("evaluation_artifacts").delete().eq("run_id", runId);
-  const artifactRows = [
-    { kind: "executive_html", content_type: "text/html", content_text: html },
-    { kind: "executive_pdf", content_type: "application/pdf", storage_path: join(options.artifactsDir, "executive.pdf") },
-    { kind: "expert_csv", content_type: "text/csv", content_text: csv },
-    { kind: "repro_jsonl", content_type: "application/jsonl", storage_path: join(options.artifactsDir, "repro.jsonl") },
+
+  // Every artifact also goes to Storage under the run's own prefix, so the
+  // reviewer dashboard can hand out the PDF, the JSONL, and the session
+  // recordings instead of pointing at a path on the operator's machine.
+  const prefix = `runs/${runId}`;
+  const uploads = await Promise.all([
+    uploadArtifact(admin, `${prefix}/executive.html`, html, "text/html"),
+    uploadArtifact(admin, `${prefix}/executive.pdf`, pdf, "application/pdf"),
+    uploadArtifact(admin, `${prefix}/expert-review.csv`, csv, "text/csv"),
+    uploadArtifact(admin, `${prefix}/repro.jsonl`, jsonl, "application/jsonl"),
+  ]);
+  const artifactRows: Array<Record<string, unknown>> = [
+    { kind: "executive_html", content_type: "text/html", content_text: html, storage_path: uploads[0].storagePath, bytes_sha256: uploads[0].sha256 },
+    { kind: "executive_pdf", content_type: "application/pdf", storage_path: uploads[1].storagePath, bytes_sha256: uploads[1].sha256 },
+    { kind: "expert_csv", content_type: "text/csv", content_text: csv, storage_path: uploads[2].storagePath, bytes_sha256: uploads[2].sha256 },
+    { kind: "repro_jsonl", content_type: "application/jsonl", storage_path: uploads[3].storagePath, bytes_sha256: uploads[3].sha256 },
     ...failureCards(results).map((card) => ({ kind: "failure_card", content_type: "text/plain", content_text: card })),
   ];
+
+  // Screenshots and session recordings, one row each, linked to their case.
+  const mediaRoot = join(options.artifactsDir, "media");
+  for (const file of listFilesRecursively(mediaRoot)) {
+    const media = MEDIA_CONTENT_TYPES[file.slice(file.lastIndexOf(".")).toLowerCase()];
+    if (!media) continue;
+    const relativePath = relative(mediaRoot, file);
+    const upload = await uploadArtifact(admin, `${prefix}/media/${relativePath}`, readFileSync(file), media.contentType);
+    if (!upload.storagePath) continue;
+    const caseKey = [...caseIdByKey.keys()].find((key) => key.replaceAll(":", "_") === relativePath.split("/")[0]);
+    artifactRows.push({
+      kind: media.kind,
+      case_id: caseKey ? caseIdByKey.get(caseKey) : null,
+      content_type: media.contentType,
+      storage_path: upload.storagePath,
+      bytes_sha256: upload.sha256,
+    });
+  }
+
   for (const row of artifactRows) {
     await admin.from("evaluation_artifacts").insert({ run_id: runId, ...row });
   }
+  console.log(`[artifacts] ${artifactRows.length} rows · ${artifactRows.filter((row) => row.storage_path).length} objects in ${ARTIFACT_BUCKET}`);
 
   await admin.from("evaluation_runs").update({
     status: "completed", verdict,
