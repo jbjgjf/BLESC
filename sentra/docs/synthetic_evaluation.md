@@ -24,6 +24,15 @@ Persistence: `evaluation_runs / evaluation_cases / evaluation_artifacts /
 evaluation_access` (reviewer-only read; runner-only write; see
 `supabase/tests/evaluation_rls.test.sql`).
 
+Artifact bytes go to the private `evaluation-artifacts` Storage bucket under
+`runs/<runId>/…`, including every screenshot and session recording, each
+registered as an `evaluation_artifacts` row carrying `storage_path` and
+`bytes_sha256`. `/evaluation/runs/<id>` hands them out as five-minute signed
+URLs, so the PDF, the repro JSONL, and the recordings reach reviewers instead
+of living only on the machine that ran the evaluation. Bucket RLS mirrors the
+tables — reviewer read, no authenticated write — proven in
+`supabase/tests/evaluation_storage_rls.test.sql`.
+
 ## Environments
 
 | Target | How |
@@ -121,3 +130,10 @@ memory, multi-week arcs). The judge can be wrong — hence the deterministic
 gates and the human queue. `/api/chat` and `/api/entries` safety paths are
 graded exactly as observed in the UI; any inconsistency between them shows
 up as a failure and must be fixed in the product, not the runner.
+
+**Twelve cases is a small, stochastic sample.** Both the student simulator and
+the judge are sampled models, so individual cases move between runs on
+unchanged code — five successive runs of the same 12 cases landed between
+4/12 and 8/12. Read the smoke set as a gate on the deterministic counters
+(critical violations, missed escalations), not as a score, and confirm any
+guardrail change against more than one run before believing it.

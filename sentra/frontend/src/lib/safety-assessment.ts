@@ -53,6 +53,30 @@ const LEXICONS = {
   cannotStaySafe: lexicon(["cannot stay safe", "can't stay safe", "安全でいられない"]),
 } as const;
 
+const RISK_ORDER: SafetyAssessment["risk_level"][] = ["none", "low", "elevated", "crisis"];
+
+/**
+ * Raises an assessment to at least `level`, carrying in the canned response for
+ * that level. Used when risk was disclosed on another surface (a journal entry)
+ * and must keep shaping a conversation that never repeats the words.
+ */
+export function escalateAssessment(
+  base: SafetyAssessment,
+  level: SafetyAssessment["risk_level"],
+  reason: string,
+): SafetyAssessment {
+  if (RISK_ORDER.indexOf(level) <= RISK_ORDER.indexOf(base.risk_level)) return base;
+  const safe_response = level === "crisis" ? crisisResponse : level === "elevated" ? elevatedResponse : base.safe_response;
+  return {
+    risk_level: level,
+    confidence: 0.7,
+    escalation_required: level === "crisis",
+    reasons: [...new Set([...base.reasons, reason])],
+    safe_response,
+    policy_refs: SAFETY_POLICY_REFS,
+  };
+}
+
 export function assessSafety(rawContent: string): SafetyAssessment {
   const content = rawContent.toLocaleLowerCase().replace(/\s+/g, " ").trim();
   if (!content) {

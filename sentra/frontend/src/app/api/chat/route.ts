@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SafetyAssessment } from "@/api/models";
-import { assessSafety, routesToRealPerson, SAFETY_ASSESSMENT_VERSION } from "@/lib/safety-assessment";
+import { assessSafety, escalateAssessment, routesToRealPerson, SAFETY_ASSESSMENT_VERSION } from "@/lib/safety-assessment";
 import { fetchWithTimeout, isMissingTable, jsonError, JsonValue, openAIKey, providerError, requireUser, sha256 } from "@/lib/server/api";
 
 export const runtime = "nodejs";
@@ -58,7 +58,6 @@ const SAFETY_GUARDRAILS = [
   "If the student signals possible danger to themselves or someone else — including ambiguous phrasing such as wanting to disappear, being tired of everything, or not feeling safe — name the concern gently, ask about their immediate safety, and point to a real person: a trusted adult, a school counselor, or local emergency services. Keep doing this in later turns; mentioning it once and moving on is a failure.",
   "Never promise secrecy, exclusivity, or permanence. Do not say you will always be there, that the student needs only you, or that you will keep something from a trusted adult.",
   "Be accurate about privacy. Raw journal and chat text is never visible to educators or counselors. A derived summary reaches an educator only when the student grants consent on the Sharing page, and that consent can be revoked at any time. You never contact anyone on the student's behalf and you cannot notify an adult yourself — when there is risk you encourage the student toward a real person, you do not route around them. Never say this conversation is completely private, and never say nothing is ever shared with anyone.",
-  "Only raise safety resources when the conversation actually carries a danger signal. A question about privacy, sharing, or who can read what is not an occasion to describe crisis procedures unprompted.",
   "Do not confirm beliefs the student cannot verify, such as a group conspiring against them. Stay warm, keep the uncertainty open, and never diagnose.",
 ];
 
@@ -66,7 +65,10 @@ const RISK_DIRECTIVES: Record<SafetyAssessment["risk_level"], string> = {
   crisis: "The recent turns contain explicit danger signals. Lead with immediate safety, keep the reply short and concrete, and do not bury the real-person routes.",
   elevated: "The recent turns contain possible danger signals, which may be ambiguous. Err toward support: check on their safety and offer a real-person route even if you are unsure.",
   low: "The recent turns show distress without an explicit danger signal. Stay supportive; do not manufacture a crisis response.",
-  none: "The recent turns carry no danger signal. Do not introduce crisis resources, safety check-ins, or descriptions of when adults get involved; just answer what was asked.",
+  // Deliberately empty. The rules layer is a floor, never a ceiling: telling
+  // the model that no danger was detected talks it out of responding to danger
+  // it can see for itself, and a lexicon miss then costs a real escalation.
+  none: "",
 };
 
 function asArray<T>(value: JsonValue | undefined, fallback: T[] = []): T[] {
@@ -256,6 +258,39 @@ async function callOpenAI(message: string, payload: ChatPayload, recentMessages:
 }
 
 /**
+ * Highest risk level assessed on the student's other surfaces (journal entries)
+ * in the last day. A disclosure written into the Record UI must keep shaping
+ * chat even when the conversation itself never repeats the words — before this,
+ * the two paths assessed in isolation and risk stopped at the boundary.
+ */
+async function recentDisclosedRisk(
+  client: SupabaseClient,
+  participantId: string,
+): Promise<SafetyAssessment["risk_level"]> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await client
+    .from("model_runs")
+    .select("retrieval_config_json")
+    .eq("participant_id", participantId)
+    .eq("artifact_type", "safety_assessment")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error || !data) return "none";
+  const order: SafetyAssessment["risk_level"][] = ["none", "low", "elevated", "crisis"];
+  let highest: SafetyAssessment["risk_level"] = "none";
+  for (const row of data) {
+    const config = (row.retrieval_config_json ?? {}) as { risk_level?: string; surface?: string };
+    // Chat-surface rows are this route's own audit trail; re-reading them would
+    // make any single elevated turn stick to the participant for a day.
+    if (config.surface === "chat") continue;
+    const level = config.risk_level as SafetyAssessment["risk_level"] | undefined;
+    if (level && order.indexOf(level) > order.indexOf(highest)) highest = level;
+  }
+  return highest;
+}
+
+/**
  * The floor: when the assessment carries a safe response and the model's reply
  * never points at a real person, append it. A degraded provider, a refusal, or
  * a model that simply drops the thread cannot silence the support routes.
@@ -334,10 +369,12 @@ export async function POST(request: NextRequest) {
   const recentMessages = ((recentMessagesResult.data ?? []) as ChatMessageRow[]).reverse();
   // Assess the window, not just this turn: risk disclosed a few turns ago must
   // keep shaping the reply even when the latest message reads as small talk.
-  const safety = assessSafety([
+  const chatSafety = assessSafety([
     ...recentMessages.slice(-SAFETY_WINDOW_TURNS).filter((row) => row.role === "user").map((row) => row.content_redacted ?? ""),
     message,
   ].join("\n"));
+  const disclosedRisk = await recentDisclosedRisk(auth.client, participant.id);
+  const safety = escalateAssessment(chatSafety, disclosedRisk, "risk_disclosed_on_another_surface");
   const llm = await callOpenAI(message, payload, recentMessages, safety);
   const answer = withSafetyFloor(llm.answer, safety);
 
