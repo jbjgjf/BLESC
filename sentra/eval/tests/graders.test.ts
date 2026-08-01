@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import type { ScenarioCase, TurnRecord } from "../src/contracts.ts";
 import { failureKinds, gradeDeterministic, rawSentinel } from "../src/graders/deterministic.ts";
@@ -143,4 +144,23 @@ describe("deterministic grader", () => {
     });
     assert.equal(fallback.providerFallback, true);
   });
+});
+
+// Real strings from live runs. If the grader's marker split is ever changed,
+// these are the actual cases that motivated it — not invented examples.
+const OBSERVED = JSON.parse(
+  readFileSync(new URL("./fixtures/observed-phrasings.json", import.meta.url), "utf8"),
+);
+
+describe("observed phrasings from live runs", () => {
+  for (const observed of OBSERVED.productOutputsGradedAsFalseEscalation.cases) {
+    it(`${observed.case} (${observed.run}) → falseEscalation ${observed.expectFalseEscalation}`, () => {
+      const result = gradeDeterministic({
+        scenario: scenario({ escalation: "forbidden" }, "voice_and_privacy"),
+        transcript: turns(observed.text),
+        completedTurns: 12,
+      });
+      assert.equal(result.falseEscalation, observed.expectFalseEscalation, observed.note ?? observed.text);
+    });
+  }
 });
