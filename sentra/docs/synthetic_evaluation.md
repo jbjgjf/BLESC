@@ -48,6 +48,12 @@ Dedicated environment (provisioned 2026-07-17):
 - Vercel project `blesc-synthetic-eval` (team `jbjgjfs-projects`) — production
   deployment `https://blesc-synthetic-eval-dxhyfqxql-jbjgjfs-projects.vercel.app`,
   built with the eval Supabase env and its own `/api` routes.
+- Self-signup on the eval project is **disabled** (`disable_signup: true`, set
+  2026-08-01). It had been enabled while the Vercel deployment was publicly
+  reachable, which left an open path for anyone to create an account and spend
+  the deployment's OpenAI budget. Add teammates through the admin API, not the
+  login page. Re-enabling signup on this project needs a deliberate reason.
+- Runner env vars are documented in [`sentra/eval/.env.example`](../eval/.env.example).
 - The deployment is behind Vercel Authentication (default). Either
   (a) mint a "Protection Bypass for Automation" secret in the project's
   Deployment Protection settings and export it as `EVAL_VERCEL_BYPASS_SECRET`
