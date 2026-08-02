@@ -9,8 +9,9 @@ import { supabase } from "@/lib/supabase/client";
 
 const primaryNav = [
   { href: "/",      label: "Record" },
+  // Voice is a mode inside Chat, not a separate destination — the old /voice
+  // tab put the same conversation in two places.
   { href: "/chat",  label: "Chat" },
-  { href: "/voice", label: "Voice" },
   { href: "/graph", label: "Graph" },
   { href: "/support-summary", label: "Summary" },
   { href: "/audit", label: "Audit" },

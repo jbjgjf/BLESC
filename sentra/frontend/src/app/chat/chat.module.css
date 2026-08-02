@@ -470,3 +470,31 @@
     padding-bottom: 170px;
   }
 }
+
+/* Voice-mode entry, sitting between dictation and send. Dictation types for
+   you; this one opens a spoken conversation, so it reads as a peer of the
+   mic rather than a second send button. */
+.voiceMode {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--blue-base);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, opacity 0.2s ease;
+}
+
+.voiceMode:hover:not(:disabled) {
+  background: var(--blue-base);
+  color: #ffffff;
+}
+
+.voiceMode:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

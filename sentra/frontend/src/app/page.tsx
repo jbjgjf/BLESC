@@ -813,9 +813,7 @@ export default function Home() {
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
           <Link
-            href="/voice"
-            target="_blank"
-            rel="noopener noreferrer"
+            href="/chat"
             className="ml-3 mt-4 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition-all"
             style={{
               ...displayFont,
@@ -827,7 +825,7 @@ export default function Home() {
               textDecoration: "none",
             }}
           >
-            Open Voice Workspace
+            Open Chat &amp; Voice
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>
