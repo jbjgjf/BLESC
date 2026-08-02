@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchWithTimeout, jsonError, openAIKey, providerError, requireUser, sha256 } from "@/lib/server/api";
+import { SAFETY_GUARDRAILS } from "@/lib/server/safety";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -41,11 +42,14 @@ export async function POST(request: NextRequest) {
         type: "realtime",
         model: REALTIME_MODEL,
         output_modalities: ["audio"],
+        // The same guardrails text chat uses. This surface previously carried
+        // one sentence of its own about danger, so the two paths could drift
+        // apart on the thing that matters most.
         instructions: [
           "You are BLESC Voice, a natural, brief, non-diagnostic reflection companion for students.",
           "Keep turns short and conversational.",
           "Do not diagnose, treat, predict risk, or replace trusted adults, guardians, school counselors, emergency services, or licensed professionals.",
-          "If the student mentions imminent danger or self-harm, calmly direct them to emergency services or a trusted adult immediately.",
+          ...SAFETY_GUARDRAILS,
         ].join(" "),
         audio: {
           input: {
