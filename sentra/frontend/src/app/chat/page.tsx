@@ -5,8 +5,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { ApiClient } from "@/api/client";
 import { useAuth } from "@/lib/auth";
-import { Send } from "lucide-react";
+import { AudioLines, Send } from "lucide-react";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
+import { VoiceMode, type VoiceTurn } from "@/components/VoiceMode";
 import styles from "./chat.module.css";
 
 type Message = {
@@ -34,6 +35,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const nearBottomRef = useRef(true);
@@ -132,6 +134,22 @@ export default function ChatPage() {
     requestAnimationFrame(autoGrow);
   };
 
+  // Voice mode is a mode of this conversation, not a separate one, so its turns
+  // join the thread on exit instead of disappearing with the overlay.
+  const closeVoice = (turns: VoiceTurn[]) => {
+    setVoiceOpen(false);
+    if (!turns.length) return;
+    nearBottomRef.current = true;
+    setMessages((current) => [
+      ...current,
+      ...turns.map((turn, index) => ({
+        id: `v-${Date.now()}-${index}`,
+        role: turn.role === "user" ? ("user" as const) : ("ai" as const),
+        text: turn.text,
+      })),
+    ]);
+  };
+
   return (
     <div className={styles.root}>
       <header className={styles.header}>
@@ -224,6 +242,17 @@ export default function ChatPage() {
           <div className={styles.voiceSlot}>
             <VoiceInputButton disabled={isThinking} onTranscript={insertTranscript} />
           </div>
+          {/* Dictation fills the box above; this opens a spoken conversation. */}
+          <button
+            type="button"
+            className={styles.voiceMode}
+            onClick={() => setVoiceOpen(true)}
+            disabled={isThinking}
+            aria-label="Start a voice conversation"
+            title="Voice mode"
+          >
+            <AudioLines size={19} />
+          </button>
           <button
             type="button"
             className={styles.send}
@@ -245,6 +274,8 @@ export default function ChatPage() {
         </div>
       </div>
       <div className={styles.disclaimer}>blesc is not a clinical assessment or an emergency service.</div>
+
+      {voiceOpen && <VoiceMode onClose={closeVoice} />}
     </div>
   );
 }
