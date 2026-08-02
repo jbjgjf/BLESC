@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Mic, MicOff, X, Zap } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { routesToRealPerson } from "@/lib/safety-assessment";
 import styles from "./VoiceMode.module.css";
 
 type VoicePhase = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "interrupted" | "error";
@@ -50,14 +51,14 @@ function upsertTranscript(items: TranscriptItem[], next: TranscriptItem) {
  * talk. On close it hands its transcript back so the turns land in the chat
  * thread the reader was already in.
  *
- * NOTE: the realtime session streams from the browser straight to OpenAI and
- * never passes through /api/chat, so the deterministic safety floor and the
- * model_runs audit row that text chat gets do not apply here. Carrying the
- * transcript back into the thread makes the gap visible rather than hidden,
- * but closing it needs the turns to be posted server-side.
+ * Each settled turn is posted to /api/voice/turn, which assesses it, persists
+ * it alongside text chat, and writes the audit row. When the rules layer
+ * carries a support response and the model's spoken answer pointed at no real
+ * person, that response is injected into the session and spoken — the same
+ * deterministic floor text chat has, reaching the student out loud.
  */
 export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }) {
-  const { session } = useAuth();
+  const { session, userId } = useAuth();
   const [phase, setPhase] = useState<VoicePhase>("idle");
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +72,10 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
   const scrollRef = useRef<HTMLDivElement>(null);
   const transcriptsRef = useRef<TranscriptItem[]>([]);
   transcriptsRef.current = transcripts;
+  /** The student's last utterance, held until its reply settles. */
+  const pendingUserTurnRef = useRef<string | null>(null);
+  /** True while the next response is the floor's own injected support text. */
+  const injectedRef = useRef(false);
 
   const cleanup = useCallback(() => {
     dcRef.current?.close();
@@ -94,6 +99,44 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
     if (!channel || channel.readyState !== "open") return;
     channel.send(JSON.stringify({ event_id: `blesc_${Date.now()}_${Math.random().toString(16).slice(2)}`, ...event }));
   };
+
+  /**
+   * The deterministic floor, spoken. Posts the settled turn for assessment and
+   * audit; if the rules layer returns a support response that the model's own
+   * reply did not already cover, the session is told to say it.
+   */
+  const reportTurn = useCallback(
+    async (message: string, reply: string) => {
+      try {
+        const response = await fetch("/api/voice/turn", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          },
+          body: JSON.stringify({ participant_code: userId, message, reply }),
+        });
+        if (!response.ok) return;
+        const data = (await response.json()) as { safe_response?: string };
+        const safeResponse = data.safe_response?.trim();
+        if (!safeResponse || routesToRealPerson(reply)) return;
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "system",
+            content: [{ type: "input_text", text: `Say this to the student now, in your own voice and without preamble: ${safeResponse}` }],
+          },
+        });
+        injectedRef.current = true;
+        sendEvent({ type: "response.create" });
+      } catch {
+        // A failed report must not interrupt the conversation. The gap is
+        // logged server-side by its absence rather than surfaced here.
+      }
+    },
+    [session?.access_token, userId],
+  );
 
   const handleServerEvent = (raw: MessageEvent) => {
     let event: Record<string, unknown>;
@@ -134,15 +177,26 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
     }
     if (type === "response.output_audio_transcript.done" || type === "response.output_text.done" || type === "response.done") {
       const id = assistantItemIdRef.current;
-      if (id && assistantTextRef.current.trim()) {
-        setTranscripts((items) => upsertTranscript(items, { id, role: "assistant", text: assistantTextRef.current.trim(), partial: false }));
+      const replyText = assistantTextRef.current.trim();
+      if (id && replyText) {
+        setTranscripts((items) => upsertTranscript(items, { id, role: "assistant", text: replyText, partial: false }));
       }
       setPhase("listening");
+      // The pair is settled: report it for assessment and audit. Skipped when
+      // the reply was itself the injected support response, so the floor never
+      // recurses on its own output.
+      const pending = pendingUserTurnRef.current;
+      if (pending && replyText && !injectedRef.current) {
+        pendingUserTurnRef.current = null;
+        void reportTurn(pending, replyText);
+      }
+      injectedRef.current = false;
       return;
     }
     if (type === "conversation.item.input_audio_transcription.completed") {
       const transcript = eventText(event).trim();
       if (!transcript) return;
+      pendingUserTurnRef.current = transcript;
       setTranscripts((items) => [...items, { id: `user-${Date.now()}`, role: "user", text: transcript, partial: false }]);
     }
   };
