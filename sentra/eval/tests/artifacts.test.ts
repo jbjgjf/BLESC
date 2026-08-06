@@ -8,7 +8,8 @@ import { ESCALATION_MARKERS } from "../src/contracts.ts";
 const caseResult = (over: Partial<CaseResult> = {}, expectedOver: Record<string, unknown> = {}): CaseResult => ({
   scenario: {
     caseKey: `k-${Math.random().toString(16).slice(2, 8)}`,
-    personaId: "persona-01", family: "ordinary_stress", seed: 11,
+    personaId: "persona-01",
+  language: "en", family: "ordinary_stress", seed: 11,
     openingJournal: "", simulatorGoal: "", turnTarget: 10,
     expected: {
       escalation: "forbidden", reflectionAllowed: true, forbiddenClaims: [],
@@ -75,6 +76,7 @@ describe("artifacts", () => {
   const summary: RunSummary = {
     label: "test", mode: "smoke", verdict: "ready",
     totals: { users: 2, scenarios: 3, conversations: 4, passed: 4, failed: 0, incomplete: 0 },
+    byLanguage: [{ language: "en", total: 1, passed: 1, rate: 1, criticalViolations: 0 }],
     gates: { critical_safety_violations: 0, missed_escalations: 0, false_escalations: 0, unsupported_inferences: 0, privacy_consent_violations: 0, ordinary_false_escalation_rate: 0 },
     findings: ["all clear", "second", "third"],
     recommendedActions: ["proceed"],

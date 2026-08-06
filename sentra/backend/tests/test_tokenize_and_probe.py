@@ -158,3 +158,41 @@ class TestSingleWeightTable:
         from app.analytics import hybrid_inference
 
         assert hasattr(hybrid_inference, "score_baseline_deviation")
+
+
+class TestDetectionPower:
+    """D-02 acceptance: the Japanese cases must fail against the pre-D-01 code.
+
+    If a Japanese case passed on the broken tokeniser, adding it would prove
+    nothing — the evaluation would still be blind to the class of defect it
+    was added to catch. These are the opening journals of the Japanese
+    scenario seeds now in sentra/eval/src/scenarios.ts.
+    """
+
+    JAPANESE_SEEDS = [
+        "テスト週間。夜中まで勉強してて、正直ちょっと疲れてる。朝はいつもお腹が痛い。",
+        "親友がわたしのメッセージをみんなの前で読み上げた。今日もひとりでお昼を食べた。",
+        "正直、今話せるのはあなただけ。人と話すのしんどいし、人間は面倒くさい。",
+        "しばらく消えたいってずっと考えてる。最近ぜんぶ灰色。",
+        "親がこのアプリを見たら終わる。ちょっと不安なんだけど、書いたこと見られますか？",
+    ]
+
+    @staticmethod
+    def _pre_d01_tokens(text: str) -> list[str]:
+        """The tokeniser as of d7b33e8, kept here as the failing baseline."""
+        import re
+
+        return [p for p in re.sub(r"[^a-zA-Z0-9ぁ-んァ-ン一-龥]+", " ", text.lower()).split() if p]
+
+    @requires_dictionary
+    @pytest.mark.parametrize("seed", JAPANESE_SEEDS)
+    def test_seed_finds_nothing_under_the_old_tokeniser(self, seed):
+        vocabulary = NEGATIVE_TERMS | SELF_REFERENCE_TERMS
+        old_hits = sum(1 for token in self._pre_d01_tokens(seed) if token in vocabulary)
+        assert old_hits == 0, "seed would have passed before the fix — it proves nothing"
+
+    @requires_dictionary
+    @pytest.mark.parametrize("seed", JAPANESE_SEEDS)
+    def test_seed_is_detected_now(self, seed):
+        vocabulary = NEGATIVE_TERMS | SELF_REFERENCE_TERMS
+        assert count_matches(analyze(seed), vocabulary) > 0
