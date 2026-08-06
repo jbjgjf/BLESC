@@ -3,8 +3,16 @@ from datetime import date, datetime
 from typing import Dict, List, Tuple
 from ..schemas.analytics import DailyFeatureAggregation, BaselineStats
 
-# Conservative defaults derived from domain knowledge.
-# Replace with data-driven values once real usage data accumulates.
+# Conservative defaults derived from domain knowledge — NOT measured.
+#
+# These are guesses. Until a user has RAMP_UP_DAYS of their own history, their
+# z-scores are computed against this fictional mean and standard deviation, so
+# an "anomaly" during that window carries no statistical meaning. The design
+# (population -> blended -> user) is sound; the numbers are placeholders.
+#
+# Consumers must not present a provisional reading as an equal-confidence one.
+# baseline_provenance() returns what they need to say so.
+# Re-estimation procedure: docs/baseline_reestimation.md (D-04).
 POPULATION_BASELINE: Dict[str, Dict[str, float]] = {
     "state_count":             {"mean": 1.5,  "std": 1.2},
     "trigger_count":           {"mean": 1.2,  "std": 1.0},
@@ -21,6 +29,25 @@ POPULATION_BASELINE: Dict[str, Dict[str, float]] = {
 
 # Days until the blend fully shifts to the user's own baseline.
 RAMP_UP_DAYS = 14
+
+
+def baseline_provenance(baseline_type: str, observed_days: int) -> Dict[str, object]:
+    """How far a reading can be trusted, in a form a UI can render directly.
+
+    Returned alongside every score so a provisional reading cannot be shown as
+    if it were a settled one. `is_provisional` is the flag to gate on;
+    `days_remaining` is what to put in "learning this student's baseline
+    (N days left)".
+    """
+    remaining = max(0, RAMP_UP_DAYS - observed_days)
+    return {
+        "baseline_type": baseline_type,
+        "observed_days": observed_days,
+        "ramp_up_days": RAMP_UP_DAYS,
+        "days_remaining": remaining,
+        "is_provisional": baseline_type != "user",
+        "population_baseline_is_measured": False,
+    }
 
 
 def estimate_baseline(user_id: str, aggregations: List[DailyFeatureAggregation]) -> BaselineStats:

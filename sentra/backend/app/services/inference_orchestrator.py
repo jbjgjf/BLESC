@@ -8,7 +8,7 @@ from typing import Optional
 from sqlmodel import Session, func, select
 
 from ..analytics.aggregation import aggregate_daily_features
-from ..analytics.baseline import get_effective_baseline
+from ..analytics.baseline import baseline_provenance, get_effective_baseline
 from ..analytics.explanation_gen import RuleEngine, generate_explanation
 from ..analytics.graph_features import build_graph_summary
 from ..analytics.hybrid_inference import combine_hybrid_score, score_baseline_deviation, score_temporal_shift
@@ -72,6 +72,8 @@ class InferenceOrchestrator:
             baseline_deviation_json={
                 "status": "not_enough_data",
                 "baseline_available": False,
+                "baseline_type": "population",
+                "baseline_provenance": baseline_provenance("population", baseline_day_count),
                 "baseline_day_count": baseline_day_count,
                 "required_baseline_days": required_days,
                 "feature_zscores": {},
@@ -220,6 +222,9 @@ class InferenceOrchestrator:
             "feature_zscores": z_scores,
             "baseline_available": baseline is not None,
             "baseline_type": baseline_type,  # "population" | "blended" | "user"
+            # Travels with the score so a consumer cannot render a reading taken
+            # against guessed population statistics as an equal-confidence one.
+            "baseline_provenance": baseline_provenance(baseline_type, len(history)),
             "top_features": [
                 name
                 for name, _ in sorted(z_scores.items(), key=lambda kv: abs(kv[1]), reverse=True)[:4]
