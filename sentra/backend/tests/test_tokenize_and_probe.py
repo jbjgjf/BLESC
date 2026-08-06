@@ -1,0 +1,160 @@
+"""Regression tests for the tokeniser and the cognitive probe.
+
+Written against the defect the external review recorded: Japanese text was
+split on whitespace, so a whole bunsetsu arrived as one token and matched
+nothing. Every lexicon metric read ~0 for Japanese users while still returning
+a value, so nothing looked broken.
+"""
+
+import pytest
+
+from app.analytics.cognitive_probe import (
+    NEGATIVE_TERMS,
+    POSITIVE_TERMS,
+    SELF_REFERENCE_TERMS,
+    cognitive_probe_features,
+)
+from app.analytics.tokenize import (
+    analyze,
+    contains_japanese,
+    count_matches,
+    japanese_analysis_available,
+    tokens,
+)
+
+requires_dictionary = pytest.mark.skipif(
+    not japanese_analysis_available(),
+    reason="fugashi/unidic-lite not installed",
+)
+
+
+class TestTokeniser:
+    def test_english_splits_on_whitespace_as_before(self):
+        assert tokens("I feel tired and anxious") == ["i", "feel", "tired", "and", "anxious"]
+
+    def test_empty_text_yields_nothing(self):
+        assert tokens("") == []
+        assert analyze("") == []
+
+    def test_contains_japanese_detects_each_script(self):
+        assert contains_japanese("ひらがな")
+        assert contains_japanese("カタカナ")
+        assert contains_japanese("漢字")
+        assert not contains_japanese("plain ascii 123")
+
+    @requires_dictionary
+    def test_japanese_is_segmented_into_words(self):
+        # The exact defect: this used to be two bunsetsu-sized tokens.
+        got = tokens("最近ちょっと疲れてるかも、不安です")
+        assert "疲れる" in got
+        assert "不安" in got
+        assert not any(len(token) > 6 for token in got), got
+
+    @requires_dictionary
+    def test_particles_and_punctuation_are_not_tokens(self):
+        # Counting them would dilute every density metric for Japanese only.
+        got = tokens("私は自分がもう消えたいと思う、つらい")
+        for function_word in ("は", "が", "と", "、"):
+            assert function_word not in got
+
+    @requires_dictionary
+    def test_one_entry_per_word_even_when_lemma_differs(self):
+        # Emitting surface and lemma as separate tokens would inflate
+        # token_count and corrupt every density and the perseveration ratio.
+        assert len(analyze("疲れた")) == 1
+        assert len(analyze("助けてくれた")) == 2  # 助ける + くれる
+
+
+class TestVocabularyMatching:
+    @requires_dictionary
+    @pytest.mark.parametrize("text", ["疲れる", "疲れた", "疲れてる", "疲れ", "疲れました", "疲れちゃった"])
+    def test_every_inflection_reaches_the_same_entry(self, text):
+        assert count_matches(analyze(text), NEGATIVE_TERMS) == 1
+
+    @requires_dictionary
+    def test_unidic_lemma_spellings_still_match(self):
+        # UniDic reads 私 as 私-代名詞 and 助け as 助ける; a vocabulary written
+        # the way a person would write it must still match.
+        assert count_matches(analyze("私"), SELF_REFERENCE_TERMS) == 1
+        assert count_matches(analyze("助けてくれた"), POSITIVE_TERMS) == 1
+
+
+class TestCognitiveProbe:
+    @requires_dictionary
+    def test_japanese_recall_produces_lexicon_hits(self):
+        # The review's stated acceptance criterion.
+        features = cognitive_probe_features("", "最近ちょっと疲れてるかも、不安です")
+        assert features["negative_term_count"] >= 2
+        assert features["rumination_index"] > 0
+
+    def test_english_recall_is_unchanged(self):
+        features = cognitive_probe_features("", "I feel tired and anxious and alone")
+        assert features["negative_term_count"] == 3
+        assert features["token_count"] == 7
+        assert features["self_ref_density"] > 0
+
+    @requires_dictionary
+    def test_mixed_language_finds_both_vocabularies(self):
+        features = cognitive_probe_features("", "今日は tired だった")
+        assert features["negative_term_count"] == 1  # tired
+        assert features["recency_marker_count"] == 1  # 今日
+
+    @requires_dictionary
+    def test_japanese_self_reference_is_counted(self):
+        features = cognitive_probe_features("", "私は自分のことが不安です")
+        assert features["self_ref_density"] > 0
+
+    @requires_dictionary
+    def test_semantic_distance_is_meaningful_for_japanese(self):
+        # Bunsetsu tokens shared no members, so this pinned at 1.0 regardless
+        # of how close the two texts actually were.
+        near = cognitive_probe_features("今日は疲れた", "今日はとても疲れた")
+        far = cognitive_probe_features("今日は疲れた", "友達と楽しく過ごした")
+        assert near["semantic_distance_to_journal"] < far["semantic_distance_to_journal"]
+
+    def test_empty_probe_is_flagged(self):
+        features = cognitive_probe_features("", "")
+        assert features["empty_probe"] is True
+        assert features["token_count"] == 0
+
+    def test_degradation_is_reported_rather_than_silent(self):
+        # The failure mode being closed: a Japanese reading taken without a
+        # dictionary must be identifiable in the data, not indistinguishable
+        # from a calm week.
+        features = cognitive_probe_features("", "不安です")
+        assert features["contains_japanese"] is True
+        assert features["japanese_analysis_available"] == japanese_analysis_available()
+
+
+class TestSingleWeightTable:
+    """D-05: the baseline-deviation weights must exist in exactly one place."""
+
+    def test_scoring_no_longer_carries_a_weight_table(self):
+        import ast
+        import inspect
+
+        from app.analytics import scoring
+
+        assert not hasattr(scoring, "calculate_anomaly_score")
+
+        # Look for an actual dict of feature -> number, rather than matching
+        # text: prose explaining why the table was removed would trip that.
+        tree = ast.parse(inspect.getsource(scoring))
+        weight_tables = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Dict)
+            and node.keys
+            and all(isinstance(key, ast.Constant) and isinstance(key.value, str) for key in node.keys)
+            and all(
+                isinstance(value, ast.Constant) and isinstance(value.value, (int, float))
+                or (isinstance(value, ast.UnaryOp) and isinstance(value.operand, ast.Constant))
+                for value in node.values
+            )
+        ]
+        assert not weight_tables, "a second weight table came back into scoring.py"
+
+    def test_hybrid_inference_holds_the_live_table(self):
+        from app.analytics import hybrid_inference
+
+        assert hasattr(hybrid_inference, "score_baseline_deviation")

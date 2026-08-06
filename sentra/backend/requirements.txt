@@ -18,3 +18,9 @@ python-multipart
 pyyaml
 pyarrow
 pytest
+# Japanese morphological analysis for app/analytics/tokenize.py. Without
+# these, Japanese falls back to whitespace splitting and every lexicon metric
+# under-counts; the probe reports japanese_analysis_available=false so the
+# degradation is visible rather than silent.
+fugashi
+unidic-lite
