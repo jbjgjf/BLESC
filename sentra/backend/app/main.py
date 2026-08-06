@@ -23,6 +23,7 @@ from .schemas.entry import Entry, get_default_expires_at
 from .schemas.extraction import Extraction
 from .schemas.research import EvalExample
 from .schemas.structured import EntrySubmissionResponse, ExtractionResponse, GraphSnapshot, HybridExplanation
+from .analytics.baseline import baseline_provenance
 from .services.inference_orchestrator import InferenceOrchestrator
 from .services.hf_research_benchmark import hf_dataset_rows, run_hf_research_benchmark
 from .services.llm_adapter import llm_adapter
@@ -312,7 +313,14 @@ def _empty_explanation(user_id: str, day: datetime, graph_snapshot: Optional[Gra
         user_id=user_id,
         day=day,
         triggered_rules_json=[],
-        baseline_deviation_json={"baseline_available": False, "feature_zscores": {}, "top_features": [], "score": 0.0},
+        baseline_deviation_json={
+            "baseline_available": False,
+            "baseline_type": "population",
+            "baseline_provenance": baseline_provenance("population", 0),
+            "feature_zscores": {},
+            "top_features": [],
+            "score": 0.0,
+        },
         changed_relations_json=[],
         protective_decline_json={},
         uncertainty_json={"level": "high", "reasons": ["No explanation available"], "missing_signals": ["baseline", "graph"]},
