@@ -6,7 +6,7 @@ import { AlertCircle, Loader2 } from "lucide-react";
 
 import { ApiClient } from "@/api/client";
 import type { EducatorStudentStatus } from "@/api/models";
-import { panel } from "@/components/educator/StatusChips";
+import { NonDiagnosticNotice, hasShowableObservation, panel } from "@/components/educator/StatusChips";
 
 const MIN_COHORT_FOR_BREAKDOWN = 3;
 
@@ -70,8 +70,9 @@ export default function EducatorOverviewPage() {
   const activeLast7d = roster.filter((student) =>
     student.last_active_day && loadedAt - new Date(student.last_active_day).getTime() <= 7 * 24 * 60 * 60 * 1000,
   ).length;
-  const flagged = roster.filter((student) => student.safety_level === "crisis" || student.safety_level === "elevated").length;
-  const review = roster.filter((student) => student.state_band === "review").length;
+  // Counted from observations only. A tile counting an inferred band would
+  // put the classification back on the dashboard through the totals.
+  const flagged = roster.filter(hasShowableObservation).length;
   const suppress = roster.length < MIN_COHORT_FOR_BREAKDOWN;
 
   return (
@@ -79,8 +80,7 @@ export default function EducatorOverviewPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Tile label="Consented students" value={String(roster.length)} />
         <Tile label="Active last 7 days" value={suppress ? "—" : String(activeLast7d)} hint={suppress ? "hidden for small cohorts" : undefined} />
-        <Tile label="Open safety flags" value={suppress ? "—" : String(flagged)} hint={suppress ? "hidden for small cohorts" : "crisis or elevated"} />
-        <Tile label="In review band" value={suppress ? "—" : String(review)} hint={suppress ? "hidden for small cohorts" : "signal ≥ 2.0"} />
+        <Tile label="要確認の観測" value={suppress ? "—" : String(flagged)} hint={suppress ? "hidden for small cohorts" : "根拠を提示できるもののみ"} />
       </div>
       {suppress ? (
         <p className="px-1 text-xs" style={{ color: "var(--ink-faint)" }}>
@@ -88,6 +88,7 @@ export default function EducatorOverviewPage() {
           aggregate can never describe a single person. Use the <Link href="/educator/roster" style={{ color: "var(--gold-deep)", fontWeight: 600 }}>roster</Link> for individual status.
         </p>
       ) : null}
+      <NonDiagnosticNotice />
     </div>
   );
 }

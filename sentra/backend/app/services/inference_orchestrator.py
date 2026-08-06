@@ -9,6 +9,12 @@ from sqlmodel import Session, func, select
 
 from ..analytics.aggregation import aggregate_daily_features
 from ..analytics.baseline import baseline_provenance, get_effective_baseline
+
+# Whether the computed risk score is written to insights.anomaly_score.
+# Off since 2026-08-06 pending legal review of retention and SaMD
+# applicability. Historical rows are untouched — deleting them is
+# irreversible and waits on that same advice.
+PERSIST_ANOMALY_SCORE = False
 from ..analytics.explanation_gen import RuleEngine, generate_explanation
 from ..analytics.graph_features import build_graph_summary
 from ..analytics.hybrid_inference import combine_hybrid_score, score_baseline_deviation, score_temporal_shift
@@ -311,11 +317,19 @@ class InferenceOrchestrator:
                 logger.exception("[orchestrator] could not persist fallback explanation")
 
         # ── 8. Anomaly result ────────────────────────────────────────────────
+        #
+        # PERSIST_ANOMALY_SCORE is off. Storing a risk classification attached
+        # to an identifiable minor is the compliance exposure, and hiding the
+        # value from the educator surface does not reduce it — retention does.
+        # The score is still computed, and everything downstream of it still
+        # runs; only the persisted value is zeroed, so turning this back on is
+        # a one-line change once legal review lands.
+        # See docs/educator_display_policy.md.
         try:
             result = AnomalyResult(
                 user_id=user_id,
                 day=day,
-                anomaly_score=score_breakdown["final_score"],
+                anomaly_score=score_breakdown["final_score"] if PERSIST_ANOMALY_SCORE else 0.0,
                 z_scores_json={
                     **z_scores,
                     "baseline_deviation_score": baseline_deviation["score"],

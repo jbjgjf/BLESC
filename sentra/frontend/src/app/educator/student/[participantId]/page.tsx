@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { AlertCircle, ArrowLeft, Loader2, ShieldAlert } from "lucide-react";
 
 import { ApiClient } from "@/api/client";
-import { BandChip, SafetyChip, panel } from "@/components/educator/StatusChips";
+import { AttentionChip, BaselineContextLine, NonDiagnosticNotice, ObservationLine, panel } from "@/components/educator/StatusChips";
 
 type Overview = Awaited<ReturnType<typeof ApiClient.getStudentOverviewForEducator>>;
 
@@ -60,9 +60,13 @@ export default function EducatorStudentPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <BandChip band={student.state_band} />
-          <SafetyChip level={student.safety_level} />
+          <AttentionChip student={student} />
         </div>
+      </section>
+
+      <section className="space-y-1 px-7 py-4" style={panel}>
+        <ObservationLine student={student} />
+        <BaselineContextLine student={student} />
       </section>
 
       {safetyRuns.length ? (
@@ -127,6 +131,7 @@ export default function EducatorStudentPage() {
         This view was recorded in the access log and is visible to the student. Consent can be revoked by the
         student at any time.
       </p>
+      <NonDiagnosticNotice />
     </div>
   );
 }

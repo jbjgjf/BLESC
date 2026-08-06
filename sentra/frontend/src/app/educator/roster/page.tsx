@@ -6,15 +6,16 @@ import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
 
 import { ApiClient } from "@/api/client";
 import type { EducatorStudentStatus } from "@/api/models";
-import { BandChip, SafetyChip, panel } from "@/components/educator/StatusChips";
+import { AttentionChip, BaselineContextLine, NonDiagnosticNotice, ObservationLine, hasShowableObservation, panel } from "@/components/educator/StatusChips";
 
 type Filter = "all" | "flagged" | "inactive";
 
-const BAND_RANK: Record<EducatorStudentStatus["state_band"], number> = { review: 3, watch: 2, unknown: 1, settled: 0 };
+// Ordering is by observation only. Ranking by the inferred band would put the
+// classification back into the interface through the sort order.
 
 function needsAttention(student: EducatorStudentStatus): number {
   const safety = student.safety_level === "crisis" ? 8 : student.safety_level === "elevated" ? 4 : 0;
-  return safety + BAND_RANK[student.state_band];
+  return safety;
 }
 
 function isInactive(student: EducatorStudentStatus, referenceTime: number): boolean {
@@ -53,7 +54,7 @@ export default function EducatorRosterPage() {
     if (!roster) return [];
     const filtered = roster.filter((student) =>
       filter === "all" ? true
-      : filter === "flagged" ? (student.safety_level === "crisis" || student.safety_level === "elevated" || student.state_band === "review")
+      : filter === "flagged" ? hasShowableObservation(student)
       : isInactive(student, loadedAt),
     );
     return [...filtered].sort((a, b) => needsAttention(b) - needsAttention(a) || a.code.localeCompare(b.code));
@@ -113,20 +114,21 @@ export default function EducatorRosterPage() {
                   {student.last_active_day
                     ? `Last reflection ${new Date(student.last_active_day).toLocaleDateString()}`
                     : "No reflections yet"}
-                  {student.latest_score !== null && Number.isFinite(student.latest_score)
-                    ? ` · signal ${student.latest_score.toFixed(2)}`
-                    : ""}
+                </div>
+                <div className="mt-1.5 space-y-0.5">
+                  <ObservationLine student={student} />
+                  {hasShowableObservation(student) ? <BaselineContextLine student={student} /> : null}
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <BandChip band={student.state_band} />
-                <SafetyChip level={student.safety_level} />
+                <AttentionChip student={student} />
                 <ArrowRight className="h-4 w-4" style={{ color: "var(--ink-faint)" }} />
               </div>
             </Link>
           ))}
         </section>
       )}
+      <NonDiagnosticNotice />
     </div>
   );
 }
