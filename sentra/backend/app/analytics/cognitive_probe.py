@@ -1,10 +1,22 @@
 from __future__ import annotations
 
-import re
 from typing import Any, Dict, Set
 
+from app.analytics.tokenize import (
+    analyze,
+    count_matches,
+    contains_japanese,
+    japanese_analysis_available,
+)
 
-PIPELINE_VERSION = "cognitive-probe-v1"
+
+PIPELINE_VERSION = "cognitive-probe-v2"
+
+# Vocabularies are matched against both the surface form and the UniDic lemma,
+# so an inflected occurrence reaches the same entry: 疲れてる and 疲れた both
+# reduce to 疲れる. Where UniDic's lemma differs from the everyday citation form
+# (助け -> 助ける, すぐ -> 直ぐ, 私 -> 私-代名詞) both spellings are listed rather
+# than relying on one of them winning.
 
 NEGATIVE_TERMS = {
     "alone",
@@ -25,6 +37,16 @@ NEGATIVE_TERMS = {
     "怖い",
     "悲しい",
     "疲れ",
+    "疲れる",
+    "しんどい",
+    "つらい",
+    "辛い",
+    "苦しい",
+    "消える",
+    "死にたい",
+    "無理",
+    "焦る",
+    "落ち込む",
 }
 POSITIVE_TERMS = {
     "better",
@@ -40,15 +62,17 @@ POSITIVE_TERMS = {
     "安心",
     "友達",
     "助け",
+    "助ける",
     "良い",
+    "嬉しい",
+    "楽しい",
+    "大丈夫",
+    "落ち着く",
+    "支え",
+    "支える",
 }
-SELF_REFERENCE_TERMS = {"i", "me", "my", "mine", "myself", "私", "自分", "僕", "俺"}
-RECENCY_TERMS = {"first", "immediately", "just", "now", "today", "最初", "すぐ", "今", "今日"}
-
-
-def _tokens(text: str) -> list[str]:
-    normalized = re.sub(r"[^a-zA-Z0-9ぁ-んァ-ン一-龥]+", " ", text.lower())
-    return [part for part in normalized.split() if part]
+SELF_REFERENCE_TERMS = {"i", "me", "my", "mine", "myself", "私", "私-代名詞", "自分", "僕", "俺", "わたし", "ぼく"}
+RECENCY_TERMS = {"first", "immediately", "just", "now", "today", "最初", "すぐ", "直ぐ", "今", "今日", "さっき", "最近"}
 
 
 def _jaccard_distance(left: Set[str], right: Set[str]) -> float:
@@ -61,15 +85,15 @@ def _jaccard_distance(left: Set[str], right: Set[str]) -> float:
 
 
 def cognitive_probe_features(journal_text: str, recall_text: str) -> Dict[str, Any]:
-    recall_tokens = _tokens(recall_text)
-    journal_tokens = _tokens(journal_text)
-    recall_set = set(recall_tokens)
-    journal_set = set(journal_tokens)
-    token_count = len(recall_tokens)
-    negative_count = sum(1 for token in recall_tokens if token in NEGATIVE_TERMS)
-    positive_count = sum(1 for token in recall_tokens if token in POSITIVE_TERMS)
-    self_ref_count = sum(1 for token in recall_tokens if token in SELF_REFERENCE_TERMS)
-    recency_count = sum(1 for token in recall_tokens if token in RECENCY_TERMS)
+    recall_words = analyze(recall_text)
+    journal_words = analyze(journal_text)
+    recall_set = {word.canonical for word in recall_words}
+    journal_set = {word.canonical for word in journal_words}
+    token_count = len(recall_words)
+    negative_count = count_matches(recall_words, NEGATIVE_TERMS)
+    positive_count = count_matches(recall_words, POSITIVE_TERMS)
+    self_ref_count = count_matches(recall_words, SELF_REFERENCE_TERMS)
+    recency_count = count_matches(recall_words, RECENCY_TERMS)
     repeated_count = token_count - len(recall_set)
     negative_density = negative_count / token_count if token_count else 0.0
     positive_density = positive_count / token_count if token_count else 0.0
@@ -90,4 +114,10 @@ def cognitive_probe_features(journal_text: str, recall_text: str) -> Dict[str, A
         "semantic_distance_to_journal": _jaccard_distance(recall_set, journal_set),
         "rumination_index": round(rumination_index, 6),
         "empty_probe": token_count == 0,
+        # Whether this reading can be trusted. Japanese text analysed without a
+        # dictionary falls back to whitespace splitting and under-counts every
+        # lexicon metric — the original defect. Recording it means a degraded
+        # environment shows up in the data instead of looking like a calm week.
+        "contains_japanese": contains_japanese(recall_text) or contains_japanese(journal_text),
+        "japanese_analysis_available": japanese_analysis_available(),
     }
