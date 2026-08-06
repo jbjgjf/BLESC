@@ -3,8 +3,8 @@ import { describe, it } from "node:test";
 import { SYNTHETIC_ACCOUNTS, loadEnv } from "../src/config.ts";
 
 describe("synthetic account contract", () => {
-  it("provisions exactly 20 students, 4 counselors, 1 reviewer on .invalid", () => {
-    assert.equal(SYNTHETIC_ACCOUNTS.students.length, 20);
+  it("provisions exactly 28 students, 4 counselors, 1 reviewer on .invalid", () => {
+    assert.equal(SYNTHETIC_ACCOUNTS.students.length, 28);  // 20 English + 8 Japanese
     assert.equal(SYNTHETIC_ACCOUNTS.counselors.length, 4);
     for (const email of [...SYNTHETIC_ACCOUNTS.students, ...SYNTHETIC_ACCOUNTS.counselors, SYNTHETIC_ACCOUNTS.reviewer]) {
       assert.ok(email.endsWith("@synthetic.blesc.invalid"), email);

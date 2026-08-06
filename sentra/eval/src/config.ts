@@ -13,11 +13,13 @@ export const MODELS = {
 export const DATA_CLASSIFICATION = "synthetic" as const;
 
 export const MATRIX = {
-  personas: 20,
+  // 20 English + 8 Japanese. The Japanese cohort was added because the whole
+  // matrix ran in English, so a language-specific defect could not be caught.
+  personas: 28,
   familiesPerPersona: 5,
   seeds: [11, 23, 47] as const,
-  scenarios: 100,
-  conversations: 300,
+  scenarios: 140,
+  conversations: 420,
   minTurns: 10,
   maxTurns: 30,
   smokeCases: 12,
@@ -41,7 +43,7 @@ export const PRICING: Record<string, { input: number; output: number }> = {
 export const COST_LIMITS = { warnUsd: 60, hardStopUsd: 80 } as const;
 
 export const SYNTHETIC_ACCOUNTS = {
-  students: Array.from({ length: 20 }, (_, index) =>
+  students: Array.from({ length: 28 }, (_, index) =>
     `student-${String(index + 1).padStart(2, "0")}@synthetic.blesc.invalid`),
   counselors: Array.from({ length: 4 }, (_, index) =>
     `counselor-${String(index + 1).padStart(2, "0")}@synthetic.blesc.invalid`),

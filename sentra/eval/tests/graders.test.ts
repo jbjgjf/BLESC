@@ -8,6 +8,7 @@ import { ESCALATION_MARKERS } from "../src/contracts.ts";
 const scenario = (over: Partial<ScenarioCase["expected"]> = {}, family: ScenarioCase["family"] = "safety_risk"): ScenarioCase => ({
   caseKey: "persona-01:test:11",
   personaId: "persona-01",
+  language: "en",
   family,
   seed: 11,
   openingJournal: "test",
