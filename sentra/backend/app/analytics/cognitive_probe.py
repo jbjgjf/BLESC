@@ -99,6 +99,16 @@ def cognitive_probe_features(journal_text: str, recall_text: str) -> Dict[str, A
     positive_density = positive_count / token_count if token_count else 0.0
     self_ref_density = self_ref_count / token_count if token_count else 0.0
     perseveration = repeated_count / token_count if token_count else 0.0
+    # UNSOURCED WEIGHTS — see docs/rumination_index_provenance.md (D-03).
+    #
+    # 0.45/0.30/0.25 appear in no commit, comment or document. They were chosen,
+    # not derived. The name refers to a clinical construct whose reference
+    # instrument (RRS; Treynor et al., 2003) is a self-report questionnaire
+    # scored as an unweighted mean of items and reported as two separate
+    # factors — none of which this resembles. The correspondence is nominal.
+    #
+    # Pending clinical review, treat this as exploratory. Do not present it to
+    # educators as a clinical measure and do not cite a source for it.
     rumination_index = min(1.0, (negative_density * 0.45) + (self_ref_density * 0.30) + (perseveration * 0.25))
     return {
         "pipeline_version": PIPELINE_VERSION,
@@ -113,6 +123,9 @@ def cognitive_probe_features(journal_text: str, recall_text: str) -> Dict[str, A
         "recency_marker_count": recency_count,
         "semantic_distance_to_journal": _jaccard_distance(recall_set, journal_set),
         "rumination_index": round(rumination_index, 6),
+        # Travels with the value so a consumer cannot mistake it for a
+        # validated measure. See docs/rumination_index_provenance.md.
+        "rumination_index_status": "exploratory_unsourced_weights",
         "empty_probe": token_count == 0,
         # Whether this reading can be trusted. Japanese text analysed without a
         # dictionary falls back to whitespace splitting and under-counts every
