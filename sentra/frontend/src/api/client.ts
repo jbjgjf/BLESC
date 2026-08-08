@@ -1192,7 +1192,7 @@ export class ApiClient {
     const [insightsResult, safetyResult] = await Promise.all([
       supabase
         .from("insights")
-        .select("participant_id, day, anomaly_score")
+        .select("participant_id, day, anomaly_score, baseline_deviation_json")
         .in("participant_id", ids)
         .order("day", { ascending: false })
         .limit(400),
@@ -1207,7 +1207,12 @@ export class ApiClient {
     if (insightsResult.error) throwSupabaseError("Load cohort insights failed", insightsResult.error);
     if (safetyResult.error) throwSupabaseError("Load cohort safety failed", safetyResult.error);
 
-    type InsightRowLite = { participant_id: string; day: string; anomaly_score: number | null };
+    type InsightRowLite = {
+      participant_id: string;
+      day: string;
+      anomaly_score: number | null;
+      baseline_deviation_json: { baseline_provenance?: { is_provisional?: boolean; days_remaining?: number; baseline_type?: string } } | null;
+    };
     type SafetyRowLite = { participant_id: string; retrieval_config_json: Record<string, JsonValue> | null; created_at: string };
     const latestInsight = new Map<string, InsightRowLite>();
     for (const row of (insightsResult.data ?? []) as InsightRowLite[]) {
@@ -1222,6 +1227,11 @@ export class ApiClient {
       const insight = latestInsight.get(row.participant_id);
       const safety = latestSafety.get(row.participant_id);
       const score = insight?.anomaly_score ?? null;
+      const provenance = insight?.baseline_deviation_json?.baseline_provenance;
+      const config = safety?.retrieval_config_json ?? null;
+      const reasons = Array.isArray(config?.reasons)
+        ? (config!.reasons as JsonValue[]).filter((reason): reason is string => typeof reason === "string")
+        : [];
       return {
         participant_id: row.participant_id,
         org_id: row.org_id,
@@ -1235,6 +1245,13 @@ export class ApiClient {
           ? String(safety.retrieval_config_json.risk_level)
           : null,
         safety_at: safety?.created_at ?? null,
+        safety_reasons: reasons,
+        safety_surface: typeof config?.surface === "string" ? String(config.surface) : null,
+        // A missing provenance means the row predates D-04; treat it as
+        // provisional rather than assuming a settled baseline.
+        baseline_is_provisional: provenance?.is_provisional ?? true,
+        baseline_days_remaining: typeof provenance?.days_remaining === "number" ? provenance.days_remaining : null,
+        baseline_type: typeof provenance?.baseline_type === "string" ? provenance.baseline_type : null,
       };
     });
   }

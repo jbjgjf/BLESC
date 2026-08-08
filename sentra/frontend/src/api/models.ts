@@ -111,10 +111,26 @@ export interface EducatorStudentStatus {
   code: string;
   display_name: string | null;
   last_active_day: string | null;
+  /** Internal only. Computed and stored, never rendered to an educator — a
+   *  three-band classification of a minor is an inference about their internal
+   *  state, and at school-level prevalence its positive predictive value is
+   *  poor regardless of how good the model gets. See
+   *  docs/educator_display_policy.md. */
   latest_score: number | null;
   state_band: "settled" | "watch" | "review" | "unknown";
+  /** Observed, not inferred: a deterministic lexicon match in safety.py. */
   safety_level: string | null;
   safety_at: string | null;
+  /** Why the safety layer fired, e.g. ["self_harm_or_suicide_risk"]. An
+   *  observation with no reasons is not shown — an educator must never see a
+   *  flag they cannot trace back to something the student actually wrote. */
+  safety_reasons: string[];
+  /** Which surface it was written on: journal, chat or voice. */
+  safety_surface: string | null;
+  /** Whether the baseline behind any context line is still provisional. */
+  baseline_is_provisional: boolean;
+  baseline_days_remaining: number | null;
+  baseline_type: string | null;
 }
 
 export interface CohortAlert {
