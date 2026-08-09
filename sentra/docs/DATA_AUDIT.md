@@ -14,7 +14,7 @@ BLESC tracks extensive data across interactions, memory, graphs, and reflection.
 - **Graph Elements (`GraphVersion`, `GraphSnapshot`)**: Nodes (`id`, `category` e.g., Protective/Event/Behavior/Trigger/State, `label`, `confidence`, `intensity`), Relations (`source_id`, `target_id`, `type`, `confidence`).
 - **Graph Diffing**: Semantic drift scores, counts of added/removed/changed relations.
 - **Reflection Signals**: `anomaly_score` based on baseline drift, `protective_decline` (tracking drop in "Protective" node counts), `uncertainty` level.
-- **Cognitive Probe Variables (`CognitiveProbeFeature`)**: token counts, character counts, negative/positive term counts, recall valence (positive vs negative density), self-reference density ("I", "me", "my"), recency markers ("now", "today", "just"), perseveration ratio, `semantic_distance_to_journal` (Jaccard distance), `rumination_index`.
+- **Cognitive Probe Variables (`CognitiveProbeFeature`)**: token counts, character counts, negative/positive term counts, recall valence (positive vs negative density), self-reference density ("I", "me", "my"), recency markers ("now", "today", "just"), perseveration ratio, `semantic_distance_to_journal` (Jaccard distance), `negative_self_focus_score` and `reflective_focus_score` (renamed from `rumination_index` in #82; rows before pipeline cognitive-probe-v3 carry the old key).
 
 ### LLM-Generated Metrics
 - **Ontology Extraction (`Extraction`)**: raw output identifying nodes and relations.
@@ -40,7 +40,7 @@ BLESC tracks extensive data across interactions, memory, graphs, and reflection.
 | `insights` | `anomaly_score`, `baseline_deviation_json` | float, jsonb | `baseline.py` / `pattern_mining.py` | Nightly / Post-submission |
 | `conversation_recall_summaries` | `summary_json`, `window_turn_count` | jsonb, int | Chat window summary (LLM) | Periodically (min 6 turns) |
 
-*Note: All JSONB structures above aggregate the specific metric keys outlined in the Data Inventory (e.g., `rumination_index` is stored inside `cognitive_probe_features.feature_json`).*
+*Note: All JSONB structures above aggregate the specific metric keys outlined in the Data Inventory (e.g., `negative_self_focus_score` is stored inside `cognitive_probe_features.feature_json`).*
 
 ---
 
@@ -157,7 +157,7 @@ The 30-Turn Recall feature summarizes the latest session conversations.
 | Feature | Status | Evidence / Notes |
 |---|---|---|
 | **Interaction Telemetry** | **Implemented** | `page.tsx` fully captures cursors, pauses, and revisions. Persisted to `interaction_events`. |
-| **Cognitive Probe** | **Implemented** | `cognitive_probe.py` accurately calculates rumination and perseveration metrics. |
+| **Cognitive Probe** | **Implemented** | `cognitive_probe.py` calculates lexical focus and perseveration metrics. Exploratory, unvalidated — see `rumination_index_provenance.md`. |
 | **RAG Semantic Re-ranking** | **Missing** | `build_research_retrieval_context` naively concatenates graph and vector matches without intelligent cross-scoring. |
 | **Reflection Baseline** | **Placeholder** | `baseline.py` heavily relies on `POPULATION_BASELINE` hardcoded values (e.g. `event_transition_signal: 0.5`) until 14 days of data accumulate. |
 | **Graph Pattern RAG** | **Partially Implemented** | `match_graph_patterns` in SQL uses simple `LIKE '%term%'` substring matching, missing semantic graph querying. |

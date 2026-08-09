@@ -1,0 +1,135 @@
+"""Issues #81, #82, #83 — the probe's scoring rule, name and structure.
+
+The weights were unsourced, the name claimed a clinical construct the metric
+does not implement, and the single scalar collapsed a distinction the
+reference instrument keeps deliberately.
+"""
+
+import pytest
+
+from app.analytics.cognitive_probe import (
+    PIPELINE_VERSION,
+    REFLECTION_TERMS,
+    VOCABULARY_PROVENANCE,
+    cognitive_probe_features,
+    is_legacy_probe_row,
+    read_negative_self_focus,
+)
+from app.analytics.tokenize import japanese_analysis_available
+
+requires_dictionary = pytest.mark.skipif(
+    not japanese_analysis_available(), reason="fugashi/unidic-lite not installed"
+)
+
+
+class TestScoringRule:
+    """#81 — equal weighting, which is what the RRS actually does."""
+
+    def test_score_is_the_unweighted_mean_of_its_components(self):
+        features = cognitive_probe_features("", "i feel tired alone and i am tired")
+        expected = (
+            features["negative_term_count"] / features["token_count"]
+            + features["self_ref_density"]
+            + features["perseveration"]
+        ) / 3
+        assert features["negative_self_focus_score"] == pytest.approx(expected, abs=1e-6)
+
+    def test_range_is_zero_to_one(self):
+        # Each component is a density in 0..1, so their mean is too. No clamp
+        # is needed, and none is applied — a min(1.0, ...) would hide a
+        # component that had escaped its range.
+        for text in ["", "i", "i i i i i", "tired tired tired alone alone"]:
+            score = cognitive_probe_features("", text)["negative_self_focus_score"]
+            assert 0.0 <= score <= 1.0, text
+
+    def test_old_weights_are_gone(self):
+        # AST, not text: the comment explaining why the weights were removed
+        # names them, and a substring check would trip on its own rationale.
+        import ast
+        import inspect
+
+        from app.analytics import cognitive_probe
+
+        tree = ast.parse(inspect.getsource(cognitive_probe).lstrip())
+        literals = {
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, float)
+        }
+        assert not ({0.45, 0.30, 0.25} & literals), f"an unsourced weight is back: {literals}"
+
+
+class TestNaming:
+    """#82 — the clinical name is a claim the metric cannot support."""
+
+    def test_new_keys_are_emitted(self):
+        features = cognitive_probe_features("", "i feel tired")
+        assert "negative_self_focus_score" in features
+        assert "reflective_focus_score" in features
+
+    def test_old_key_is_not_emitted(self):
+        assert "rumination_index" not in cognitive_probe_features("", "i feel tired")
+
+    def test_pipeline_version_distinguishes_old_rows(self):
+        assert PIPELINE_VERSION == "cognitive-probe-v3"
+
+    def test_history_is_readable_not_dropped(self):
+        legacy = {"rumination_index": 0.42, "pipeline_version": "cognitive-probe-v2"}
+        assert read_negative_self_focus(legacy) == 0.42
+        assert is_legacy_probe_row(legacy) is True
+
+    def test_current_rows_are_not_flagged_legacy(self):
+        assert is_legacy_probe_row(cognitive_probe_features("", "i feel tired")) is False
+
+    def test_missing_key_returns_none_rather_than_raising(self):
+        assert read_negative_self_focus({"pipeline_version": "x"}) is None
+
+
+class TestSplit:
+    """#83 — brooding-side and reflection-side reported separately."""
+
+    def test_reflection_language_scores_reflective_not_negative(self):
+        features = cognitive_probe_features("", "i will try to talk to my teacher tomorrow and plan")
+        assert features["reflective_focus_score"] > 0
+        assert features["reflective_focus_score"] > features["negative_self_focus_score"]
+
+    @requires_dictionary
+    def test_reflection_works_in_japanese(self):
+        features = cognitive_probe_features("", "明日はまず先生に相談してみようと思う")
+        assert features["reflective_focus_score"] > 0
+
+    @requires_dictionary
+    def test_brooding_language_does_not_score_reflective(self):
+        features = cognitive_probe_features("", "私は自分がもう消えたい、つらい")
+        assert features["negative_self_focus_score"] > 0
+        assert features["reflective_focus_score"] == 0.0
+
+    def test_no_combined_scalar_is_emitted(self):
+        # Averaging the two would reproduce the collapse this split undoes,
+        # and there is no basis for weighting them against each other.
+        features = cognitive_probe_features("", "i feel tired but i will try")
+        assert "rumination_index" not in features
+        assert "combined_focus_score" not in features
+
+
+class TestVocabularyProvenance:
+    """#83's constraint: the new list must not become a second unsourced one."""
+
+    def test_every_vocabulary_declares_where_it_came_from(self):
+        features = cognitive_probe_features("", "i feel tired")
+        provenance = features["vocabulary_provenance"]
+        for name in ("negative", "positive", "self_reference", "recency", "reflection"):
+            assert name in provenance
+
+    def test_reflection_list_is_marked_unsourced(self):
+        # Honest by default: it is the author's judgement of what
+        # problem-solving language looks like, not items from an instrument.
+        assert VOCABULARY_PROVENANCE["reflection"] == "author_judgement_unsourced"
+
+    def test_reflection_vocabulary_covers_both_languages(self):
+        assert any(term.isascii() for term in REFLECTION_TERMS)
+        assert any(not term.isascii() for term in REFLECTION_TERMS)
+
+    def test_status_no_longer_claims_only_the_weights_were_the_problem(self):
+        status = cognitive_probe_features("", "i feel tired")["focus_scores_status"]
+        assert "unvalidated" in status
