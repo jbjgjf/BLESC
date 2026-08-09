@@ -2,11 +2,12 @@ import logging
 from typing import Any, Dict, List
 
 from ..analytics.graph_features import build_graph_summary
+# Same contents as the sets that used to be declared here; schema.py adds the
+# provenance and scope notes that a bare set could not carry. Behaviour is
+# unchanged — this is an import, not a vocabulary change.
+from .schema import VALID_CATEGORIES, VALID_RELATIONS
 
 logger = logging.getLogger(__name__)
-
-VALID_CATEGORIES = {"State", "Trigger", "Protective", "Behavior", "Event"}
-VALID_RELATIONS = {"causes", "escalates", "buffers", "avoids", "co_occurs", "precedes"}
 
 DEFAULT_CATEGORY = "State"
 DEFAULT_RELATION = "co_occurs"
