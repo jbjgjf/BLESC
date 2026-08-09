@@ -1,0 +1,244 @@
+subgraph_id: sleep_deprivation
+# The chain the landing page illustrates the whole ontology with:
+#   睡眠不足 → 認知機能の低下 → 抑うつ傾向
+# It was encoded nowhere. This file is the first place it exists.
+#
+# Curation rule applied throughout: no edge goes in because it sounds right.
+# Where the cited material reports an association, evidence_strength is
+# `association` even when the relation type is `causes` — the graph models a
+# direction, the source reports a correlation, and the gap stays visible.
+# Where nothing can be pointed at, the edge is `expert_judgement` with a
+# written rationale or it is not here.
+description_en: Adolescent sleep deprivation and its reported links to mood and school functioning.
+description_ja: 思春期の睡眠不足と、気分・学校生活との関連。
+
+sources:
+  - who_adolescent_mh
+  - nice_ng134
+  - who_mhgap
+  - mext_seitoshido
+  - expert_judgement
+
+nodes:
+  - id: sleep_deprivation
+    category: Trigger
+    label_ja: 睡眠不足
+    label_en: sleep deprivation
+    source_refs: [who_adolescent_mh]
+
+  - id: late_night_screen_use
+    category: Behavior
+    label_ja: 夜更かし・就寝前のスマホ
+    label_en: late-night screen use
+    source_refs: [expert_judgement]
+
+  - id: cognitive_impairment
+    category: State
+    label_ja: 認知機能の低下
+    label_en: reduced concentration and memory
+    source_refs: [who_adolescent_mh]
+
+  - id: depressed_mood
+    category: State
+    label_ja: 抑うつ傾向
+    label_en: depressed mood
+    source_refs: [nice_ng134, who_adolescent_mh]
+
+  - id: irritability
+    category: State
+    label_ja: いらだち・情動反応の高まり
+    label_en: irritability and heightened emotional reactivity
+    source_refs: [who_adolescent_mh]
+
+  - id: anxiety
+    category: State
+    label_ja: 不安
+    label_en: anxiety
+    source_refs: [who_adolescent_mh]
+
+  - id: fatigue
+    category: State
+    label_ja: 疲労感
+    label_en: fatigue
+    source_refs: [nice_ng134]
+
+  - id: academic_difficulty
+    category: Event
+    label_ja: 学業のつまずき
+    label_en: difficulty keeping up at school
+    source_refs: [mext_seitoshido]
+
+  - id: school_absence
+    category: Event
+    label_ja: 遅刻・欠席
+    label_en: lateness or absence
+    source_refs: [mext_seitoshido]
+
+  - id: social_withdrawal
+    category: Behavior
+    label_ja: 人との関わりを避ける
+    label_en: withdrawing from others
+    source_refs: [nice_ng134]
+
+  - id: regular_sleep_schedule
+    category: Protective
+    label_ja: 規則的な睡眠
+    label_en: regular sleep schedule
+    source_refs: [who_adolescent_mh]
+
+  - id: trusted_adult_contact
+    category: Protective
+    label_ja: 信頼できる大人とのつながり
+    label_en: contact with a trusted adult
+    source_refs: [who_mhgap, mext_seitoshido]
+
+edges:
+  # --- the landing page's chain ------------------------------------------
+  - source: sleep_deprivation
+    target: cognitive_impairment
+    type: causes
+    evidence_strength: association
+    source_refs: [who_adolescent_mh]
+    scope_note: >-
+      WHO adolescent material reports insufficient sleep alongside reduced
+      concentration. Observational; the direction modelled here is not
+      established by that source, and reverse and common-cause explanations
+      are not excluded.
+
+  - source: cognitive_impairment
+    target: depressed_mood
+    type: causes
+    evidence_strength: association
+    source_refs: [nice_ng134, who_adolescent_mh]
+    scope_note: >-
+      NG134 lists concentration difficulty among the features clinicians assess
+      in depression. That makes it a FEATURE OF the condition as much as a
+      route into it — the edge direction is a modelling choice, and the
+      literature does not settle it. The weakest link in the page's chain.
+
+  # --- sleep and mood ----------------------------------------------------
+  - source: sleep_deprivation
+    target: depressed_mood
+    type: causes
+    evidence_strength: association
+    source_refs: [who_adolescent_mh, nice_ng134]
+    scope_note: >-
+      Reported association between insufficient sleep and depression in
+      adolescents. Bidirectional in the literature — disturbed sleep is also a
+      feature of depression — so this edge should not be read as one-way.
+
+  - source: sleep_deprivation
+    target: irritability
+    type: causes
+    evidence_strength: association
+    source_refs: [who_adolescent_mh]
+    scope_note: >-
+      Insufficient sleep is reported as increasing emotional reactivity and
+      impulsivity. Association.
+
+  - source: sleep_deprivation
+    target: fatigue
+    type: causes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced. Included because fatigue is near-definitional to sleep
+      deprivation, and omitting it would leave a gap a generated graph is
+      certain to fill. Marked as judgement rather than dressed in a citation.
+
+  - source: depressed_mood
+    target: sleep_deprivation
+    type: causes
+    evidence_strength: association
+    source_refs: [nice_ng134]
+    scope_note: >-
+      The reverse direction, encoded deliberately. NG134 lists sleep
+      disturbance among depressive features, so a graph that only carried
+      sleep → mood would misrepresent the evidence as one-directional.
+
+  # --- knock-on effects at school ----------------------------------------
+  - source: cognitive_impairment
+    target: academic_difficulty
+    type: causes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced as a causal claim. 生徒指導提要 describes the school's role
+      when a student struggles; it does not model why. Judgement.
+
+  - source: sleep_deprivation
+    target: school_absence
+    type: causes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced. Plausible and commonly reported by schools, but no cited
+      material here supports it.
+
+  - source: depressed_mood
+    target: social_withdrawal
+    type: causes
+    evidence_strength: association
+    source_refs: [nice_ng134]
+    scope_note: >-
+      NG134 includes withdrawal among the features assessed in depression.
+      A feature-of relationship modelled as directed — same caveat as the
+      cognitive_impairment edge.
+
+  - source: depressed_mood
+    target: anxiety
+    type: co_occurs
+    evidence_strength: association
+    source_refs: [who_adolescent_mh]
+    scope_note: >-
+      Co-occurrence rather than direction. WHO material reports anxiety and
+      depression as the most common adolescent conditions; nothing cited here
+      orders them, so the edge asserts the least it can.
+
+  - source: irritability
+    target: social_withdrawal
+    type: precedes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Temporal only, and deliberately typed `precedes` rather than `causes`
+      because there is no support for direction. This is the demotion the
+      relation vocabulary exists to allow.
+
+  # --- protective --------------------------------------------------------
+  - source: regular_sleep_schedule
+    target: sleep_deprivation
+    type: buffers
+    evidence_strength: association
+    source_refs: [who_adolescent_mh]
+    scope_note: >-
+      Population-level protective framing applied to an individual edge, which
+      is an extension beyond what the source states.
+
+  - source: trusted_adult_contact
+    target: depressed_mood
+    type: buffers
+    evidence_strength: association
+    source_refs: [who_mhgap, mext_seitoshido]
+    scope_note: >-
+      mhGAP and 生徒指導提要 both describe routing a young person to a trusted
+      adult or professional. Both are about PROCESS — neither quantifies an
+      effect on mood, so this is the weakest kind of support the file carries.
+
+  - source: late_night_screen_use
+    target: sleep_deprivation
+    type: causes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced from the material in this registry. Widely reported
+      elsewhere, but nothing cited here supports it, so it stays judgement.
+
+  - source: school_absence
+    target: social_withdrawal
+    type: co_occurs
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Undirected. Both are things a school observes; neither this file nor its
+      sources establish which comes first.
