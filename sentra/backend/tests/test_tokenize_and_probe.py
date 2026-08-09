@@ -85,7 +85,7 @@ class TestCognitiveProbe:
         # The review's stated acceptance criterion.
         features = cognitive_probe_features("", "最近ちょっと疲れてるかも、不安です")
         assert features["negative_term_count"] >= 2
-        assert features["rumination_index"] > 0
+        assert features["negative_self_focus_score"] > 0
 
     def test_english_recall_is_unchanged(self):
         features = cognitive_probe_features("", "I feel tired and anxious and alone")

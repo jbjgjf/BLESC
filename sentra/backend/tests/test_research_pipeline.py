@@ -135,7 +135,7 @@ def test_submission_creates_research_artifacts():
         assert body["anomaly_result"] is None
         assert body["explanation"]["baseline_deviation_json"]["status"] == "not_enough_data"
         recall_features = body["research_artifacts"]["cognitive_probe_artifact"]["feature_json"]
-        assert "rumination_index" in recall_features
+        assert "negative_self_focus_score" in recall_features
         assert "semantic_distance_to_journal" in recall_features
 
     with Session(engine) as session:

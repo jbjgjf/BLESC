@@ -1,6 +1,10 @@
-# `rumination_index` — provenance dossier for clinical review
+# `negative_self_focus_score` — provenance dossier for clinical review
 
-**Status: UNRESOLVED. Awaiting expert sign-off.**
+*Formerly `rumination_index`. Renamed 2026-08-09 (#82); the old name is kept in
+this filename and in the history below so the trail is followable.*
+
+**Status: PARTIALLY RESOLVED. Two of five checklist items closed by #81–#83;
+three still need a clinician.**
 Raised as D-03 in the external technical review of `d7b33e8` (2026-08-06).
 This document exists so a qualified reviewer can decide; it is not itself a
 justification, and nothing here should be read as one.
@@ -8,6 +12,17 @@ justification, and nothing here should be read as one.
 ## What the code does
 
 `app/analytics/cognitive_probe.py`:
+
+As of #81–#83 (2026-08-09):
+
+```python
+brooding_like   = (negative_density + self_ref_density + perseveration) / 3
+reflection_like = reflection_density
+# emitted as negative_self_focus_score and reflective_focus_score, 0.0-1.0.
+# No combined scalar.
+```
+
+Previously, and the reason this document exists:
 
 ```python
 rumination_index = min(1.0, (negative_density * 0.45)
@@ -58,12 +73,12 @@ Reported reliabilities: brooding α = .77, reflection α = .72 (Treynor et al.,
 
 ## Correspondence analysis
 
-| | RRS | `rumination_index` |
+| | RRS | `negative_self_focus_score` |
 | --- | --- | --- |
 | modality | self-report questionnaire | lexical density over free text |
 | response | person rates statements about themselves | inferred from word choice |
-| scoring | unweighted mean of items | weighted sum, weights unsourced |
-| structure | two factors reported separately | one scalar |
+| scoring | unweighted mean of items | unweighted mean (#81) — now matching |
+| structure | two factors reported separately | two components reported separately (#83) — now matching |
 | validation | published psychometrics | none in this repository |
 | population | validated adult and adolescent samples | none |
 
@@ -76,32 +91,50 @@ first-person pronoun density in particular has been studied. It is an argument
 that *this* formula, with *these* weights, is not an implementation of *that*
 instrument, and cannot cite it.
 
-## What sign-off would require
+## Checklist status
 
-For the clinical name to stand, a reviewer would need to establish at least:
+- [x] **A defensible basis for the weights.** Closed by #81. The three
+      components are now an **unweighted mean**, which is the rule the RRS
+      itself uses — its subscales are the average of their items, with no
+      factor weights. Equal weighting is not a placeholder: it replaces three
+      numbers that cannot be justified with one that can. The old
+      0.45/0.30/0.25 are gone, and a test walks the module's AST to keep them
+      out.
+- [x] **Whether a single scalar is appropriate.** Closed by #83, in the
+      direction the literature indicates: **two components, reported
+      separately**. All three original inputs were brooding-side, so the old
+      scalar was brooding-only under a name covering both factors. A
+      reflection-side vocabulary now exists and `reflective_focus_score` is
+      emitted alongside `negative_self_focus_score`. **No combined scalar is
+      produced** — averaging them would reproduce the collapse, and there is no
+      basis for weighting one against the other.
+- [ ] **The construct the score claims to estimate**, stated precisely enough
+      to be falsifiable. Open. Needs a clinician.
+- [ ] **Whether free recall is a valid elicitation** for that construct. Open.
+      Needs a clinician.
+- [ ] **Behaviour for Japanese specifically.** Partially addressed: the
+      tokenisation was repaired in D-01 and the vocabularies now declare their
+      provenance in the payload (`vocabulary_provenance`), which records them
+      as `author_judgement_unsourced`. Still open: no Japanese lexical-marker
+      literature has been consulted for the term lists. See #84.
 
-- [ ] A defensible basis for the three components and their relative weights —
-      derived from data, from a published linguistic-marker model, or from
-      documented expert judgement recorded as such
-- [ ] Whether a single scalar is appropriate, or whether brooding-like and
-      reflection-like signals must be reported separately
-- [ ] The construct the score claims to estimate, stated precisely enough to be
-      falsifiable
-- [ ] Whether the free-recall probe is a valid elicitation for that construct
-- [ ] Behaviour for Japanese text specifically. The vocabulary is hand-written
-      and the tokenisation was only fixed on 2026-08-06 (D-01); no Japanese
-      lexical-marker literature has been consulted for the term lists.
+## What #81–#83 did and did not establish
 
-Absent that, the review's B option applies: rename to a descriptive term such as
-`negative_self_focus_score` and state in the docstring, the API response and the
-educator UI that it is exploratory and carries no clinical interpretation.
+**Did:** replaced an indefensible scoring rule with a defensible one, stopped a
+clinical name from travelling into the API and the graph payload, and stopped a
+brooding-only signal being presented as covering both factors.
+
+**Did not:** make the metric validated. Two lexical densities are not two RRS
+subscales. The correspondence table above is unchanged — the modality is still
+lexical density against a self-report instrument, and there is still no
+validation and no population. The metric is exploratory either way; it is now
+exploratory with a defensible scoring rule instead of an indefensible one.
 
 ## Interim position
 
-Until a reviewer signs the above, the code must not imply provenance it does not
-have. The docstring records that the weights are unsourced. **This dossier is
-not sign-off**, and the metric should not be presented to educators as a
-clinical measure while it stands unresolved.
+**This dossier is not sign-off.** The score must not be presented to educators
+as a clinical measure while the three open items stand. `focus_scores_status`
+travels with the values in the payload for exactly that reason.
 
 Related: D-04 (`POPULATION_BASELINE` is guessed, so z-scores over this metric are
 not statistically meaningful during the 14-day ramp-up) and M-02 (no accuracy
