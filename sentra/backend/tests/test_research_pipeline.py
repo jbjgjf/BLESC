@@ -259,15 +259,19 @@ def test_reflection_signal_requires_real_baseline_history_and_changes_with_data(
     from datetime import date, timedelta
 
     from app.schemas.analytics import DailyFeatureAggregation
+    from app.services.inference_orchestrator import MIN_REFLECTION_BASELINE_DAYS
 
     user_id = "test_reflection_user"
     today = date.today()
+    # A full baseline window of the user's own history: there is no population
+    # fallback, so anything less produces no signal at all.
+    history = [
+        (offset, 1, 1, 1.0) for offset in range(MIN_REFLECTION_BASELINE_DAYS + 2, 3, -1)
+    ] + [
+        (3, 2, 1, 0.8),
+    ]
     with Session(engine) as session:
-        for offset, state_count, trigger_count, protective_ratio in [
-            (5, 1, 1, 1.0),
-            (4, 1, 1, 1.0),
-            (3, 2, 1, 0.8),
-        ]:
+        for offset, state_count, trigger_count, protective_ratio in history:
             day = today - timedelta(days=offset)
             session.add(
                 DailyFeatureAggregation(

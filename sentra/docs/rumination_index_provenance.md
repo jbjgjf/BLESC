@@ -136,8 +136,9 @@ exploratory with a defensible scoring rule instead of an indefensible one.
 as a clinical measure while the three open items stand. `focus_scores_status`
 travels with the values in the payload for exactly that reason.
 
-Related: D-04 (`POPULATION_BASELINE` is guessed, so z-scores over this metric are
-not statistically meaningful during the 14-day ramp-up) and M-02 (no accuracy
+Related: D-04 (the guessed `POPULATION_BASELINE` has been removed, so z-scores
+over this metric are now withheld rather than computed against invented
+statistics during the first 14 days) and M-02 (no accuracy
 validation of any risk output exists — no PHQ-9, K6, GAD-7, sensitivity,
 specificity or AUROC appears anywhere in the repository).
 

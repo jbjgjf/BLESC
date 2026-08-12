@@ -8,7 +8,7 @@ from typing import Optional
 from sqlmodel import Session, func, select
 
 from ..analytics.aggregation import aggregate_daily_features
-from ..analytics.baseline import baseline_provenance, get_effective_baseline
+from ..analytics.baseline import RAMP_UP_DAYS, baseline_provenance, get_effective_baseline
 
 # Whether the computed risk score is written to insights.anomaly_score.
 # Off since 2026-08-06 pending legal review of retention and SaMD
@@ -45,7 +45,14 @@ _EMPTY_GRAPH_DIFF = {
     },
 }
 
-MIN_REFLECTION_BASELINE_DAYS = int(os.getenv("MIN_REFLECTION_BASELINE_DAYS", "3"))
+# A signal needs a baseline, and a baseline is now built only from the user's
+# own history — there is no population fallback to stand in for the missing
+# days. So the requirement can never sit below RAMP_UP_DAYS, whatever the
+# environment asks for.
+MIN_REFLECTION_BASELINE_DAYS = max(
+    int(os.getenv("MIN_REFLECTION_BASELINE_DAYS", "3")),
+    RAMP_UP_DAYS,
+)
 
 
 class InferenceOrchestrator:
@@ -78,8 +85,8 @@ class InferenceOrchestrator:
             baseline_deviation_json={
                 "status": "not_enough_data",
                 "baseline_available": False,
-                "baseline_type": "population",
-                "baseline_provenance": baseline_provenance("population", baseline_day_count),
+                "baseline_type": "none",
+                "baseline_provenance": baseline_provenance("none", baseline_day_count),
                 "baseline_day_count": baseline_day_count,
                 "required_baseline_days": required_days,
                 "feature_zscores": {},
@@ -181,7 +188,7 @@ class InferenceOrchestrator:
                     DailyFeatureAggregation.day < day,
                 )
                 .order_by(DailyFeatureAggregation.day.desc())
-                .limit(max(MIN_REFLECTION_BASELINE_DAYS, 14))
+                .limit(MIN_REFLECTION_BASELINE_DAYS)
             )
             history = self.session.exec(historical_query).all()
         except Exception:
@@ -200,25 +207,38 @@ class InferenceOrchestrator:
 
         # ── 3. Baseline estimation ───────────────────────────────────────────
         baseline = None
-        baseline_type = "population"
+        baseline_type = "none"
         try:
             baseline, baseline_type = get_effective_baseline(user_id, list(history))
-            self.session.add(baseline)
-            self.session.commit()
-            logger.info(
-                "[orchestrator] reflection_signal baseline type=%s baseline_days=%s stats_keys=%s",
-                baseline_type,
-                len(history),
-                list(baseline.stats_json.keys()),
-            )
         except Exception:
-            logger.exception("[orchestrator] baseline estimation failed; continuing without baseline")
+            logger.exception("[orchestrator] baseline estimation failed; no baseline available")
+
+        # No baseline, no deviation to measure. Scoring against nothing would
+        # emit a reading that looks like a measurement and isn't.
+        if baseline is None:
+            self._persist_not_enough_data_explanation(
+                user_id=user_id,
+                day=day,
+                aggregation=aggregation,
+                baseline_day_count=len(history),
+                required_days=MIN_REFLECTION_BASELINE_DAYS,
+            )
+            return None
+
+        self.session.add(baseline)
+        self.session.commit()
+        logger.info(
+            "[orchestrator] reflection_signal baseline type=%s baseline_days=%s stats_keys=%s",
+            baseline_type,
+            len(history),
+            list(baseline.stats_json.keys()),
+        )
 
         # ── 4. Z-scores and deviation ────────────────────────────────────────
         try:
             z_scores = compute_zscores(
                 aggregation.feature_vector_json,
-                baseline.stats_json if baseline else {},
+                baseline.stats_json,
             )
         except Exception:
             logger.exception("[orchestrator] z-score computation failed; using empty z-scores")
@@ -226,10 +246,10 @@ class InferenceOrchestrator:
 
         baseline_deviation = {
             "feature_zscores": z_scores,
-            "baseline_available": baseline is not None,
-            "baseline_type": baseline_type,  # "population" | "blended" | "user"
-            # Travels with the score so a consumer cannot render a reading taken
-            # against guessed population statistics as an equal-confidence one.
+            "baseline_available": True,
+            "baseline_type": baseline_type,  # "user"
+            # Travels with the score so a consumer can see how much of the
+            # user's own history the reading actually rests on.
             "baseline_provenance": baseline_provenance(baseline_type, len(history)),
             "top_features": [
                 name
