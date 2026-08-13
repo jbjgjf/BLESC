@@ -13,7 +13,17 @@ from app.analytics.tokenize import (
 )
 
 
-PIPELINE_VERSION = "cognitive-probe-v3"
+#: v4 (2026-08-13): the shared tokeniser stopped counting 動詞-非自立可能 verbs
+#: that follow a 接続助詞 as content — the 〜てくる / 〜てしまう / 〜ていく aspect
+#: constructions. They are grammar, not vocabulary, and they were inflating
+#: token_count, which is the denominator of every density here. Densities from v3
+#: and v4 are therefore not comparable and read_negative_self_focus() must keep
+#: refusing to convert across versions.
+#:
+#: Found through the #87 retrieval benchmark rather than here: two Japanese
+#: sentences sharing only 「〜てきた」 matched lexically, which is the same class
+#: of defect as D-01 and was invisible in the probe's own output.
+PIPELINE_VERSION = "cognitive-probe-v4"
 
 @dataclass(frozen=True)
 class VocabularyProvenance:

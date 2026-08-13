@@ -62,7 +62,13 @@ class TestTokeniser:
         # Emitting surface and lemma as separate tokens would inflate
         # token_count and corrupt every density and the perseveration ratio.
         assert len(analyze("疲れた")) == 1
-        assert len(analyze("助けてくれた")) == 2  # 助ける + くれる
+        # Was 2 (助ける + くれる). くれる here is the 〜てくれる benefactive
+        # auxiliary, not the verb "to give": it is 動詞-非自立可能 directly after
+        # a 接続助詞, so it is grammar and no longer counted. One content word.
+        assert len(analyze("助けてくれた")) == 1
+        # The same lemma as a main verb still counts, which is what makes the
+        # rule a disambiguation rather than a blanket exclusion.
+        assert len(analyze("先生がくれた")) == 2  # 先生 + くれる
 
 
 class TestVocabularyMatching:
