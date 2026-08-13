@@ -39,6 +39,36 @@ _TOKEN = re.compile(r"[a-z0-9]+")
 _TRIPLE = re.compile(r"^\s*([^:]+):([^-]+?)\s*->\s*([a-z_]+)\s*->\s*([^:]+):(.+?)\s*$")
 
 
+#: English closed-class words, removed for RETRIEVAL only.
+#:
+#: This does not belong in app.analytics.tokenize, and the reason is the point:
+#: cognitive_probe's primary signal IS first-person pronoun density (Rude et al.
+#: 2004). Stripping "i", "me", "my" there would delete the measurement. Retrieval
+#: wants the opposite — a day matching a query on "it" and "and" is noise.
+#:
+#: Without this, the two languages were filtered asymmetrically: UniDic drops
+#: Japanese particles by part of speech and nothing dropped the English
+#: equivalents, so `keyword` matched on "it"/"and"/"this" in every English case
+#: while the Japanese cases had their function words removed. Any ja/en
+#: comparison would have been measuring that asymmetry.
+#:
+#: Closed-class only — determiners, pronouns, prepositions, conjunctions,
+#: copulas, auxiliaries. No content words, no frequency cutoff: a frequency list
+#: would be fitted to these cases.
+_ENGLISH_FUNCTION_WORDS = frozenset(
+    """
+    a an the this that these those there here
+    i me my mine myself you your yours we us our ours they them their theirs
+    he him his she her hers it its
+    is am are was were be been being do does did done have has had having
+    can could will would shall should may might must
+    of in on at to from by for with without into onto over under about
+    and or but so if then than as because while when where which who whom whose
+    what how why not no nor too very just also again still yet
+    """.split()
+)
+
+
 def tokens(text: str) -> Set[str]:
     """Content tokens, via the shared analytics tokeniser.
 
@@ -55,7 +85,33 @@ def tokens(text: str) -> Set[str]:
     """
     from app.analytics.tokenize import tokens as analyse
 
-    return {token for token in analyse(text) if len(token) > 1}
+    return {
+        token
+        for token in analyse(text)
+        if len(token) > 1 and token not in _ENGLISH_FUNCTION_WORDS
+    }
+
+
+CHAR_NGRAM_N = 3
+
+
+def char_ngrams(text: str, n: int = CHAR_NGRAM_N) -> Set[str]:
+    """Character n-grams, script-agnostic.
+
+    The cheap stand-in for embedding similarity when no model is available: it
+    catches morphological variants and partial matches that exact token
+    matching misses ("転校し" / "転校して"), and it works the same way in
+    Japanese and English without a tokeniser or a dictionary.
+
+    It is NOT semantic. It cannot match a paraphrase that shares no characters,
+    which is precisely what the target days are built to be. That limit is the
+    reason this condition exists: it marks how far a lexical method can be
+    pushed before traversal is the only thing left.
+    """
+    cleaned = "".join(text.lower().split())
+    if len(cleaned) < n:
+        return {cleaned} if cleaned else set()
+    return {cleaned[index : index + n] for index in range(len(cleaned) - n + 1)}
 
 
 def jaccard(left: Iterable[str], right: Iterable[str]) -> float:
@@ -145,6 +201,7 @@ def traversal_score(motifs: Sequence[str], distance: Dict[str, int]) -> Tuple[fl
 def score_candidate(
     method: str,
     query_tokens: Set[str],
+    query_ngrams: Set[str],
     text: str,
     motifs: Sequence[str],
     distance: Dict[str, int],
@@ -153,15 +210,25 @@ def score_candidate(
 ) -> Dict[str, float | int | None]:
     text_score = jaccard(query_tokens, tokens(text))
     motif_lexical = jaccard(query_tokens, tokens(" ".join(motifs)))
+    fuzzy_score = jaccard(query_ngrams, char_ngrams(text))
     graph_score, hops = traversal_score(motifs, distance)
     safety_bonus = 0.45 if expects_crisis and safety_label == "crisis" else 0.0
 
     if method == "keyword":
         score = text_score
     elif method == "semantic_proxy":
-        # Still lexical. Included as the honest middle: it sees the motif
-        # strings but does not traverse them.
-        score = (0.75 * text_score) + (0.25 * motif_lexical)
+        # AMENDED 2026-08-13 (see docs/benchmark_preregistration.md).
+        # Was 0.75*text + 0.25*motif_lexical. Because every query in this set is
+        # built to share no vocabulary with anything, motif_lexical was 0 on all
+        # 6 cases, so the condition reduced to 0.75*text_score — a monotone
+        # transform of `keyword` producing an IDENTICAL ranking every time. That
+        # is the exact defect the #86 rebuild existed to remove, surviving in
+        # one condition.
+        #
+        # Now character-trigram overlap: a genuinely different lexical signal
+        # that tolerates morphological variation, plus a smaller motif term. It
+        # still does not traverse.
+        score = (0.60 * fuzzy_score) + (0.25 * text_score) + (0.15 * motif_lexical)
     elif method == "graph_pattern":
         score = (0.20 * text_score) + (0.80 * graph_score) + safety_bonus
     elif method == "hf_reranker_candidate":
@@ -176,6 +243,7 @@ def score_candidate(
     return {
         "score": round(score, 4),
         "text_score": round(text_score, 4),
+        "fuzzy_score": round(fuzzy_score, 4),
         "motif_lexical_score": round(motif_lexical, 4),
         "graph_score": round(graph_score, 4),
         "hops_from_anchor": hops,

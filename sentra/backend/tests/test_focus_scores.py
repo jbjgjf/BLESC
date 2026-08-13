@@ -71,7 +71,7 @@ class TestNaming:
         assert "rumination_index" not in cognitive_probe_features("", "i feel tired")
 
     def test_pipeline_version_distinguishes_old_rows(self):
-        assert PIPELINE_VERSION == "cognitive-probe-v3"
+        assert PIPELINE_VERSION == "cognitive-probe-v4"
 
     def test_history_is_readable_not_dropped(self):
         legacy = {"rumination_index": 0.42, "pipeline_version": "cognitive-probe-v2"}

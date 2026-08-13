@@ -76,6 +76,10 @@ class BenchmarkCase:
     labelled_by: str = "author"
 
 
+def _is_japanese(word: str) -> bool:
+    return any("\u3040" <= char <= "\u30ff" or "\u4e00" <= char <= "\u9fff" for char in word)
+
+
 def _decoys(prefix: str, words: Sequence[str], start: int, count: int, day_from: int) -> list[EvidenceDay]:
     """Lexical decoys: days that reuse the query's vocabulary and are wrong.
 
@@ -92,7 +96,14 @@ def _decoys(prefix: str, words: Sequence[str], start: int, count: int, day_from:
             EvidenceDay(
                 evidence_id=f"{prefix}{start + offset}",
                 day=f"2026-06-{(day_from + offset) % 28 + 1:02d}",
-                text=f"Wrote about {word} again today, and about {second} in passing.",
+                # Language-appropriate surface form. A Japanese case padded with
+                # "Wrote about 感じ again today" is trivially separable by script
+                # alone, which is a cue no real candidate set would offer.
+                text=(
+                    f"今日も{word}のことを書いた。{second}のことも少し。"
+                    if _is_japanese(word)
+                    else f"Wrote about {word} again today, and about {second} in passing."
+                ),
                 graph_motifs=(f"State:{word} -> co_occurs -> State:{second}",),
             )
         )
@@ -201,6 +212,36 @@ BENCHMARK_CASES: Sequence[BenchmarkCase] = [
         ),
         family="two_hop_chain",
         lang="en",
+        required_hops=1,
+    ),
+    BenchmarkCase(
+        case_id="chain_red_herring_ja",
+        query="今週なにかが変わった気がするけど、うまく言えない。",
+        query_anchors=("sleep deprivation",),
+        evidence=(
+            *_SLEEP_CHAIN_JA,
+            EvidenceDay(
+                "t1", "2026-05-26",
+                "仲の良かった子が学期末で転校していった。",
+                ("Event:friend leaving -> causes -> State:loneliness",),
+            ),
+            EvidenceDay(
+                "t2", "2026-05-27",
+                "週末の家がいつもより静かだ。",
+                ("State:loneliness -> co_occurs -> Behavior:staying in",),
+            ),
+            *_decoys("d", DECOY_WORDS_JA, 1, 22, 1),
+        ),
+        expected_evidence_ids=("t1", "t2"),
+        expected_safety="normal",
+        expected_policy="describe the recent change, not the older pattern",
+        research_note=(
+            "Matched pair with chain_red_herring_en. Without it the red-herring "
+            "case is English-only, so English carries a case built to be failed "
+            "and the per-language split measures that instead of language."
+        ),
+        family="two_hop_chain",
+        lang="ja",
         required_hops=1,
     ),
     # ---- vocabulary-disjoint single day ---------------------------------

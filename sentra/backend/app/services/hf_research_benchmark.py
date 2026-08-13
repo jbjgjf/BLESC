@@ -72,6 +72,7 @@ from .benchmark_labelling import DATASET_VERSION, assign_splits, labelling_statu
 from .benchmark_retrieval import (
     METHODS,
     build_concept_graph,
+    char_ngrams,
     chance_level,
     hop_distances,
     ndcg_at_k,
@@ -90,6 +91,7 @@ DEFAULT_DEPTH = 3
 
 def _rank_evidence(case: BenchmarkCase, method: str, max_depth: int = DEFAULT_DEPTH) -> List[Dict[str, Any]]:
     query_tokens = tokens(case.query)
+    query_ngrams = char_ngrams(case.query)
     graph = build_concept_graph([evidence.graph_motifs for evidence in case.evidence])
     distance = hop_distances(graph, case.query_anchors, max_depth)
     expects_crisis = case.expected_safety == "crisis"
@@ -99,6 +101,7 @@ def _rank_evidence(case: BenchmarkCase, method: str, max_depth: int = DEFAULT_DE
         scored = score_candidate(
             method,
             query_tokens,
+            query_ngrams,
             evidence.text,
             evidence.graph_motifs,
             distance,
@@ -232,6 +235,11 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = TOP
         "summary": summary,
         "by_family": _grouped(method_results, "family"),
         "by_language": _grouped(method_results, "lang"),
+        # by_language is the row a reader will treat as "how well does it work
+        # in Japanese", and right now it cannot answer that. Emitted beside it
+        # so the caveat travels with the number.
+        "comparison_validity": _comparison_validity(),
+        "condition_independence": _condition_independence(method_results),
         "by_traversal_depth": _depth_sweep(selected_methods, k),
         "case_composition": CASE_COMPOSITION,
         "retired_cases": RETIRED_CASES,
@@ -272,6 +280,72 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = TOP
                 "fine-tuning examples tied to a user",
             ],
         },
+    }
+
+
+def _condition_independence(method_results: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
+    """Which conditions are actually distinct arms.
+
+    Two conditions can differ in score and still rank identically, and only the
+    ranking is what nDCG sees. A summary listing four conditions when three
+    produce three distinct rankings overstates the ablation, so the count is
+    reported rather than inferred from the number of keys.
+    """
+    import itertools
+
+    duplicates: List[str] = []
+    for left, right in itertools.combinations(sorted(method_results), 2):
+        pairs = zip(method_results[left], method_results[right])
+        if all(a["retrieval_metrics"]["top_k"] == b["retrieval_metrics"]["top_k"] for a, b in pairs):
+            duplicates.append(f"{left} == {right}")
+
+    return {
+        "reported_conditions": len(method_results),
+        "distinct_rankings": len(method_results) - len(duplicates),
+        "identical_ranking_pairs": duplicates,
+        "note": (
+            "hf_reranker_candidate is a deterministic placeholder for a "
+            "cross-encoder that has not been built. On this case set traversal "
+            "dominates both graph conditions, so it ranks identically to "
+            "graph_pattern and is not an independent arm. Manufacturing a "
+            "different formula to separate them would be inventing a result."
+        )
+        if duplicates
+        else "every condition produces a distinct ranking.",
+    }
+
+
+def _comparison_validity() -> Dict[str, Any]:
+    """Whether the per-language split is comparing languages or comparing cases.
+
+    The matched-pair design exists so that language is not confounded with
+    difficulty. It only delivers that when each family holds the same number of
+    cases in each language. It currently does not: the red-herring case is
+    English-only, so English carries a case built to be failed and Japanese does
+    not, and `en` scores lower for that reason rather than any linguistic one.
+
+    Checked rather than remembered — an unbalanced set is easy to reintroduce by
+    adding one case.
+    """
+    matrix: Dict[str, Dict[str, int]] = {}
+    for case in BENCHMARK_CASES:
+        matrix.setdefault(case.family, {}).setdefault(case.lang, 0)
+        matrix[case.family][case.lang] += 1
+
+    unbalanced = sorted(
+        family for family, langs in matrix.items() if len(set(langs.values())) > 1 or len(langs) < 2
+    )
+    return {
+        "family_by_language": matrix,
+        "unbalanced_families": unbalanced,
+        "per_language_comparison_valid": not unbalanced,
+        "note": (
+            "per-language results are confounded with case difficulty: "
+            f"{', '.join(unbalanced)} do not hold equal counts per language. "
+            "Read by_language as descriptive only until #88 balances the set."
+        )
+        if unbalanced
+        else "families hold equal counts per language; the per-language split is interpretable.",
     }
 
 

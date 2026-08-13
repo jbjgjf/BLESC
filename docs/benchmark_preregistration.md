@@ -55,8 +55,11 @@ Four, defined in `app/services/benchmark_retrieval.py`, all ranking the same
 candidate set for the same query:
 
 1. **keyword** — Jaccard over content tokens of the day's text.
-2. **semantic_proxy** — `0.75 × text Jaccard + 0.25 × Jaccard over the motif
-   strings as text`. Sees the graph as words; does not traverse it.
+2. **semantic_proxy** — `0.60 × character-trigram Jaccard + 0.25 × token
+   Jaccard + 0.15 × Jaccard over the motif strings as text`. A fuzzy lexical
+   matcher: tolerates morphological variation, does not traverse the graph, and
+   cannot match a paraphrase that shares no characters. *(Amended 2026-08-13 —
+   see Amendments.)*
 3. **graph_pattern** — `0.20 × text + 0.80 × traversal + safety bonus`, where
    traversal is `1/(1 + hops)` by breadth-first search from the query anchors
    over parsed motif triples.
@@ -117,6 +120,28 @@ Any one of these is a negative result and is reported as one:
 A negative result is publishable and will be published. There is no version of
 this analysis where the hypothesis cannot lose.
 
+## Known limitation: `hf_reranker_candidate` is not an independent arm
+
+On this case set it ranks **identically to `graph_pattern` on every case**.
+It is a deterministic placeholder for a cross-encoder that has not been built,
+differing only in weights, and traversal dominates both. Reported in
+`condition_independence` (`distinct_rankings: 3` against
+`reported_conditions: 4`) so the ablation is never read as four independent
+arms. Inventing a different formula to separate them would be manufacturing a
+result; the fix is to implement the reranker or drop the arm.
+
+## Known limitation: the case set is adversarial to lexical retrieval by design
+
+Targets share no content word with their query and decoys reuse the query's
+vocabulary. That is deliberate — it is what makes the hypothesis falsifiable —
+but it means `keyword` sitting at chance is partly a property of the design
+rather than a finding about lexical retrieval in general.
+
+What this set can establish: traversal **can** recover multi-day chains that
+lexical retrieval cannot. What it cannot establish: **how often** that situation
+arises in real use. That requires cases representative of actual product
+queries, which is #88's job and is not claimed here.
+
 ## Case exclusion criteria
 
 Written before any case is excluded. A case is excluded only if:
@@ -152,7 +177,11 @@ Any deviation is recorded here with a reason and a date. Never a silent edit.
 
 | Date | Change | Reason |
 |---|---|---|
-| — | — | — |
+| 2026-08-13 | `semantic_proxy` redefined from `0.75 × token Jaccard + 0.25 × motif Jaccard` to character-trigram overlap (weights above). | In its old form it produced an **identical ranking to `keyword` on all 6 cases**. Every query in this set is built to share no vocabulary with anything, so the motif term was 0 throughout and the condition reduced to a monotone transform of `keyword` — the exact defect #86 existed to remove, surviving in one arm. The ablation reported four conditions where three existed. |
+| 2026-08-13 | `test_lexical_conditions_do_not_beat_chance_on_this_case_set` narrowed from `(keyword, semantic_proxy)` to `keyword` only. | Consequence of the row above, not a response to a red build. A character-trigram matcher is not "purely lexical" in the sense the assertion was written for: Japanese morphology means related words share characters, so a small lift over chance is expected and is what makes the middle condition informative — it measures how much is recoverable without traversal. `keyword` is the exact-match floor and the claim still holds there unchanged. |
+| 2026-08-13 | Added `chain_red_herring_ja`; Japanese decoys rewritten as Japanese sentences. | The red-herring case was English-only, so English carried a case built to be failed and Japanese did not: `by_language` was measuring case difficulty, not language. Families now hold equal counts per language and `comparison_validity.per_language_comparison_valid` is true. The Japanese decoys had been English templates with Japanese words substituted (`"Wrote about 感じ again today"`), separable by script alone — a cue no real candidate set offers. |
+| 2026-08-13 | Shared tokeniser stopped counting 動詞-非自立可能 verbs following a 接続助詞; `PIPELINE_VERSION` → `cognitive-probe-v4`. | 「戻ってきた」 and 「よくなってきた」 both yielded lemma 来る, so a lexical baseline matched two sentences sharing only the 〜てくる aspect construction and scored 0.77 on a case built to be lexically unsolvable, while its English pair scored 0.0. Grammar was being counted as vocabulary. Affects `cognitive_probe` densities (token_count is their denominator), hence the version bump; v3 and v4 values are not comparable. |
+| 2026-08-13 | English closed-class words filtered for **retrieval only**, not in `app.analytics.tokenize`. | UniDic drops Japanese particles by part of speech and nothing dropped the English equivalents, so `keyword` was matching on `it` / `and` / `this` in every English case — the two languages were filtered asymmetrically and any ja/en comparison would have measured that. It is not applied in the shared tokeniser because `cognitive_probe`'s primary signal **is** first-person pronoun density (Rude et al. 2004); stripping `i` / `me` / `my` there would delete the measurement. |
 
 ## References
 

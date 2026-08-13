@@ -67,17 +67,59 @@ def test_the_baseline_is_reported_against_chance(summary):
         assert "lift_over_chance" in summary[method]
 
 
-def test_lexical_conditions_do_not_beat_chance_on_this_case_set(summary):
-    # Stronger than the ceiling and specific to the current cases: with targets
-    # that share no content word with the query and decoys that do, a purely
-    # lexical method should be at or below chance. If this starts failing, an
-    # easy case has been added.
-    for method in ("keyword", "semantic_proxy"):
-        lift = summary[method]["lift_over_chance"]
-        assert lift <= 0.05, (
-            f"{method} beats chance by {lift:.4f}. A lexical method should not — "
-            f"check whether a target now shares vocabulary with its query."
-        )
+def test_exact_lexical_matching_does_not_beat_chance_on_this_case_set(summary):
+    # Narrowed on 2026-08-13 from ("keyword", "semantic_proxy") to keyword only,
+    # and the reason is not that the old form went red.
+    #
+    # semantic_proxy was redefined in the same change from exact-token Jaccard to
+    # character-trigram overlap, because in its old form it produced an IDENTICAL
+    # ranking to keyword on all 6 cases — a monotone transform, which is the
+    # defect #86 existed to remove. A fuzzy matcher is not "purely lexical" in
+    # the sense this assertion was written for: Japanese morphology means
+    # related words share characters, so a small lift is expected and is what
+    # makes the middle condition informative. It tells us how much is
+    # recoverable WITHOUT traversal.
+    #
+    # keyword is the exact-match floor and the claim still holds there. The
+    # ceiling on semantic_proxy is now carried by
+    # test_the_graph_conditions_are_the_ones_that_separate.
+    # Amendment recorded in docs/benchmark_preregistration.md.
+    lift = summary["keyword"]["lift_over_chance"]
+    assert lift <= 0.05, (
+        f"keyword beats chance by {lift:.4f}. Exact lexical matching should not — "
+        f"check whether a target now shares vocabulary with its query."
+    )
+
+
+def test_no_two_conditions_produce_the_same_ranking_on_every_case():
+    """An ablation with two identical conditions has fewer arms than it reports.
+
+    This is what caught semantic_proxy: it scored differently from keyword but
+    ranked identically, so the summary showed four conditions where three
+    existed. Comparing mean scores would not have found it — only the rankings.
+    """
+    import itertools
+
+    result = run_hf_research_benchmark()
+    cases = result["cases"]
+    degenerate = []
+    for left, right in itertools.combinations(METHODS, 2):
+        pairs = zip(cases[left], cases[right])
+        if all(a["retrieval_metrics"]["top_k"] == b["retrieval_metrics"]["top_k"] for a, b in pairs):
+            degenerate.append(f"{left} == {right}")
+
+    # hf_reranker_candidate is a deterministic placeholder for a cross-encoder
+    # that does not exist yet. It differs from graph_pattern only in weights,
+    # and on this case set traversal dominates both, so the rankings coincide.
+    # Exempted BY NAME with the reason, rather than by relaxing the rule — and
+    # it is reported in `condition_independence` so the ablation is never read
+    # as four independent arms.
+    known_placeholder = {"graph_pattern == hf_reranker_candidate"}
+    unexpected = [entry for entry in degenerate if entry not in known_placeholder]
+    assert not unexpected, (
+        f"these conditions rank identically on every case and are not separate "
+        f"arms: {unexpected}"
+    )
 
 
 def test_the_graph_conditions_are_the_ones_that_separate(summary):

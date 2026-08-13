@@ -29,6 +29,21 @@ logger = logging.getLogger(__name__)
 # words are tagged 名詞 by UniDic, so this filter never touches them.
 _FUNCTION_WORD_POS = frozenset({"助詞", "助動詞", "補助記号", "空白"})
 
+#: Verbs UniDic tags 動詞-非自立可能 are content verbs in some positions and
+#: grammatical auxiliaries in others: 「学校に来る」 is the verb, 「戻ってきた」 is
+#: the 〜てくる aspect construction. UniDic gives both lemma 来る, so filtering the
+#: tag outright would delete a real verb, and keeping it counts grammar as
+#: content. The disambiguator is the preceding token: a 非自立可能 verb directly
+#: after a 接続助詞 (て / で) is auxiliary.
+#:
+#: Found via the #87 benchmark: 「またあの感じが戻ってきた」 and 「よくなってきた」
+#: share no content, but both yielded 来る, so a lexical baseline matched them and
+#: scored 0.77 on a case built to be lexically unsolvable. The English half of the
+#: same pair scored 0.0. Left alone, every ja/en comparison would have carried
+#: this.
+_AUXILIARY_CAPABLE_POS2 = "非自立可能"
+_CONJUNCTIVE_PARTICLE_POS2 = "接続助詞"
+
 _ASCII_FALLBACK = re.compile(r"[^a-zA-Z0-9ぁ-んァ-ン一-龥]+")
 _JAPANESE = re.compile(r"[ぁ-んァ-ヶ一-龥]")
 
@@ -102,8 +117,15 @@ def analyze(text: str) -> list[Token]:
         return [Token(part, part) for part in parts if part]
 
     out: list[Token] = []
+    previous_is_conjunctive = False
     for word in tagger(text):
-        if word.feature.pos1 in _FUNCTION_WORD_POS:
+        pos1, pos2 = word.feature.pos1, word.feature.pos2
+        is_conjunctive = pos1 == "助詞" and pos2 == _CONJUNCTIVE_PARTICLE_POS2
+        auxiliary = (
+            pos1 == "動詞" and pos2 == _AUXILIARY_CAPABLE_POS2 and previous_is_conjunctive
+        )
+        previous_is_conjunctive = is_conjunctive
+        if pos1 in _FUNCTION_WORD_POS or auxiliary:
             continue
         surface = word.surface.strip().lower()
         if not surface:
