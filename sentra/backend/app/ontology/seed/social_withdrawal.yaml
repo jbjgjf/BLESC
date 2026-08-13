@@ -1,0 +1,365 @@
+subgraph_id: social_withdrawal
+# The subgraph the product's own signal runs on: Behavior:withdrawal, the
+# protective-factor decline the pipeline already computes in
+# `graph_features.protective_decline`, and the `protective_decline` benchmark
+# case. None of it was tied to a source until this file.
+#
+# Two things a reader should know before trusting anything below.
+#
+# 1. 不登校 IS NOT A CLINICAL CONSTRUCT. It is a Japanese administrative
+#    category — 文部科学省 counts a student as 不登校 at 30 days of absence in a
+#    school year for reasons other than illness or economics. NG134 and the WHO
+#    material describe clinical depression. Connecting the two is a JUDGEMENT,
+#    and every edge touching `futoko` is marked `expert_judgement` and says so
+#    in its own scope_note. Many 不登校 students are not depressed; many
+#    depressed students attend every day. A graph that quietly equated them
+#    would be making a clinical claim out of an attendance record.
+#
+# 2. THE RELATION VOCABULARY CANNOT SAY "THIS PROTECTIVE FACTOR WEAKENED."
+#    `buffers` states that a resource is present and helping; there is no
+#    inverse. The decline the benchmark case asks for is therefore encoded as a
+#    PAIR: a `buffers` edge for the resource while it holds, and an `avoids`
+#    edge from the withdrawal behaviour to the same resource for the
+#    disengagement. That pairing is an engineering workaround, not a finding —
+#    it is recorded here rather than fixed, because widening the vocabulary is
+#    a separate change needing its own argument (#75).
+#
+# 3. THREE EDGES ARE SHARED WITH THE OTHER SEED FILES, ON PURPOSE.
+#    `depressed_mood -> social_withdrawal` and `school_absence ->
+#    social_withdrawal` are also in sleep.yaml; `trusted_adult_contact ->
+#    depressed_mood` is in sleep.yaml AND academic_pressure.yaml. They are
+#    stated
+#    identically — same type, same strength, same source_refs — so a merge that
+#    de-duplicates on (source, target, type) keeps one copy and loses nothing.
+#    They are ONE piece of support appearing twice, not two independent ones,
+#    and a merge that concatenated would double-count a single reading of
+#    NG134. Nothing merges the subgraphs today; this is written down, and
+#    pinned by a test, so that whoever writes that step is not the one who has
+#    to notice.
+#
+# Curation rule, unchanged from sleep.yaml: no edge goes in because it sounds
+# right. Where the cited material reports an association, evidence_strength is
+# `association` even when the relation type is `causes`. Where nothing can be
+# pointed at, the edge is `expert_judgement` with a written rationale or it is
+# not here.
+#
+# The judgement rate on this file is high — higher than sleep.yaml's. That is
+# the honest result, not a defect in the curation: 生徒指導提要 is a source
+# about school PROCESS and is explicit that it supports no clinical claim, and
+# the WHO fact sheet reports population risk factors rather than directed
+# individual-level relations. Withdrawal is where this project's signal lives
+# and it is where the available material has least to say. `unsourced_edge_rate`
+# reports it rather than hiding it.
+description_en: Adolescent social withdrawal, the decline of protective relationships around it, and its reported links to mood and school non-attendance.
+description_ja: 思春期の社会的ひきこもり傾向と、その周辺で弱まる保護的なつながり、気分・不登校との関連。
+
+sources:
+  - who_adolescent_mh
+  - who_mhgap
+  - nice_ng134
+  - mext_seitoshido
+  - expert_judgement
+
+nodes:
+  # --- the behaviour itself ------------------------------------------------
+  - id: social_withdrawal
+    category: Behavior
+    label_ja: 人との関わりを避ける
+    label_en: withdrawing from others
+    source_refs: [nice_ng134]
+
+  - id: help_seeking
+    category: Behavior
+    label_ja: 相談する・助けを求める
+    label_en: asking someone for help
+    source_refs: [mext_seitoshido, who_mhgap]
+
+  # --- states --------------------------------------------------------------
+  - id: loneliness
+    category: State
+    label_ja: 孤独感
+    label_en: loneliness
+    source_refs: [who_adolescent_mh]
+
+  - id: depressed_mood
+    category: State
+    label_ja: 抑うつ傾向
+    label_en: depressed mood
+    source_refs: [nice_ng134, who_adolescent_mh]
+
+  - id: anxiety
+    category: State
+    label_ja: 不安
+    label_en: anxiety
+    source_refs: [who_adolescent_mh]
+
+  - id: shame_about_returning
+    category: State
+    label_ja: 教室に戻りにくさ・引け目
+    label_en: shame about going back
+    source_refs: [expert_judgement]
+
+  # --- triggers and events -------------------------------------------------
+  - id: peer_conflict
+    category: Trigger
+    label_ja: いじめ・友人関係のトラブル
+    label_en: bullying or trouble with friends
+    source_refs: [who_adolescent_mh, mext_seitoshido]
+
+  - id: school_absence
+    category: Event
+    label_ja: 遅刻・欠席
+    label_en: lateness or absence
+    source_refs: [mext_seitoshido]
+
+  - id: futoko
+    category: Event
+    label_ja: 不登校（年間30日以上の欠席）
+    label_en: futoko — administrative non-attendance category, 30+ days per school year
+    source_refs: [mext_seitoshido]
+
+  # --- protective ----------------------------------------------------------
+  - id: trusted_adult_contact
+    category: Protective
+    label_ja: 信頼できる大人とのつながり
+    label_en: contact with a trusted adult
+    source_refs: [who_mhgap, mext_seitoshido]
+
+  - id: peer_friendship
+    category: Protective
+    label_ja: 友人とのつながり
+    label_en: friendship with peers
+    source_refs: [who_adolescent_mh]
+
+  - id: family_support
+    category: Protective
+    label_ja: 家庭の支え
+    label_en: support at home
+    source_refs: [who_adolescent_mh]
+
+  - id: school_counselor_access
+    category: Protective
+    label_ja: スクールカウンセラー等への接続
+    label_en: access to a school counsellor or equivalent
+    source_refs: [mext_seitoshido]
+
+edges:
+  # --- into withdrawal -----------------------------------------------------
+  - source: peer_conflict
+    target: anxiety
+    type: causes
+    evidence_strength: association
+    source_refs: [who_adolescent_mh]
+    scope_note: >-
+      WHO adolescent material lists bullying and peer violence among the risk
+      factors for adolescent mental health conditions. A risk-factor listing at
+      population level; the directed individual edge is an extension, and
+      nothing cited orders the two in a single student's account.
+
+  - source: peer_conflict
+    target: social_withdrawal
+    type: causes
+    evidence_strength: association
+    source_refs: [who_adolescent_mh, mext_seitoshido]
+    scope_note: >-
+      生徒指導提要 describes the school's response to いじめ, including students
+      who stop coming or stop speaking to anyone. That is a source about what
+      staff should DO, not about mechanism. WHO lists bullying as a risk factor.
+      Neither establishes this direction; association is the most either supports.
+
+  - source: depressed_mood
+    target: social_withdrawal
+    type: causes
+    evidence_strength: association
+    source_refs: [nice_ng134]
+    scope_note: >-
+      NG134 includes withdrawal among the features clinicians assess in
+      depression. That makes withdrawal a FEATURE OF the condition as much as a
+      consequence of it — the direction is a modelling choice the guideline does
+      not make.
+
+      SHARED CLAIM. sleep.yaml carries this same edge from the same reading of
+      NG134. It is stated identically in both files — same type, same strength,
+      same source_refs — so a merge that de-duplicates on
+      (source, target, type) loses nothing and never has to choose between two
+      versions. The two files are ONE piece of support, not two, and a merge
+      that concatenated instead of de-duplicating would double-count it.
+      `test_shared_claims_are_stated_identically` is what keeps that safe.
+
+  - source: shame_about_returning
+    target: social_withdrawal
+    type: escalates
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced. Typed `escalates` rather than `causes` because it presupposes
+      withdrawal already present — the loop where absence makes returning harder
+      and the difficulty extends the absence. Widely described by schools;
+      nothing in this registry supports it.
+
+  # --- out of withdrawal ---------------------------------------------------
+  - source: social_withdrawal
+    target: loneliness
+    type: causes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced, and close to definitional, which is exactly why it is marked
+      rather than dressed in the WHO citation the next edge carries. Withdrawal
+      and loneliness are not the same thing — a student can withdraw without
+      feeling lonely, and can feel lonely in a full classroom.
+
+  - source: loneliness
+    target: depressed_mood
+    type: causes
+    evidence_strength: association
+    source_refs: [who_adolescent_mh]
+    scope_note: >-
+      WHO adolescent material names social exclusion and loneliness among the
+      determinants of adolescent mental health. Population-level risk factor,
+      reported without direction; the arrow here is the model's, not the
+      source's.
+
+  # --- the protective-factor decline pattern -------------------------------
+  # Each `avoids` edge below is the disengagement half of a pair whose other
+  # half is the `buffers` edge on the same protective node. Neither half is a
+  # sourced claim about mechanism: `avoids` is defined as recording the
+  # student's own account of avoidance, and it is being used here for a
+  # resource rather than a trigger, which is a stretch of the term. This is the
+  # workaround the file header describes.
+  - source: social_withdrawal
+    target: help_seeking
+    type: avoids
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      The pattern the `protective_decline` benchmark case turns on — a student
+      who used to ask for help and stopped. Not sourced as a relation. `avoids`
+      is the nearest the vocabulary reaches; the vocabulary has no term for a
+      protective factor weakening, which is a gap this file documents rather
+      than fills.
+
+  - source: social_withdrawal
+    target: trusted_adult_contact
+    type: avoids
+    evidence_strength: expert_judgement
+    source_refs: [mext_seitoshido]
+    scope_note: >-
+      生徒指導提要 describes the expectation that staff notice a student who has
+      stopped consulting anyone. It supports that this is something schools
+      WATCH FOR — it does not support a directed relation between the behaviour
+      and the loss of contact, so the strength stays judgement despite the
+      citation. The citation records what was consulted, not what was
+      established.
+
+  - source: trusted_adult_contact
+    target: depressed_mood
+    type: buffers
+    evidence_strength: association
+    source_refs: [who_mhgap, mext_seitoshido]
+    scope_note: >-
+      mhGAP and 生徒指導提要 both describe routing a young person to a trusted
+      adult or professional. Both are about PROCESS — neither quantifies an
+      effect on mood. The weakest kind of support in this file.
+
+      SHARED CLAIM, the third of them, and the most shared thing in the seed
+      set: sleep.yaml and academic_pressure.yaml both carry this edge with the
+      same type, strength and source_refs, so all three files count once
+      through a de-duplicating merge.
+
+  - source: peer_friendship
+    target: loneliness
+    type: buffers
+    evidence_strength: association
+    source_refs: [who_adolescent_mh]
+    scope_note: >-
+      WHO frames protective factors at population level. Applying one to an
+      individual edge is an extension the source does not make — the same
+      extension the `Protective` category's own scope_note records.
+
+  - source: family_support
+    target: depressed_mood
+    type: buffers
+    evidence_strength: association
+    source_refs: [who_adolescent_mh]
+    scope_note: >-
+      WHO names quality of home life among the determinants of adolescent
+      mental health. Population-level and undirected in the source; encoded here
+      as a directed buffer, which is more than the source says.
+
+  - source: school_counselor_access
+    target: help_seeking
+    type: precedes
+    evidence_strength: expert_judgement
+    source_refs: [mext_seitoshido]
+    scope_note: >-
+      生徒指導提要 establishes that the route exists — スクールカウンセラー and
+      スクールソーシャルワーカー as part of the school's structure. It does not
+      establish that access produces help-seeking, and the gap between a service
+      existing and a student using it is the whole problem. Typed `precedes`
+      because only the ordering is defensible.
+
+  # --- school non-attendance ----------------------------------------------
+  - source: school_absence
+    target: social_withdrawal
+    type: co_occurs
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Undirected. Both are things a school observes; neither this file nor its
+      sources establish which comes first.
+
+      SHARED CLAIM, like the depressed_mood edge above: sleep.yaml carries it
+      with the same orientation, type, strength and source_refs, so it survives
+      a de-duplicating merge unchanged and counts once.
+
+  - source: school_absence
+    target: futoko
+    type: precedes
+    evidence_strength: expert_judgement
+    source_refs: [mext_seitoshido]
+    scope_note: >-
+      ADMINISTRATIVE, NOT PSYCHOLOGICAL. 文部科学省 defines 不登校 by a counting
+      rule — 30 days of absence in a school year, excluding illness and
+      economic reasons. This edge is that threshold being crossed and nothing
+      more. The citation supports the definition; it supports no claim about the
+      student. Strength stays judgement because a definitional relation is not
+      an empirical finding.
+
+  - source: social_withdrawal
+    target: futoko
+    type: precedes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced. Temporal only. 不登校 is an attendance category; withdrawal
+      is a reported behaviour, and a student can be either without the other.
+      See the depressed_mood edge below for the full construct-mismatch note.
+
+  - source: depressed_mood
+    target: futoko
+    type: precedes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      THE CONSTRUCT MISMATCH THIS FILE EXISTS TO MARK. 不登校 is a Japanese
+      administrative category defined by a 文部科学省 counting rule. Depressed
+      mood as used here comes from NG134, a clinical guideline. Mapping one onto
+      the other is a judgement, and a contested one — 不登校 has documented
+      routes that are not clinical at all, and most depressed students attend
+      school. Typed `precedes` rather than `causes` because no direction is
+      supportable, sourced to `expert_judgement` rather than to NG134 or 生徒指導
+      提要 because neither source makes this connection, and left in the graph
+      rather than dropped because a curated subgraph that stayed silent here
+      would let a generated one invent the link unmarked.
+
+  - source: futoko
+    target: shame_about_returning
+    type: causes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced. The return half of the loop: the longer the absence runs, the
+      harder re-entry is described as being. Commonly reported by schools and by
+      students; nothing in this registry supports it, and it is the edge a
+      reviewer should challenge first if they want one removed.
