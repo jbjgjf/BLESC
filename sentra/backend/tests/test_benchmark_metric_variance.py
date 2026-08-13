@@ -66,12 +66,16 @@ class TestReportedMetricsCanActuallyDiffer:
     which point the marker comes off. It is not weakened to pass today.
     """
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="#86/#89: no condition separates from the keyword baseline yet — every metric is 1.0",
-    )
     def test_every_summary_key_varies(self, result):
-        keys = set(result["summary"][METHODS[0]])
+        # chance is the same for every condition BY CONSTRUCTION — it is the
+        # expected score from ranking the same candidate set at random, so it
+        # does not depend on the method. That is the opposite of the #85 bug:
+        # there, a value that should have varied did not. Here a value that
+        # must not vary is being used as the yardstick the others are measured
+        # against, so it is exempted by name rather than by a pattern that
+        # would also let a real regression through.
+        invariant_by_design = {"chance_ndcg_at_k"}
+        keys = set(result["summary"][METHODS[0]]) - invariant_by_design
         constant = [
             key
             for key in keys
@@ -79,12 +83,14 @@ class TestReportedMetricsCanActuallyDiffer:
         ]
         assert not constant, f"these summary keys are identical across conditions: {constant}"
 
-    def test_the_saturation_is_total_and_recorded(self, result):
-        # Pins the current state so the claim in the PR is checkable and so a
-        # partial improvement is visible as a change here rather than passing
-        # silently under the xfail above.
+    def test_the_saturation_is_gone(self, result):
+        # This test used to pin total saturation — every metric 1.0 for every
+        # condition — with the xfail above marking it as the state to escape.
+        # #86 rebuilt the harness and #89 added the ceiling, so the assertion
+        # is inverted rather than deleted: the history of what this measured
+        # is the point.
         values = {
             metric: {result["summary"][method][metric] for method in METHODS}
             for metric in ("mean_recall_at_k", "mean_ndcg_at_k", "target_hit_rate")
         }
-        assert all(observed == {1.0} for observed in values.values()), values
+        assert not any(observed == {1.0} for observed in values.values()), values

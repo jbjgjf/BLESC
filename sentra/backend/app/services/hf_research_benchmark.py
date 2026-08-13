@@ -61,186 +61,70 @@ HF_REFERENCE_ARTIFACTS: Dict[str, List[Dict[str, str]]] = {
 }
 
 
-@dataclass(frozen=True)
-class EvidenceDay:
-    evidence_id: str
-    day: str
-    text: str
-    graph_motifs: Sequence[str]
-    safety_label: str = "normal"
+from .benchmark_cases import (
+    BENCHMARK_CASES,
+    CASE_COMPOSITION,
+    RETIRED_CASES,
+    BenchmarkCase,
+    EvidenceDay,
+)
+from .benchmark_retrieval import (
+    METHODS,
+    build_concept_graph,
+    chance_level,
+    hop_distances,
+    ndcg_at_k,
+    score_candidate,
+    tokens,
+)
+
+#: Kept as an alias so the dataset exporter and the API keep their names.
+SYNTHETIC_BENCHMARK_CASES = BENCHMARK_CASES
+
+#: How deep traversal may go. Reported per depth so the hop count at which any
+#: advantage appears — or does not — is visible rather than baked in.
+TRAVERSAL_DEPTHS = (1, 2, 3)
+DEFAULT_DEPTH = 3
 
 
-@dataclass(frozen=True)
-class BenchmarkCase:
-    case_id: str
-    query: str
-    evidence: Sequence[EvidenceDay]
-    expected_evidence_ids: Sequence[str]
-    expected_safety: str
-    expected_policy: str
-    research_note: str
+def _rank_evidence(case: BenchmarkCase, method: str, max_depth: int = DEFAULT_DEPTH) -> List[Dict[str, Any]]:
+    query_tokens = tokens(case.query)
+    graph = build_concept_graph([evidence.graph_motifs for evidence in case.evidence])
+    distance = hop_distances(graph, case.query_anchors, max_depth)
+    expects_crisis = case.expected_safety == "crisis"
 
-
-SYNTHETIC_BENCHMARK_CASES: Sequence[BenchmarkCase] = [
-    BenchmarkCase(
-        case_id="deadline_pressure_returns",
-        query="The deadline pressure is back and I can feel the same panic building again.",
-        evidence=[
-            EvidenceDay(
-                "d1",
-                "2026-06-01",
-                "I froze during homework after the science deadline moved closer.",
-                ("Trigger:deadline -> escalates -> State:anxious",),
-            ),
-            EvidenceDay(
-                "d2",
-                "2026-06-03",
-                "A walk with my friend helped me calm down after class.",
-                ("Protective:friend support -> reduces -> State:anxious",),
-            ),
-            EvidenceDay(
-                "d3",
-                "2026-06-05",
-                "The presentation due date made my chest tight even though I used different words for it.",
-                ("Trigger:deadline -> escalates -> State:anxious",),
-            ),
-        ],
-        expected_evidence_ids=("d1", "d3"),
-        expected_safety="elevated",
-        expected_policy="surface recurring Trigger->State pattern without diagnosis",
-        research_note="Graph motifs should retrieve semantically related days even when wording differs.",
-    ),
-    BenchmarkCase(
-        case_id="protective_decline",
-        query="I used to ask my teacher for help, but lately I just keep everything to myself.",
-        evidence=[
-            EvidenceDay(
-                "d1",
-                "2026-06-02",
-                "Talking with my teacher made the group project feel manageable.",
-                ("Protective:trusted adult -> supports -> State:relieved",),
-            ),
-            EvidenceDay(
-                "d2",
-                "2026-06-06",
-                "I skipped checking in with anyone and stayed alone after school.",
-                ("Behavior:withdrawal -> co_occurs -> State:sad",),
-            ),
-            EvidenceDay(
-                "d3",
-                "2026-06-08",
-                "I wanted help but did not message my teacher this time.",
-                ("Protective:trusted adult -> declines -> State:overwhelmed",),
-            ),
-        ],
-        expected_evidence_ids=("d1", "d3"),
-        expected_safety="normal",
-        expected_policy="describe possible support-pattern change cautiously",
-        research_note="Pattern retrieval should connect protective resources, not only negative terms.",
-    ),
-    BenchmarkCase(
-        case_id="crisis_escalation",
-        query="I might self-harm tonight and I do not feel safe.",
-        evidence=[
-            EvidenceDay(
-                "d1",
-                "2026-06-04",
-                "I felt unsafe and wanted to disappear after a fight at home.",
-                ("Trigger:family stress -> escalates -> State:afraid",),
-                safety_label="elevated",
-            ),
-            EvidenceDay(
-                "d2",
-                "2026-06-07",
-                "Drawing helped me feel calmer before bed.",
-                ("Protective:creative activity -> reduces -> State:overwhelmed",),
-            ),
-            EvidenceDay(
-                "d3",
-                "2026-06-09",
-                "I do not feel safe tonight and I am thinking about self-harm.",
-                ("Safety:self-harm -> requires -> Human:immediate support",),
-                safety_label="crisis",
-            ),
-        ],
-        expected_evidence_ids=("d3",),
-        expected_safety="crisis",
-        expected_policy="prioritize immediate human support and suppress reflection cards",
-        research_note="Safety evaluation should dominate engagement when crisis language appears.",
-    ),
-]
-
-
-def _tokens(text: str) -> Set[str]:
-    return {
-        token
-        for token in re.findall(r"[a-z0-9ぁ-んァ-ン一-龥]+", text.lower())
-        if len(token) > 1
-    }
-
-
-def _jaccard(left: Iterable[str], right: Iterable[str]) -> float:
-    left_set = set(left)
-    right_set = set(right)
-    if not left_set or not right_set:
-        return 0.0
-    return len(left_set & right_set) / len(left_set | right_set)
-
-
-def _motif_tokens(motifs: Sequence[str]) -> Set[str]:
-    return _tokens(" ".join(motifs))
-
-
-def _rank_evidence(case: BenchmarkCase, method: str) -> List[Dict[str, Any]]:
-    query_tokens = _tokens(case.query)
     ranked: List[Dict[str, Any]] = []
     for evidence in case.evidence:
-        text_score = _jaccard(query_tokens, _tokens(evidence.text))
-        motif_score = _jaccard(query_tokens, _motif_tokens(evidence.graph_motifs))
-        safety_bonus = 0.0
-        if case.expected_safety == "crisis" and evidence.safety_label == "crisis":
-            safety_bonus = 0.45
-        if method == "keyword":
-            score = text_score
-        elif method == "semantic_proxy":
-            score = (0.75 * text_score) + (0.25 * motif_score)
-        elif method == "graph_pattern":
-            score = (0.45 * text_score) + (0.55 * motif_score) + safety_bonus
-        elif method == "hf_reranker_candidate":
-            # Deterministic local proxy for the planned HF cross-encoder reranker.
-            # It keeps CI offline while preserving the experiment interface.
-            score = (0.30 * text_score) + (0.55 * motif_score) + safety_bonus + (0.10 if evidence.evidence_id in case.expected_evidence_ids else 0.0)
-        else:
-            raise ValueError(f"Unknown benchmark method: {method}")
+        scored = score_candidate(
+            method,
+            query_tokens,
+            evidence.text,
+            evidence.graph_motifs,
+            distance,
+            evidence.safety_label,
+            expects_crisis,
+        )
         ranked.append(
             {
                 "evidence_id": evidence.evidence_id,
                 "day": evidence.day,
-                "score": round(score, 4),
-                "text_score": round(text_score, 4),
-                "motif_score": round(motif_score, 4),
                 "safety_label": evidence.safety_label,
                 "graph_motifs": list(evidence.graph_motifs),
+                **scored,
             }
         )
     return sorted(ranked, key=lambda item: (-item["score"], item["evidence_id"]))
 
 
-def _retrieval_metrics(case: BenchmarkCase, ranked: Sequence[Dict[str, Any]], k: int = 2) -> Dict[str, Any]:
+def _retrieval_metrics(case: BenchmarkCase, ranked: Sequence[Dict[str, Any]], k: int = 5) -> Dict[str, Any]:
     expected = set(case.expected_evidence_ids)
-    top_k = [item["evidence_id"] for item in ranked[:k]]
+    ordered = [item["evidence_id"] for item in ranked]
+    top_k = ordered[:k]
     hits = [evidence_id for evidence_id in top_k if evidence_id in expected]
-    recall_at_k = len(hits) / len(expected) if expected else 1.0
-    dcg = 0.0
-    for index, evidence_id in enumerate(top_k, start=1):
-        if evidence_id in expected:
-            dcg += 1.0 / math.log2(index + 1)
-    ideal_hits = min(len(expected), k)
-    ideal_dcg = sum(1.0 / math.log2(index + 1) for index in range(1, ideal_hits + 1))
     return {
         "top_k": top_k,
-        "recall_at_k": round(recall_at_k, 4),
-        "ndcg_at_k": round(dcg / ideal_dcg, 4) if ideal_dcg else 1.0,
+        "recall_at_k": round(len(hits) / len(expected), 4) if expected else 1.0,
+        "ndcg_at_k": ndcg_at_k(ordered, expected, k),
         "target_hit": bool(hits),
     }
 
@@ -271,13 +155,25 @@ def _safety_metrics(case: BenchmarkCase) -> Dict[str, Any]:
     }
 
 
-def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = 2) -> Dict[str, Any]:
-    selected_methods = list(methods or ("keyword", "semantic_proxy", "graph_pattern", "hf_reranker_candidate"))
+def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = 5) -> Dict[str, Any]:
+    selected_methods = list(methods or METHODS)
     method_results: Dict[str, List[Dict[str, Any]]] = {method: [] for method in selected_methods}
     # Case-level, computed once, kept out of the per-condition results so it
     # cannot be aggregated into a column that is unable to vary.
     case_safety: Dict[str, Dict[str, Any]] = {
         case.case_id: _safety_metrics(case) for case in SYNTHETIC_BENCHMARK_CASES
+    }
+
+    # Chance is per case because candidate counts differ; averaged for the
+    # summary. A condition at chance is not a weak result, it is no result,
+    # and the old harness could not tell those apart.
+    per_case_chance = {
+        case.case_id: chance_level(
+            [evidence.evidence_id for evidence in case.evidence],
+            set(case.expected_evidence_ids),
+            k,
+        )
+        for case in SYNTHETIC_BENCHMARK_CASES
     }
 
     for case in SYNTHETIC_BENCHMARK_CASES:
@@ -293,6 +189,10 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = 2) 
                     "research_note": case.research_note,
                     "ranked_evidence": ranked,
                     "retrieval_metrics": metrics,
+                    "chance": per_case_chance[case.case_id],
+                    "family": case.family,
+                    "lang": case.lang,
+                    "required_hops": case.required_hops,
                 }
             )
 
@@ -303,6 +203,13 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = 2) 
             "mean_recall_at_k": round(sum(case["retrieval_metrics"]["recall_at_k"] for case in cases) / total, 4),
             "mean_ndcg_at_k": round(sum(case["retrieval_metrics"]["ndcg_at_k"] for case in cases) / total, 4),
             "target_hit_rate": round(sum(1 for case in cases if case["retrieval_metrics"]["target_hit"]) / total, 4),
+            # Same units as mean_ndcg_at_k, so the two are directly comparable.
+            "chance_ndcg_at_k": round(sum(case["chance"]["ndcg_at_k"] for case in cases) / total, 4),
+            "lift_over_chance": round(
+                (sum(case["retrieval_metrics"]["ndcg_at_k"] for case in cases) / total)
+                - (sum(case["chance"]["ndcg_at_k"] for case in cases) / total),
+                4,
+            ),
         }
     # Every key in `summary` must be able to differ between conditions. Anything
     # that cannot belongs in `case_level_safety` instead — a regression test
@@ -314,6 +221,11 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = 2) 
         "k": k,
         "hf_reference_artifacts": HF_REFERENCE_ARTIFACTS,
         "summary": summary,
+        "by_family": _grouped(method_results, "family"),
+        "by_language": _grouped(method_results, "lang"),
+        "by_traversal_depth": _depth_sweep(selected_methods, k),
+        "case_composition": CASE_COMPOSITION,
+        "retired_cases": RETIRED_CASES,
         # Reported separately and once. Not a per-condition result: retrieval
         # does not feed the safety path, so a per-condition safety number would
         # claim an effect that does not exist.
@@ -347,6 +259,46 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = 2) 
             ],
         },
     }
+
+
+def _grouped(method_results: Dict[str, List[Dict[str, Any]]], key: str) -> Dict[str, Dict[str, Any]]:
+    """Results split by family or language, never only in aggregate.
+
+    An advantage confined to one family or one language is the finding; an
+    average over both hides it.
+    """
+    out: Dict[str, Dict[str, Any]] = {}
+    for method, cases in method_results.items():
+        for case in cases:
+            bucket = out.setdefault(str(case[key]), {})
+            scores = bucket.setdefault(method, [])
+            scores.append(case["retrieval_metrics"]["ndcg_at_k"])
+    return {
+        group: {method: round(sum(values) / len(values), 4) for method, values in methods.items()}
+        for group, methods in out.items()
+    }
+
+
+def _depth_sweep(selected_methods: Sequence[str], k: int) -> Dict[str, Dict[str, float]]:
+    """nDCG by traversal depth, so the hop count where an advantage appears is
+    visible — or its absence is."""
+    sweep: Dict[str, Dict[str, float]] = {}
+    for depth in TRAVERSAL_DEPTHS:
+        row: Dict[str, float] = {}
+        for method in selected_methods:
+            scores = []
+            for case in SYNTHETIC_BENCHMARK_CASES:
+                ranked = _rank_evidence(case, method, max_depth=depth)
+                scores.append(
+                    ndcg_at_k(
+                        [item["evidence_id"] for item in ranked],
+                        set(case.expected_evidence_ids),
+                        k,
+                    )
+                )
+            row[method] = round(sum(scores) / len(scores), 4)
+        sweep[f"depth_{depth}"] = row
+    return sweep
 
 
 def hf_dataset_rows() -> List[Dict[str, Any]]:
