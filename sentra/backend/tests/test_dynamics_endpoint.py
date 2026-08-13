@@ -14,10 +14,10 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.database import get_session
-from app.main import app
+from app.main import MAX_DYNAMICS_DAYS, app
 from app.schemas.analytics import DailyFeatureAggregation
 
 USER = "dynamics-user"
@@ -165,3 +165,61 @@ def test_a_trend_carries_its_calibration_over_the_wire():
 
 def test_a_nonsensical_window_is_rejected():
     assert client.get("/api/research/dynamics", params={"user_id": USER, "days": 0}).status_code == 400
+
+
+# ---- review of #114 --------------------------------------------------------
+
+
+def test_an_unbounded_window_is_rejected_rather_than_quietly_shortened():
+    """The surrogate null is 200 rolling pipelines per trend per feature, so the
+    work grows with the window. Rejected rather than clamped: an analysis run
+    over a shorter window than the caller asked for is a different analysis
+    wearing the caller's label.
+    """
+    assert client.get(
+        "/api/research/dynamics", params={"user_id": USER, "days": MAX_DYNAMICS_DAYS}
+    ).status_code == 200
+    over = client.get(
+        "/api/research/dynamics", params={"user_id": USER, "days": MAX_DYNAMICS_DAYS + 1}
+    )
+    assert over.status_code == 400
+    assert str(MAX_DYNAMICS_DAYS) in over.json()["detail"]
+
+
+def test_two_aggregations_for_one_day_are_one_observation_over_the_wire():
+    """`process_day` inserts unconditionally, so a second entry on a day adds a
+    second row. The later row supersedes it, and the response says the day was
+    duplicated rather than leaving the collapse invisible."""
+    duplicated_day = date.today() - timedelta(days=3)
+    with Session(engine) as session:
+        session.add(
+            DailyFeatureAggregation(
+                user_id=USER,
+                day=duplicated_day,
+                feature_vector_json={"protective_ratio": 0.99, "relation_density": 1.5},
+            )
+        )
+        session.commit()
+
+    try:
+        payload = client.get(
+            "/api/research/dynamics", params={"user_id": USER, "days": 30}
+        ).json()
+
+        assert payload["days_with_multiple_rows"] == [duplicated_day.isoformat()]
+        assert payload["days_observed"] == 30, "30 days, not 31 rows"
+
+        ratio = next(f for f in payload["features"] if f["feature"] == "protective_ratio")
+        days = [point["day"] for point in ratio["rolling_variance"]]
+        assert len(days) == len(set(days)), "one rolling point per date"
+        assert ratio["spacing"]["observation_count"] == 29, "day 10 omits the feature"
+    finally:
+        with Session(engine) as session:
+            stale = session.exec(
+                select(DailyFeatureAggregation).where(
+                    DailyFeatureAggregation.user_id == USER,
+                    DailyFeatureAggregation.day == duplicated_day,
+                )
+            ).all()
+            session.delete(sorted(stale, key=lambda row: row.id)[-1])
+            session.commit()
