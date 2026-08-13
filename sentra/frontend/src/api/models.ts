@@ -269,7 +269,13 @@ export interface AnomalyResult {
   id: RecordId;
   user_id: string;
   day: string;
-  anomaly_score: number;
+  /**
+   * Null while the student is still inside the 14-day ramp, and null from the
+   * route handler, which cannot see history. A consumer must render the
+   * `baseline_deviation_json.status` empty state rather than substituting zero
+   * — zero is a reading, and during ramp-up there is no reading.
+   */
+  anomaly_score: number | null;
   z_scores_json: Record<string, number>;
   explanation_id?: RecordId;
 }
