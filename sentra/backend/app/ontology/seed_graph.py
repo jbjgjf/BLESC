@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import yaml
 
@@ -47,6 +47,38 @@ class SeedSubgraph:
     description_ja: str
     nodes: Dict[str, SeedNode]
     edges: List[SeedEdge]
+    #: Node ids forming a directed path the retrieval benchmark's temporal cases
+    #: are built from, or empty where a file declares none.
+    #:
+    #: Declared in the YAML rather than described in a comment because the
+    #: dependency runs the wrong way otherwise: the cases in
+    #: `app/services/benchmark_cases.py` assert an answer key that only holds
+    #: while these edges exist, and a comment does not fail when they change.
+    benchmark_chain: Tuple[str, ...] = ()
+
+    def motif_term(self, node_id: str) -> str:
+        """A node in the notation `benchmark_cases.py` writes motifs in.
+
+        The convention is `Category:id-with-spaces`, NOT `Category:label_en` —
+        the existing cases already do this (`State:cognitive impairment`, where
+        the label is "reduced concentration and memory"), and it is written down
+        here because it was previously only inferable by reading both files.
+        """
+        node = self.nodes[node_id]
+        return f"{node.category}:{node.id.replace('_', ' ')}"
+
+    @property
+    def chain_motifs(self) -> List[str]:
+        """The declared chain rendered as benchmark motif strings, in order.
+
+        So a case author copies the chain rather than retyping it. Empty where
+        no chain is declared.
+        """
+        by_pair = {(edge.source, edge.target): edge for edge in self.edges}
+        return [
+            f"{self.motif_term(source)} -> {by_pair[(source, target)].type} -> {self.motif_term(target)}"
+            for source, target in zip(self.benchmark_chain, self.benchmark_chain[1:])
+        ]
 
     @property
     def unsourced_edge_rate(self) -> float:
@@ -105,13 +137,40 @@ def _load_file(path: Path) -> SeedSubgraph:
             )
         )
 
+    chain = tuple(raw.get("benchmark_chain") or ())
+    if chain:
+        _validate_chain(path, chain, nodes, edges)
+
     return SeedSubgraph(
         subgraph_id=raw["subgraph_id"],
         description_en=raw.get("description_en", ""),
         description_ja=raw.get("description_ja", ""),
         nodes=nodes,
         edges=edges,
+        benchmark_chain=chain,
     )
+
+
+def _validate_chain(path: Path, chain: Tuple[str, ...], nodes: Dict[str, SeedNode], edges: List[SeedEdge]) -> None:
+    """A declared chain must be a real directed path through this file.
+
+    Checked at load time for the same reason source ids are: a chain that named
+    a step no edge carries would let the benchmark cases built on it look
+    grounded in the curation while resting on nothing.
+    """
+    if len(chain) < 3:
+        raise SeedGraphError(
+            f"{path.name}: benchmark_chain has {len(chain)} nodes; a chain shorter than three is not multi-hop"
+        )
+    pairs = {(edge.source, edge.target) for edge in edges}
+    for source, target in zip(chain, chain[1:]):
+        for node_id in (source, target):
+            if node_id not in nodes:
+                raise SeedGraphError(f"{path.name}: benchmark_chain names {node_id!r}, which is not a node in this file")
+        if (source, target) not in pairs:
+            raise SeedGraphError(
+                f"{path.name}: benchmark_chain step {source} -> {target} is not an edge in this file"
+            )
 
 
 @lru_cache(maxsize=1)

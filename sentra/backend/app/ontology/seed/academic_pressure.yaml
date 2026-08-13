@@ -1,0 +1,431 @@
+subgraph_id: academic_pressure
+# The most frequent trigger in the synthetic cases — `deadline_pressure_returns`,
+# `study_overload_recovery`, both `vocab_disjoint` cases — and until this file
+# the one with nothing behind it. The benchmark's two-hop temporal cases (#87,
+# grown in #88) are built on the chain declared below.
+#
+# Five things a reader should know before trusting anything here.
+#
+# 1. THIS IS THE SUBGRAPH THE BENCHMARK LEANS ON HARDEST, SO THE ORDER MATTERS.
+#    `graph_pattern` can only beat `keyword` in principle on a query whose
+#    answer requires traversing a path no single day contains. The chain is
+#    curated here FIRST and the cases are written against it — the reverse
+#    order produces cases that assert whatever the graph happens to contain,
+#    and a benchmark scoring against its own answer key. `benchmark_chain`
+#    below is that contract, loaded and validated rather than left in a
+#    comment, so a later edit to these edges fails a test instead of quietly
+#    invalidating the cases.
+#
+# 2. THE DECLARED CHAIN IS FIVE NODES, NOT THE FOUR THE ISSUE SKETCHED.
+#    The sketch was exam pressure → insomnia → cognitive impairment →
+#    anhedonia. What is declared is
+#
+#        exam_pressure → sleep_deprivation → cognitive_impairment
+#                      → depressed_mood → anhedonia
+#
+#    Two deliberate departures.
+#
+#    `insomnia` is not used as a node id. 不眠症 is a clinical diagnosis and
+#    nothing in this registry supports asserting one from a diary entry; the
+#    node is `sleep_onset_difficulty` — 寝つけない — which is what a student
+#    reports. It is in the file, on its own route into sleep loss, but off the
+#    declared chain: routing the chain through it would make the chain five
+#    edges long, and `graph_pattern` sweeps depth 1-3 only, so the terminal day
+#    would sit four hops from the anchor and score zero under the very
+#    condition the case exists to test. A chain the benchmark cannot traverse
+#    is not a chain the benchmark can use.
+#
+#    `cognitive_impairment → anhedonia` is not an edge here. Both are features
+#    NG134 directs clinicians to assess; a direct edge between them would be a
+#    claim no source makes, added only to shorten the path by one. It goes
+#    through `depressed_mood`, which is the reading sleep.yaml already carries.
+#
+# 3. THE JUDGEMENT RATE IS THE HIGHEST OF THE THREE FILES, AND THAT IS THE
+#    FINDING. sleep.yaml sits at 0.40, social_withdrawal.yaml at 0.59, this
+#    file above both. Academic pressure is the most frequent trigger in the
+#    case set and the one the available material has least to say about:
+#    生徒指導提要 is a source about school PROCESS and is explicit that it
+#    supports no clinical claim, and the WHO fact sheet reports population-level
+#    risk factors, not directed individual relations. Nothing here cites a
+#    source for 受験, 塾 or 提出期限 because this registry holds none.
+#    `unsourced_edge_rate` reports it; a test pins it above sleep.yaml's so a
+#    later edit cannot dress judgement as citation.
+#
+# 4. SEVEN NODES AND FIVE EDGES ARE SHARED WITH sleep.yaml, ON PURPOSE AND
+#    STATED IDENTICALLY. The chain has to be traversable inside ONE loaded
+#    subgraph — nothing merges the files today — so the sleep→cognition→mood
+#    segment is carried here as well as there. It is ONE reading of the same
+#    material appearing twice, not two independent supports, and a merge that
+#    concatenated rather than de-duplicating on (source, target, type) would
+#    double-count it.
+#
+#    This matters more here than it did for social_withdrawal.yaml, because
+#    `provenance._label_index` is first-writer-wins over `sorted(glob)` and
+#    `academic_pressure.yaml` sorts first. Every label these files share is now
+#    resolved to THIS file. That changes nothing only for as long as the shared
+#    nodes and edges stay identical, which is why the test asserting it is not
+#    housekeeping.
+#
+# 5. ONE EDGE DISAGREES WITH AN EXISTING BENCHMARK CASE, DELIBERATELY. The
+#    `vocab_disjoint` cases carry the motif
+#    `Trigger:exam pressure -> escalates -> State:anxious`. The curated edge is
+#    `causes`, because `escalates` presupposes the anxiety already present and
+#    nothing supports that as the general case. The graph is not being bent to
+#    the case. Recorded here so whoever revises those cases sees it.
+#
+# Curation rule, unchanged from sleep.yaml and social_withdrawal.yaml: no edge
+# goes in because it sounds right. Where the cited material reports an
+# association, evidence_strength is `association` even when the relation type
+# is `causes`. Where nothing can be pointed at, the edge is `expert_judgement`
+# with a written rationale or it is not here.
+description_en: Adolescent academic pressure — exams, deadlines and expectation — and its reported route through sleep loss to mood.
+description_ja: 思春期の学業ストレス（試験・締め切り・期待）と、睡眠の乱れを介した気分への経路。
+
+sources:
+  - who_adolescent_mh
+  - who_mhgap
+  - nice_ng134
+  - mext_seitoshido
+  - expert_judgement
+
+#: The path the temporal benchmark cases (#87, #88) are built from, declared so
+#: it is validated rather than described. The loader fails if any consecutive
+#: pair is not an edge in this file. `chain_motifs` renders it in the notation
+#: `app/services/benchmark_cases.py` uses, so a case author copies it instead of
+#: re-typing it — which is the whole mechanism keeping the two in step.
+#:
+#: Four hops from `exam_pressure`, so with one day per step the terminal day
+#: sits at depth 3 — the deepest the `graph_pattern` sweep reaches.
+benchmark_chain:
+  - exam_pressure
+  - sleep_deprivation
+  - cognitive_impairment
+  - depressed_mood
+  - anhedonia
+
+nodes:
+  # --- the pressure itself -------------------------------------------------
+  - id: exam_pressure
+    category: Trigger
+    label_ja: 試験・成績へのプレッシャー
+    label_en: exam pressure
+    source_refs: [mext_seitoshido]
+
+  - id: assignment_deadline
+    category: Event
+    label_ja: 課題の提出期限
+    label_en: assignment deadline
+    source_refs: [expert_judgement]
+
+  - id: performance_expectation
+    category: Trigger
+    label_ja: 成績への期待（家庭・学校から）
+    label_en: expectation to do well
+    source_refs: [expert_judgement]
+
+  # --- sleep: shared with sleep.yaml, plus the onset difficulty ------------
+  - id: sleep_onset_difficulty
+    category: State
+    label_ja: 寝つけない・眠りが浅い
+    label_en: trouble falling or staying asleep
+    source_refs: [expert_judgement]
+
+  - id: sleep_deprivation
+    category: Trigger
+    label_ja: 睡眠不足
+    label_en: sleep deprivation
+    source_refs: [who_adolescent_mh]
+
+  # --- states --------------------------------------------------------------
+  - id: cognitive_impairment
+    category: State
+    label_ja: 認知機能の低下
+    label_en: reduced concentration and memory
+    source_refs: [who_adolescent_mh]
+
+  - id: depressed_mood
+    category: State
+    label_ja: 抑うつ傾向
+    label_en: depressed mood
+    source_refs: [nice_ng134, who_adolescent_mh]
+
+  - id: anhedonia
+    category: State
+    label_ja: 興味や楽しさを感じない
+    label_en: loss of interest or pleasure
+    source_refs: [nice_ng134]
+
+  - id: anxiety
+    category: State
+    label_ja: 不安
+    label_en: anxiety
+    source_refs: [who_adolescent_mh]
+
+  # --- what the school sees ------------------------------------------------
+  - id: academic_difficulty
+    category: Event
+    label_ja: 学業のつまずき
+    label_en: difficulty keeping up at school
+    source_refs: [mext_seitoshido]
+
+  # --- behaviours ----------------------------------------------------------
+  - id: all_nighter_studying
+    category: Behavior
+    label_ja: 徹夜・深夜までの勉強
+    label_en: studying late into the night
+    source_refs: [expert_judgement]
+
+  - id: avoiding_schoolwork
+    category: Behavior
+    label_ja: 課題に手をつけられない
+    label_en: putting off schoolwork
+    source_refs: [expert_judgement]
+
+  # --- protective ----------------------------------------------------------
+  - id: regular_sleep_schedule
+    category: Protective
+    label_ja: 規則的な睡眠
+    label_en: regular sleep schedule
+    source_refs: [who_adolescent_mh]
+
+  - id: trusted_adult_contact
+    category: Protective
+    label_ja: 信頼できる大人とのつながり
+    label_en: contact with a trusted adult
+    source_refs: [who_mhgap, mext_seitoshido]
+
+  - id: study_plan_support
+    category: Protective
+    label_ja: 学習の見通しを一緒に立てる支援
+    label_en: help planning the workload
+    source_refs: [mext_seitoshido]
+
+edges:
+  # --- the declared benchmark chain ---------------------------------------
+  # Four edges, in order. Two of them are sleep.yaml's, unchanged.
+  - source: exam_pressure
+    target: sleep_deprivation
+    type: causes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced. The first link of the declared chain and the one a reviewer
+      should challenge first: nothing in this registry connects academic
+      pressure to sleep loss, and the direction is at least as arguable in
+      reverse — a student sleeping badly finds the same workload heavier. It is
+      here rather than dropped because the chain the benchmark tests has to
+      start somewhere real, and leaving the most frequent trigger in the case
+      set unconnected would let a generated graph invent this link unmarked.
+      `sleep_onset_difficulty` below names the mechanism this edge skips.
+
+  - source: sleep_deprivation
+    target: cognitive_impairment
+    type: causes
+    evidence_strength: association
+    source_refs: [who_adolescent_mh]
+    scope_note: >-
+      WHO adolescent material reports insufficient sleep alongside reduced
+      concentration. Observational; the direction modelled here is not
+      established by that source, and reverse and common-cause explanations are
+      not excluded.
+
+      SHARED CLAIM. sleep.yaml carries this edge from the same reading of the
+      same material — one support appearing twice, not two. Stated identically
+      (same type, same strength, same source_refs) so a merge de-duplicating on
+      (source, target, type) drops a copy without choosing between versions.
+
+  - source: cognitive_impairment
+    target: depressed_mood
+    type: causes
+    evidence_strength: association
+    source_refs: [nice_ng134, who_adolescent_mh]
+    scope_note: >-
+      NG134 lists concentration difficulty among the features clinicians assess
+      in depression. That makes it a FEATURE OF the condition as much as a route
+      into it — the edge direction is a modelling choice the guideline does not
+      make. sleep.yaml calls this the weakest link in its chain; it is the
+      weakest link in this one too, and the chain should not be read as a
+      mechanism.
+
+      SHARED CLAIM, stated identically to sleep.yaml.
+
+  - source: depressed_mood
+    target: anhedonia
+    type: causes
+    evidence_strength: association
+    source_refs: [nice_ng134]
+    scope_note: >-
+      NG134 treats loss of interest or pleasure as a core feature of depression
+      in children and young people. The same caveat as the edge above, and
+      arguably sharper: anhedonia is part of what the construct MEANS, so a
+      directed edge between them is closer to a definition than a finding. It is
+      typed `causes` because the chain models a route a student's account
+      follows, and marked `association` because the guideline reports
+      co-occurring features, not a direction.
+
+  # --- the mechanism the chain skips ---------------------------------------
+  - source: exam_pressure
+    target: sleep_onset_difficulty
+    type: causes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced. Lying awake before an exam is the specific thing students
+      describe, and it is a narrower claim than the direct pressure → sleep
+      deprivation edge, so both are here: this pair names a mechanism, that one
+      asserts the outcome. Deliberately NOT called insomnia — 不眠症 is a
+      diagnosis, and nothing in this registry supports inferring one.
+
+  - source: sleep_onset_difficulty
+    target: sleep_deprivation
+    type: causes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced, and near-definitional, which is why it is marked rather than
+      given the WHO citation the next edge carries. They are still different
+      things: a student can sleep badly and still get enough hours, and can
+      fall asleep instantly on five hours a night.
+
+  # --- what feeds the pressure ---------------------------------------------
+  - source: assignment_deadline
+    target: exam_pressure
+    type: escalates
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced. The relation the retired `deadline_pressure_returns` case was
+      named for. Typed `escalates` rather than `causes` because a deadline
+      intensifies a pressure the school year already supplies; it does not
+      create it.
+
+  - source: performance_expectation
+    target: exam_pressure
+    type: escalates
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced. Expectation from home or school is widely described in the
+      Japanese context and this registry holds nothing that states it. The WHO
+      fact sheet names quality of home life among population-level determinants,
+      which is a different claim at a different level, so it is not cited here.
+
+  - source: academic_difficulty
+    target: exam_pressure
+    type: precedes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced, and the edge that closes the loop
+      pressure → sleep loss → cognition → falling behind → pressure. The
+      recurrence in `deadline_pressure_returns` is that loop, so the graph is
+      CYCLIC on purpose. Typed `precedes` because only the ordering is
+      defensible: falling behind before the next assessment is an observation,
+      not a mechanism.
+
+  # --- what the pressure feeds ---------------------------------------------
+  - source: exam_pressure
+    target: anxiety
+    type: causes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced. NOTE FOR CASE AUTHORS: the `vocab_disjoint` benchmark cases
+      state this motif as `escalates`. The curated edge is `causes` —
+      `escalates` presupposes anxiety already present, which is a stronger claim
+      than anything supports. The graph is not being adjusted to match the case;
+      per #78's own constraint the curation comes first and the cases follow.
+
+  - source: exam_pressure
+    target: all_nighter_studying
+    type: causes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced. The behavioural route into sleep loss, kept separate from the
+      `sleep_onset_difficulty` route because they are different situations —
+      choosing to stay up and being unable to sleep are not the same account,
+      and a graph that collapsed them would lose the distinction a reader needs.
+
+  - source: all_nighter_studying
+    target: sleep_deprivation
+    type: causes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced. Definitional in the direction stated. sleep.yaml carries the
+      neighbouring `late_night_screen_use → sleep_deprivation`; this is a
+      distinct behaviour with a distinct account, not a restatement, and the two
+      files do not share it.
+
+  - source: anxiety
+    target: avoiding_schoolwork
+    type: causes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced. NG134 treats avoidance as something clinicians ask about; it
+      does not connect it to anxiety causally, so nothing is cited. Included
+      because the avoidance loop is what turns a single hard week into the
+      multi-week pattern the temporal cases look for.
+
+  - source: avoiding_schoolwork
+    target: academic_difficulty
+    type: precedes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced. Temporal only, and typed `precedes` rather than `causes`
+      deliberately: the two are close to the same thing observed at different
+      moments, and a causal arrow between them would assert more than a school's
+      record can distinguish.
+
+  - source: cognitive_impairment
+    target: academic_difficulty
+    type: causes
+    evidence_strength: expert_judgement
+    source_refs: [expert_judgement]
+    scope_note: >-
+      Not sourced as a causal claim. 生徒指導提要 describes the school's role
+      when a student struggles; it does not model why. Judgement.
+
+      SHARED CLAIM, stated identically to sleep.yaml.
+
+  # --- protective ----------------------------------------------------------
+  - source: regular_sleep_schedule
+    target: sleep_deprivation
+    type: buffers
+    evidence_strength: association
+    source_refs: [who_adolescent_mh]
+    scope_note: >-
+      Population-level protective framing applied to an individual edge, which
+      is an extension beyond what the source states.
+
+      SHARED CLAIM, stated identically to sleep.yaml.
+
+  - source: trusted_adult_contact
+    target: depressed_mood
+    type: buffers
+    evidence_strength: association
+    source_refs: [who_mhgap, mext_seitoshido]
+    scope_note: >-
+      mhGAP and 生徒指導提要 both describe routing a young person to a trusted
+      adult or professional. Both are about PROCESS — neither quantifies an
+      effect on mood, so this is the weakest kind of support the file carries.
+
+      SHARED CLAIM, stated identically to sleep.yaml — and to
+      social_withdrawal.yaml (#77), which carries the same three fields while
+      it sits on its own branch, so the three files agree when it lands.
+
+  - source: study_plan_support
+    target: exam_pressure
+    type: buffers
+    evidence_strength: expert_judgement
+    source_refs: [mext_seitoshido]
+    scope_note: >-
+      生徒指導提要 describes 学習指導 and 進路指導 as part of what a school
+      provides, so the citation records what was consulted — it does not support
+      a buffering effect on how pressured a student feels, and the strength
+      stays judgement despite the reference. The gap between a support existing
+      and it reaching a student is the same gap social_withdrawal.yaml records
+      for スクールカウンセラー access.

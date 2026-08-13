@@ -23,6 +23,23 @@ Two families:
   (`app/ontology/seed/sleep.yaml`), not invented here — a benchmark whose
   chains were written for it would be scoring its own answer key.
 
+WHERE THE NEXT CHAINS COME FROM (#78, for the #88 growth). Academic pressure is
+the most frequent trigger in this set, and `app/ontology/seed/academic_pressure.yaml`
+declares the chain to build those cases on as `benchmark_chain`, validated at
+load time:
+
+    exam_pressure -> sleep_deprivation -> cognitive_impairment
+                  -> depressed_mood -> anhedonia
+
+`load_seed_subgraphs()["academic_pressure"].chain_motifs` renders it in the
+motif notation below, so a case author copies it rather than retyping it and a
+later edit to the curation fails a test instead of quietly invalidating the
+cases. Four hops, which is deliberate: with one day per step the terminal day
+sits at depth 3, the deepest `TRAVERSAL_DEPTHS` reaches. Note that the curated
+`exam_pressure -> anxiety` edge is `causes`, while the `vocab_disjoint` cases
+below state that motif as `escalates`; the curation is first and those cases
+are what should change.
+
 One case is a red herring: the path exists and the correct answer is elsewhere.
 A benchmark where the graph method can only win is as uninformative as one
 where everything wins.

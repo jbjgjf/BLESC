@@ -2,7 +2,7 @@ import hashlib
 import io
 import logging
 import os
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -24,6 +24,7 @@ from .schemas.extraction import Extraction
 from .schemas.research import EvalExample
 from .schemas.structured import EntrySubmissionResponse, ExtractionResponse, GraphSnapshot, HybridExplanation
 from .analytics.baseline import baseline_provenance
+from .temporal import assemble_participant_graph, snapshot_inputs
 from .services.inference_orchestrator import InferenceOrchestrator
 from .services.hf_research_benchmark import hf_dataset_rows, run_hf_research_benchmark
 from .services.llm_adapter import llm_adapter
@@ -759,6 +760,55 @@ def list_graph_snapshots(user_id: str, limit: int = 12, session: Session = Depen
         all(len(snapshot.nodes_json or []) == 0 for snapshot in snapshots) if snapshots else True,
     )
     return snapshots
+
+
+@app.get("/api/research/temporal-graph")
+def get_participant_temporal_graph(
+    user_id: str,
+    limit: int = 120,
+    as_of: Optional[str] = None,
+    max_gap_days: int = 0,
+    session: Session = Depends(get_session),
+):
+    """The participant temporal graph (#95), assembled on read.
+
+    Derived, not stored. Materialising it would create a second copy of the
+    history to keep in sync with `graph_snapshots`, and the assembler is
+    deterministic, so recomputing costs less than the drift would.
+
+    `as_of` adds the graph as it stood at the end of that day — reconstructed
+    from the event log, which is a different question from what was written
+    that day. This is a data model, not a prediction: see
+    `docs/participant_temporal_graph.md`.
+    """
+    query = (
+        select(GraphSnapshot)
+        .where(GraphSnapshot.user_id == user_id)
+        .order_by(GraphSnapshot.day.asc(), GraphSnapshot.created_at.asc())
+        .limit(limit)
+    )
+    rows = session.exec(query).all()
+    graph = assemble_participant_graph(user_id, snapshot_inputs(rows), max_gap_days=max_gap_days)
+    payload = graph.as_dict()
+
+    if as_of:
+        try:
+            payload["as_of"] = graph.at(date.fromisoformat(as_of)).as_dict()
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="as_of must be an ISO date (YYYY-MM-DD)"
+            ) from None
+
+    logger.info(
+        "[temporal-graph] user=%s snapshots=%s nodes=%s edges=%s identity_usable=%s disagreements=%s",
+        user_id,
+        graph.report.snapshots_seen,
+        len(graph.nodes),
+        len(graph.edges),
+        graph.report.identity_is_usable,
+        len(graph.report.diff_disagreements),
+    )
+    return payload
 
 
 @app.get("/api/timeline", response_model=List[AnomalyResult])
