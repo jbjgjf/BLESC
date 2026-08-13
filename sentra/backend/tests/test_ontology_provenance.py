@@ -182,6 +182,227 @@ class TestSleepSubgraph:
             seed_graph._load_file(bad)
 
 
+class TestAcademicPressureSubgraph:
+    """#78 — the trigger the case set uses most, and the chain the temporal
+    benchmark cases (#87, #88) are built on.
+
+    The order these assertions defend: the chain is curated here and the cases
+    are written against it. Cases written first would assert whatever the graph
+    happened to contain, and the graph condition would be scoring its own
+    answer key.
+    """
+
+    @pytest.fixture(scope="class")
+    def pressure(self):
+        return load_seed_subgraphs()["academic_pressure"]
+
+    def test_edge_count_is_within_the_stated_range(self, pressure):
+        assert 10 <= len(pressure.edges) <= 20
+
+    def test_every_node_is_bilingual_and_sourced(self, pressure):
+        for node in pressure.nodes.values():
+            assert node.label_ja and node.label_en
+            assert node.source_refs
+            assert node.category in VALID_CATEGORIES
+
+    def test_every_edge_carries_source_refs_and_a_scope_note(self, pressure):
+        for edge in pressure.edges:
+            assert edge.source_refs, f"{edge.source}->{edge.target}"
+            assert edge.scope_note.strip(), f"{edge.source}->{edge.target}"
+
+    def test_observational_support_is_not_dressed_as_causal(self, pressure):
+        assert not [e for e in pressure.edges if e.evidence_strength is EvidenceStrength.CAUSAL]
+        for edge in [e for e in pressure.edges if e.type == "causes"]:
+            assert edge.evidence_strength in (EvidenceStrength.ASSOCIATION, EvidenceStrength.EXPERT_JUDGEMENT)
+
+    def test_no_node_sits_in_the_file_without_an_edge(self, pressure):
+        # A node kept alive by nothing is padding, and pads the category counts
+        # a reader uses to judge the file.
+        for node_id in pressure.nodes:
+            assert [e for e in pressure.edges if node_id in (e.source, e.target)], node_id
+
+    # -- the chain the benchmark is built on ---------------------------------
+
+    def test_the_declared_chain_is_a_real_multi_hop_path(self, pressure):
+        # The loader enforces this too; asserted here because it is the
+        # acceptance criterion, not an implementation detail.
+        chain = pressure.benchmark_chain
+        assert len(chain) >= 4, "at least three hops, or a single day could contain the answer"
+        pairs = {(e.source, e.target) for e in pressure.edges}
+        for step in zip(chain, chain[1:]):
+            assert step in pairs, step
+
+    def test_the_chain_runs_from_the_trigger_to_an_affective_state(self, pressure):
+        # What makes the case winnable by traversal and not by wording: the
+        # query is about exams and the answer is about not enjoying anything.
+        chain = pressure.benchmark_chain
+        assert chain[0] == "exam_pressure"
+        assert pressure.nodes[chain[0]].category == "Trigger"
+        assert chain[-1] == "anhedonia"
+        assert pressure.nodes[chain[-1]].category == "State"
+
+    def test_the_chain_is_traversable_by_the_benchmarks_own_retrieval(self, pressure):
+        # The acceptance criterion the file exists for, checked against the
+        # real scorer rather than by eye. One day per chain step; every one of
+        # them must be reachable from the query anchor within the depth the
+        # sweep actually runs to, or the cases built on this chain score zero
+        # under the condition they exist to test.
+        from app.services.benchmark_retrieval import _adjacency, hop_distances, parse_motifs, traversal_score
+        from app.services.hf_research_benchmark import TRAVERSAL_DEPTHS
+
+        motifs = pressure.chain_motifs
+        assert len(motifs) == len(pressure.benchmark_chain) - 1
+        for motif in motifs:
+            assert parse_motifs([motif]), f"motif does not parse in the benchmark's notation: {motif}"
+
+        days = [[motif] for motif in motifs]
+        distance = hop_distances(_adjacency(days), ["exam pressure"], max(TRAVERSAL_DEPTHS))
+        for day in days:
+            score, hops = traversal_score(day, distance)
+            assert score > 0.0, f"unreachable within depth {max(TRAVERSAL_DEPTHS)}: {day}"
+            assert hops <= max(TRAVERSAL_DEPTHS)
+
+    def test_traversal_recovers_the_chain_where_wording_cannot(self, pressure):
+        # The hypothesis in miniature. Decoys reuse the query's vocabulary and
+        # the chain days share none of it, so `keyword` must be misled and
+        # `graph_pattern` must not. If this fails, a case built on this chain
+        # cannot separate the conditions whatever else is true of it.
+        from app.services.benchmark_retrieval import _adjacency, char_ngrams, hop_distances, score_candidate, tokens
+
+        query = "The pressure before a deadline is doing it again."
+        chain_days = [(f"c{i}", "Slept badly, then could not take any of it in.", [motif])
+                      for i, motif in enumerate(pressure.chain_motifs)]
+        decoy_days = [(f"d{i}", "Wrote about pressure and the deadline again today.",
+                       ["State:pressure -> co_occurs -> State:deadline"]) for i in range(20)]
+        candidates = chain_days + decoy_days
+        distance = hop_distances(_adjacency([motifs for _, _, motifs in candidates]), ["exam pressure"], 3)
+
+        def top(method):
+            ranked = sorted(
+                candidates,
+                key=lambda candidate: -score_candidate(
+                    method, tokens(query), char_ngrams(query),
+                    candidate[1], candidate[2], distance, "normal", False,
+                )["score"],
+            )
+            return {candidate[0] for candidate in ranked[: len(chain_days)]}
+
+        chain_ids = {candidate[0] for candidate in chain_days}
+        assert top("graph_pattern") == chain_ids
+        assert not (top("keyword") & chain_ids)
+
+    def test_the_recurrence_loop_the_case_set_is_named_for_is_present(self, pressure):
+        # `deadline_pressure_returns` is about a pattern coming BACK. The graph
+        # is cyclic on purpose and a test says so, because a later reviewer
+        # removing "the cycle" would remove the recurrence with it.
+        pairs = {(e.source, e.target) for e in pressure.edges}
+        assert ("academic_difficulty", "exam_pressure") in pairs
+        assert ("exam_pressure", "sleep_deprivation") in pairs
+
+    def test_the_sleep_onset_route_is_not_a_clinical_claim(self, pressure):
+        # 不眠症 is a diagnosis. The issue's sketch said "insomnia"; what is
+        # encoded is what a student reports, and it is judgement throughout.
+        assert "insomnia" not in pressure.nodes
+        assert "sleep_onset_difficulty" in pressure.nodes
+        for edge in [e for e in pressure.edges if "sleep_onset_difficulty" in (e.source, e.target)]:
+            assert edge.evidence_strength is EvidenceStrength.EXPERT_JUDGEMENT, f"{edge.source}->{edge.target}"
+            assert edge.source_refs == ["expert_judgement"], f"{edge.source}->{edge.target}"
+
+    # -- what the file shares with the others --------------------------------
+
+    def test_the_judgement_rate_is_reported_not_minimised(self, pressure):
+        # Highest of the seed files, and that is the honest result: this
+        # registry holds no source for 受験, 塾 or 提出期限, and 生徒指導提要 is
+        # explicit that it supports no clinical claim.
+        assert 0 < pressure.unsourced_edge_rate < 1
+        assert pressure.unsourced_edge_rate > load_seed_subgraphs()["sleep_deprivation"].unsourced_edge_rate
+
+    def test_shared_nodes_and_edges_are_stated_identically(self, pressure):
+        # Sharper here than for social_withdrawal.yaml: `provenance._label_index`
+        # is first-writer-wins over sorted(glob), and academic_pressure.yaml
+        # sorts first, so every label these files share now resolves to THIS
+        # file. Which file wins is only harmless while they agree exactly.
+        others = {key: value for key, value in load_seed_subgraphs().items() if key != "academic_pressure"}
+        assert others, "expected at least sleep.yaml alongside this file"
+
+        shared_nodes = 0
+        for other in others.values():
+            for node_id, node in pressure.nodes.items():
+                twin = other.nodes.get(node_id)
+                if twin is None:
+                    continue
+                shared_nodes += 1
+                assert (node.category, node.label_ja, node.label_en) == (
+                    twin.category, twin.label_ja, twin.label_en), node_id
+                assert sorted(node.source_refs) == sorted(twin.source_refs), node_id
+        assert shared_nodes, "expected the sleep nodes this file's chain runs through"
+
+        here = {(e.source, e.target, e.type): e for e in pressure.edges}
+        shared_edges = 0
+        for other in others.values():
+            for key, twin in {(e.source, e.target, e.type): e for e in other.edges}.items():
+                if key not in here:
+                    continue
+                shared_edges += 1
+                assert here[key].evidence_strength is twin.evidence_strength, key
+                assert sorted(here[key].source_refs) == sorted(twin.source_refs), key
+        assert shared_edges, "expected the sleep edges this file's chain runs through"
+
+    def test_it_does_not_contradict_another_subgraph(self, pressure):
+        # A reversed shared edge would give a merged graph a cycle no file's
+        # curation argued for. Runs over every loaded subgraph so it also
+        # covers social_withdrawal.yaml once that lands.
+        here = {(e.source, e.target) for e in pressure.edges}
+        for subgraph_id, other in load_seed_subgraphs().items():
+            if subgraph_id == "academic_pressure":
+                continue
+            reversed_pairs = here & {(e.target, e.source) for e in other.edges}
+            assert not reversed_pairs, f"orientation conflict with {subgraph_id}: {reversed_pairs}"
+
+    # -- the loader guarantee the cases rest on ------------------------------
+
+    def test_loader_rejects_a_chain_step_that_is_not_an_edge(self, tmp_path):
+        # Without this the declared chain is a comment: it could name a path
+        # the curation does not carry, and the cases built on it would look
+        # grounded while resting on nothing.
+        bad = tmp_path / "bad.yaml"
+        bad.write_text(
+            "subgraph_id: bad\nbenchmark_chain: [a, b, c]\nnodes:\n"
+            "  - {id: a, category: State, label_ja: あ, label_en: a, source_refs: [expert_judgement]}\n"
+            "  - {id: b, category: State, label_ja: い, label_en: b, source_refs: [expert_judgement]}\n"
+            "  - {id: c, category: State, label_ja: う, label_en: c, source_refs: [expert_judgement]}\n"
+            "edges:\n"
+            "  - {source: a, target: b, type: causes, evidence_strength: expert_judgement,"
+            " source_refs: [expert_judgement], scope_note: note}\n",
+            encoding="utf-8",
+        )
+        from app.ontology import seed_graph
+
+        with pytest.raises(seed_graph.SeedGraphError) as caught:
+            seed_graph._load_file(bad)
+        assert "b -> c" in str(caught.value)
+
+    def test_loader_rejects_a_chain_too_short_to_be_multi_hop(self, tmp_path):
+        bad = tmp_path / "bad.yaml"
+        bad.write_text(
+            "subgraph_id: bad\nbenchmark_chain: [a, b]\nnodes:\n"
+            "  - {id: a, category: State, label_ja: あ, label_en: a, source_refs: [expert_judgement]}\n"
+            "  - {id: b, category: State, label_ja: い, label_en: b, source_refs: [expert_judgement]}\n"
+            "edges:\n"
+            "  - {source: a, target: b, type: causes, evidence_strength: expert_judgement,"
+            " source_refs: [expert_judgement], scope_note: note}\n",
+            encoding="utf-8",
+        )
+        from app.ontology import seed_graph
+
+        with pytest.raises(seed_graph.SeedGraphError):
+            seed_graph._load_file(bad)
+
+    def test_a_file_declaring_no_chain_is_unaffected(self):
+        assert load_seed_subgraphs()["sleep_deprivation"].benchmark_chain == ()
+        assert load_seed_subgraphs()["sleep_deprivation"].chain_motifs == []
+
+
 class TestGeneratedGraphAnnotation:
     """#80 — the curated subgraphs were inert until the extraction path saw them."""
 
