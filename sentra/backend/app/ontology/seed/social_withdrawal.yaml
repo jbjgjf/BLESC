@@ -24,10 +24,11 @@ subgraph_id: social_withdrawal
 #    it is recorded here rather than fixed, because widening the vocabulary is
 #    a separate change needing its own argument (#75).
 #
-# 3. THREE EDGES ARE SHARED WITH sleep.yaml, ON PURPOSE.
-#    `depressed_mood -> social_withdrawal`, `school_absence ->
-#    social_withdrawal` and `trusted_adult_contact -> depressed_mood` appear in
-#    both files. They are stated
+# 3. THREE EDGES ARE SHARED WITH THE OTHER SEED FILES, ON PURPOSE.
+#    `depressed_mood -> social_withdrawal` and `school_absence ->
+#    social_withdrawal` are also in sleep.yaml; `trusted_adult_contact ->
+#    depressed_mood` is in sleep.yaml AND academic_pressure.yaml. They are
+#    stated
 #    identically — same type, same strength, same source_refs — so a merge that
 #    de-duplicates on (source, target, type) keeps one copy and loses nothing.
 #    They are ONE piece of support appearing twice, not two independent ones,
@@ -261,9 +262,10 @@ edges:
       adult or professional. Both are about PROCESS — neither quantifies an
       effect on mood. The weakest kind of support in this file.
 
-      SHARED CLAIM, the third of them: sleep.yaml carries this edge with the
-      same type, strength and source_refs, so it counts once through a
-      de-duplicating merge.
+      SHARED CLAIM, the third of them, and the most shared thing in the seed
+      set: sleep.yaml and academic_pressure.yaml both carry this edge with the
+      same type, strength and source_refs, so all three files count once
+      through a de-duplicating merge.
 
   - source: peer_friendship
     target: loneliness

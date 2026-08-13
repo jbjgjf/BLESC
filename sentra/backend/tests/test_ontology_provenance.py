@@ -240,21 +240,44 @@ class TestSocialWithdrawalSubgraph:
         assert protective & buffers_out & avoids_in
 
     def test_shared_claims_are_stated_identically(self, withdrawal):
-        # Two edges are carried by sleep.yaml as well. They are one reading of
-        # NG134 appearing twice, not two independent supports — so they must
-        # agree exactly, and a merge that de-duplicates on (source, target,
-        # type) can then drop a copy without choosing between versions. If they
-        # ever diverge, that merge silently picks a winner.
-        sleep = load_seed_subgraphs()["sleep_deprivation"]
+        # Some of these edges and nodes are carried by the other seed files as
+        # well — one reading of NG134 or mhGAP appearing more than once, not
+        # several independent supports. They must agree exactly, so a merge
+        # that de-duplicates on (source, target, type) can drop a copy without
+        # choosing between versions. If they ever diverge, that merge silently
+        # picks a winner, and so does `provenance._label_index`, which is
+        # first-writer-wins over sorted(glob) and resolves these labels to
+        # whichever file sorts first.
+        #
+        # Runs over every other loaded subgraph rather than sleep.yaml alone:
+        # `trusted_adult_contact -> depressed_mood` is in three files now, and
+        # a pairwise check would have kept passing while missing the third.
+        others = {k: v for k, v in load_seed_subgraphs().items() if k != "social_withdrawal"}
+        assert others, "expected the other seed files alongside this one"
+
+        here_nodes = withdrawal.nodes
+        shared_nodes = 0
+        for other in others.values():
+            for node_id, node in here_nodes.items():
+                twin = other.nodes.get(node_id)
+                if twin is None:
+                    continue
+                shared_nodes += 1
+                assert (node.category, node.label_ja, node.label_en) == (
+                    twin.category, twin.label_ja, twin.label_en), node_id
+                assert sorted(node.source_refs) == sorted(twin.source_refs), node_id
+        assert shared_nodes, "expected the nodes this file shares with the others"
+
         here = {(e.source, e.target, e.type): e for e in withdrawal.edges}
-        there = {(e.source, e.target, e.type): e for e in sleep.edges}
-
-        shared = set(here) & set(there)
-        assert shared, "expected the withdrawal edges sleep.yaml also carries"
-
-        for key in shared:
-            assert here[key].evidence_strength is there[key].evidence_strength, key
-            assert sorted(here[key].source_refs) == sorted(there[key].source_refs), key
+        shared_edges = 0
+        for other in others.values():
+            for key, twin in {(e.source, e.target, e.type): e for e in other.edges}.items():
+                if key not in here:
+                    continue
+                shared_edges += 1
+                assert here[key].evidence_strength is twin.evidence_strength, key
+                assert sorted(here[key].source_refs) == sorted(twin.source_refs), key
+        assert shared_edges, "expected the edges this file shares with the others"
 
     def test_withdrawal_reaches_a_protective_resource(self, withdrawal):
         # The benchmark case walks from Behavior:withdrawal to the support the
@@ -289,15 +312,16 @@ class TestSocialWithdrawalSubgraph:
         assert 0 < withdrawal.unsourced_edge_rate < 1
         assert withdrawal.unsourced_edge_rate > load_seed_subgraphs()["sleep_deprivation"].unsourced_edge_rate
 
-    def test_it_does_not_contradict_the_sleep_subgraph(self, withdrawal):
-        # Both files carry school_absence and social_withdrawal. Same
-        # orientation in both, or a merged graph gains a cycle that neither
-        # file's curation argued for.
-        sleep = load_seed_subgraphs()["sleep_deprivation"]
-        shared = {(e.source, e.target) for e in sleep.edges} & {
-            (e.target, e.source) for e in withdrawal.edges
-        }
-        assert not shared, f"orientation conflict with sleep.yaml: {shared}"
+    def test_it_does_not_contradict_another_subgraph(self, withdrawal):
+        # A reversed shared edge would give a merged graph a cycle no file's
+        # curation argued for. Over every loaded subgraph, not sleep.yaml
+        # alone, for the same reason as the shared-claim check above.
+        here = {(e.source, e.target) for e in withdrawal.edges}
+        for subgraph_id, other in load_seed_subgraphs().items():
+            if subgraph_id == "social_withdrawal":
+                continue
+            reversed_pairs = here & {(e.target, e.source) for e in other.edges}
+            assert not reversed_pairs, f"orientation conflict with {subgraph_id}: {reversed_pairs}"
 
 
 class TestAcademicPressureSubgraph:
