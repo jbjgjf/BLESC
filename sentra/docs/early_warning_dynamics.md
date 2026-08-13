@@ -99,6 +99,15 @@ variance_floor      1e-9    below this a series is constant
 They are echoed into every payload with `declared_before_results: true`, so an
 analysis run with looser minimums is visibly one.
 
+`variance_floor` is compared against **each side's** sample variance. It was
+first written against the Pearson denominator, `sqrt(Sxx · Syy)`, which is not a
+variance: it multiplies the two sides together, so a routine spread on one side
+lifted a flat other side over the guard — `var(x) = 3e-13` beside
+`var(y) = 0.04` puts the denominator near `4e-7`, and the correlation is then
+computed on x's floating-point noise. It also grew with the pair count, so the
+threshold meant something different for a long series than a short one. Found in
+review of PR #114.
+
 ## The feature selection
 
 Explicit, not "every key in the vector" — the choice changes what the variance
@@ -194,7 +203,7 @@ result = analyse_participant(user_id, [(row.day, row.feature_vector_json) for ro
 ```
 
 ```
-GET /api/research/dynamics?user_id=…&days=90
+GET /api/research/dynamics?user_id=…&days=90     # 1 ≤ days ≤ 366
 ```
 
 Computed on read. Pure functions over plain `(day, vector)` tuples — no database,
@@ -202,6 +211,36 @@ no clock, no population — following the convention in `pattern_mining.py` and
 `memory_objects.py`. `test_analysis_does_not_read_the_wall_clock` asserts the
 absence of `date.today()`, so a result computed in December from an August series
 matches the one computed in August.
+
+### One day is one observation
+
+`DailyFeatureAggregation` has no uniqueness constraint on `(user_id, day)` and
+`InferenceOrchestrator.process_day` inserts unconditionally, so a participant who
+submits twice on a day leaves two rows for it. Each row is a full recomputation
+over *every* extraction that existed when it ran, so the rows are successive
+answers to one question rather than parts to combine: **the later row supersedes
+the earlier one**, and `days_with_multiple_rows` reports which dates that
+happened on rather than leaving the collapse invisible.
+
+Uncollapsed, a duplicated day was weighted twice in every window's variance,
+anchored two rolling points on one date, and — because the lag-1 lookup keeps one
+value per day while iterating every observation — contributed two different
+x-values against one y. The day is the unit here for the same reason it is in
+`temporal.assemble`. Found in review of PR #114.
+
+### Cost
+
+The surrogate null is the expensive part: `SURROGATE_TRIALS` (200) complete
+rolling pipelines. Both trends draw from **one** set of permutations — the seed
+is fixed and `_rolling` already returns both series, so permutation *k* yields
+both taus and the separate passes were doing identical work twice. Windows slide
+rather than rescanning the series per anchor, and a series too short to support
+any trend builds no null at all. Together these took one feature over 180 days
+from ~1.0s to ~0.55s, with byte-identical output.
+
+`days` is bounded at 366 and a larger request is **rejected, not clamped** — an
+analysis silently run over a shorter window than the caller asked for is a
+different analysis wearing the caller's label.
 
 ## Wording
 

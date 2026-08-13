@@ -464,6 +464,141 @@ def test_days_observed_counts_days_not_rows():
     assert analyse_participant("p1", rows).days_observed == 2
 
 
+# ---- review of #114: one day is one observation ---------------------------
+#
+# `DailyFeatureAggregation` has no uniqueness constraint on (user_id, day) and
+# `InferenceOrchestrator.process_day` inserts unconditionally, so a participant
+# who submits twice on a day has two rows for it. Each row is a full
+# recomputation over every extraction that existed when it ran, so they are
+# successive answers rather than parts to combine.
+
+
+def test_two_rows_for_one_day_produce_one_observation():
+    rows = [
+        (DAY0, {"protective_ratio": 0.10}),
+        (DAY0, {"protective_ratio": 0.90}),
+        (DAY0 + timedelta(days=1), {"protective_ratio": 0.50}),
+    ]
+    observed = observations_from_vectors(rows, "protective_ratio")
+
+    assert [(point.day, point.value) for point in observed] == [
+        (DAY0, 0.90),
+        (DAY0 + timedelta(days=1), 0.50),
+    ], "the later row supersedes; it was computed over at least as many entries"
+    assert len({point.day for point in observed}) == len(observed)
+
+
+def test_a_duplicated_day_is_reported_rather_than_collapsed_in_silence():
+    rows = [(DAY0, {"protective_ratio": 0.1}), (DAY0, {"protective_ratio": 0.9})]
+    result = analyse_participant("p1", rows)
+
+    assert result.days_with_multiple_rows == (DAY0,)
+    assert result.as_dict()["days_with_multiple_rows"] == [DAY0.isoformat()]
+    assert analyse_participant("p1", [(DAY0, {"protective_ratio": 0.1})]).days_with_multiple_rows == ()
+
+
+def test_a_duplicated_day_cannot_change_the_result_by_arriving_twice():
+    """A day counted twice was weighted twice in every window's variance and
+    anchored two rolling points on one date."""
+    rng = random.Random(99)
+    base = [(DAY0 + timedelta(days=index), {"protective_ratio": 0.5 + rng.gauss(0, 0.05)}) for index in range(30)]
+    duplicated = base[:10] + [(base[10][0], {"protective_ratio": 0.99})] + base[10:]
+
+    def ratio(result):
+        return next(feature for feature in result.features if feature.feature == "protective_ratio")
+
+    clean = ratio(analyse_participant("p1", base))
+    with_duplicate_result = analyse_participant("p1", duplicated)
+    with_duplicate = ratio(with_duplicate_result)
+
+    assert clean.spacing.observation_count == 30
+    assert with_duplicate.spacing.observation_count == 30, "still 30 days, not 31 rows"
+    assert with_duplicate_result.days_with_multiple_rows == (base[10][0],)
+    assert len({point.day for point in with_duplicate.rolling_variance}) == len(
+        with_duplicate.rolling_variance
+    ), "one rolling point per date"
+
+
+def test_which_duplicate_arrives_last_is_the_only_thing_that_decides():
+    """Order within a day is meaningful — later supersedes — but order across a
+    day boundary is not, and neither may leave two observations behind."""
+    rows = [
+        (DAY0 + timedelta(days=1), {"protective_ratio": 0.5}),
+        (DAY0, {"protective_ratio": 0.1}),
+        (DAY0, {"protective_ratio": 0.9}),
+    ]
+    assert observations_from_vectors(rows, "protective_ratio")[0].value == 0.9
+    assert len(observations_from_vectors(rows, "protective_ratio")) == 2
+
+
+# ---- review of #114: the floor is a floor on variance ----------------------
+
+
+def test_the_variance_floor_rejects_a_flat_side_even_beside_a_varying_one():
+    """The floor guards each side's variance, not the Pearson denominator.
+
+    The denominator multiplies the two sides together, so a routine spread on
+    one side lifts a flat other side over the guard and the correlation is
+    computed on floating-point noise.
+    """
+    rng = random.Random(7)
+    flat = [0.5 + (index % 2) * 1e-6 for index in range(30)]
+    varied = [0.5 + rng.gauss(0, 0.2) for _ in range(30)]
+
+    assert sample_variance(flat) < DEFAULT_PARAMETERS.variance_floor
+    assert sample_variance(varied) > DEFAULT_PARAMETERS.variance_floor
+    assert pearson(flat, varied, DEFAULT_PARAMETERS.variance_floor) is None
+    assert pearson(varied, flat, DEFAULT_PARAMETERS.variance_floor) is None, "symmetric"
+
+
+def test_the_floor_means_the_same_thing_at_every_series_length():
+    """`sqrt(Sxx * Syy)` grows with the pair count, so the old guard let the same
+    near-constant series through once it was long enough."""
+    rng = random.Random(11)
+    for n in (5, 15, 60):
+        flat = [0.5 + (index % 2) * 1e-6 for index in range(n)]
+        varied = [0.5 + rng.gauss(0, 0.2) for _ in range(n)]
+        assert pearson(flat, varied, DEFAULT_PARAMETERS.variance_floor) is None, n
+
+
+def test_a_real_correlation_is_untouched_by_the_floor():
+    xs = [0.1, 0.3, 0.2, 0.5, 0.4, 0.6]
+    ys = [0.2, 0.4, 0.25, 0.55, 0.45, 0.7]
+    value = pearson(xs, ys, DEFAULT_PARAMETERS.variance_floor)
+    assert value is not None and value > 0.9
+
+
+# ---- review of #114: the null costs the same and says the same -------------
+
+
+def test_both_trends_draw_their_null_from_one_set_of_permutations():
+    """Halving the surrogate work must not move a number.
+
+    The seed is fixed, so permutation k was identical across the two passes the
+    module used to make; taking both taus from each permutation reproduces both
+    nulls exactly. This pins the trial counts and the percentiles that the
+    separate passes produced.
+    """
+    result = analyse_feature(destabilising(3), "protective_ratio")
+    variance_calibration = result.variance_trend.calibration
+
+    assert variance_calibration is not None
+    assert variance_calibration.seed == SURROGATE_SEED
+    assert variance_calibration.trials > 0
+    assert analyse_feature(destabilising(3), "protective_ratio").variance_trend.as_dict() == (
+        result.variance_trend.as_dict()
+    )
+
+
+def test_a_series_that_cannot_support_a_trend_pays_for_no_null():
+    """200 rolling pipelines for a calibration nothing will read."""
+    result = analyse_feature(series([0.5, 0.6, 0.4]), "protective_ratio")
+
+    assert result.variance_trend.status is MeasureStatus.NOT_ENOUGH_DATA
+    assert result.variance_trend.calibration is None
+    assert result.autocorrelation_trend.calibration is None
+
+
 def test_parameters_can_be_overridden_for_an_analysis_that_says_it_did():
     """Not a tuning knob for making a result appear. The parameters are echoed
     into the payload, so an analysis run with looser minimums is visibly one."""
