@@ -34,6 +34,12 @@ from .ontology.evolution import (
     resolve,
     seed_attribution,
 )
+from .policy import (
+    baseline_policies,
+    environment_contract,
+    evaluate_all_splits,
+    training_gate,
+)
 from .temporal import assemble_participant_graph, snapshot_inputs
 from .traversal import (
     SeedCandidate,
@@ -976,6 +982,36 @@ def get_explanation(explanation_id: int, session: Session = Depends(get_session)
 def get_features(user_id: str, session: Session = Depends(get_session)):
     query = select(DailyFeatureAggregation).where(DailyFeatureAggregation.user_id == user_id).order_by(DailyFeatureAggregation.day.asc())
     return session.exec(query).all()
+
+
+@app.get("/api/research/graph-walk-policy")
+def get_graph_walk_policy(include_evaluation: bool = True):
+    """The Stage-1 graph-walk MDP (#98), its baselines, and the data gate.
+
+    **Nothing is trained.** Every benchmark case carries `labelled_by="author"`,
+    and #98 requires reward to come from human-labelled evidence, so
+    `training_gate.open` is false and the numbers below are baselines over the
+    environment — not a policy result. `#88` is what opens the gate.
+
+    `environment` is the decision process written out in full: state, actions,
+    transition, episode limit, terminal conditions, reward. #102 is explicit that
+    the repository's existing traversal and ranking are not reinforcement
+    learning, and serving the MDP makes that difference checkable.
+    """
+    payload: Dict[str, Any] = {
+        "environment": environment_contract(),
+        "training_gate": training_gate().as_dict(),
+        "policies": [policy.as_dict() for policy in baseline_policies()],
+    }
+    if include_evaluation:
+        payload["evaluation"] = evaluate_all_splits()
+
+    logger.info(
+        "[graph-walk-policy] gate_open=%s evaluated=%s",
+        payload["training_gate"]["open"],
+        include_evaluation,
+    )
+    return payload
 
 
 @app.get("/api/research/ontology-layers")
