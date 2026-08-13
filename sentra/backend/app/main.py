@@ -2,7 +2,7 @@ import hashlib
 import io
 import logging
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -24,6 +24,7 @@ from .schemas.extraction import Extraction
 from .schemas.research import EvalExample
 from .schemas.structured import EntrySubmissionResponse, ExtractionResponse, GraphSnapshot, HybridExplanation
 from .analytics.baseline import baseline_provenance
+from .analytics.dynamics import analyse_participant
 from .temporal import assemble_participant_graph, snapshot_inputs
 from .services.inference_orchestrator import InferenceOrchestrator
 from .services.hf_research_benchmark import hf_dataset_rows, run_hf_research_benchmark
@@ -829,6 +830,56 @@ def get_explanation(explanation_id: int, session: Session = Depends(get_session)
 def get_features(user_id: str, session: Session = Depends(get_session)):
     query = select(DailyFeatureAggregation).where(DailyFeatureAggregation.user_id == user_id).order_by(DailyFeatureAggregation.day.asc())
     return session.exec(query).all()
+
+
+@app.get("/api/research/dynamics")
+def get_participant_dynamics(
+    user_id: str,
+    days: int = 90,
+    session: Session = Depends(get_session),
+):
+    """Exploratory time-series dynamics (#97), computed on read.
+
+    Reports how much each selected feature varied and how much each day resembled
+    the one before, over the window it actually had. **Not** an early-warning
+    system: no threshold, no risk band, no predicted transition, and no
+    comparison against any other participant. `not_validated_here` and
+    `interpretation` come back with every response and say so.
+
+    Where a series cannot support a calculation the answer is `not_enough_data`
+    or `not_computable`, never a number standing in for absence. Trends carry a
+    calibration against a null built by permuting this participant's own values
+    across their own days, because the bare Kendall tau has a ~25% false-positive
+    rate on flat input and is not reportable alone.
+    """
+    if days < 1:
+        raise HTTPException(status_code=400, detail="days must be at least 1")
+
+    window_start = date.today() - timedelta(days=days - 1)
+    rows = session.exec(
+        select(DailyFeatureAggregation)
+        .where(
+            DailyFeatureAggregation.user_id == user_id,
+            DailyFeatureAggregation.day >= window_start,
+        )
+        .order_by(DailyFeatureAggregation.day.asc())
+    ).all()
+
+    result = analyse_participant(
+        user_id, [(row.day, row.feature_vector_json or {}) for row in rows]
+    )
+    payload = result.as_dict()
+    payload["requested_days"] = days
+
+    logger.info(
+        "[dynamics] user=%s days_requested=%s days_observed=%s features=%s flags=%s",
+        user_id,
+        days,
+        result.days_observed,
+        len(result.features),
+        sorted({flag for feature in result.features for flag in feature.quality_flags}),
+    )
+    return payload
 
 
 @app.get("/api/baseline")

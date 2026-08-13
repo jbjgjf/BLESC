@@ -1929,8 +1929,10 @@ def recompute_longitudinal_features(
             )
             .order_by(DailyFeatureAggregation.day.asc())
         ).all()
-        vectors = [agg.feature_vector_json or {} for agg in aggs]
-        feature_names = sorted({key for vector in vectors for key in vector.keys()})
+        # (day, vector) rather than vectors alone: three of the statistics below
+        # need to know WHICH days they are differencing. See #97.
+        dated = [(agg.day, agg.feature_vector_json or {}) for agg in aggs]
+        feature_names = sorted({key for _, vector in dated for key in vector.keys()})
         feature_json: Dict[str, Any] = {
             "n_days_observed": len(aggs),
             "window_days": window_days,
@@ -1940,21 +1942,64 @@ def recompute_longitudinal_features(
             "change_rate": {},
             "volatility": {},
             "recurrence": {},
+            # How many days actually carried each feature. Without it, every
+            # statistic above reads as if it were computed over `n_days_observed`
+            # days, and a feature present on 2 of 30 looks like one present on 30.
+            "observed_days": {},
+            "dynamics_version_note": (
+                "Whole-window descriptive statistics. Rolling variance, calendar-lag-1 "
+                "autocorrelation and their calibration live in app/analytics/dynamics.py (#97); "
+                "these are not early-warning indicators."
+            ),
         }
         for name in feature_names:
-            values = [float(vector.get(name) or 0.0) for vector in vectors]
+            # A day whose vector omits this feature contributes NOTHING. It used
+            # to contribute 0.0 via `float(vector.get(name) or 0.0)`, so absence
+            # entered the mean and the variance as a measurement of zero — the
+            # coercion #97 forbids, in the table #97 reads from.
+            observed = [
+                (day, float(vector[name]))
+                for day, vector in dated
+                if name in vector and vector[name] is not None and not isinstance(vector[name], bool)
+            ]
+            values = [value for _, value in observed]
             if not values:
                 continue
             mean = sum(values) / len(values)
-            deltas = [b - a for a, b in zip(values, values[1:])]
-            abs_deltas = [abs(delta) for delta in deltas]
-            variance = sum((value - mean) ** 2 for value in values) / max(1, len(values))
+            feature_json["observed_days"][name] = len(values)
             feature_json["mean"][name] = round(mean, 4)
-            feature_json["trend"][name] = round((values[-1] - values[0]) / max(1, len(values) - 1), 4)
-            feature_json["consistency"][name] = round(1.0 / (1.0 + variance), 4)
-            feature_json["change_rate"][name] = round(sum(abs_deltas) / max(1, len(abs_deltas)), 4)
-            feature_json["volatility"][name] = round(variance ** 0.5, 4)
             feature_json["recurrence"][name] = sum(1 for value in values if value > 0)
+
+            # Sample variance, and None below two observations. The old
+            # population variance with a `max(1, ...)` guard gave a single
+            # observation variance 0, therefore volatility 0 and consistency 1.0
+            # — a student who wrote once was reported as maximally consistent.
+            if len(values) < 2:
+                feature_json["volatility"][name] = None
+                feature_json["consistency"][name] = None
+                feature_json["trend"][name] = None
+                feature_json["change_rate"][name] = None
+                continue
+            variance = sum((value - mean) ** 2 for value in values) / (len(values) - 1)
+            feature_json["volatility"][name] = round(variance ** 0.5, 4)
+            feature_json["consistency"][name] = round(1.0 / (1.0 + variance), 4)
+
+            # Per DAY, not per row. `(values[-1] - values[0]) / (len - 1)` and
+            # `zip(values, values[1:])` both treated consecutive observations as
+            # consecutive days, so a student writing on the 1st, 2nd and 9th had
+            # the 2nd differenced against the 9th as a one-step change.
+            span_days = (observed[-1][0] - observed[0][0]).days
+            feature_json["trend"][name] = (
+                round((values[-1] - values[0]) / span_days, 4) if span_days else None
+            )
+            daily_rates = [
+                abs(later_value - earlier_value) / (later_day - earlier_day).days
+                for (earlier_day, earlier_value), (later_day, later_value) in zip(observed, observed[1:])
+                if (later_day - earlier_day).days > 0
+            ]
+            feature_json["change_rate"][name] = (
+                round(sum(daily_rates) / len(daily_rates), 4) if daily_rates else None
+            )
         row = LongitudinalFeature(
             user_id=user_id,
             participant_code=participant_code,

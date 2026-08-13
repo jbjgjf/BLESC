@@ -323,7 +323,14 @@ def mine_feature_trends(
 
     results: List[Dict[str, Any]] = []
     for name, (rising_phrase, falling_phrase) in _FEATURE_NARRATION.items():
-        trend = float(trends.get(name) or 0.0)
+        # `None` means the window could not support a trend — one observation, or
+        # no elapsed days between the first and last. It is NOT a trend of zero,
+        # and narrating it as one would put "no change" in front of a reader when
+        # the truthful answer is "not enough to say" (#97).
+        raw_trend = trends.get(name)
+        if raw_trend is None:
+            continue
+        trend = float(raw_trend)
         if abs(trend) < trend_threshold:
             continue
         rising = trend > 0
@@ -343,7 +350,14 @@ def mine_feature_trends(
                 "detail": {
                     "feature": name,
                     "trend": round(trend, 4),
-                    "volatility": round(float(volatility.get(name) or 0.0), 4),
+                    # Passed through as None rather than coerced. A window with
+                    # too few observations to have a spread must not render as a
+                    # spread of zero, which reads as perfect stability.
+                    "volatility": (
+                        round(float(volatility[name]), 4)
+                        if volatility.get(name) is not None
+                        else None
+                    ),
                     "direction": "rising" if rising else "falling",
                     "flagged_as_risk": is_risk,
                 },
