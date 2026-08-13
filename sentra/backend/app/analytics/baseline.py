@@ -1,43 +1,18 @@
 import numpy as np
-from datetime import date, datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from ..schemas.analytics import DailyFeatureAggregation, BaselineStats
 
-# Conservative defaults derived from domain knowledge — NOT measured.
-#
-# These are guesses. Until a user has RAMP_UP_DAYS of their own history, their
-# z-scores are computed against this fictional mean and standard deviation, so
-# an "anomaly" during that window carries no statistical meaning. The design
-# (population -> blended -> user) is sound; the numbers are placeholders.
-#
-# Consumers must not present a provisional reading as an equal-confidence one.
-# baseline_provenance() returns what they need to say so.
-# Re-estimation procedure: docs/baseline_reestimation.md (D-04).
-POPULATION_BASELINE: Dict[str, Dict[str, float]] = {
-    "state_count":             {"mean": 1.5,  "std": 1.2},
-    "trigger_count":           {"mean": 1.2,  "std": 1.0},
-    "protective_count":        {"mean": 1.8,  "std": 1.3},
-    "behavior_count":          {"mean": 0.8,  "std": 0.7},
-    "event_count":             {"mean": 1.0,  "std": 0.9},
-    "event_avg_duration":      {"mean": 45.0, "std": 30.0},
-    "event_transition_signal": {"mean": 0.5,  "std": 0.4},
-    "protective_ratio":        {"mean": 0.45, "std": 0.25},
-    "protective_buffer_ratio": {"mean": 0.30, "std": 0.20},
-    "relation_density":        {"mean": 0.40, "std": 0.30},
-    "isolation_signal":        {"mean": 0.20, "std": 0.25},
-}
-
-# Days until the blend fully shifts to the user's own baseline.
+# Days of the user's own history required before a baseline is usable.
 RAMP_UP_DAYS = 14
 
 
 def baseline_provenance(baseline_type: str, observed_days: int) -> Dict[str, object]:
     """How far a reading can be trusted, in a form a UI can render directly.
 
-    Returned alongside every score so a provisional reading cannot be shown as
-    if it were a settled one. `is_provisional` is the flag to gate on;
-    `days_remaining` is what to put in "learning this student's baseline
-    (N days left)".
+    Returned alongside every score so a reading taken before the user has their
+    own history cannot be shown as if it were a settled one. `is_provisional`
+    is the flag to gate on; `days_remaining` is what to put in "learning this
+    student's baseline (N days left)".
     """
     remaining = max(0, RAMP_UP_DAYS - observed_days)
     return {
@@ -46,7 +21,6 @@ def baseline_provenance(baseline_type: str, observed_days: int) -> Dict[str, obj
         "ramp_up_days": RAMP_UP_DAYS,
         "days_remaining": remaining,
         "is_provisional": baseline_type != "user",
-        "population_baseline_is_measured": False,
     }
 
 
@@ -71,79 +45,19 @@ def estimate_baseline(user_id: str, aggregations: List[DailyFeatureAggregation])
     )
 
 
-def _blend(
-    population: Dict[str, Dict[str, float]],
-    user_stats: Dict[str, Dict[str, float]],
-    ratio: float,
-) -> Dict[str, Dict[str, float]]:
-    """ratio=0.0 → population only, ratio=1.0 → user only."""
-    result: Dict[str, Dict[str, float]] = {}
-    for key in set(population) | set(user_stats):
-        pop = population.get(key, {"mean": 0.0, "std": 1.0})
-        usr = user_stats.get(key, pop)
-        result[key] = {
-            "mean": pop["mean"] * (1 - ratio) + usr["mean"] * ratio,
-            # Clamp std > 0 to prevent silent division-by-zero in z-score
-            "std": max(pop["std"] * (1 - ratio) + usr["std"] * ratio, 0.01),
-        }
-    return result
-
-
 def get_effective_baseline(
     user_id: str,
     aggregations: List[DailyFeatureAggregation],
-) -> Tuple[BaselineStats, str]:
+) -> Tuple[Optional[BaselineStats], str]:
     """
-    Always returns a valid BaselineStats plus a type label.
+    Returns the user's own baseline, or None when there is not enough history.
 
     baseline_type:
-      "population" — no user data yet; using domain defaults
-      "blended"    — mixing population and user data during ramp-up
-      "user"       — 14+ days of data; fully personal baseline
+      "none" — fewer than RAMP_UP_DAYS of the user's own data; no baseline, so
+               no z-score may be computed
+      "user" — RAMP_UP_DAYS+ of data; fully personal baseline
     """
-    n = len(aggregations)
-    today = datetime.utcnow().date()
+    if len(aggregations) < RAMP_UP_DAYS:
+        return None, "none"
 
-    if n == 0:
-        return (
-            BaselineStats(
-                user_id=user_id,
-                window_start=today,
-                window_end=today,
-                stats_json=POPULATION_BASELINE,
-            ),
-            "population",
-        )
-
-    if n == 1:
-        # One data point: borrow population std, use user mean
-        vec = aggregations[0].feature_vector_json
-        single_day_stats = {
-            k: {"mean": float(vec.get(k, POPULATION_BASELINE.get(k, {}).get("mean", 0.0))),
-                "std": POPULATION_BASELINE.get(k, {}).get("std", 1.0)}
-            for k in POPULATION_BASELINE
-        }
-        ratio = 1.0 / RAMP_UP_DAYS
-        blended = _blend(POPULATION_BASELINE, single_day_stats, ratio)
-        day = aggregations[0].day
-        return (
-            BaselineStats(user_id=user_id, window_start=day, window_end=day, stats_json=blended),
-            "blended",
-        )
-
-    user_bl = estimate_baseline(user_id, aggregations)
-    ratio = min(1.0, n / RAMP_UP_DAYS)
-
-    if ratio >= 1.0:
-        return user_bl, "user"
-
-    blended = _blend(POPULATION_BASELINE, user_bl.stats_json, ratio)
-    return (
-        BaselineStats(
-            user_id=user_id,
-            window_start=aggregations[0].day,
-            window_end=aggregations[-1].day,
-            stats_json=blended,
-        ),
-        "blended",
-    )
+    return estimate_baseline(user_id, aggregations), "user"

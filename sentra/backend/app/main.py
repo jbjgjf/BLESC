@@ -315,8 +315,8 @@ def _empty_explanation(user_id: str, day: datetime, graph_snapshot: Optional[Gra
         triggered_rules_json=[],
         baseline_deviation_json={
             "baseline_available": False,
-            "baseline_type": "population",
-            "baseline_provenance": baseline_provenance("population", 0),
+            "baseline_type": "none",
+            "baseline_provenance": baseline_provenance("none", 0),
             "feature_zscores": {},
             "top_features": [],
             "score": 0.0,

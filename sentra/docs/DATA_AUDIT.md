@@ -92,11 +92,11 @@ The Ontology Graph converts raw text into conceptual memory traces.
 
 ## 6. Reflection Signal Analysis
 
-The Reflection Signal (`anomaly_score`) visible on the dashboard is **real, but utilizes a blended fallback heuristic if data is sparse.**
+The Reflection Signal (`anomaly_score`) visible on the dashboard is **real, and is withheld entirely if data is sparse.**
 
 - **Generation**: Created by `get_effective_baseline()` in `baseline.py`.
 - **Data Feed**: It consumes `DailyFeatureAggregation` representing structural graph states.
-- **Pipeline**: If a user has `< 14` days of data, it blends their data with a hard-coded `POPULATION_BASELINE` containing mocked assumptions: `{"protective_ratio": {"mean": 0.45, "std": 0.25}, "isolation_signal": {"mean": 0.20}}`.
+- **Pipeline**: The baseline is computed only from the user's own history. Below 14 days there is no baseline and no score — the orchestrator persists a `"not_enough_data"` explanation instead. The hard-coded `POPULATION_BASELINE` that used to fill those days was removed (see `baseline_reestimation.md`).
 - **Storage**: The resulting score and baseline deviation is stored in the `insights` table (`anomaly_score` column).
 - **UI Display**: If `baseline_deviation_json.status` is `"not_enough_data"`, the UI explicitly masks the score. Otherwise, it renders the raw anomaly score.
 
@@ -159,7 +159,7 @@ The 30-Turn Recall feature summarizes the latest session conversations.
 | **Interaction Telemetry** | **Implemented** | `page.tsx` fully captures cursors, pauses, and revisions. Persisted to `interaction_events`. |
 | **Cognitive Probe** | **Implemented** | `cognitive_probe.py` calculates lexical focus and perseveration metrics. Exploratory, unvalidated — see `rumination_index_provenance.md`. |
 | **RAG Semantic Re-ranking** | **Missing** | `build_research_retrieval_context` naively concatenates graph and vector matches without intelligent cross-scoring. |
-| **Reflection Baseline** | **Placeholder** | `baseline.py` heavily relies on `POPULATION_BASELINE` hardcoded values (e.g. `event_transition_signal: 0.5`) until 14 days of data accumulate. |
+| **Reflection Baseline** | **Implemented** | `baseline.py` builds the baseline from the user's own history only; the hardcoded `POPULATION_BASELINE` was removed. No score is produced until 14 days of data accumulate. |
 | **Graph Pattern RAG** | **Partially Implemented** | `match_graph_patterns` in SQL uses simple `LIKE '%term%'` substring matching, missing semantic graph querying. |
 | **Diagnostic Mode** | **Unused / Mocked** | All frontend and backend systems explicitly flag outputs with `"non_diagnostic": True` and avoid strict clinical tagging. |
 | **Longitudinal Insights UI** | **Missing** | `LongitudinalPattern` and `LongitudinalFeature` tables exist and are populated, but are not rendered on the main dashboard UI. |
