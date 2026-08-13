@@ -14,6 +14,18 @@ Three things changed in the rebuild, and all three change the numbers:
    and could not test the hypothesis it exists to test.
 3. Chance level is computed per case, so "better than nothing" is visible
    instead of assumed.
+
+#96 adds a fourth change. `relation_aware` walks the motif triples **directed
+and typed**, applying the fixed per-relation parameters in
+`app/traversal/relations.py` — the same table the production traversal uses, so
+the benchmark measures the rule the product runs rather than a re-implementation
+of it. It is reported under the `fixed_rule_traversal` family, separately from
+anything learned, which is what #96 requires and what `METHOD_FAMILIES` exists
+to make structural rather than a matter of how the reader groups the columns.
+
+`graph_pattern` stays undirected and untyped. It is the baseline `relation_aware`
+has to beat, and a baseline that gets upgraded alongside the thing it measures
+is not a baseline.
 """
 
 from __future__ import annotations
@@ -23,9 +35,32 @@ import random
 import re
 from collections import deque
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Sequence, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-METHODS = ("keyword", "semantic_proxy", "graph_pattern", "hf_reranker_candidate")
+from ..traversal.relations import TraversalDirection, is_known, rule_for
+
+METHODS = (
+    "keyword",
+    "semantic_proxy",
+    "graph_pattern",
+    "relation_aware",
+    "hf_reranker_candidate",
+)
+
+#: Which family each condition belongs to. #96: 'Benchmark output reports
+#: fixed-rule traversal separately from learned methods.' Encoded here so the
+#: separation survives someone reading the summary table quickly, and so a new
+#: condition has to declare which kind it is.
+METHOD_FAMILIES: Dict[str, str] = {
+    "keyword": "lexical",
+    "semantic_proxy": "lexical",
+    "graph_pattern": "untyped_traversal",
+    "relation_aware": "fixed_rule_traversal",
+    # Named `candidate` because it is a deterministic stand-in, not a trained
+    # model. It sits here so that when a real cross-encoder replaces it, the
+    # family it reports under does not have to be renegotiated.
+    "hf_reranker_candidate": "learned_candidate",
+}
 
 #: Fixed so a run is reproducible. Chance is estimated by sampling rather than
 #: derived in closed form: nDCG@k under a random permutation has an awkward
@@ -180,6 +215,112 @@ def hop_distances(graph: Dict[str, Set[str]], anchors: Sequence[str], max_depth:
     return distance
 
 
+def build_relation_graph(motif_lists: Sequence[Sequence[str]]) -> Dict[str, List[Triple]]:
+    """Directed, typed adjacency: `subject -> [triples leaving it]`.
+
+    The counterpart to `_adjacency`, and the difference is the whole point of the
+    condition it feeds. `_adjacency` records that two concepts are connected;
+    this records which way and by what, so `causes` and `buffers` stop being the
+    same edge.
+
+    A triple whose relation is outside the ontology vocabulary is dropped rather
+    than given a default parameter — the same refusal `app/traversal/walk.py`
+    makes, for the same reason.
+    """
+    graph: Dict[str, List[Triple]] = {}
+    for motifs in motif_lists:
+        for triple in parse_motifs(motifs):
+            if not is_known(triple.relation):
+                continue
+            graph.setdefault(triple.subject, []).append(triple)
+            if rule_for(triple.relation).direction is TraversalDirection.SYMMETRIC:
+                graph.setdefault(triple.object, []).append(
+                    Triple(triple.object, triple.relation, triple.subject)
+                )
+    for concept in graph:
+        graph[concept].sort(key=lambda t: (t.relation, t.object))
+    return graph
+
+
+@dataclass(frozen=True)
+class Reach:
+    """How well a concept is reached from the anchors, and by what."""
+
+    damping: float
+    hops: int
+    relations: Tuple[str, ...]
+
+
+def relation_aware_reach(
+    graph: Dict[str, List[Triple]],
+    anchors: Sequence[str],
+    max_depth: int,
+) -> Dict[str, Reach]:
+    """Best directed path from any anchor to each reachable concept.
+
+    "Best" is the highest compounded damping, not the fewest hops: a two-hop
+    `causes` chain (0.81) is stronger evidence than a one-hop `co_occurs` (0.50),
+    and a hop count cannot express that. Ties break on fewer hops so the
+    shortest of two equally-damped routes is the one reported.
+
+    Directed and downstream-only. Walking the anchors backwards as well would
+    reach everything the undirected baseline reaches, which would make this
+    condition a slower `graph_pattern`.
+    """
+    reach: Dict[str, Reach] = {}
+    frontier: List[Tuple[str, Reach]] = []
+    for anchor in anchors:
+        key = anchor.strip().lower()
+        if key in graph or any(t.object == key for triples in graph.values() for t in triples):
+            reach[key] = Reach(damping=1.0, hops=0, relations=())
+            frontier.append((key, reach[key]))
+
+    for _depth in range(max_depth):
+        next_frontier: List[Tuple[str, Reach]] = []
+        for concept, current in sorted(frontier, key=lambda item: item[0]):
+            for triple in graph.get(concept, []):
+                candidate = Reach(
+                    damping=current.damping * rule_for(triple.relation).step_damping,
+                    hops=current.hops + 1,
+                    relations=current.relations + (triple.relation,),
+                )
+                existing = reach.get(triple.object)
+                if existing is not None and (existing.damping, -existing.hops) >= (
+                    candidate.damping,
+                    -candidate.hops,
+                ):
+                    continue
+                reach[triple.object] = candidate
+                next_frontier.append((triple.object, candidate))
+        frontier = next_frontier
+        if not frontier:
+            break
+    return reach
+
+
+def relation_aware_score(
+    motifs: Sequence[str], reach: Dict[str, Reach]
+) -> Tuple[float, Optional[int], Optional[str]]:
+    """This day's best damped reachability, its hop count, and its weakest relation.
+
+    The weakest relation travels with the score for the same reason it does on an
+    `EvidencePath`: a reader is entitled to know which link the number depends on
+    without reconstructing the walk.
+    """
+    best: Optional[Reach] = None
+    for triple in parse_motifs(motifs):
+        for concept in (triple.subject, triple.object):
+            found = reach.get(concept)
+            if found is None or found.hops == 0:
+                continue
+            if best is None or (found.damping, -found.hops) > (best.damping, -best.hops):
+                best = found
+    if best is None:
+        return 0.0, None, None
+    weakest = min(best.relations, key=lambda name: rule_for(name).step_damping)
+    return round(best.damping, 4), best.hops, weakest
+
+
 def traversal_score(motifs: Sequence[str], distance: Dict[str, int]) -> Tuple[float, int | None]:
     """How close this day's concepts sit to the query's anchors.
 
@@ -207,11 +348,13 @@ def score_candidate(
     distance: Dict[str, int],
     safety_label: str,
     expects_crisis: bool,
-) -> Dict[str, float | int | None]:
+    reach: Optional[Dict[str, Reach]] = None,
+) -> Dict[str, float | int | None | str]:
     text_score = jaccard(query_tokens, tokens(text))
     motif_lexical = jaccard(query_tokens, tokens(" ".join(motifs)))
     fuzzy_score = jaccard(query_ngrams, char_ngrams(text))
     graph_score, hops = traversal_score(motifs, distance)
+    relation_score, relation_hops, weakest_relation = relation_aware_score(motifs, reach or {})
     safety_bonus = 0.45 if expects_crisis and safety_label == "crisis" else 0.0
 
     if method == "keyword":
@@ -231,6 +374,14 @@ def score_candidate(
         score = (0.60 * fuzzy_score) + (0.25 * text_score) + (0.15 * motif_lexical)
     elif method == "graph_pattern":
         score = (0.20 * text_score) + (0.80 * graph_score) + safety_bonus
+    elif method == "relation_aware":
+        # Same 0.20/0.80 split as graph_pattern, deliberately. The two conditions
+        # differ in ONE thing — whether traversal is directed and typed — and a
+        # different mixing weight would confound the comparison with a tuning
+        # choice. No safety bonus: #85 removed a metric that could not vary, and
+        # a crisis bonus here would reintroduce a term that has nothing to do
+        # with whether relation-aware traversal retrieves better.
+        score = (0.20 * text_score) + (0.80 * relation_score)
     elif method == "hf_reranker_candidate":
         # Deterministic stand-in for the planned cross-encoder. It combines the
         # two signals more aggressively than graph_pattern and NOTHING ELSE —
@@ -247,6 +398,13 @@ def score_candidate(
         "motif_lexical_score": round(motif_lexical, 4),
         "graph_score": round(graph_score, 4),
         "hops_from_anchor": hops,
+        "relation_aware_score": relation_score,
+        "relation_aware_hops": relation_hops,
+        # The link the relation-aware number most depends on. Reported per
+        # candidate so a condition that wins on chains of `co_occurs` is visibly
+        # winning on the vocabulary's weakest claim.
+        "relation_aware_weakest_relation": weakest_relation,
+        "method_family": METHOD_FAMILIES[method],
     }
 
 

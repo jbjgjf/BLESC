@@ -6,6 +6,7 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_research_pipeline.db"
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.services.benchmark_retrieval import METHOD_FAMILIES, METHODS
 from app.services.hf_research_benchmark import (
     HF_REFERENCE_ARTIFACTS,
     hf_dataset_rows,
@@ -22,7 +23,18 @@ def test_hf_research_benchmark_has_reproducible_ablation_summary():
     assert "BAAI/bge-reranker-v2-m3" in str(HF_REFERENCE_ARTIFACTS)
 
     summary = result["summary"]
-    assert set(summary.keys()) == {"keyword", "semantic_proxy", "graph_pattern", "hf_reranker_candidate"}
+    # Derived from METHODS rather than restated, so adding a condition does not
+    # need this line edited to agree with it — a hardcoded copy only ever fails
+    # for the boring reason.
+    assert set(summary.keys()) == set(METHODS)
+
+    # #96: every condition declares whether it is a fixed rule or something
+    # learned, and the split is reported as a block rather than left to a reader
+    # who knows what the column names mean.
+    assert all(summary[method]["method_family"] == METHOD_FAMILIES[method] for method in METHODS)
+    families = result["method_families"]["families"]
+    assert families["fixed_rule_traversal"] == ["relation_aware"]
+    assert "trained, fitted or learned" in result["method_families"]["note"]
 
     # The `>=` inequality this line used to carry was replaced in #89. It
     # passed whenever the conditions were equal, which was their permanent
