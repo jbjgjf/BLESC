@@ -269,7 +269,13 @@ export interface AnomalyResult {
   id: RecordId;
   user_id: string;
   day: string;
-  anomaly_score: number;
+  /**
+   * Null while the student is still inside the 14-day ramp, and null from the
+   * route handler, which cannot see history. A consumer must render the
+   * `baseline_deviation_json.status` empty state rather than substituting zero
+   * — zero is a reading, and during ramp-up there is no reading.
+   */
+  anomaly_score: number | null;
   z_scores_json: Record<string, number>;
   explanation_id?: RecordId;
 }
@@ -346,6 +352,15 @@ export interface EntrySubmissionResponse {
     graph_snapshot_id?: string | null;
     insight_id?: string | null;
     entry_session_id?: string | null;
+    /**
+     * The insight as stored. The backend that wrote it is the only one that
+     * could see the participant's history, so this — not the placeholder in
+     * `anomaly_result` at the top level — is the version that measured
+     * anything. `anomaly_score` is null unless a real baseline was estimated,
+     * the same rule the read path applies.
+     */
+    anomaly_result?: AnomalyResult;
+    explanation?: ExplanationPayload;
     reason?: string;
     warnings?: string[];
   };

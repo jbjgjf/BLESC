@@ -5,6 +5,7 @@ import { ApiClient } from "@/api/client";
 import { AnomalyResult, ExplanationPayload } from "@/api/models";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { readBaselineProvenance, rampUpMessage as buildRampUpMessage } from "@/lib/baseline";
 
 function formatRecord(value: unknown): string {
   return JSON.stringify(value ?? {}, null, 2);
@@ -69,6 +70,10 @@ export default function Insights() {
   }, [userId]);
 
   useEffect(() => { loadInsights(); }, [loadInsights]);
+
+  const rampUpMessage = buildRampUpMessage(
+    readBaselineProvenance(explanation?.baseline_deviation_json),
+  );
 
   if (isLoading) {
     return (
@@ -188,17 +193,25 @@ export default function Insights() {
                 >
                   Hybrid Reflection Signal
                 </div>
+                {/*
+                  A score exists only against a settled personal baseline. Until
+                  then this reads as an em-dash and says why — it must not fall
+                  back to 0.00, which is a reading, and reads as the most
+                  reassuring one available.
+                */}
                 <div
                   className="text-6xl leading-none"
                   style={{ ...S.displayFont, fontWeight: 700, color: "var(--ink)", letterSpacing: "0.04em" }}
                 >
-                  {anomaly.anomaly_score.toFixed(2)}
+                  {anomaly.anomaly_score !== null ? anomaly.anomaly_score.toFixed(2) : "—"}
                 </div>
                 <p
                   className="mt-4 text-sm leading-relaxed"
                   style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}
                 >
-                  Non-diagnostic signal from rule activations, baseline deviation, and temporal drift.
+                  {anomaly.anomaly_score !== null
+                    ? "Non-diagnostic signal from rule activations, baseline deviation, and temporal drift."
+                    : rampUpMessage}
                 </p>
               </div>
             </div>
@@ -231,7 +244,12 @@ export default function Insights() {
                   ))}
                 {Object.keys(explanation?.baseline_deviation_json?.feature_zscores ?? {}).length === 0 && (
                   <div className="px-5 py-6 text-sm" style={{ color: "var(--ink-faint)", fontStyle: "italic", ...S.bodyFont }}>
-                    No deviation metrics.
+                    {/* "No deviation metrics" read as a gap in the data. The
+                        reason is specific and worth stating: a z-score is a
+                        distance from a baseline, and there is no baseline yet. */}
+                    {anomaly?.anomaly_score === null
+                      ? "No z-scores yet — each one measures distance from your own baseline, which is still forming."
+                      : "No deviation metrics."}
                   </div>
                 )}
               </div>

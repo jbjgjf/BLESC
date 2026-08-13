@@ -43,8 +43,23 @@ export default function Timeline() {
   useEffect(() => { loadTimeline(); }, [loadTimeline]);
 
   const latest = data.at(-1);
-  const highSignalDays = useMemo(() => data.filter((d) => d.anomaly_score >= 2).length, [data]);
-  const status = latest && latest.anomaly_score >= 2 ? "Review Needed" : "Within Baseline";
+  // A day only counts once it has a score, and a day only has a score once the
+  // student has fourteen days of their own history behind it. Counting a null
+  // as "not high" would have reported every ramp-up day as reassuring.
+  const scoredDays = useMemo(() => data.filter((d) => d.anomaly_score !== null), [data]);
+  const highSignalDays = useMemo(
+    () => scoredDays.filter((d) => (d.anomaly_score ?? 0) >= 2).length,
+    [scoredDays],
+  );
+  const hasSignal = latest != null && latest.anomaly_score !== null;
+  // "Within Baseline" was shown whenever the score was below 2 — including when
+  // there was no baseline to be within, which was every day in production,
+  // because the number it tested came from a formula that never read one.
+  const status = !hasSignal
+    ? "Learning Baseline"
+    : (latest.anomaly_score ?? 0) >= 2
+      ? "Review Needed"
+      : "Within Baseline";
 
   if (isLoading) {
     return (
@@ -170,7 +185,9 @@ export default function Timeline() {
                 {status}
               </div>
               <div className="mt-1 text-sm" style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}>
-                Latest reflection signal {Number.isFinite(latest?.anomaly_score) ? latest!.anomaly_score.toFixed(2) : "—"}
+                {hasSignal
+                  ? `Latest reflection signal ${latest.anomaly_score!.toFixed(2)}`
+                  : "No signal yet — a reading needs 14 days of your own entries to compare against"}
               </div>
             </div>
 
@@ -199,7 +216,9 @@ export default function Timeline() {
                 {highSignalDays}
               </div>
               <div className="mt-1 text-sm" style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}>
-                Review threshold 2.0
+                {scoredDays.length > 0
+                  ? `Review threshold 2.0 · ${scoredDays.length} scored day(s)`
+                  : "Review threshold 2.0 · no scored days yet"}
               </div>
             </div>
 
@@ -291,6 +310,12 @@ export default function Timeline() {
                   activeDot={{ r: 6, strokeWidth: 0, fill: "var(--gold)" }}
                   name="Hybrid reflection signal"
                   animationDuration={900}
+                  // Days inside the ramp have no score, and the line must break
+                  // across them rather than draw a segment between the days on
+                  // either side. Connecting them would interpolate a trend
+                  // through a period that was never measured — set explicitly
+                  // because the honest rendering here is a gap, not a curve.
+                  connectNulls={false}
                 />
               </LineChart>
             </ResponsiveContainer>

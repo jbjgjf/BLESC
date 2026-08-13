@@ -52,9 +52,11 @@ retroactively justify the band.
    judgement.
 4. **Context only against a settled baseline.** While
    `baseline_provenance.is_provisional` is true, the comparison line is
-   replaced by "基準値の学習中（残り N 日）". During ramp-up the comparison is
-   against guessed population statistics (D-04) and would read as evidence
-   while carrying none.
+   replaced by "基準値の学習中（残り N 日）", and no score reaches the band or
+   the alert list. Originally this was because the ramp-up comparison ran
+   against guessed population statistics (D-04). Those were deleted in #91, so
+   there is now no comparison at all during ramp-up — the rule stands unchanged
+   and its reason is simpler: there is nothing to compare against yet.
 5. **Every educator surface states that the tool does not diagnose.**
 
 ## What is still written
@@ -64,6 +66,23 @@ column and existing rows remain. Retention of a risk classification attached to
 an identifiable minor is the compliance question, and it is not answered by
 hiding the value — so new writes stopped at the same time as the display
 change. Deleting historical rows is irreversible and waits on legal advice.
+
+**Correction, and how long it took to notice.** "New writes stopped" was true
+only of the FastAPI backend, which honoured `PERSIST_ANOMALY_SCORE = False` from
+2026-08-06. Production does not use that backend: submissions go to the Next.js
+route handler and every row lands in Supabase. That path went on writing a score
+on every submission for the two months after this policy was decided — and the
+value it wrote had no baseline behind it, being
+`1 + triggers*0.8 - protective*0.25 + relations*0.05` over a single entry.
+`longitudinal_features.latest_anomaly_score` accumulated the same value into a
+time series. Both are now gated on the same constant, and reads are gated too,
+so rows written during that window stop rendering as measurements. See
+`production_baseline_path.md`.
+
+The general lesson is worth keeping: a policy enforced in one of two
+implementations is not enforced. This one was written as a decision about the
+product and applied to the codebase that happened to be in front of the person
+applying it.
 
 `state_band` is derived client-side from `anomaly_score` and was never stored.
 

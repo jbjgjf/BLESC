@@ -218,13 +218,35 @@ function toGraphSnapshot(row: GraphSnapshotRow, userId: string): GraphSnapshot {
   };
 }
 
+/**
+ * Whether a stored insight row rests on a real personal baseline.
+ *
+ * This is the single gate every consumer of a score goes through, and it is
+ * deliberately positive-only: a row counts as a measurement when it says so,
+ * not when it fails to say otherwise. Three kinds of row do not qualify:
+ *
+ *  - a student still inside the 14-day ramp, where there is no baseline (#91);
+ *  - a row from the route handler, which cannot see history at all;
+ *  - every row written before this change, whose `anomaly_score` holds
+ *    `1 + triggers*0.8 - protective*0.25 + relations*0.05` and whose
+ *    `baseline_deviation_json` already recorded `baseline_available: false`.
+ *
+ * The third is why this is applied on read rather than only on write. Those
+ * rows are still in the table — deleting them is irreversible and waits on the
+ * same legal advice as the retention question — and they must stop rendering as
+ * measurements now, not whenever they age out.
+ */
+function hasSettledBaseline(row: InsightRow): boolean {
+  return row.baseline_deviation_json?.baseline_available === true;
+}
+
 function toAnomaly(row: InsightRow, userId: string): AnomalyResult {
   return {
     id: row.id,
     user_id: participantCode(row, userId),
     day: row.day,
-    anomaly_score: row.anomaly_score,
-    z_scores_json: row.z_scores_json ?? {},
+    anomaly_score: hasSettledBaseline(row) ? row.anomaly_score : null,
+    z_scores_json: hasSettledBaseline(row) ? row.z_scores_json ?? {} : {},
     explanation_id: row.id,
   };
 }
@@ -363,21 +385,27 @@ export class ApiClient {
    * Either backend does the write — FastAPI when `NEXT_PUBLIC_API_URL` points
    * at it, otherwise the route handler in `src/app/api/entries/`.
    *
-   * It used to. The backend computed against SQLite, returned the result, and
-   * this method then inserted that response into `entries`, `graph_snapshots`,
+   * It used to. The backend computed the submission, returned it, and this
+   * method then inserted that response into `entries`, `graph_snapshots`,
    * `insights` and a dozen research tables — a second write, from a browser
    * tab, with no retry. A closed tab or one failed request left Supabase
    * holding part of a submission while SQLite held all of it, and the two
    * drifted apart with nothing to reconcile them.
    *
+   * The baseline computation that used to run here went with it, to
+   * `lib/server/supabaseWriter.ts`. It has to sit next to the insert: it reads
+   * the participant's history out of `graph_snapshots` and its output IS the
+   * insight row. Splitting the two would mean two round trips to Supabase from
+   * different processes, with the row written by one of them.
+   *
    * The identity the backend needs to write on this user's behalf is resolved
    * here, because only the browser has the session: `owner_user_id` is the
    * Supabase Auth user id and `participant_id` the participants row. Without
-   * them the backend computes and persists locally but mirrors nothing.
+   * them the backend computes and returns but mirrors nothing.
    *
    * `supabase_sync` on the response reports what the backend wrote. When it
-   * carries row ids, those replace the backend's local integer ids so the
-   * returned object matches what a subsequent read from Supabase will show.
+   * carries row ids, those replace the backend's own ids so the returned object
+   * matches what a subsequent read from Supabase will show.
    */
   static async createEntry(
     userId: string,
@@ -407,15 +435,18 @@ export class ApiClient {
 
     const sync = computed.supabase_sync;
     if (sync?.status === "failed") {
-      // Not thrown: the submission itself succeeded and the student's result
-      // is in hand. But the row is not in Supabase, so the next read will not
-      // show it, and that has to be visible rather than inferred from a gap.
+      // Not thrown: the submission itself succeeded and the student's result is
+      // in hand. But the row is not in Supabase, so the next read will not show
+      // it, and that has to be visible rather than inferred from a gap.
       console.error("[entries] backend Supabase sync failed; this entry will not appear in history", sync.reason);
     } else if (sync?.warnings?.length) {
       console.warn("[entries] backend Supabase sync incomplete", sync.warnings);
     }
 
     if (!sync?.entry_id) return computed;
+    // The insight is the backend's, not the route handler's empty placeholder:
+    // only the writer had the history to estimate a baseline from, so its
+    // anomaly_result and explanation are the ones that measured anything.
     return {
       ...computed,
       entry: { ...computed.entry, id: sync.entry_id },
@@ -423,12 +454,8 @@ export class ApiClient {
       graph_snapshot: computed.graph_snapshot && sync.graph_snapshot_id
         ? { ...computed.graph_snapshot, id: sync.graph_snapshot_id, entry_id: sync.entry_id }
         : computed.graph_snapshot,
-      anomaly_result: computed.anomaly_result && sync.insight_id
-        ? { ...computed.anomaly_result, id: sync.insight_id, explanation_id: sync.insight_id }
-        : computed.anomaly_result,
-      explanation: computed.explanation && sync.insight_id
-        ? { ...computed.explanation, id: sync.insight_id }
-        : computed.explanation,
+      anomaly_result: sync.anomaly_result ?? computed.anomaly_result,
+      explanation: sync.explanation ?? computed.explanation,
     };
   }
 
@@ -770,7 +797,10 @@ export class ApiClient {
       participant_id: string;
       day: string;
       anomaly_score: number | null;
-      baseline_deviation_json: { baseline_provenance?: { is_provisional?: boolean; days_remaining?: number; baseline_type?: string } } | null;
+      baseline_deviation_json: {
+        baseline_available?: boolean;
+        baseline_provenance?: { is_provisional?: boolean; days_remaining?: number; baseline_type?: string };
+      } | null;
     };
     type SafetyRowLite = { participant_id: string; retrieval_config_json: Record<string, JsonValue> | null; created_at: string };
     const latestInsight = new Map<string, InsightRowLite>();
@@ -785,7 +815,15 @@ export class ApiClient {
     return roster.map((row) => {
       const insight = latestInsight.get(row.participant_id);
       const safety = latestSafety.get(row.participant_id);
-      const score = insight?.anomaly_score ?? null;
+      // Same positive-only gate as `hasSettledBaseline`. Without it, a student
+      // inside the ramp — and every row written before the baseline reached
+      // production — feeds `state_band`, and `state_band === "review"` raises
+      // an `anomaly_spike` alert to an educator reading
+      // "Reflection signal 3.40 is above the review threshold (2.0)".
+      // That sentence needs the 3.40 to have measured something.
+      const score = insight?.baseline_deviation_json?.baseline_available === true
+        ? insight.anomaly_score ?? null
+        : null;
       const provenance = insight?.baseline_deviation_json?.baseline_provenance;
       const config = safety?.retrieval_config_json ?? null;
       const reasons = Array.isArray(config?.reasons)

@@ -766,6 +766,24 @@ def _insert_graph_version(
         client.table("graph_change_events").insert(change_rows).execute()
 
 
+def _settled_anomaly_score(computed: EntrySubmissionResponse) -> Optional[float]:
+    """The score a consumer may render, or None.
+
+    Positive-only, matching `hasSettledBaseline` in `client.ts`: a row counts as
+    a measurement when its explanation says a baseline was available, not when
+    it fails to say otherwise. During the 14-day ramp the orchestrator writes
+    `baseline_available: False` and an `anomaly_score` of 0.0 — zero is the
+    absence of a reading there, not a reading of zero, and must not be stored as
+    one.
+    """
+    if computed.anomaly_result is None or computed.explanation is None:
+        return None
+    deviation = computed.explanation.baseline_deviation_json or {}
+    if deviation.get("baseline_available") is not True:
+        return None
+    return computed.anomaly_result.anomaly_score
+
+
 def _insert_longitudinal_features(
     client: Any,
     owner_user_id: str,
@@ -798,9 +816,12 @@ def _insert_longitudinal_features(
                 "window_end": day_value,
                 "pipeline_version": "longitudinal-v1",
                 "feature_json": {
-                    "latest_anomaly_score": (
-                        computed.anomaly_result.anomaly_score if computed.anomaly_result else None
-                    ),
+                    # Null unless the row rests on a real personal baseline, so
+                    # this table cannot accumulate a time series of a number
+                    # that measured nothing — a series reads as far stronger
+                    # evidence than any single value in it. Same rule the read
+                    # path applies in `client.ts:hasSettledBaseline`.
+                    "latest_anomaly_score": _settled_anomaly_score(computed),
                     "node_count": node_count,
                     "relation_count": relation_count,
                     "protective_count": protective_count,

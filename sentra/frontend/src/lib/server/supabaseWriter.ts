@@ -21,7 +21,18 @@
  */
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { buildTemporalDiff, EMPTY_SNAPSHOT, relationShiftSummary, usesLegacyPositionalIds, type SnapshotShape } from "@/lib/temporalDiff";
+import { buildTemporalDiff, EMPTY_SNAPSHOT, relationShiftSummary, usesLegacyPositionalIds, type SnapshotShape, type TemporalDiff } from "@/lib/temporalDiff";
+import {
+  MIN_BASELINE_DAYS,
+  PERSIST_ANOMALY_SCORE,
+  checkRules,
+  combineHybridScore,
+  evaluateBaseline,
+  protectiveDecline,
+  scoreTemporalShift,
+  topFeatures,
+  type DayGraph,
+} from "@/lib/baseline";
 
 type Json = Record<string, unknown>;
 
@@ -31,6 +42,10 @@ export type SupabaseSyncResult = {
   graph_snapshot_id?: string | null;
   insight_id?: string | null;
   entry_session_id?: string | null;
+  /** The stored insight, so the caller renders what landed rather than the
+   *  empty placeholder it posted. Absent when no insight row was written. */
+  anomaly_result?: Record<string, unknown>;
+  explanation?: Record<string, unknown>;
   reason?: string;
   warnings: string[];
 };
@@ -70,7 +85,9 @@ export type ComputedSubmission = {
     graph_summary_json: Json;
     temporal_diff_json?: Json;
   } | null;
-  anomaly_result?: { day?: string; anomaly_score?: number; z_scores_json?: Json } | null;
+  // Read only for its `day`. The score is recomputed here — the route handler
+  // sends null, and FastAPI's own value is not what lands in this table.
+  anomaly_result?: { day?: string; user_id?: string; anomaly_score?: number | null; z_scores_json?: Json } | null;
   explanation?: {
     day?: string;
     triggered_rules_json?: unknown;
@@ -172,7 +189,7 @@ async function temporalDiffAgainstSupabase(
   day: string,
   current: SnapshotShape,
   existingDiff: Json,
-): Promise<Json> {
+): Promise<{ diff: Json; previousDayGraph: SnapshotShape | null }> {
   const previousSnapshot = await client
     .from("graph_snapshots")
     .select("nodes_json, relations_json, day, created_at")
@@ -202,18 +219,225 @@ async function temporalDiffAgainstSupabase(
   const diff = buildTemporalDiff(current, legacyBoundary ? EMPTY_SNAPSHOT : previous);
 
   return {
-    ...existingDiff,
-    ...diff,
-    relation_shift_summary: legacyBoundary
-      ? "previous snapshot predates label-derived node identity; not comparable"
-      : relationShiftSummary(diff, hadPrevious),
-    diff_basis: lookupFailed
-      ? "lookup_failed"
-      : legacyBoundary
-        ? "legacy_id_scheme_boundary"
-        : hadPrevious
-          ? "previous_snapshot"
-          : "first_snapshot_for_participant",
+    diff: {
+      ...existingDiff,
+      ...diff,
+      relation_shift_summary: legacyBoundary
+        ? "previous snapshot predates label-derived node identity; not comparable"
+        : relationShiftSummary(diff, hadPrevious),
+      diff_basis: lookupFailed
+        ? "lookup_failed"
+        : legacyBoundary
+          ? "legacy_id_scheme_boundary"
+          : hadPrevious
+            ? "previous_snapshot"
+            : "first_snapshot_for_participant",
+    },
+    // Handed back so the insight can measure protective decline against the
+    // same previous snapshot the diff was taken against, rather than issuing a
+    // second lookup that could disagree with it.
+    previousDayGraph: hadPrevious ? previous : null,
+  };
+}
+
+/**
+ * The participant's own prior days, one bucket per distinct day, most recent
+ * first — the input a personal baseline is estimated from.
+ *
+ * This is the piece production never had. The FastAPI backend reads
+ * `daily_feature_aggregations` out of SQLite, and in production nothing ever
+ * writes there: `NEXT_PUBLIC_API_URL` is unset on Vercel, so submissions go to
+ * the route handler and every row lands in Supabase instead. The backend's
+ * 14-day ramp could therefore never complete, and the score a student saw came
+ * from an arithmetic formula over one submission.
+ *
+ * Supabase has no aggregation table, but it does not need one: the daily
+ * feature vector is a pure function of the nodes and relations, and those are
+ * in `graph_snapshots` already.
+ */
+async function loadBaselineHistory(
+  client: SupabaseClient,
+  participantId: string,
+  beforeDay: string,
+): Promise<{ history: DayGraph[][]; lookupFailed: boolean; truncated: boolean }> {
+  // Enough rows to reach MIN_BASELINE_DAYS distinct days even for a participant
+  // who submits several times a day. `truncated` records the case where it was
+  // not — a short window must not be indistinguishable from a student who
+  // genuinely has fewer days.
+  const ROW_LIMIT = 300;
+  const { data, error } = await client
+    .from("graph_snapshots")
+    .select("day, nodes_json, relations_json")
+    .eq("participant_id", participantId)
+    .lt("day", beforeDay)
+    .order("day", { ascending: false })
+    .limit(ROW_LIMIT);
+
+  if (error) {
+    console.warn("[insights] baseline history lookup failed", error);
+    return { history: [], lookupFailed: true, truncated: false };
+  }
+
+  const byDay = new Map<string, DayGraph[]>();
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const day = String(row.day);
+    const bucket = byDay.get(day) ?? [];
+    bucket.push({
+      nodes: (row.nodes_json ?? []) as DayGraph["nodes"],
+      relations: (row.relations_json ?? []) as DayGraph["relations"],
+    });
+    byDay.set(day, bucket);
+  }
+
+  return {
+    history: [...byDay.values()].slice(0, MIN_BASELINE_DAYS),
+    lookupFailed: false,
+    truncated: (data?.length ?? 0) >= ROW_LIMIT && byDay.size < MIN_BASELINE_DAYS,
+  };
+}
+
+/**
+ * The `insights` row for one submission: a real deviation against the student's
+ * own history, or an explicit refusal to produce one.
+ *
+ * Replaces what the route handler used to hand over untouched:
+ *
+ *     anomaly_score = 1 + triggers * 0.8 - protective * 0.25 + relations * 0.05
+ *     baseline_deviation_json = { baseline_available: false, reason: "single production submission" }
+ *
+ * The second line was true. Nothing read it, and the first line was rendered as
+ * "Hybrid Reflection Signal" — a number with a floor of 1.0 that moved with how
+ * much a student wrote and could not move with anything else, because it had no
+ * history to compare against.
+ *
+ * This ran in `api/client.ts` until #2. It has to sit next to the insert: it
+ * reads history out of `graph_snapshots` and its output IS the row. Now that
+ * the insert is here, so is this.
+ */
+async function buildInsight(params: {
+  client: SupabaseClient;
+  participantId: string;
+  day: string;
+  snapshot: ComputedSubmission["graph_snapshot"];
+  previousDayGraph: DayGraph | null;
+}): Promise<Record<string, unknown>> {
+  const { client, participantId, day, snapshot, previousDayGraph } = params;
+  const today: DayGraph = {
+    nodes: (snapshot?.nodes_json ?? []) as unknown as DayGraph["nodes"],
+    relations: (snapshot?.relations_json ?? []) as unknown as DayGraph["relations"],
+  };
+  const graphSummary = (snapshot?.graph_summary_json ?? {}) as {
+    event_count?: number;
+    key_relations?: unknown;
+  };
+  const diff = (snapshot?.temporal_diff_json ?? {}) as unknown as Partial<TemporalDiff>;
+
+  const { history, lookupFailed, truncated } = await loadBaselineHistory(client, participantId, day);
+  const outcome = evaluateBaseline([today], history);
+  const decline = protectiveDecline(today, previousDayGraph ?? { nodes: [], relations: [] }, Boolean(previousDayGraph));
+
+  const shared = {
+    changed_relations_json: diff.changed_relations ?? [],
+    protective_decline_json: decline,
+    graph_summary_json: graphSummary ?? {},
+    key_relations: graphSummary?.key_relations ?? [],
+  };
+
+  if (outcome.status === "not_enough_data") {
+    // The shape `_persist_not_enough_data_explanation` writes in the backend. A
+    // student in their first fortnight gets an explicit empty state, not a
+    // score computed against statistics nobody measured (#91).
+    const reasons = [
+      `Reflection Signal needs at least ${outcome.requiredDays} prior day(s) of this student's own data.`,
+      `Only ${outcome.observedDays} prior day(s) are available.`,
+    ];
+    if (lookupFailed) reasons.push("The history lookup failed, so the day count above is a floor, not a count.");
+    if (truncated) reasons.push("The history window was truncated by the row limit; the day count above is a floor.");
+
+    return {
+      ...shared,
+      // Not written while PERSIST_ANOMALY_SCORE is off. The column is not
+      // nullable in older rows, so zero is the same value the backend writes
+      // rather than a reading of zero.
+      anomaly_score: 0,
+      z_scores_json: {},
+      triggered_rules_json: [],
+      baseline_deviation_json: {
+        status: "not_enough_data",
+        baseline_available: false,
+        baseline_type: "none",
+        baseline_provenance: outcome.provenance,
+        baseline_day_count: outcome.observedDays,
+        required_baseline_days: outcome.requiredDays,
+        feature_zscores: {},
+        top_features: [],
+        score: null,
+        latest_feature_vector: outcome.featureVector,
+        history_lookup_failed: lookupFailed,
+        history_window_truncated: truncated,
+      },
+      uncertainty_json: {
+        level: "high",
+        status: "not_enough_data",
+        reasons,
+        missing_signals: ["personal baseline"],
+      },
+      evidence_summaries: ["Not enough personal history is available to calculate a Reflection Signal yet."],
+      score_breakdown_json: {
+        status: "not_enough_data",
+        rule_score: 0,
+        deviation_score: 0,
+        temporal_shift_score: 0,
+        final_score: null,
+      },
+    };
+  }
+
+  const ruleHits = checkRules(outcome.featureVector, outcome.zScores, graphSummary, diff, decline);
+  const breakdown = combineHybridScore(ruleHits, outcome.deviationScore, scoreTemporalShift(diff));
+
+  return {
+    ...shared,
+    // Computed, and deliberately not persisted. `PERSIST_ANOMALY_SCORE` is off
+    // pending legal review of retaining a risk classification attached to an
+    // identifiable minor (docs/educator_display_policy.md). The real value is
+    // in score_breakdown_json.final_score, as it is on the backend.
+    anomaly_score: PERSIST_ANOMALY_SCORE ? breakdown.final_score : 0,
+    z_scores_json: {
+      ...outcome.zScores,
+      baseline_deviation_score: outcome.deviationScore,
+      temporal_shift_score: breakdown.temporal_shift_score,
+    },
+    triggered_rules_json: ruleHits,
+    baseline_deviation_json: {
+      status: "ok",
+      baseline_available: true,
+      baseline_type: outcome.baselineType,
+      baseline_provenance: outcome.provenance,
+      baseline_day_count: outcome.observedDays,
+      required_baseline_days: MIN_BASELINE_DAYS,
+      feature_zscores: outcome.zScores,
+      top_features: topFeatures(outcome.zScores),
+      score: outcome.deviationScore,
+      latest_feature_vector: outcome.featureVector,
+      // Features that did not move across the whole window, so their z-scores
+      // carry no information however large their weight. #85 was this exact
+      // failure reported as a measurement.
+      degenerate_features: outcome.degenerate,
+    },
+    uncertainty_json: {
+      level: today.nodes.length >= 4 ? "low" : "medium",
+      status: "ok",
+      reasons: [
+        today.nodes.length >= 4 ? "Graph coverage is adequate" : "Sparse graph coverage",
+        previousDayGraph ? "Compared with prior structural snapshot" : "No prior graph to compare",
+      ],
+      missing_signals: outcome.degenerate.length
+        ? [`features with no variance across the window: ${outcome.degenerate.join(", ")}`]
+        : [],
+    },
+    evidence_summaries: ruleHits.map((hit) => hit.evidence),
+    score_breakdown_json: { status: "ok", ...breakdown },
   };
 }
 
@@ -258,6 +482,15 @@ export async function writeEntryResult(
   let entryId: string;
   let graphSnapshotId: string | null = null;
   let insightId: string | null = null;
+  // The insight row, once computed. Returned to the caller as well as written:
+  // the route handler emits an empty placeholder because it cannot see history,
+  // so this is the only version of the score that measured anything.
+  let insightRowValues: Record<string, unknown> | null = null;
+  let insightDay: string | null = null;
+  // The snapshot as actually written — the recomputed diff, not the one the
+  // backend handed over — and the previous day it was compared against.
+  let writtenSnapshot: ComputedSubmission["graph_snapshot"] = null;
+  let writtenPreviousDayGraph: DayGraph | null = null;
   try {
     const entryRow = unwrap(
       "entries insert",
@@ -284,7 +517,7 @@ export async function writeEntryResult(
     if (computed.graph_snapshot) {
       const snapshot = computed.graph_snapshot;
       const day = asDay(snapshot.day) ?? new Date().toISOString().slice(0, 10);
-      const temporalDiff = await temporalDiffAgainstSupabase(
+      const { diff: temporalDiff, previousDayGraph } = await temporalDiffAgainstSupabase(
         client,
         participantId,
         day,
@@ -294,6 +527,8 @@ export async function writeEntryResult(
         },
         snapshot.temporal_diff_json ?? {},
       );
+      writtenPreviousDayGraph = previousDayGraph as DayGraph | null;
+      writtenSnapshot = { ...snapshot, temporal_diff_json: temporalDiff };
       const graphRow = unwrap(
         "graph_snapshots insert",
         await client
@@ -317,10 +552,20 @@ export async function writeEntryResult(
     }
 
     if (computed.anomaly_result || computed.explanation) {
-      const day =
+      insightDay =
         asDay(computed.anomaly_result?.day) ??
         asDay(computed.explanation?.day) ??
         new Date().toISOString().slice(0, 10);
+      // Not copied from `computed`: the route handler emits an empty
+      // placeholder there precisely because it cannot see history. The real
+      // deviation is estimated here, against the rows just read.
+      insightRowValues = await buildInsight({
+        client,
+        participantId,
+        day: insightDay,
+        snapshot: writtenSnapshot ?? computed.graph_snapshot,
+        previousDayGraph: writtenPreviousDayGraph,
+      });
       const insightRow = unwrap(
         "insights insert",
         await client
@@ -330,19 +575,8 @@ export async function writeEntryResult(
             participant_id: participantId,
             entry_id: entryId,
             graph_snapshot_id: graphSnapshotId,
-            day,
-            anomaly_score: computed.anomaly_result?.anomaly_score ?? 0,
-            z_scores_json: computed.anomaly_result?.z_scores_json ?? {},
-            triggered_rules_json: computed.explanation?.triggered_rules_json ?? [],
-            baseline_deviation_json: computed.explanation?.baseline_deviation_json ?? {},
-            changed_relations_json: computed.explanation?.changed_relations_json ?? [],
-            protective_decline_json: computed.explanation?.protective_decline_json ?? {},
-            uncertainty_json: computed.explanation?.uncertainty_json ?? {},
-            evidence_summaries: computed.explanation?.evidence_summaries ?? [],
-            graph_summary_json:
-              computed.explanation?.graph_summary_json ?? computed.graph_snapshot?.graph_summary_json ?? {},
-            score_breakdown_json: computed.explanation?.score_breakdown_json ?? {},
-            key_relations: computed.explanation?.key_relations ?? [],
+            day: insightDay,
+            ...insightRowValues,
             extraction_provider: computed.extraction.extraction_provider,
             extraction_model: computed.extraction.extraction_model,
           })
@@ -638,7 +872,14 @@ export async function writeEntryResult(
         window_end: day,
         pipeline_version: "longitudinal-v1",
         feature_json: {
-          latest_anomaly_score: computed.anomaly_result?.anomaly_score ?? null,
+          // Always null while PERSIST_ANOMALY_SCORE is off, matching the
+          // insights column. This used to carry the route handler's formula, so
+          // the longitudinal table accumulated a time series of a number that
+          // never measured anything — and a series reads as far stronger
+          // evidence than any single value in it.
+          latest_anomaly_score: PERSIST_ANOMALY_SCORE
+            ? (insightRowValues?.anomaly_score as number | null) ?? null
+            : null,
           node_count: nodeCount,
           relation_count: relationCount,
           protective_count: protectiveCount,
@@ -687,6 +928,40 @@ export async function writeEntryResult(
     graph_snapshot_id: graphSnapshotId,
     insight_id: insightId,
     entry_session_id: entrySessionId,
+    // The insight travels back so the caller renders what was stored rather
+    // than the placeholder it posted. `anomaly_score` follows the same rule the
+    // read path applies (`hasSettledBaseline`): a number only when a baseline
+    // was actually estimated, null during ramp-up, never zero-as-a-reading.
+    ...(insightId && insightRowValues
+      ? {
+          anomaly_result: {
+            id: insightId,
+            user_id: computed.anomaly_result?.user_id ?? "",
+            day: insightDay ?? "",
+            anomaly_score: settledScore(insightRowValues),
+            z_scores_json: (insightRowValues.z_scores_json ?? {}) as Record<string, number>,
+            explanation_id: insightId,
+          },
+          explanation: {
+            id: insightId,
+            user_id: computed.anomaly_result?.user_id ?? "",
+            day: insightDay ?? "",
+            created_at: new Date().toISOString(),
+            ...insightRowValues,
+          },
+        }
+      : {}),
     warnings,
   };
+}
+
+/**
+ * The score a consumer may render: present only when the row rests on a real
+ * personal baseline. Mirrors `hasSettledBaseline` on the read path, so a
+ * freshly written row and the same row read back agree.
+ */
+function settledScore(insight: Record<string, unknown>): number | null {
+  const deviation = insight.baseline_deviation_json as { baseline_available?: boolean } | undefined;
+  if (deviation?.baseline_available !== true) return null;
+  return (insight.anomaly_score as number | null) ?? null;
 }

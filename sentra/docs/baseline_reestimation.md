@@ -49,10 +49,17 @@ to gate any display on. `days_remaining` is what goes in "learning this
 student's baseline (11 days left)". The `population_baseline_is_measured` key
 is gone with the constant it described.
 
-**Not yet done:** the educator surface does not read this. That UI is the
-Next.js app fed from Supabase; it does not consume this backend's inference
-output at all, so there is nothing to attach the badge to until those paths
-meet. Wiring it is a separate piece of work and is not claimed here.
+**Now wired.** This used to read "not yet done: the educator surface does not
+read this … there is nothing to attach the badge to until those paths meet."
+Those paths have now met — but not by the backend reaching Supabase. The
+baseline computation was ported to TypeScript and runs in the Supabase write
+path, so `baseline_provenance` is written on every production submission and
+both surfaces read it. See `production_baseline_path.md` for why the port was
+the available move and what it cost.
+
+The reason the badge had nothing to attach to was worse than "the paths have not
+met yet": production was not merely missing the provenance, it was writing a
+score of its own that had no baseline behind it at all.
 
 ## If a population baseline is ever reintroduced
 

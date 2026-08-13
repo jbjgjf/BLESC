@@ -114,7 +114,22 @@ def test_no_two_conditions_produce_the_same_ranking_on_every_case():
     # Exempted BY NAME with the reason, rather than by relaxing the rule — and
     # it is reported in `condition_independence` so the ablation is never read
     # as four independent arms.
-    known_placeholder = {"graph_pattern == hf_reranker_candidate"}
+    #
+    # `relation_aware` (#96) collapses onto the same ranking for a DIFFERENT and
+    # more interesting reason: every chain in the current six cases runs forward
+    # from the query anchor and uses one relation type per case, so directed
+    # typed traversal reaches exactly what undirected untyped traversal reaches,
+    # in the same order. This case set cannot tell the two apart. That is a
+    # finding about the cases, not about the implementation —
+    # `test_relation_aware_traversal.py` shows the two separating on a case that
+    # can discriminate, and #88 is where discriminating cases get added:
+    # a distractor reached only against an arrow, and two routes of equal length
+    # whose relation types differ.
+    known_placeholder = {
+        "graph_pattern == hf_reranker_candidate",
+        "graph_pattern == relation_aware",
+        "relation_aware == hf_reranker_candidate",
+    }
     unexpected = [entry for entry in degenerate if entry not in known_placeholder]
     assert not unexpected, (
         f"these conditions rank identically on every case and are not separate "

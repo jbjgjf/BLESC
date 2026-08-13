@@ -96,7 +96,7 @@ def _relation(source, target, confidence=0.9):
     return {"source_id": source, "target_id": target, "type": "causes", "confidence": confidence}
 
 
-def _computed(nodes=None, relations=None, day=date(2026, 8, 13)):
+def _computed(nodes=None, relations=None, day=date(2026, 8, 13), baseline_available=False):
     nodes = nodes if nodes is not None else [_node("sleep"), _node("exam", "Trigger")]
     relations = relations if relations is not None else [_relation("exam", "sleep")]
     created_at = datetime(2026, 8, 13, 9, 0, 0)
@@ -129,7 +129,7 @@ def _computed(nodes=None, relations=None, day=date(2026, 8, 13)):
             user_id="p01",
             day=created_at,
             triggered_rules_json=[],
-            baseline_deviation_json={},
+            baseline_deviation_json={"baseline_available": baseline_available},
             changed_relations_json=[],
             protective_decline_json={},
             uncertainty_json={"level": "low"},
@@ -306,6 +306,32 @@ def test_a_failing_core_write_is_reported_not_raised(monkeypatch):
     assert result["status"] == "failed"
     assert "entries rejected" in result["reason"]
     assert "insights" not in client.writes
+
+
+def test_an_unsettled_baseline_writes_no_longitudinal_score(monkeypatch):
+    """During the 14-day ramp the orchestrator writes 0.0 as "no reading".
+
+    Copying that into `longitudinal_features` would turn the absence of a
+    measurement into a time series of zeroes, and a series reads as far
+    stronger evidence than any single value in it.
+    """
+    client = FakeClient()
+    _configured(monkeypatch, client)
+
+    supabase_writer.write_entry_result("owner-1", "participant-1", _computed(baseline_available=False))
+
+    for row in client.writes["longitudinal_features"]:
+        assert row["feature_json"]["latest_anomaly_score"] is None
+
+
+def test_a_settled_baseline_carries_its_score_through(monkeypatch):
+    client = FakeClient()
+    _configured(monkeypatch, client)
+
+    supabase_writer.write_entry_result("owner-1", "participant-1", _computed(baseline_available=True))
+
+    for row in client.writes["longitudinal_features"]:
+        assert row["feature_json"]["latest_anomaly_score"] == 2.4
 
 
 def test_safety_assessment_audit_row_is_written(monkeypatch):
