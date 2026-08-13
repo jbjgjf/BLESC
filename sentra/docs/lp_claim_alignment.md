@@ -66,6 +66,23 @@ which nobody chose.
 Not a meeting. A named clinical collaborator, a written scope, and either a
 first curated subgraph (①) or a documented mapping from source to weight (③).
 
+### Progress against that definition, 2026-08-13
+
+| requirement | status |
+| --- | --- |
+| first curated subgraph (①) | **done** — `backend/app/ontology/seed/sleep.yaml`, 12 nodes / 15 edges, the chain the LP already illustrates |
+| written scope | **done** — `clinical_reviewer_packet.md`, two questions, one hour, with what is explicitly not being asked |
+| named clinical collaborator | **open** — the packet is ready to send; the name is not filled in |
+| documented source → weight mapping (③) | **open** — depends on the reviewer's answers |
+
+Two of four. The remaining blocker on ① is a name, not engineering.
+
+```
+Collaborator:  [ 未記入 ]
+Scope agreed:  [ 未記入 ]
+Sent on:       [ 未記入 ]
+```
+
 ## Related
 
 - `educator_display_policy.md` — why ④ became A and what the product shows now

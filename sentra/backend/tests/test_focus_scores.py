@@ -124,7 +124,9 @@ class TestVocabularyProvenance:
     def test_reflection_list_is_marked_unsourced(self):
         # Honest by default: it is the author's judgement of what
         # problem-solving language looks like, not items from an instrument.
-        assert VOCABULARY_PROVENANCE["reflection"] == "author_judgement_unsourced"
+        # Structure changed in #84 from a bare string to a record; the claim
+        # it asserts is the same.
+        assert VOCABULARY_PROVENANCE["reflection"].source_refs == ["expert_judgement"]
 
     def test_reflection_vocabulary_covers_both_languages(self):
         assert any(term.isascii() for term in REFLECTION_TERMS)
@@ -133,3 +135,70 @@ class TestVocabularyProvenance:
     def test_status_no_longer_claims_only_the_weights_were_the_problem(self):
         status = cognitive_probe_features("", "i feel tired")["focus_scores_status"]
         assert "unvalidated" in status
+
+
+class TestVocabularySourcing:
+    """#84 — the word lists are the entire input to the score.
+
+    Their contents are as load-bearing as the weights were, and got less
+    scrutiny. Each list now states its basis, its selection rule, and what
+    would take a term out.
+    """
+
+    def test_every_vocabulary_resolves_against_the_source_registry(self):
+        from app.analytics.cognitive_probe import VOCABULARY_PROVENANCE
+        from app.ontology.sources import resolve
+
+        for name, provenance in VOCABULARY_PROVENANCE.items():
+            assert provenance.source_refs, name
+            for source_id in provenance.source_refs:
+                resolve(source_id)
+
+    def test_every_vocabulary_states_what_takes_a_term_out(self):
+        from app.analytics.cognitive_probe import VOCABULARY_PROVENANCE
+
+        for name, provenance in VOCABULARY_PROVENANCE.items():
+            assert provenance.inclusion_rule.strip(), name
+            assert provenance.exclusion_rule.strip(), name
+
+    def test_english_self_reference_is_first_person_singular_only(self):
+        # The scope Rude et al. (2004) actually support. Plural forms are
+        # absent deliberately — the finding does not extend to them, and a
+        # `we` in the list would be citing beyond the source.
+        from app.analytics.cognitive_probe import SELF_REFERENCE_TERMS
+
+        english = {term for term in SELF_REFERENCE_TERMS if term.isascii()}
+        assert english == {"i", "me", "my", "mine", "myself"}
+        assert not english & {"we", "us", "our", "ours", "ourselves"}
+
+    def test_the_pronoun_source_records_what_it_does_not_cover(self):
+        from app.ontology.sources import resolve
+
+        scope = resolve("rude_2004_pronouns").scope_note
+        # Japanese drops pronouns, so density is a different quantity; the
+        # sample is US college students, not adolescents.
+        assert "Japanese" in scope
+        assert "PLURAL" in scope or "plural" in scope
+
+    def test_japanese_lexicons_were_investigated_and_the_answer_recorded(self):
+        # "We looked and found nothing" would have been the easier claim and
+        # is not the true one: J-LIWC2015, JIWC and 日本語感情語辞書 all exist.
+        from app.analytics.cognitive_probe import JAPANESE_LEXICON_STATUS
+        from app.ontology.sources import resolve
+
+        assert JAPANESE_LEXICON_STATUS == "suitable_resources_exist_but_unused"
+        assert "exist" in resolve("j_liwc2015_not_used").scope_note
+
+    def test_no_liwc_content_is_reproduced(self):
+        # LIWC is a licensed dictionary. It is cited for the method — counting
+        # pronouns and affect words as separate dimensions — never for words.
+        from app.ontology.sources import resolve
+
+        assert "not" in resolve("liwc_category").scope_note.lower()
+
+    def test_per_language_sizes_are_reported(self):
+        features = cognitive_probe_features("", "i feel tired")
+        for name in ("negative", "positive", "self_reference", "recency", "reflection"):
+            entry = features["vocabulary_provenance"][name]
+            assert entry["size_en"] > 0, name
+            assert entry["size_ja"] > 0, name

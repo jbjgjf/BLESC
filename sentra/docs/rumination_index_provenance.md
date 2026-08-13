@@ -130,6 +130,29 @@ lexical density against a self-report instrument, and there is still no
 validation and no population. The metric is exploratory either way; it is now
 exploratory with a defensible scoring rule instead of an indefensible one.
 
+## Reviewer answers
+
+Packet: `clinical_reviewer_packet.md` — two questions, one hour.
+Recorded here on return, **as a dated expert judgement, not as a published
+source**. An expert's answer is evidence about a design decision; it is not a
+citation, and writing it up as one would repeat the error this whole dossier
+exists to correct.
+
+```
+Reviewer:            [ 未記入 ]
+Date:                [ 未記入 ]
+Agreed description:  [ 助言 / レビュー / 共同研究 / 名前を出さない ]
+
+Q1 — is a 30-second free recall a valid elicitation for this construct?
+     [ 未記入 ]
+
+Q2 — is the two-component split the right one?
+     [ 未記入 ]
+```
+
+Until these are filled in, the two open checklist items above stay open, and
+nothing on the site or in any submission may describe the metric as reviewed.
+
 ## Interim position
 
 **This dossier is not sign-off.** The score must not be presented to educators

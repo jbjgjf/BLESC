@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Set
+from dataclasses import dataclass
+from typing import Any, Dict, List, Set
+
+from app.ontology.sources import resolve
 
 from app.analytics.tokenize import (
     analyze,
@@ -12,16 +15,89 @@ from app.analytics.tokenize import (
 
 PIPELINE_VERSION = "cognitive-probe-v3"
 
-# Where each word list came from. Recorded in the payload so a consumer can see
-# that these are hand-written, not derived from a validated instrument — and so
-# adding a sourced list later is a change of value rather than a new field.
-VOCABULARY_PROVENANCE = {
-    "negative": "author_judgement_unsourced",
-    "positive": "author_judgement_unsourced",
-    "self_reference": "closed_class_pronouns",
-    "recency": "author_judgement_unsourced",
-    "reflection": "author_judgement_unsourced",
+@dataclass(frozen=True)
+class VocabularyProvenance:
+    """Where a word list came from, and what would change it.
+
+    These lists are the entire input to the score. Their contents are as
+    load-bearing as the weights were, and had less scrutiny — so each one
+    states its basis, its selection rule, and what would take a term out.
+
+    `source_refs` resolve against app/ontology/sources.py. A list with no
+    published basis says so via `expert_judgement` rather than leaving the
+    field empty, which is the same rule the ontology follows.
+    """
+
+    source_refs: List[str]
+    inclusion_rule: str
+    exclusion_rule: str
+
+    def as_dict(self, terms: Set[str]) -> Dict[str, Any]:
+        english = sorted(term for term in terms if term.isascii())
+        japanese = sorted(term for term in terms if not term.isascii())
+        return {
+            "source_refs": list(self.source_refs),
+            "kinds": [resolve(ref).kind.value for ref in self.source_refs],
+            "inclusion_rule": self.inclusion_rule,
+            "exclusion_rule": self.exclusion_rule,
+            # Reported per language so a thin list on one side is visible
+            # rather than hidden inside a total.
+            "size_en": len(english),
+            "size_ja": len(japanese),
+        }
+
+
+VOCABULARY_PROVENANCE: Dict[str, VocabularyProvenance] = {
+    "negative": VocabularyProvenance(
+        source_refs=["rude_2004_pronouns", "liwc_category", "expert_judgement"],
+        inclusion_rule=(
+            "Negative-valence affect words a secondary-school student would plausibly "
+            "write. Rude et al. support elevated negative-valence word use as a marker; "
+            "the specific membership is hand-written and is not a LIWC category."
+        ),
+        exclusion_rule=(
+            "Out if it only reads negative in one register (dark slang used as a joke), "
+            "or if it names a diagnosis rather than an experience."
+        ),
+    ),
+    "positive": VocabularyProvenance(
+        source_refs=["liwc_category", "expert_judgement"],
+        inclusion_rule="Positive-valence counterpart to the negative list, same register.",
+        exclusion_rule="Out if its positivity depends on context ('fine', 'whatever').",
+    ),
+    "self_reference": VocabularyProvenance(
+        source_refs=["rude_2004_pronouns", "liwc_category"],
+        inclusion_rule=(
+            "First-person SINGULAR only — the scope Rude et al. actually support. "
+            "The English list is exactly i/me/my/mine/myself; plural forms are "
+            "deliberately absent because the finding does not extend to them."
+        ),
+        exclusion_rule=(
+            "Out if plural, or if the source's scope does not reach it. The Japanese "
+            "entries are NOT covered by that source: Japanese drops pronouns freely, so "
+            "density measures something different, and no Japanese lexicon was consulted."
+        ),
+    ),
+    "recency": VocabularyProvenance(
+        source_refs=["expert_judgement"],
+        inclusion_rule="Words placing an event close to now. No source; a design choice.",
+        exclusion_rule="Out if it can refer to any point in time ('then', 'once').",
+    ),
+    "reflection": VocabularyProvenance(
+        source_refs=["expert_judgement"],
+        inclusion_rule=(
+            "Problem-solving, future orientation, reappraisal, plan-making — the "
+            "reflection side the RRS keeps separate from brooding. Author's judgement "
+            "of what that language looks like, not items from an instrument."
+        ),
+        exclusion_rule="Out if it marks intention without any action or reappraisal.",
+    ),
 }
+
+#: Japanese lexicons were investigated, exist, and are NOT used. Recorded here
+#: because 'we looked and found nothing' would have been the easier claim and
+#: is not the true one — see the j_liwc2015_not_used source entry.
+JAPANESE_LEXICON_STATUS = "suitable_resources_exist_but_unused"
 
 # Vocabularies are matched against both the surface form and the UniDic lemma,
 # so an inflected occurrence reaches the same entry: 疲れてる and 疲れた both
@@ -171,7 +247,14 @@ def cognitive_probe_features(journal_text: str, recall_text: str) -> Dict[str, A
         # Travels with the values so a consumer cannot mistake them for a
         # validated measure. See docs/rumination_index_provenance.md.
         "focus_scores_status": "exploratory_equal_weighted_unvalidated",
-        "vocabulary_provenance": VOCABULARY_PROVENANCE,
+        "vocabulary_provenance": {
+            "negative": VOCABULARY_PROVENANCE["negative"].as_dict(NEGATIVE_TERMS),
+            "positive": VOCABULARY_PROVENANCE["positive"].as_dict(POSITIVE_TERMS),
+            "self_reference": VOCABULARY_PROVENANCE["self_reference"].as_dict(SELF_REFERENCE_TERMS),
+            "recency": VOCABULARY_PROVENANCE["recency"].as_dict(RECENCY_TERMS),
+            "reflection": VOCABULARY_PROVENANCE["reflection"].as_dict(REFLECTION_TERMS),
+            "japanese_lexicon_status": JAPANESE_LEXICON_STATUS,
+        },
         "empty_probe": token_count == 0,
         # Whether this reading can be trusted. Japanese text analysed without a
         # dictionary falls back to whitespace splitting and under-counts every

@@ -124,6 +124,62 @@ SOURCES: Dict[str, Source] = {
             "rather than about psychology."
         ),
     ),
+    "rude_2004_pronouns": Source(
+        source_id="rude_2004_pronouns",
+        citation=(
+            "Rude, S., Gortner, E-M., & Pennebaker, J. W. (2004). Language use of "
+            "depressed and depression-vulnerable college students. "
+            "Cognition & Emotion, 18(8), 1121-1133."
+        ),
+        url="https://doi.org/10.1080/02699930441000030",
+        kind=SourceKind.PRIMARY,
+        retrieved_on=_RETRIEVED,
+        scope_note=(
+            "Supports: an association between depression and elevated FIRST-PERSON "
+            "SINGULAR pronoun use (I, me, my), and elevated negative-valence word use, "
+            "in written text. Does NOT support: first-person PLURAL (we, us), any "
+            "causal reading, use as an individual-level indicator, adolescents "
+            "specifically — the sample is US college students — or Japanese, where "
+            "pronoun dropping makes density a different quantity entirely."
+        ),
+    ),
+    "liwc_category": Source(
+        source_id="liwc_category",
+        citation=(
+            "Tausczik, Y. R., & Pennebaker, J. W. (2010). The psychological meaning of "
+            "words: LIWC and computerized text analysis methods. "
+            "Journal of Language and Social Psychology, 29(1), 24-54."
+        ),
+        url="https://doi.org/10.1177/0261927X09351676",
+        kind=SourceKind.PRIMARY,
+        retrieved_on=_RETRIEVED,
+        scope_note=(
+            "Supports: the category design of counting first-person singular pronouns "
+            "and affect words as separate dimensions. Does NOT support: the specific "
+            "membership of the lists in this repository, which are hand-written and "
+            "are NOT LIWC categories — LIWC is a licensed dictionary and none of it is "
+            "reproduced here. Cited for the method, not for the words."
+        ),
+    ),
+    "j_liwc2015_not_used": Source(
+        source_id="j_liwc2015_not_used",
+        citation=(
+            "Igarashi, T. et al. J-LIWC2015 (Japanese LIWC2015); NAIST JIWC-Dictionary; "
+            "日本語感情語辞書. Investigated 2026-08-13 and NOT used."
+        ),
+        url="https://sociocom.naist.jp/jiwc-dictionary/",
+        kind=SourceKind.EXPERT_JUDGEMENT,
+        retrieved_on=_RETRIEVED,
+        scope_note=(
+            "Records an ABSENCE, deliberately. Japanese affect and pronoun lexicons do "
+            "exist — J-LIWC2015 carries first-person singular and plural categories, "
+            "JIWC covers seven affect classes, and 日本語感情語辞書 has ~6,894 entries "
+            "over ten. The Japanese word lists here draw on none of them; they are "
+            "hand-written. The honest finding is not 'we looked and found nothing' but "
+            "'suitable resources exist and have not been used', which is a larger gap. "
+            "Adopting one is a change to the score's behaviour and needs its own PR."
+        ),
+    ),
     # Not a citation. This is how the registry records that a choice has no
     # published basis, so it is countable rather than invisible.
     "expert_judgement": Source(
