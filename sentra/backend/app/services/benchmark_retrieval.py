@@ -161,6 +161,14 @@ class Triple:
     subject: str
     relation: str
     object: str
+    #: The `Category:` half of each endpoint, which the retrieval conditions do
+    #: not use and #79's provenance coverage does — a node has to carry its
+    #: category to be a node the ontology recognises. Defaulted so the reversed
+    #: construction in `build_relation_graph` and any other positional caller
+    #: keep working, and kept on the triple rather than re-parsed downstream so
+    #: the motif notation stays defined in exactly one place.
+    subject_category: str = ""
+    object_category: str = ""
 
 
 def parse_motifs(motifs: Sequence[str]) -> List[Triple]:
@@ -175,8 +183,16 @@ def parse_motifs(motifs: Sequence[str]) -> List[Triple]:
         match = _TRIPLE.match(motif)
         if not match:
             continue
-        _, subject, relation, _, object_ = match.groups()
-        parsed.append(Triple(subject.strip().lower(), relation.strip(), object_.strip().lower()))
+        subject_category, subject, relation, object_category, object_ = match.groups()
+        parsed.append(
+            Triple(
+                subject.strip().lower(),
+                relation.strip(),
+                object_.strip().lower(),
+                subject_category.strip(),
+                object_category.strip(),
+            )
+        )
     return parsed
 
 
@@ -235,7 +251,13 @@ def build_relation_graph(motif_lists: Sequence[Sequence[str]]) -> Dict[str, List
             graph.setdefault(triple.subject, []).append(triple)
             if rule_for(triple.relation).direction is TraversalDirection.SYMMETRIC:
                 graph.setdefault(triple.object, []).append(
-                    Triple(triple.object, triple.relation, triple.subject)
+                    Triple(
+                        triple.object,
+                        triple.relation,
+                        triple.subject,
+                        triple.object_category,
+                        triple.subject_category,
+                    )
                 )
     for concept in graph:
         graph[concept].sort(key=lambda t: (t.relation, t.object))

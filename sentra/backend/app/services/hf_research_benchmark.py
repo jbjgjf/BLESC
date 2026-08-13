@@ -68,6 +68,7 @@ from .benchmark_cases import (
     BenchmarkCase,
     EvidenceDay,
 )
+from ..ontology.provenance import COVERAGE_NOTE, MATCH_RULES, annotate, provenance_coverage
 from ..traversal.relations import RELATION_RULES_VERSION
 from .benchmark_labelling import DATASET_VERSION, assign_splits, labelling_status
 from .benchmark_retrieval import (
@@ -79,6 +80,7 @@ from .benchmark_retrieval import (
     chance_level,
     hop_distances,
     ndcg_at_k,
+    parse_motifs,
     relation_aware_reach,
     score_candidate,
     tokens,
@@ -177,6 +179,170 @@ def _safety_metrics(case: BenchmarkCase) -> Dict[str, Any]:
     }
 
 
+def case_graph(case: BenchmarkCase) -> Dict[str, List[Dict[str, Any]]]:
+    """A case's motifs as an ontology graph, so coverage can be measured on it.
+
+    The motifs across all of a case's evidence days are one graph, not one per
+    day: a case is written as a chain spanning days, and measuring each day
+    separately would report the chain as a set of disconnected fragments.
+
+    Node ids are the motif's own concept strings — `exam pressure`, from
+    `Trigger:exam pressure`. `provenance._normalise` strips spaces and
+    underscores before comparing, so that reaches the curated `exam_pressure`
+    by the `exact_id` rule. That is a dependency between two files and it is
+    covered by a test rather than left to hold by luck.
+    """
+    nodes: Dict[str, Dict[str, Any]] = {}
+    relations: Dict[tuple, Dict[str, Any]] = {}
+    for evidence in case.evidence:
+        for triple in parse_motifs(evidence.graph_motifs):
+            for concept, category in (
+                (triple.subject, triple.subject_category),
+                (triple.object, triple.object_category),
+            ):
+                nodes.setdefault(concept, {"id": concept, "label": concept, "category": category})
+            key = (triple.subject, triple.object, triple.relation)
+            relations.setdefault(
+                key,
+                {"source_id": triple.subject, "target_id": triple.object, "type": triple.relation},
+            )
+    return {"nodes": list(nodes.values()), "relations": list(relations.values())}
+
+
+def _pool(coverages: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """Pooled over elements, not averaged over cases.
+
+    A mean of per-case rates weights a 4-element case the same as a 40-element
+    one, which for a set whose cases differ this much in size is a number about
+    the case mix rather than about the graphs. The per-case rates are reported
+    alongside, so the distribution is visible instead of only its summary —
+    which is the whole reason this is measured before anything is gated on it.
+    """
+    node_total = sum(item["node_count"] for item in coverages)
+    edge_total = sum(item["edge_count"] for item in coverages)
+    matched_nodes = sum(item["matched_node_count"] for item in coverages)
+    matched_edges = sum(item["matched_edge_count"] for item in coverages)
+    element_total = node_total + edge_total
+
+    by_strength: Dict[str, int] = {}
+    for item in coverages:
+        for strength, count in item["edges_by_strength"].items():
+            by_strength[strength] = by_strength.get(strength, 0) + count
+
+    return {
+        "case_count": len(coverages),
+        "nodes_with_source": round(matched_nodes / node_total, 6) if node_total else 0.0,
+        "edges_with_source": round(matched_edges / edge_total, 6) if edge_total else 0.0,
+        "edges_by_strength": dict(sorted(by_strength.items())),
+        "unsourced_rate": round(1 - (matched_nodes + matched_edges) / element_total, 6)
+        if element_total
+        else 0.0,
+        "matched_seed_subgraphs": sorted(
+            {subgraph for item in coverages for subgraph in item["matched_seed_subgraphs"]}
+        ),
+        "node_count": node_total,
+        "edge_count": edge_total,
+    }
+
+
+def _language_split_validity() -> Dict[str, Any]:
+    """Whether the per-language coverage split can detect a language effect.
+
+    On this case set it cannot, and the reason is structural rather than a
+    result. The `ja` and `en` graphs are *not* identical — the lexical decoys
+    are written in each language and their motifs differ. But the decoys match
+    nothing in either language, and every element that does match comes from a
+    curated chain whose motifs are written in the English concept notation for
+    both twins. So the numerator is shared by construction while only unmatched
+    noise varies, and `by_language` is two copies of one number.
+
+    Reporting it without this beside it would let "no gap between ja and en" be
+    read as a finding about Japanese coverage when nothing about Japanese was
+    measured. The gap the split exists to expose is real and lives one layer up:
+    it appears once coverage runs over graphs extracted from Japanese *text*,
+    where the labels reaching the matcher are Japanese.
+
+    Checked against the matcher rather than asserted, so the note stops being
+    printed on the day the matched sets stop being shared.
+    """
+    matched: Dict[str, Set[str]] = {}
+    for case in SYNTHETIC_BENCHMARK_CASES:
+        graph = case_graph(case)
+        nodes = [dict(node) for node in graph["nodes"]]
+        annotate(nodes, [dict(rel) for rel in graph["relations"]])
+        matched.setdefault(case.lang, set()).update(
+            node["id"] for node in nodes if node["provenance"]["matched"]
+        )
+
+    languages = sorted(matched)
+    identical = len(languages) > 1 and len({frozenset(ids) for ids in matched.values()}) == 1
+
+    return {
+        "languages": languages,
+        "matched_concepts_are_shared_across_languages": identical,
+        "per_language_comparison_valid": not identical,
+        "note": (
+            "by_language is not informative on this case set. Every element that matches "
+            "the curation comes from a chain whose motifs are written in the English "
+            "concept notation for both languages, so ja and en share the entire matched "
+            "set and only unmatched decoy motifs differ between them. The ja/en coverage "
+            "gap this split exists to expose requires graphs extracted from Japanese text, "
+            "where the labels being matched are Japanese."
+        )
+        if identical
+        else "languages match distinct concept sets; the split is interpretable.",
+    }
+
+
+def _provenance_coverage_report() -> Dict[str, Any]:
+    """What share of each benchmark case's graph is tied to a published source.
+
+    Case-level and reported once, for the same reason `case_level_safety` is:
+    coverage is a property of the case's graph and cannot vary with the
+    retrieval condition, so a per-condition column would be one number printed
+    five times and read as five measurements.
+
+    Nothing is gated on any of this. The distribution has not been looked at
+    yet, and a threshold chosen before there is one is a number picked to be
+    passed.
+    """
+    per_case = {
+        case.case_id: {
+            "lang": case.lang,
+            "family": case.family,
+            **provenance_coverage(case_graph(case)),
+        }
+        for case in SYNTHETIC_BENCHMARK_CASES
+    }
+
+    by_language: Dict[str, Dict[str, Any]] = {}
+    for lang in sorted({case.lang for case in SYNTHETIC_BENCHMARK_CASES}):
+        by_language[lang] = _pool(
+            [item for item in per_case.values() if item["lang"] == lang]
+        )
+
+    return {
+        "by_language_validity": _language_split_validity(),
+        "note": COVERAGE_NOTE,
+        "match_rules": list(MATCH_RULES),
+        "match_rule_note": (
+            "exact_id and normalised_label only. Embedding similarity is not used: it "
+            "needs a stated threshold to be falsifiable, and one chosen before the "
+            "distribution is known is a number picked to produce a coverage figure. "
+            "Deterministic matching under-counts, which is the safer direction for a "
+            "number reported as evidence. See docs/provenance_coverage.md."
+        ),
+        "overall": _pool(list(per_case.values())),
+        # Split by language because the aggregate hides the gap that is itself
+        # a finding: the curated labels are bilingual but the sources behind
+        # them are mostly English-language guidance, so Japanese coverage
+        # dropping below English is expected and should be visible, not
+        # averaged away.
+        "by_language": by_language,
+        "cases": per_case,
+    }
+
+
 def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = TOP_K) -> Dict[str, Any]:
     selected_methods = list(methods or METHODS)
     method_results: Dict[str, List[Dict[str, Any]]] = {method: [] for method in selected_methods}
@@ -258,6 +424,10 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = TOP
         "by_traversal_depth": _depth_sweep(selected_methods, k),
         "case_composition": CASE_COMPOSITION,
         "retired_cases": RETIRED_CASES,
+        # #79. Beside case_level_safety and for the same structural reason: a
+        # property of the case, so it is reported once rather than per
+        # condition. Measured, never gated on.
+        "provenance_coverage": _provenance_coverage_report(),
         # Reported separately and once. Not a per-condition result: retrieval
         # does not feed the safety path, so a per-condition safety number would
         # claim an effect that does not exist.

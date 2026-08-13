@@ -4,8 +4,11 @@ The defect these close is not missing citations. It is that a sourced choice
 and an invented one looked identical in the code.
 """
 
+from pathlib import Path
+
 import pytest
 
+from app.ontology.provenance import COVERAGE_NOTE, MATCH_RULES, provenance_coverage
 from app.ontology.schema import CATEGORIES, RELATIONS, VALID_CATEGORIES, VALID_RELATIONS, EvidenceStrength
 from app.ontology.seed_graph import load_seed_subgraphs
 from app.ontology.sources import SOURCES, SourceKind, UnknownSource, resolve
@@ -633,3 +636,188 @@ class TestGeneratedGraphAnnotation:
         result = validate_extraction({"nodes": [{"node_id": "a", "class": "Vibe"}]})
         assert result["coercion_count"] == 1
         assert result["nodes"][0]["category"] == "State"
+
+
+class TestProvenanceCoverage:
+    """#79 — the number the research claim rests on, reportable on its own.
+
+    'What share of an LLM-generated psychological graph can be tied to a
+    published source?' Measured, documented, and gated on nothing.
+    """
+
+    GRAPH = {
+        "nodes": [
+            {"id": "sleep_deprivation", "label": "睡眠不足", "category": "Trigger"},
+            {"id": "x1", "label": "認知機能の低下", "category": "State"},
+            {"id": "weird", "label": "テスト前の胃痛", "category": "State"},
+        ],
+        "relations": [
+            {"source_id": "sleep_deprivation", "target_id": "x1", "type": "causes"},
+            {"source_id": "sleep_deprivation", "target_id": "weird", "type": "causes"},
+        ],
+    }
+
+    def test_it_reports_every_field_the_issue_names(self):
+        coverage = provenance_coverage(self.GRAPH)
+        for key in (
+            "nodes_with_source",
+            "edges_with_source",
+            "edges_by_strength",
+            "unsourced_rate",
+            "matched_seed_subgraphs",
+        ):
+            assert key in coverage
+
+    def test_measuring_a_graph_does_not_annotate_it(self):
+        # The distinction from annotate(): a caller asking for the number should
+        # not find its graph silently carrying provenance keys afterwards. The
+        # benchmark passes graphs it then reports verbatim.
+        graph = {"nodes": [dict(node) for node in self.GRAPH["nodes"]], "relations": []}
+        provenance_coverage(graph)
+        assert all("provenance" not in node for node in graph["nodes"])
+
+    def test_it_agrees_with_the_extraction_path(self):
+        # Two callers, one definition. If these ever disagree, the coverage
+        # reported by CI is not the coverage the product computes.
+        from_validator = validate_extraction({
+            "nodes": [
+                {"node_id": node["id"], "label": node["label"], "class": node["category"]}
+                for node in self.GRAPH["nodes"]
+            ],
+            "relations": list(self.GRAPH["relations"]),
+        })["provenance"]
+        assert provenance_coverage(self.GRAPH) == from_validator
+
+    def test_every_evidence_strength_is_a_key_even_at_zero(self):
+        # An absent key reads as "not measured". "No causal edges in this graph"
+        # is a finding, and it is also what lets these be summed across cases.
+        by_strength = provenance_coverage(self.GRAPH)["edges_by_strength"]
+        assert set(by_strength) == {strength.value for strength in EvidenceStrength}
+        assert by_strength["causal"] == 0
+
+    def test_counts_are_carried_so_a_set_of_these_can_be_pooled(self):
+        # Averaging per-case rates weights a 3-element graph like a 40-element
+        # one. Pooling needs the denominators, so they are reported.
+        coverage = provenance_coverage(self.GRAPH)
+        assert coverage["node_count"] == 3
+        assert coverage["edge_count"] == 2
+        assert coverage["matched_node_count"] == round(
+            coverage["nodes_with_source"] * coverage["node_count"]
+        )
+
+    def test_the_matching_rule_is_stated_with_the_number(self):
+        # An unstated matching rule makes the coverage number unfalsifiable.
+        assert provenance_coverage(self.GRAPH)["match_rules"] == ["exact_id", "normalised_label"]
+
+    def test_the_caveat_travels_with_the_number(self):
+        # Coverage is not accuracy, and "62% sourced" reads as a quality claim
+        # when quoted alone. The note is in the payload so it survives quoting.
+        assert "not accuracy" in COVERAGE_NOTE
+        assert "still be wrong about a student" in COVERAGE_NOTE
+
+    def test_an_empty_graph_reports_zero_rather_than_dividing_by_zero(self):
+        coverage = provenance_coverage({"nodes": [], "relations": []})
+        assert coverage["nodes_with_source"] == 0.0
+        assert coverage["unsourced_rate"] == 0.0
+        assert coverage["matched_seed_subgraphs"] == []
+
+    def test_edges_is_accepted_as_an_alias_for_relations(self):
+        as_edges = provenance_coverage({"nodes": self.GRAPH["nodes"], "edges": self.GRAPH["relations"]})
+        assert as_edges == provenance_coverage(self.GRAPH)
+
+    def test_nothing_is_gated_on_coverage(self):
+        # The constraint the issue is explicit about: measure first, thresholds
+        # only once there is a distribution. A comparison against a coverage
+        # figure appearing in the validator would be that gate arriving early.
+        import inspect
+
+        from app.ontology import provenance, validator
+
+        for module in (provenance, validator):
+            body = inspect.getsource(module)
+            for forbidden in ("MIN_COVERAGE", "COVERAGE_THRESHOLD", "raise" + " CoverageError"):
+                assert forbidden not in body, module.__name__
+
+
+class TestBenchmarkProvenanceCoverage:
+    """#79 — coverage for every benchmark case, reported and printed by CI."""
+
+    @pytest.fixture(scope="class")
+    def report(self):
+        from app.services.hf_research_benchmark import run_hf_research_benchmark
+
+        return run_hf_research_benchmark()["provenance_coverage"]
+
+    def test_every_case_is_covered(self, report):
+        from app.services.hf_research_benchmark import SYNTHETIC_BENCHMARK_CASES
+
+        assert set(report["cases"]) == {case.case_id for case in SYNTHETIC_BENCHMARK_CASES}
+
+    def test_a_case_graph_reaches_the_curated_subgraphs(self, report):
+        # The load-bearing dependency between two files: benchmark motifs write
+        # concepts as "exam pressure" and the curation as "exam_pressure", and
+        # they meet only because provenance._normalise strips both. If this
+        # fails, every coverage number silently becomes 0.
+        assert any(case["matched_seed_subgraphs"] for case in report["cases"].values())
+        assert report["overall"]["nodes_with_source"] > 0
+
+    def test_the_aggregate_is_pooled_not_averaged(self, report):
+        cases = report["cases"].values()
+        expected = sum(case["matched_node_count"] for case in cases) / sum(
+            case["node_count"] for case in cases
+        )
+        assert report["overall"]["nodes_with_source"] == round(expected, 6)
+
+    def test_it_is_reported_per_language(self, report):
+        from app.services.hf_research_benchmark import SYNTHETIC_BENCHMARK_CASES
+
+        assert set(report["by_language"]) == {case.lang for case in SYNTHETIC_BENCHMARK_CASES}
+
+    def test_an_uninformative_language_split_says_so(self, report):
+        # The ja/en numbers are currently identical, and reporting that without
+        # the reason would let "no gap" be read as a finding about Japanese
+        # coverage when nothing about Japanese was measured: everything that
+        # matches comes from chain motifs written in English notation for both.
+        validity = report["by_language_validity"]
+        rates = {lang: coverage["nodes_with_source"] for lang, coverage in report["by_language"].items()}
+        if len(set(rates.values())) == 1:
+            assert validity["per_language_comparison_valid"] is False
+            assert "not informative" in validity["note"]
+
+    def test_coverage_is_not_a_per_condition_result(self, report):
+        # Same structural reason safety moved out of `summary` in #85: coverage
+        # is a property of the case's graph and cannot vary with the retrieval
+        # condition, so a per-condition column would print one number five times
+        # and have it read as five measurements.
+        from app.services.benchmark_retrieval import METHODS
+        from app.services.hf_research_benchmark import run_hf_research_benchmark
+
+        summary = run_hf_research_benchmark()["summary"]
+        for method in METHODS:
+            assert not [key for key in summary[method] if "provenance" in key or "source" in key]
+
+    def test_the_caveat_is_in_the_block(self, report):
+        assert "not accuracy" in report["note"]
+        assert report["match_rules"] == list(MATCH_RULES)
+
+    def test_the_ci_report_runs_and_does_not_fail_the_build(self, capsys):
+        # It prints coverage per run so a regression is visible; it must not
+        # gate, because there is no distribution to set a threshold against yet.
+        import runpy
+        import sys
+
+        argv = sys.argv
+        sys.argv = ["report_provenance_coverage.py"]
+        try:
+            with pytest.raises(SystemExit) as caught:
+                runpy.run_path(
+                    str(Path(__file__).resolve().parents[1] / "scripts" / "report_provenance_coverage.py"),
+                    run_name="__main__",
+                )
+        finally:
+            sys.argv = argv
+
+        assert caught.value.code == 0
+        printed = capsys.readouterr().out
+        assert "Provenance coverage" in printed
+        assert "not accuracy" in printed

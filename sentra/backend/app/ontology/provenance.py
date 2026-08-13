@@ -12,6 +12,13 @@ label.
 Unmatched elements are marked `unmatched`, never left without the key. An
 absent field reads as "not checked", which is a different claim from "checked
 and not found", and the coverage number depends on telling them apart.
+
+Two entry points, one definition. `annotate()` marks a graph in place and is
+what the extraction path uses; `provenance_coverage()` measures a graph without
+touching it and is what the benchmark and the CI report use. Both end in
+`coverage()`, so the number CI prints cannot drift from the number the product
+computes. What that number means, and what it does not, is
+docs/provenance_coverage.md.
 """
 
 from __future__ import annotations
@@ -19,6 +26,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from .schema import EvidenceStrength
 from .seed_graph import SeedSubgraph, load_seed_subgraphs
 
 #: How a generated element is matched to a curated one.
@@ -29,6 +37,18 @@ from .seed_graph import SeedSubgraph, load_seed_subgraphs
 #: produce a coverage figure. Deterministic matching under-counts, which is the
 #: safer direction for a number being reported as evidence.
 MATCH_RULES = ("exact_id", "normalised_label")
+
+#: Emitted beside every coverage number rather than left to docs/provenance_coverage.md.
+#:
+#: The number is the kind that gets quoted on its own — "62% of the graph is
+#: sourced" reads as a quality claim and is not one. Carrying the caveat in the
+#: payload means it survives being copied out of the payload.
+COVERAGE_NOTE = (
+    "Coverage is not accuracy. It is the share of a generated graph that the curated "
+    "seed subgraphs recognise, under the stated match rules. A fully sourced graph can "
+    "still be wrong about a student, and an unsourced element may be a correct "
+    "observation the curation does not cover. Nothing is gated on this number."
+)
 
 _NORMALISE = re.compile(r"[\s　_\-・,.、。]+")
 
@@ -126,6 +146,23 @@ def annotate(nodes: List[Dict[str, Any]], relations: List[Dict[str, Any]]) -> Di
     return coverage(nodes, relations)
 
 
+def provenance_coverage(graph: Dict[str, Any]) -> Dict[str, Any]:
+    """Coverage for a graph that is not on its way through the extraction path.
+
+    The entry point for anything that wants the number and not the annotation —
+    the benchmark, the CI report. It works on copies, so a caller's graph does
+    not silently acquire `provenance` keys by being measured. `annotate()` is
+    the in-place counterpart the validator uses, and both end in `coverage()`,
+    so the two callers cannot drift into measuring different things.
+
+    Accepts `{"nodes": [...], "relations": [...]}`; `edges` is read as an alias
+    for `relations` because the callers here talk about edges.
+    """
+    nodes = [dict(node) for node in graph.get("nodes", [])]
+    relations = [dict(rel) for rel in graph.get("relations", graph.get("edges", []))]
+    return annotate(nodes, relations)
+
+
 def coverage(nodes: List[Dict[str, Any]], relations: List[Dict[str, Any]]) -> Dict[str, Any]:
     """What share of this graph can be tied back to a published source.
 
@@ -136,10 +173,14 @@ def coverage(nodes: List[Dict[str, Any]], relations: List[Dict[str, Any]]) -> Di
     matched_nodes = [node for node in nodes if node.get("provenance", {}).get("matched")]
     matched_edges = [rel for rel in relations if rel.get("provenance", {}).get("matched")]
 
-    by_strength: Dict[str, int] = {}
+    # Every strength is a key even at zero, for the reason unmatched elements
+    # are marked rather than omitted: an absent key reads as "not measured",
+    # and "no causal edges in this graph" is a finding, not a gap in the
+    # report. It is also what lets these dicts be summed across cases without
+    # the caller having to know which keys to expect.
+    by_strength: Dict[str, int] = {strength.value: 0 for strength in EvidenceStrength}
     for relation in matched_edges:
-        strength = relation["provenance"]["evidence_strength"]
-        by_strength[strength] = by_strength.get(strength, 0) + 1
+        by_strength[relation["provenance"]["evidence_strength"]] += 1
 
     total = len(nodes) + len(relations)
     return {
@@ -151,6 +192,14 @@ def coverage(nodes: List[Dict[str, Any]], relations: List[Dict[str, Any]]) -> Di
         "matched_seed_subgraphs": sorted(
             {node["provenance"]["subgraph_id"] for node in matched_nodes}
         ),
+        # Carried so a set of these can be pooled correctly. Averaging the
+        # rates above across cases weights a 3-element graph the same as a
+        # 40-element one; with the counts here the caller can choose, and the
+        # choice is visible in the report rather than buried in an aggregate.
+        "node_count": len(nodes),
+        "edge_count": len(relations),
+        "matched_node_count": len(matched_nodes),
+        "matched_edge_count": len(matched_edges),
         # Edges the model asserted between two curated nodes that the curation
         # does not carry. Neither an error nor a success — the interesting set.
         "edges_between_curated_nodes_not_in_seed": sum(
