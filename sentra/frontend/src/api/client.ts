@@ -26,6 +26,7 @@ import {
 import { supabase } from "@/lib/supabase/client";
 import { generateCounselorSummary, type CounselorTimelineEvent } from "@/lib/counselor-summary";
 import { buildAuditTrails, type ModelRunRecord } from "@/lib/audit-trail";
+import { EMPTY_SNAPSHOT, buildTemporalDiff, relationShiftSummary, type SnapshotShape } from "@/lib/temporalDiff";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
@@ -786,6 +787,56 @@ export class ApiClient {
     let graphSnapshot: GraphSnapshot | null = null;
     let graphSnapshotId: string | null = null;
     if (computed.graph_snapshot) {
+      // The route handler cannot see this participant's history, so the diff it
+      // returned is a diff against nothing and is labelled `no_previous_lookup`.
+      // This is the only place with both the database connection and the
+      // participant id, so the real day-over-day comparison happens here.
+      //
+      // Before #106 there was no recomputation and no lookup: every production
+      // row said every node and relation was newly added, on every day, and the
+      // temporal view rendered accordingly.
+      const previousSnapshot = await supabase
+        .from("graph_snapshots")
+        .select("nodes_json, relations_json, day, created_at")
+        .eq("participant_id", participant.id)
+        .lt("day", computed.graph_snapshot.day)
+        .order("day", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // A failed lookup must not silently become "no previous day" — that is
+      // indistinguishable from the bug being fixed. Record it instead.
+      const lookupFailed = Boolean(previousSnapshot.error);
+      if (lookupFailed) {
+        console.warn("[entries] previous snapshot lookup failed; diff basis degraded", previousSnapshot.error);
+      }
+      const previous: SnapshotShape = previousSnapshot.data
+        ? {
+            nodes: (previousSnapshot.data.nodes_json ?? []) as SnapshotShape["nodes"],
+            relations: (previousSnapshot.data.relations_json ?? []) as SnapshotShape["relations"],
+          }
+        : EMPTY_SNAPSHOT;
+      const hadPrevious = Boolean(previousSnapshot.data);
+      const recomputedDiff = buildTemporalDiff(
+        {
+          nodes: (computed.graph_snapshot.nodes_json ?? []) as SnapshotShape["nodes"],
+          relations: (computed.graph_snapshot.relations_json ?? []) as SnapshotShape["relations"],
+        },
+        previous,
+      );
+      const existingDiff = (computed.graph_snapshot.temporal_diff_json ?? {}) as unknown as Record<string, unknown>;
+      const temporalDiff = {
+        ...existingDiff,
+        ...recomputedDiff,
+        relation_shift_summary: relationShiftSummary(recomputedDiff, hadPrevious),
+        diff_basis: lookupFailed
+          ? "lookup_failed"
+          : hadPrevious
+            ? "previous_snapshot"
+            : "first_snapshot_for_participant",
+      };
+
       const graphInsert = await supabase
         .from("graph_snapshots")
         .insert({
@@ -796,7 +847,7 @@ export class ApiClient {
           nodes_json: computed.graph_snapshot.nodes_json as unknown as JsonValue,
           relations_json: computed.graph_snapshot.relations_json as unknown as JsonValue,
           graph_summary_json: computed.graph_snapshot.graph_summary_json as unknown as JsonValue,
-          temporal_diff_json: computed.graph_snapshot.temporal_diff_json as unknown as JsonValue,
+          temporal_diff_json: temporalDiff as unknown as JsonValue,
           extraction_provider: computed.extraction.extraction_provider,
           extraction_model: computed.extraction.extraction_model,
         })

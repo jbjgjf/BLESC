@@ -1,33 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assessSafety, SAFETY_ASSESSMENT_VERSION } from "@/lib/safety-assessment";
+import {
+  fallbackExtraction,
+  normalizeExtraction,
+  type ExtractionPayload,
+} from "@/lib/extraction";
+import { buildTemporalDiff, EMPTY_SNAPSHOT } from "@/lib/temporalDiff";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-
-type ExtractedNode = {
-  id: string;
-  category: "State" | "Trigger" | "Protective" | "Behavior" | "Event";
-  label: string;
-  intensity: number;
-  confidence: number;
-};
-
-type ExtractedRelation = {
-  source_id: string;
-  target_id: string;
-  type: "causes" | "escalates" | "buffers" | "avoids" | "co_occurs" | "precedes";
-  confidence: number;
-};
-
-type ExtractionPayload = {
-  nodes: ExtractedNode[];
-  relations: ExtractedRelation[];
-  temporal_summary: string;
-  summary: string;
-  evidence_summaries: string[];
-};
 
 type EntryRequest = {
   text?: string;
@@ -101,95 +84,6 @@ function isoNow(): string {
 async function sha256(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function sanitizeId(value: string, index: number): string {
-  const cleaned = value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 32);
-  return cleaned || `node_${index + 1}`;
-}
-
-function clamp01(value: unknown, fallback: number): number {
-  return Math.max(0, Math.min(1, typeof value === "number" && Number.isFinite(value) ? value : fallback));
-}
-
-function normalizeExtraction(candidate: Partial<ExtractionPayload>, sourceText: string): ExtractionPayload {
-  const sourceNodes = Array.isArray(candidate.nodes) ? candidate.nodes : [];
-  const nodes: ExtractedNode[] = sourceNodes
-    .map((node, index) => {
-      const label = String(node?.label ?? `Observation ${index + 1}`).trim().slice(0, 80);
-      const category = ["State", "Trigger", "Protective", "Behavior", "Event"].includes(String(node?.category))
-        ? node.category
-        : "State";
-      return {
-        id: sanitizeId(String(node?.id ?? label), index),
-        category,
-        label: label || `Observation ${index + 1}`,
-        intensity: clamp01(node?.intensity, 0.55),
-        confidence: clamp01(node?.confidence, 0.65),
-      };
-    })
-    .filter((node, index, all) => all.findIndex((other) => other.id === node.id) === index)
-    .slice(0, 18);
-
-  const fallback = fallbackExtraction(sourceText);
-  const finalNodes = nodes.length >= 3 ? nodes : fallback.nodes;
-  const nodeIds = new Set(finalNodes.map((node) => node.id));
-  const sourceRelations = Array.isArray(candidate.relations) ? candidate.relations : [];
-  const relations = sourceRelations
-    .map((relation) => ({
-      source_id: String(relation?.source_id ?? ""),
-      target_id: String(relation?.target_id ?? ""),
-      type: ["causes", "escalates", "buffers", "avoids", "co_occurs", "precedes"].includes(String(relation?.type))
-        ? relation.type
-        : "co_occurs",
-      confidence: clamp01(relation?.confidence, 0.6),
-    }))
-    .filter((relation) => nodeIds.has(relation.source_id) && nodeIds.has(relation.target_id) && relation.source_id !== relation.target_id)
-    .slice(0, 24);
-
-  return {
-    nodes: finalNodes,
-    relations: relations.length ? relations : fallback.relations,
-    temporal_summary: String(candidate.temporal_summary || fallback.temporal_summary).slice(0, 280),
-    summary: String(candidate.summary || fallback.summary).slice(0, 360),
-    evidence_summaries: (Array.isArray(candidate.evidence_summaries) && candidate.evidence_summaries.length
-      ? candidate.evidence_summaries
-      : fallback.evidence_summaries
-    ).map((item) => String(item).slice(0, 220)).slice(0, 8),
-  };
-}
-
-function fallbackExtraction(sourceText: string): ExtractionPayload {
-  const lowered = sourceText.toLowerCase();
-  const nodes: ExtractedNode[] = [
-    { id: "current_reflection", category: "State", label: "Current reflection", intensity: 0.5, confidence: 0.55 },
-    { id: "written_journal", category: "Behavior", label: "Written journal entry", intensity: 0.55, confidence: 0.8 },
-    { id: "first_recall", category: "Event", label: "First recall moment", intensity: 0.45, confidence: 0.75 },
-  ];
-  if (/(friend|talk|help|support|walk|music|sleep|rest|plan|study)/i.test(sourceText)) {
-    nodes.push({ id: "protective_signal", category: "Protective", label: "Protective signal", intensity: 0.58, confidence: 0.58 });
-  }
-  if (/(anxious|stress|tired|deadline|worry|sad|angry|fear)/i.test(sourceText)) {
-    nodes.push({ id: "stress_signal", category: "Trigger", label: "Stress signal", intensity: lowered.includes("very") ? 0.75 : 0.58, confidence: 0.58 });
-  }
-  while (nodes.length < 5) {
-    nodes.push({ id: `context_signal_${nodes.length}`, category: "Event", label: `Context signal ${nodes.length}`, intensity: 0.4, confidence: 0.45 });
-  }
-  const relations: ExtractedRelation[] = [
-    { source_id: "first_recall", target_id: "current_reflection", type: "precedes" as const, confidence: 0.65 },
-    { source_id: "written_journal", target_id: "current_reflection", type: "co_occurs" as const, confidence: 0.62 },
-    ...(nodes.some((node) => node.id === "protective_signal")
-      ? [{ source_id: "protective_signal", target_id: "stress_signal", type: "buffers" as const, confidence: 0.52 }]
-      : []),
-  ].filter((relation) => nodes.some((node) => node.id === relation.source_id) && nodes.some((node) => node.id === relation.target_id));
-
-  return {
-    nodes,
-    relations,
-    temporal_summary: "single-session self-report with first-recall context",
-    summary: `${nodes.length} nodes extracted from a student journal and 30-first-recall submission.`,
-    evidence_summaries: ["Student submitted a journal entry and a first-recall note."],
-  };
 }
 
 function outputText(response: Record<string, unknown>): string | null {
@@ -408,13 +302,20 @@ export async function POST(request: NextRequest) {
       nodes_json: extraction.nodes,
       relations_json: extraction.relations,
       graph_summary_json: graphSummary,
+      // The route handler is stateless with respect to a participant's history:
+      // it has no Supabase client and cannot see yesterday. So it emits the
+      // diff-against-nothing and SAYS SO in `diff_basis`. The caller that owns
+      // the database connection recomputes this against the real previous
+      // snapshot before insert (see `client.ts`).
+      //
+      // This used to be the same shape with `relation_shift_summary:
+      // "production submission baseline snapshot"` hard-coded and no basis
+      // field — so every stored row claimed to be a baseline and no row could
+      // contradict it. That is why the defect survived unnoticed (#106).
       temporal_diff_json: {
-        added_nodes: extraction.nodes,
-        removed_nodes: [],
-        added_relations: extraction.relations,
-        removed_relations: [],
-        changed_relations: [],
-        relation_shift_summary: "production submission baseline snapshot",
+        ...buildTemporalDiff({ nodes: extraction.nodes, relations: extraction.relations }, EMPTY_SNAPSHOT),
+        relation_shift_summary: "not computed at the route handler; no history available here",
+        diff_basis: "no_previous_lookup",
         protective_decline: {},
         uncertainty: { extraction_status: status, telemetry_hash: telemetryHash, consent_hash: consentHash },
       },

@@ -1,0 +1,183 @@
+{
+  "contract": "temporal_diff",
+  "version": 1,
+  "purpose": "One contract, two implementations. The Next.js production path and the FastAPI research path both compute a day-over-day graph diff. They drifted (#106): the backend computed a real diff and production wrote a fixed placeholder claiming everything was new, every day, forever. Both implementations are tested against these fixtures so a future divergence fails a build instead of shipping.",
+  "notes": [
+    "confidence_change_threshold is 0.15 in both. It is an engineering choice, not a measured value: below it, day-to-day model jitter on an unchanged observation would render as 'this changed' to a student.",
+    "Node identity is the node id. Since the extraction fix, that id is derived from the label and is therefore stable across days; before it, Japanese labels produced positional ids and no cross-day comparison was meaningful.",
+    "Ordering of the output arrays is not part of the contract — tests compare as sets. Insertion order differs between a JS Map and a Python dict comprehension in ways that carry no meaning."
+  ],
+  "cases": [
+    {
+      "name": "first_entry_has_no_previous",
+      "why": "A genuine first snapshot. Everything is added and nothing is removed — which is also what the broken production writer emitted on EVERY day. The distinguishing field is relation_shift_summary / had_previous, not the arrays.",
+      "had_previous": false,
+      "previous": { "nodes": [], "relations": [] },
+      "current": {
+        "nodes": [
+          { "id": "眠れない", "category": "State", "label": "眠れない", "intensity": 0.7, "confidence": 0.8 },
+          { "id": "テスト前のプレッシャー", "category": "Trigger", "label": "テスト前のプレッシャー", "intensity": 0.8, "confidence": 0.85 }
+        ],
+        "relations": [
+          { "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes", "confidence": 0.8 }
+        ]
+      },
+      "expected": {
+        "added_node_ids": ["眠れない", "テスト前のプレッシャー"],
+        "removed_node_ids": [],
+        "added_relation_keys": ["テスト前のプレッシャー|眠れない|causes"],
+        "removed_relation_keys": [],
+        "changed_relation_keys": []
+      }
+    },
+    {
+      "name": "recurrence_nothing_changes",
+      "why": "The same observation on two days. Under the broken writer this was indistinguishable from a first entry, which is why recurrence was invisible in the product.",
+      "had_previous": true,
+      "previous": {
+        "nodes": [{ "id": "眠れない", "category": "State", "label": "眠れない", "intensity": 0.7, "confidence": 0.8 }],
+        "relations": [{ "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes", "confidence": 0.8 }]
+      },
+      "current": {
+        "nodes": [{ "id": "眠れない", "category": "State", "label": "眠れない", "intensity": 0.72, "confidence": 0.81 }],
+        "relations": [{ "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes", "confidence": 0.83 }]
+      },
+      "expected": {
+        "added_node_ids": [],
+        "removed_node_ids": [],
+        "added_relation_keys": [],
+        "removed_relation_keys": [],
+        "changed_relation_keys": []
+      }
+    },
+    {
+      "name": "disappearance",
+      "why": "#95 needs this representable. A node present yesterday and absent today is a removal, not an absence of information.",
+      "had_previous": true,
+      "previous": {
+        "nodes": [
+          { "id": "眠れない", "category": "State", "label": "眠れない", "intensity": 0.7, "confidence": 0.8 },
+          { "id": "部活を休んだ", "category": "Behavior", "label": "部活を休んだ", "intensity": 0.5, "confidence": 0.7 }
+        ],
+        "relations": [{ "source_id": "眠れない", "target_id": "部活を休んだ", "type": "causes", "confidence": 0.7 }]
+      },
+      "current": {
+        "nodes": [{ "id": "眠れない", "category": "State", "label": "眠れない", "intensity": 0.6, "confidence": 0.75 }],
+        "relations": []
+      },
+      "expected": {
+        "added_node_ids": [],
+        "removed_node_ids": ["部活を休んだ"],
+        "added_relation_keys": [],
+        "removed_relation_keys": ["眠れない|部活を休んだ|causes"],
+        "changed_relation_keys": []
+      }
+    },
+    {
+      "name": "reappearance",
+      "why": "Absent yesterday, back today. Distinct from a first observation only if the assembler keeps history; the diff itself reports it as an addition, and #95 is responsible for turning two additions separated by an absence into two observation intervals rather than one.",
+      "had_previous": true,
+      "previous": {
+        "nodes": [{ "id": "眠れない", "category": "State", "label": "眠れない", "intensity": 0.6, "confidence": 0.75 }],
+        "relations": []
+      },
+      "current": {
+        "nodes": [
+          { "id": "眠れない", "category": "State", "label": "眠れない", "intensity": 0.7, "confidence": 0.8 },
+          { "id": "部活を休んだ", "category": "Behavior", "label": "部活を休んだ", "intensity": 0.55, "confidence": 0.7 }
+        ],
+        "relations": [{ "source_id": "眠れない", "target_id": "部活を休んだ", "type": "causes", "confidence": 0.7 }]
+      },
+      "expected": {
+        "added_node_ids": ["部活を休んだ"],
+        "removed_node_ids": [],
+        "added_relation_keys": ["眠れない|部活を休んだ|causes"],
+        "removed_relation_keys": [],
+        "changed_relation_keys": []
+      }
+    },
+    {
+      "name": "changed_relation_confidence",
+      "why": "The amber state in the temporal view. It was unreachable in production because changed_relations was hard-coded empty.",
+      "had_previous": true,
+      "previous": {
+        "nodes": [{ "id": "眠れない", "category": "State", "label": "眠れない", "intensity": 0.7, "confidence": 0.8 }],
+        "relations": [{ "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes", "confidence": 0.5 }]
+      },
+      "current": {
+        "nodes": [{ "id": "眠れない", "category": "State", "label": "眠れない", "intensity": 0.7, "confidence": 0.8 }],
+        "relations": [{ "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes", "confidence": 0.9 }]
+      },
+      "expected": {
+        "added_node_ids": [],
+        "removed_node_ids": [],
+        "added_relation_keys": [],
+        "removed_relation_keys": [],
+        "changed_relation_keys": ["テスト前のプレッシャー|眠れない|causes"]
+      }
+    },
+    {
+      "name": "confidence_move_below_threshold_is_not_a_change",
+      "why": "0.14 < 0.15. Guards the boundary from being loosened by accident; loosening it makes the student's graph flicker.",
+      "had_previous": true,
+      "previous": {
+        "nodes": [{ "id": "眠れない", "category": "State", "label": "眠れない", "intensity": 0.7, "confidence": 0.8 }],
+        "relations": [{ "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes", "confidence": 0.5 }]
+      },
+      "current": {
+        "nodes": [{ "id": "眠れない", "category": "State", "label": "眠れない", "intensity": 0.7, "confidence": 0.8 }],
+        "relations": [{ "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes", "confidence": 0.64 }]
+      },
+      "expected": {
+        "added_node_ids": [],
+        "removed_node_ids": [],
+        "added_relation_keys": [],
+        "removed_relation_keys": [],
+        "changed_relation_keys": []
+      }
+    },
+    {
+      "name": "relation_retyped_is_an_add_and_a_remove",
+      "why": "causes -> co_occurs between the same pair. The relation type is part of edge identity, so this is not a confidence change. #95 must record it as a retyping event rather than as an unrelated edge appearing.",
+      "had_previous": true,
+      "previous": {
+        "nodes": [{ "id": "眠れない", "category": "State", "label": "眠れない", "intensity": 0.7, "confidence": 0.8 }],
+        "relations": [{ "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes", "confidence": 0.8 }]
+      },
+      "current": {
+        "nodes": [{ "id": "眠れない", "category": "State", "label": "眠れない", "intensity": 0.7, "confidence": 0.8 }],
+        "relations": [{ "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "co_occurs", "confidence": 0.8 }]
+      },
+      "expected": {
+        "added_node_ids": [],
+        "removed_node_ids": [],
+        "added_relation_keys": ["テスト前のプレッシャー|眠れない|co_occurs"],
+        "removed_relation_keys": ["テスト前のプレッシャー|眠れない|causes"],
+        "changed_relation_keys": []
+      }
+    },
+    {
+      "name": "english_pair_behaves_identically",
+      "why": "Matched against the Japanese cases so a language-specific defect cannot hide. The extraction defect this work started from was exactly that shape.",
+      "had_previous": true,
+      "previous": {
+        "nodes": [{ "id": "cannot_sleep", "category": "State", "label": "Cannot sleep", "intensity": 0.7, "confidence": 0.8 }],
+        "relations": [{ "source_id": "exam_pressure", "target_id": "cannot_sleep", "type": "causes", "confidence": 0.5 }]
+      },
+      "current": {
+        "nodes": [
+          { "id": "cannot_sleep", "category": "State", "label": "Cannot sleep", "intensity": 0.7, "confidence": 0.8 },
+          { "id": "skipped_club", "category": "Behavior", "label": "Skipped club", "intensity": 0.5, "confidence": 0.7 }
+        ],
+        "relations": [{ "source_id": "exam_pressure", "target_id": "cannot_sleep", "type": "causes", "confidence": 0.9 }]
+      },
+      "expected": {
+        "added_node_ids": ["skipped_club"],
+        "removed_node_ids": [],
+        "added_relation_keys": [],
+        "removed_relation_keys": [],
+        "changed_relation_keys": ["exam_pressure|cannot_sleep|causes"]
+      }
+    }
+  ]
+}
