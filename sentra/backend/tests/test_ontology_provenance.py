@@ -182,6 +182,108 @@ class TestSleepSubgraph:
             seed_graph._load_file(bad)
 
 
+class TestSocialWithdrawalSubgraph:
+    """#77 — where the product's own signal lives.
+
+    Behavior:withdrawal, the protective decline the pipeline already computes,
+    and the `protective_decline` benchmark case. None of it was sourced.
+    """
+
+    @pytest.fixture(scope="class")
+    def withdrawal(self):
+        return load_seed_subgraphs()["social_withdrawal"]
+
+    def test_edge_count_is_within_the_stated_range(self, withdrawal):
+        assert 10 <= len(withdrawal.edges) <= 20
+
+    def test_every_node_is_bilingual_and_sourced(self, withdrawal):
+        for node in withdrawal.nodes.values():
+            assert node.label_ja and node.label_en
+            assert node.source_refs
+            assert node.category in VALID_CATEGORIES
+
+    def test_every_edge_carries_source_refs_and_a_scope_note(self, withdrawal):
+        for edge in withdrawal.edges:
+            assert edge.source_refs, f"{edge.source}->{edge.target}"
+            assert edge.scope_note.strip(), f"{edge.source}->{edge.target}"
+
+    def test_observational_support_is_not_dressed_as_causal(self, withdrawal):
+        assert not [e for e in withdrawal.edges if e.evidence_strength is EvidenceStrength.CAUSAL]
+        for edge in [e for e in withdrawal.edges if e.type == "causes"]:
+            assert edge.evidence_strength in (EvidenceStrength.ASSOCIATION, EvidenceStrength.EXPERT_JUDGEMENT)
+
+    def test_both_required_sources_are_drawn_on(self, withdrawal):
+        # 生徒指導提要 for the Japanese school context, WHO for the adolescent
+        # material. The issue names both; neither may be quietly dropped.
+        cited = {ref for edge in withdrawal.edges for ref in edge.source_refs}
+        cited |= {ref for node in withdrawal.nodes.values() for ref in node.source_refs}
+        assert "mext_seitoshido" in cited
+        assert "who_adolescent_mh" in cited
+
+    def test_protective_decline_is_an_edge_pattern_not_only_negative_states(self, withdrawal):
+        # What the `protective_decline` benchmark case asserts: the graph should
+        # connect protective resources, not just accumulate negative terms.
+        protective = {n.id for n in withdrawal.nodes.values() if n.category == "Protective"}
+        assert len(protective) >= 3
+
+        touching_protective = [
+            edge for edge in withdrawal.edges
+            if edge.source in protective or edge.target in protective
+        ]
+        assert len(touching_protective) >= 6
+
+        # The decline is encoded as a pair per resource: `buffers` while it
+        # holds, `avoids` for the disengagement. A resource carrying only the
+        # buffers half cannot express decline at all.
+        buffered = {e.source for e in withdrawal.edges if e.type == "buffers"}
+        disengaged = {e.target for e in withdrawal.edges if e.type == "avoids"}
+        assert buffered & protective
+        assert disengaged & protective
+
+    def test_withdrawal_reaches_a_protective_resource(self, withdrawal):
+        # The benchmark case walks from Behavior:withdrawal to the support the
+        # student stopped using. If that path is missing the case cannot pass.
+        protective = {n.id for n in withdrawal.nodes.values() if n.category == "Protective"}
+        from_withdrawal = {e.target for e in withdrawal.edges if e.source == "social_withdrawal"}
+        assert from_withdrawal & protective
+
+    def test_futoko_is_never_mapped_onto_a_clinical_construct(self, withdrawal):
+        # The construct mismatch the issue warns about: 不登校 is an
+        # administrative category from a 文部科学省 counting rule, not a
+        # clinical one. Every edge touching it must be judgement, sourced to
+        # nothing clinical, and must say so.
+        futoko_edges = [e for e in withdrawal.edges if "futoko" in (e.source, e.target)]
+        assert futoko_edges
+
+        for edge in futoko_edges:
+            assert edge.evidence_strength is EvidenceStrength.EXPERT_JUDGEMENT, f"{edge.source}->{edge.target}"
+            assert "nice_ng134" not in edge.source_refs, f"{edge.source}->{edge.target}"
+            assert "who_adolescent_mh" not in edge.source_refs, f"{edge.source}->{edge.target}"
+            assert "who_mhgap" not in edge.source_refs, f"{edge.source}->{edge.target}"
+
+        # And no edge may claim 不登校 is caused by a clinical state.
+        for edge in futoko_edges:
+            if edge.source in ("depressed_mood", "anxiety") or edge.target in ("depressed_mood", "anxiety"):
+                assert edge.type == "precedes", f"{edge.source}->{edge.target} asserts more than ordering"
+
+    def test_the_judgement_rate_is_reported_not_minimised(self, withdrawal):
+        # Higher than sleep.yaml's, and that is the honest result: 生徒指導提要
+        # supports no clinical claim and the WHO fact sheet reports population
+        # risk factors, so most withdrawal edges have nothing to cite.
+        assert 0 < withdrawal.unsourced_edge_rate < 1
+        assert withdrawal.unsourced_edge_rate > load_seed_subgraphs()["sleep_deprivation"].unsourced_edge_rate
+
+    def test_it_does_not_contradict_the_sleep_subgraph(self, withdrawal):
+        # Both files carry school_absence and social_withdrawal. Same
+        # orientation in both, or a merged graph gains a cycle that neither
+        # file's curation argued for.
+        sleep = load_seed_subgraphs()["sleep_deprivation"]
+        shared = {(e.source, e.target) for e in sleep.edges} & {
+            (e.target, e.source) for e in withdrawal.edges
+        }
+        assert not shared, f"orientation conflict with sleep.yaml: {shared}"
+
+
 class TestGeneratedGraphAnnotation:
     """#80 — the curated subgraphs were inert until the extraction path saw them."""
 
