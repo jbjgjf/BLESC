@@ -68,6 +68,7 @@ from .benchmark_cases import (
     BenchmarkCase,
     EvidenceDay,
 )
+from .benchmark_labelling import DATASET_VERSION, assign_splits, labelling_status
 from .benchmark_retrieval import (
     METHODS,
     build_concept_graph,
@@ -116,7 +117,15 @@ def _rank_evidence(case: BenchmarkCase, method: str, max_depth: int = DEFAULT_DE
     return sorted(ranked, key=lambda item: (-item["score"], item["evidence_id"]))
 
 
-def _retrieval_metrics(case: BenchmarkCase, ranked: Sequence[Dict[str, Any]], k: int = 5) -> Dict[str, Any]:
+#: Pre-registered in docs/benchmark_preregistration.md (#90). A named constant
+#: rather than a default argument in two places: k is one of the parameters a
+#: post-hoc analysis is most tempted to move, so it should be somewhere a diff
+#: makes obvious. It was 2 under the old harness, which made the task solvable
+#: at chance.
+TOP_K = 5
+
+
+def _retrieval_metrics(case: BenchmarkCase, ranked: Sequence[Dict[str, Any]], k: int = TOP_K) -> Dict[str, Any]:
     expected = set(case.expected_evidence_ids)
     ordered = [item["evidence_id"] for item in ranked]
     top_k = ordered[:k]
@@ -155,7 +164,7 @@ def _safety_metrics(case: BenchmarkCase) -> Dict[str, Any]:
     }
 
 
-def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = 5) -> Dict[str, Any]:
+def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = TOP_K) -> Dict[str, Any]:
     selected_methods = list(methods or METHODS)
     method_results: Dict[str, List[Dict[str, Any]]] = {method: [] for method in selected_methods}
     # Case-level, computed once, kept out of the per-condition results so it
@@ -247,6 +256,11 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = 5) 
             ),
         },
         "cases": method_results,
+        # Reported inside the result, not only in the issue tracker. Every
+        # number above rests on 5 author-drafted cases in 2 independent leakage
+        # groups, and anyone reading a summary without that beside it will read
+        # it as stronger than it is (#88).
+        "labelling_status": labelling_status(),
         "privacy_boundary": {
             "contains_real_user_content": False,
             "safe_for_hf_dataset_draft": True,
@@ -302,6 +316,7 @@ def _depth_sweep(selected_methods: Sequence[str], k: int) -> Dict[str, Dict[str,
 
 
 def hf_dataset_rows() -> List[Dict[str, Any]]:
+    splits = assign_splits()
     rows: List[Dict[str, Any]] = []
     for case in SYNTHETIC_BENCHMARK_CASES:
         rows.append(
@@ -324,6 +339,11 @@ def hf_dataset_rows() -> List[Dict[str, Any]]:
                 "research_note": case.research_note,
                 "source": "synthetic_blesc_isef_seed",
                 "privacy_class": "synthetic_non_user_data",
+                "dataset_version": DATASET_VERSION,
+                "labelled_by": case.labelled_by,
+                "lang": case.lang,
+                "family": case.family,
+                "split": splits.assignment.get(case.case_id),
             }
         )
     return rows

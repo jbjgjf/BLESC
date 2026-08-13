@@ -111,3 +111,42 @@ def test_no_condition_reads_the_answer_key(summary):
     # And the scoring function cannot see the case at all, which is the
     # structural guarantee rather than a check on one field name.
     assert "case" not in inspect.signature(benchmark_retrieval.score_candidate).parameters
+
+
+def test_preregistration_matches_the_constants_it_registers():
+    """A pre-registration nobody checks is a document, not a commitment.
+
+    #90 requires that any deviation is an amendment with a date, never a silent
+    edit. This is what makes that enforceable: changing SEPARATION or
+    BASELINE_CEILING here without changing the document fails the suite, and
+    changing both makes the diff show the document moving too.
+    """
+    from pathlib import Path
+
+    doc = Path(__file__).resolve().parents[3] / "docs" / "benchmark_preregistration.md"
+    assert doc.exists(), f"pre-registration is missing at {doc}"
+    text = doc.read_text(encoding="utf-8")
+
+    assert f"**{SEPARATION:.2f}**" in text, (
+        f"SEPARATION is {SEPARATION} but the pre-registration does not state it. "
+        "Record the change as an amendment with a reason and a date."
+    )
+    assert f"**{BASELINE_CEILING:.2f}**" in text, (
+        f"BASELINE_CEILING is {BASELINE_CEILING} but the pre-registration does not "
+        "state it. Record the change as an amendment with a reason and a date."
+    )
+    assert "## What would falsify the hypothesis" in text
+    # The disclosure is the part most likely to be quietly dropped in a tidy-up,
+    # and it is the part a judge will ask about.
+    assert "Disclosure: what has already been seen" in text
+
+
+def test_preregistration_fixes_k_to_what_the_harness_uses():
+    from pathlib import Path
+
+    from app.services.hf_research_benchmark import TOP_K
+
+    doc = Path(__file__).resolve().parents[3] / "docs" / "benchmark_preregistration.md"
+    assert f"| `k` | {TOP_K} |" in doc.read_text(encoding="utf-8"), (
+        f"harness runs at k={TOP_K}; the pre-registration fixes a different k"
+    )
