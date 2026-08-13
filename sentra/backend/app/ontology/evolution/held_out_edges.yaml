@@ -1,0 +1,178 @@
+# The gate any graph-structure-learning experiment must pass before product use (#101).
+#
+# Declared BEFORE any learner exists, in the spirit of docs/benchmark_preregistration.md.
+# Changing a label after seeing a result is the move pre-registration exists to
+# prevent; changing one belongs in a PR that says which result prompted it.
+#
+# Three kinds of case, and the second is the one that matters:
+#
+#   held_out_true  a real curated edge, withheld from whatever the learner is
+#                  trained on. Recall over these says the learner can find
+#                  structure that is actually there.
+#
+#   red_herring    plausible-sounding and NOT in the curated graph. Every one is
+#                  a pair a human might well propose — two nodes that co-occur,
+#                  or that sit at either end of a real chain — where the curation
+#                  deliberately declines to assert an edge. A learner that
+#                  proposes these is not "nearly right"; it is manufacturing
+#                  clinical-looking claims, which is worse than proposing nothing.
+#
+#   negative       unrelated pairs, drawn across subgraphs. The easy case. Present
+#                  so that a failure on red herrings cannot be explained away as
+#                  the gate being uniformly harsh.
+#
+# `rationale` on a red herring says why it is tempting AND why it is wrong. A red
+# herring without that is indistinguishable from an edge somebody forgot to curate.
+
+version: 1
+declared_on: 2026-08-13
+declared_before_any_learner_existed: true
+
+thresholds:
+  # Engineering choices, not measured values, and deliberately asymmetric: the
+  # cost of a fabricated clinical edge is not the cost of a missed one.
+  min_recall: 0.60
+  max_red_herring_rate: 0.10
+  max_false_positive_rate: 0.20
+  # Below this the gate cannot decide and fails closed. A learner is not cleared
+  # by an evaluation set too small to catch it.
+  min_labelled_edges: 20
+  max_unlabelled_proposal_rate: 0.30
+
+cases:
+  # ---- held out: real curated edges ----------------------------------------
+  - edge: [sleep_deprivation, cognitive_impairment, causes]
+    label: held_out_true
+    source_refs: [who_adolescent_mh]
+    rationale: The chain the landing page illustrates the ontology with. Reported as an association.
+
+  - edge: [cognitive_impairment, depressed_mood, causes]
+    label: held_out_true
+    source_refs: [nice_ng134, who_adolescent_mh]
+    rationale: Second link of the same chain.
+
+  - edge: [depressed_mood, social_withdrawal, causes]
+    label: held_out_true
+    source_refs: [nice_ng134]
+    rationale: Withdrawal as a reported feature of low mood.
+
+  - edge: [peer_conflict, social_withdrawal, causes]
+    label: held_out_true
+    source_refs: [who_adolescent_mh, mext_seitoshido]
+    rationale: Present in the social-withdrawal subgraph with two sources.
+
+  - edge: [loneliness, depressed_mood, causes]
+    label: held_out_true
+    source_refs: [who_adolescent_mh]
+    rationale: The return leg of the withdrawal loop.
+
+  - edge: [regular_sleep_schedule, sleep_deprivation, buffers]
+    label: held_out_true
+    source_refs: [who_adolescent_mh]
+    rationale: A protective edge. Included so recall is not measured only on risk-bearing edges.
+
+  - edge: [trusted_adult_contact, depressed_mood, buffers]
+    label: held_out_true
+    source_refs: [who_mhgap, mext_seitoshido]
+    rationale: Protective, and the one edge shared across all three subgraphs.
+
+  - edge: [peer_friendship, loneliness, buffers]
+    label: held_out_true
+    source_refs: [who_adolescent_mh]
+    rationale: Protective, single subgraph.
+
+  - edge: [depressed_mood, sleep_deprivation, causes]
+    label: held_out_true
+    source_refs: [nice_ng134]
+    rationale: >-
+      The reverse of sleep_deprivation -> depressed_mood, and curated as a real edge
+      in its own right. A learner that only finds one direction of a bidirectional
+      pair has found half of it.
+
+  - edge: [school_absence, social_withdrawal, co_occurs]
+    label: held_out_true
+    source_refs: [expert_judgement]
+    rationale: >-
+      Curated as co-occurrence, not causation. A learner proposing `causes` here
+      scores as a red herring on that key, which is the intended behaviour.
+
+  - edge: [social_withdrawal, futoko, precedes]
+    label: held_out_true
+    source_refs: [expert_judgement]
+    rationale: Ordering only. Same point as above about the relation type being part of the claim.
+
+  - edge: [late_night_screen_use, sleep_deprivation, causes]
+    label: held_out_true
+    source_refs: [expert_judgement]
+    rationale: Expert judgement rather than cited. Recall should not depend on evidence strength.
+
+  # ---- red herrings: plausible and not curated ------------------------------
+  - edge: [sleep_deprivation, futoko, causes]
+    label: red_herring
+    rationale: >-
+      Tempting because a path exists — sleep_deprivation -> depressed_mood -> futoko —
+      and both ends are real. Wrong because the curation asserts the links, not the
+      shortcut, and collapsing a three-step path into one edge states a direct cause
+      no source supports. The single most likely thing a path-counting learner emits.
+
+  - edge: [exam_pressure, depressed_mood, causes]
+    label: red_herring
+    rationale: >-
+      Same shape: exam_pressure -> sleep_deprivation -> cognitive_impairment ->
+      depressed_mood is curated, the shortcut is not. Reads as a clinical claim about
+      exams causing depression, which nothing here supports.
+
+  - edge: [sleep_deprivation, social_withdrawal, causes]
+    label: red_herring
+    rationale: >-
+      Two hops away and both nodes appear in the sleep subgraph, so co-occurrence
+      statistics will favour it. The curation routes it through depressed_mood.
+
+  - edge: [anxiety, depressed_mood, causes]
+    label: red_herring
+    rationale: >-
+      The curated relation between these two is `co_occurs` with an association-level
+      source. Upgrading co-occurrence to causation is exactly the failure #101 names,
+      and it is the most defensible-sounding version of it.
+
+  - edge: [trusted_adult_contact, futoko, buffers]
+    label: red_herring
+    rationale: >-
+      Attractive because it is a hopeful claim about a protective factor, and because
+      trusted_adult_contact buffers depressed_mood which precedes futoko. The curation
+      makes no claim about school refusal, and inventing a protective effect is not a
+      safe direction to be wrong in.
+
+  - edge: [academic_difficulty, depressed_mood, causes]
+    label: red_herring
+    rationale: >-
+      A real chain runs cognitive_impairment -> academic_difficulty and
+      cognitive_impairment -> depressed_mood, so the two share a parent. Sharing a
+      parent is not an edge, and a correlational learner cannot tell the difference.
+
+  - edge: [social_withdrawal, depressed_mood, causes]
+    label: red_herring
+    rationale: >-
+      The curated edge runs the other way. A learner that recovers the pair but not the
+      direction has not recovered the claim — direction is what the relation asserts.
+
+  # ---- negatives: unrelated pairs ------------------------------------------
+  - edge: [assignment_deadline, peer_friendship, causes]
+    label: negative
+    rationale: Different subgraphs, no shared neighbour, no plausible route.
+
+  - edge: [late_night_screen_use, school_counselor_access, causes]
+    label: negative
+    rationale: A behaviour and a service. Unrelated in the curation and in the sources.
+
+  - edge: [fatigue, peer_conflict, escalates]
+    label: negative
+    rationale: Cross-subgraph with no shared neighbour.
+
+  - edge: [study_plan_support, irritability, buffers]
+    label: negative
+    rationale: A protective factor and an unrelated state. Present so negatives are not all risk-bearing.
+
+  - edge: [futoko, all_nighter_studying, causes]
+    label: negative
+    rationale: School refusal and all-night studying are close to mutually exclusive behaviours.

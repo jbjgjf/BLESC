@@ -25,6 +25,15 @@ from .schemas.research import EvalExample
 from .schemas.structured import EntrySubmissionResponse, ExtractionResponse, GraphSnapshot, HybridExplanation
 from .analytics.baseline import baseline_provenance
 from .analytics.dynamics import analyse_participant
+from .ontology.evolution import (
+    curated_edges_from_seed,
+    gate_summary,
+    personal_edges_from_graph,
+    policy_table,
+    precedence_rules,
+    resolve,
+    seed_attribution,
+)
 from .temporal import assemble_participant_graph, snapshot_inputs
 from .traversal import (
     SeedCandidate,
@@ -92,6 +101,11 @@ AUDIO_CONTENT_TYPES = {
 #: surrogate calibration is O(window) work repeated 200 times per trend per
 #: feature — so this is the difference between a slow read and an unbounded one.
 MAX_DYNAMICS_DAYS = 366
+
+#: Snapshots assembled when resolving one edge against a participant's own
+#: history. Matches the default on `/api/research/temporal-graph`, so the two
+#: endpoints answer from the same window rather than from two opinions about it.
+MAX_TEMPORAL_SNAPSHOTS = 120
 
 TRANSCRIPTION_SAFE_ERRORS = {
     "AuthenticationError",
@@ -962,6 +976,71 @@ def get_explanation(explanation_id: int, session: Session = Depends(get_session)
 def get_features(user_id: str, session: Session = Depends(get_session)):
     query = select(DailyFeatureAggregation).where(DailyFeatureAggregation.user_id == user_id).order_by(DailyFeatureAggregation.day.asc())
     return session.exec(query).all()
+
+
+@app.get("/api/research/ontology-layers")
+def get_ontology_layers():
+    """The layer contract (#101): who owns each layer and who may write to it.
+
+    Read-only and static — the policy table, the precedence rules, the gate
+    thresholds, and what the curated layer's attribution currently means. Served
+    rather than only documented so that a reviewer can check the running system
+    against `docs/ontology_evolution.md` instead of trusting that they agree.
+
+    **No learning happens in this layer.** `not_implemented_here` says so.
+    """
+    return {
+        **policy_table(),
+        "precedence": precedence_rules(),
+        "structure_learning_gate": gate_summary(),
+        "curated_attribution": seed_attribution(),
+    }
+
+
+@app.get("/api/research/ontology-resolution")
+def get_ontology_resolution(
+    source_id: str,
+    target_id: str,
+    user_id: Optional[str] = None,
+    session: Session = Depends(get_session),
+):
+    """What is believed about one directed pair, and from whose point of view.
+
+    Two answers rather than one: `general` is what the curated layer says about
+    people, `about_participant` is what this participant's own entries said. A
+    participant's account outranks a guideline for describing them and never for
+    anybody else, so the resolution reports both instead of choosing.
+
+    `causal_support` is true only where a claim's evidence strength is causal —
+    never inferred from the relation type, because `causes` resting on an
+    observational source is the normal case here.
+    """
+    claims: List[Any] = list(curated_edges_from_seed())
+
+    if user_id:
+        rows = session.exec(
+            select(GraphSnapshot)
+            .where(GraphSnapshot.user_id == user_id)
+            .order_by(GraphSnapshot.day.asc(), GraphSnapshot.created_at.asc())
+            .limit(MAX_TEMPORAL_SNAPSHOTS)
+        ).all()
+        graph = assemble_participant_graph(user_id, snapshot_inputs(rows))
+        claims.extend(personal_edges_from_graph(graph, user_id))
+
+    resolution = resolve(claims, source_id, target_id, participant_id=user_id)
+    payload = resolution.as_dict()
+    payload["contradictions_are"] = "recorded, never resolved; both claims are kept"
+
+    logger.info(
+        "[ontology-resolution] %s -> %s user=%s ranked=%s causal_support=%s contradictions=%s",
+        source_id,
+        target_id,
+        user_id,
+        len(resolution.ranked),
+        resolution.causal_support,
+        len(resolution.contradictions),
+    )
+    return payload
 
 
 @app.get("/api/research/dynamics")
