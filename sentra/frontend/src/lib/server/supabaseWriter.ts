@@ -50,6 +50,15 @@ export type SupabaseSyncResult = {
   warnings: string[];
 };
 
+/**
+ * Whose rows these are. Both fields must be *derived* from the caller's
+ * verified session — `requireUser` for the owner, and a `participants` lookup
+ * through that user's own RLS-scoped client for the participant.
+ *
+ * Never populate these from a request body. The client below holds the
+ * service-role key and bypasses RLS, so whatever is passed here is written
+ * without any further authorization check.
+ */
 export type SubmissionIdentity = {
   ownerUserId?: string | null;
   participantId?: string | null;

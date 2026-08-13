@@ -7,6 +7,7 @@ import {
 } from "@/lib/extraction";
 import { buildTemporalDiff, EMPTY_SNAPSHOT } from "@/lib/temporalDiff";
 import { writeEntryResult } from "@/lib/server/supabaseWriter";
+import { jsonError, requireUser } from "@/lib/server/api";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -19,10 +20,10 @@ type EntryRequest = {
   recall_text?: string;
   telemetry?: Record<string, JsonValue>;
   consent?: Record<string, JsonValue>;
-  // Supabase identity, resolved by the caller because only the browser holds
-  // the session. Absent, the handler computes and returns but writes nothing.
-  owner_user_id?: string;
-  participant_id?: string;
+  // No identity fields. The owner and participant are derived from the
+  // caller's session below, never read from the body — the write uses the
+  // service-role key, which bypasses RLS, so a body-supplied id would let any
+  // caller create rows under any participant.
 };
 
 const EXTRACTION_MODEL = process.env.OPENAI_EXTRACTION_MODEL || process.env.LLM_MODEL_NAME || "gpt-4.1-mini";
@@ -219,6 +220,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ detail: "Entry text is required" }, { status: 422 });
   }
 
+  // Who is writing, and for which participant — derived, never accepted.
+  //
+  // The write below uses the service-role key, which bypasses RLS. Everywhere
+  // else Postgres decides whether a caller may touch a row; here it has been
+  // told not to ask, so this block is the only thing standing between a request
+  // and another student's data. `requireUser` establishes the owner from the
+  // session, and the participant is then looked up through that user's own
+  // RLS-scoped client — a code belonging to someone else simply is not found.
+  //
+  // These ids used to come from the request body and were written straight
+  // through. Any caller could name any participant.
+  const auth = await requireUser(request);
+  if ("error" in auth) return auth.error;
+
+  const participantResult = await auth.client
+    .from("participants")
+    .select("id")
+    .eq("code", userId)
+    .limit(1)
+    .maybeSingle();
+  if (participantResult.error) return jsonError(participantResult.error.message, 502);
+  const participant = participantResult.data as { id: string } | null;
+  if (!participant) return jsonError("Participant was not found.", 404);
+
   const createdAt = isoNow();
   const idSeed = await sha256(`${userId}:${createdAt}:${entryText}`);
   const entryId = `prod_${idSeed.slice(0, 16)}`;
@@ -390,7 +415,7 @@ export async function POST(request: NextRequest) {
   // staying open. `supabase_sync` tells the caller what landed; a failure is
   // reported, not thrown, because the computed result is still worth returning.
   const supabaseSync = await writeEntryResult(
-    { ownerUserId: payload.owner_user_id, participantId: payload.participant_id },
+    { ownerUserId: auth.user.id, participantId: participant.id },
     computed,
     {
       observationType,

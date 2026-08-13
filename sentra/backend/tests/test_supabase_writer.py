@@ -75,14 +75,70 @@ class FakeTable:
         return FakeResponse([{**row, "id": f"{self._name}-uuid-{index}"} for index, row in enumerate(rows)])
 
 
+class FakeUser:
+    def __init__(self, user_id):
+        self.id = user_id
+
+
+class FakeUserResponse:
+    def __init__(self, user):
+        self.user = user
+
+
+class FakeAuth:
+    """Stands in for Supabase Auth's token introspection.
+
+    `valid_tokens` maps an access token to the user it belongs to. Anything
+    else raises, the way `GET /auth/v1/user` rejects a token it did not issue.
+    """
+
+    def __init__(self, valid_tokens):
+        self.valid_tokens = valid_tokens
+        self.seen = []
+
+    def get_user(self, jwt):
+        self.seen.append(jwt)
+        if jwt not in self.valid_tokens:
+            raise RuntimeError("invalid JWT")
+        return FakeUserResponse(FakeUser(self.valid_tokens[jwt]))
+
+
 class FakeClient:
-    def __init__(self, reads=None, fail_tables=()):
+    def __init__(self, reads=None, fail_tables=(), valid_tokens=None, participants=()):
         self.reads = reads or {}
         self.fail_tables = set(fail_tables)
         self.writes = {}
+        self.auth = FakeAuth(valid_tokens or {})
+        # (owner_user_id, code) -> participant id, as `participants` would hold.
+        self.participants = dict(participants)
+        self.queries = []
 
     def table(self, name):
+        if name == "participants":
+            return FakeParticipantsTable(self, name)
         return FakeTable(self, name)
+
+
+class FakeParticipantsTable(FakeTable):
+    """`participants` answers from `client.participants`, honouring the filters.
+
+    Written as a real filter application rather than a canned response so that
+    a test can catch the owner constraint being dropped — which is the whole
+    point of the lookup.
+    """
+
+    def execute(self):
+        if "participants" in self._client.fail_tables:
+            raise RuntimeError("participants rejected")
+        self._client.queries.append(list(self._filters))
+        owner = next((value for op, col, value in self._filters if op == "eq" and col == "owner_user_id"), None)
+        code = next((value for op, col, value in self._filters if op == "eq" and col == "code"), None)
+        matches = [
+            {"id": participant_id}
+            for (row_owner, row_code), participant_id in self._client.participants.items()
+            if (owner is None or row_owner == owner) and (code is None or row_code == code)
+        ]
+        return FakeResponse(matches)
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
@@ -155,6 +211,114 @@ def _configured(monkeypatch, client):
     monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key")
     monkeypatch.setattr(supabase_writer, "get_client", lambda: client)
+
+
+# ── authorization ────────────────────────────────────────────────────────────
+#
+# The service-role key bypasses RLS, so `resolve_identity` is the only check
+# between a request and another student's rows. Each of these is a way that
+# check could be lost.
+
+
+def _auth_client(monkeypatch, **kwargs):
+    client = FakeClient(**kwargs)
+    _configured(monkeypatch, client)
+    return client
+
+
+def test_a_request_with_no_token_resolves_to_nobody(monkeypatch):
+    _auth_client(monkeypatch, participants={("owner-1", "P01"): "participant-1"})
+    with pytest.raises(supabase_writer.NotAuthorized):
+        supabase_writer.resolve_identity(None, "P01")
+
+
+def test_a_non_bearer_authorization_header_is_not_a_token(monkeypatch):
+    _auth_client(monkeypatch, participants={("owner-1", "P01"): "participant-1"})
+    for header in ("Basic aGk6dGhlcmU=", "Bearer", "Bearer    ", "token-without-scheme"):
+        with pytest.raises(supabase_writer.NotAuthorized):
+            supabase_writer.resolve_identity(header, "P01")
+
+
+def test_a_token_supabase_does_not_recognise_is_rejected(monkeypatch):
+    """The token is introspected, not decoded here. A forged one has no issuer."""
+    _auth_client(
+        monkeypatch,
+        valid_tokens={"real-token": "owner-1"},
+        participants={("owner-1", "P01"): "participant-1"},
+    )
+    with pytest.raises(supabase_writer.NotAuthorized):
+        supabase_writer.resolve_identity("Bearer forged-token", "P01")
+
+
+def test_a_valid_token_resolves_its_own_participant(monkeypatch):
+    client = _auth_client(
+        monkeypatch,
+        valid_tokens={"token-1": "owner-1"},
+        participants={("owner-1", "P01"): "participant-1"},
+    )
+    identity = supabase_writer.resolve_identity("Bearer token-1", "P01")
+    assert identity == {"owner_user_id": "owner-1", "participant_id": "participant-1"}
+    assert client.auth.seen == ["token-1"]
+
+
+def test_a_valid_token_cannot_reach_another_users_participant(monkeypatch):
+    """The defect this replaces, stated as a test.
+
+    `owner-2` is signed in and legitimately holds a token. `P01` belongs to
+    `owner-1`. Before the fix the participant id arrived in the request body and
+    was written straight through, so this succeeded and produced rows under
+    another student. The owner filter is what makes it resolve to nothing.
+    """
+    _auth_client(
+        monkeypatch,
+        valid_tokens={"token-2": "owner-2"},
+        participants={("owner-1", "P01"): "participant-1", ("owner-2", "P02"): "participant-2"},
+    )
+    with pytest.raises(supabase_writer.NotAuthorized):
+        supabase_writer.resolve_identity("Bearer token-2", "P01")
+
+
+def test_the_participant_lookup_is_constrained_by_owner(monkeypatch):
+    """Pins the `.eq("owner_user_id", ...)` filter itself.
+
+    Without it the lookup means "any participant with this code", which across
+    tenants is any student at all — and the test above would still pass on a
+    fixture where codes happen to be unique.
+    """
+    client = _auth_client(
+        monkeypatch,
+        valid_tokens={"token-1": "owner-1"},
+        participants={("owner-1", "P01"): "participant-1"},
+    )
+    supabase_writer.resolve_identity("Bearer token-1", "P01")
+    filters = client.queries[-1]
+    assert ("eq", "owner_user_id", "owner-1") in filters
+    assert ("eq", "code", "P01") in filters
+
+
+def test_a_failed_participant_lookup_does_not_fall_open(monkeypatch):
+    _auth_client(
+        monkeypatch,
+        valid_tokens={"token-1": "owner-1"},
+        participants={("owner-1", "P01"): "participant-1"},
+        fail_tables={"participants"},
+    )
+    with pytest.raises(supabase_writer.NotAuthorized):
+        supabase_writer.resolve_identity("Bearer token-1", "P01")
+
+
+def test_the_request_model_carries_no_identity_fields():
+    """The endpoint must not accept an owner or participant id from the body.
+
+    Re-adding either field would silently restore the hole: the body value
+    would be written with the service role's authority, and every test above
+    would still pass because they exercise the resolver rather than the route.
+    """
+    from app.main import EntryCreateRequest
+
+    fields = set(EntryCreateRequest.model_fields)
+    assert "owner_user_id" not in fields
+    assert "participant_id" not in fields
 
 
 # ── graceful degradation ─────────────────────────────────────────────────────

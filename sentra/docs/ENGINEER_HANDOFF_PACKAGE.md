@@ -111,6 +111,13 @@ Notes:
   `SUPABASE_SERVICE_ROLE_KEY` is read only inside route handlers
   (`src/lib/server/supabaseWriter.ts`) and must never gain a `NEXT_PUBLIC_`
   prefix or be imported into a client component.
+- Any code path holding that key has had RLS switched off for it, so it must
+  establish the caller itself before writing. `/api/entries` derives the owner
+  from the session (`requireUser`) and looks the participant up through that
+  user's own RLS-scoped client; FastAPI does the equivalent from the Bearer
+  token in `supabase_writer.resolve_identity`. An owner or participant id must
+  never be taken from a request body on these paths — that hands the caller the
+  service role's authority over every row.
 - If `NEXT_PUBLIC_API_URL` is absent in production, the frontend may fall back to
   Next.js `/api` routes.
 

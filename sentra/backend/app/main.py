@@ -6,7 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import Body, Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -115,12 +115,11 @@ class EntryCreateRequest(BaseModel):
     recall_text: Optional[str] = None
     telemetry: Optional[Dict[str, Any]] = None
     consent: Optional[Dict[str, Any]] = None
-    # Supabase identity for the row this submission belongs to. Both come from
-    # the caller (`owner_user_id` is the Supabase Auth user id, `participant_id`
-    # the participants row). Absent, the submission still computes and persists
-    # locally — it just isn't mirrored.
-    owner_user_id: Optional[str] = None
-    participant_id: Optional[str] = None
+    # No identity fields. The Supabase owner and participant are derived from
+    # the caller's access token in `supabase_writer.resolve_identity`, never
+    # read from the body — the sync writes with the service-role key, which
+    # bypasses RLS, so a body-supplied id would let any caller write under any
+    # participant.
 
 
 class ExportCreateRequest(BaseModel):
@@ -404,8 +403,7 @@ def create_entry(
     payload: Optional[EntryCreateRequest] = Body(default=None),
     text: Optional[str] = None,
     observation_type: str = "daily",
-    owner_user_id: Optional[str] = None,
-    participant_id: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ):
     journal_text = (payload.journal_text if payload else None) or (payload.text if payload else None) or text or ""
@@ -721,12 +719,15 @@ def create_entry(
     # visible to the UI. It is deliberately non-fatal: a submission that
     # computed correctly must not become a 500 because a remote write failed,
     # and the caller can see what happened in `supabase_sync`.
-    supabase_owner = (payload.owner_user_id if payload else None) or owner_user_id
-    supabase_participant = (payload.participant_id if payload else None) or participant_id
+    #
+    # The identity is derived from the access token, not from the request body.
+    # Nothing the caller can set decides which participant these rows land
+    # under; an unauthenticated call computes and returns but writes nothing.
     try:
+        identity = supabase_writer.resolve_identity(authorization, participant_code)
         response.supabase_sync = supabase_writer.write_entry_result(
-            owner_user_id=supabase_owner,
-            participant_id=supabase_participant,
+            owner_user_id=identity["owner_user_id"],
+            participant_id=identity["participant_id"],
             computed=response,
             observation_type=observation_type,
             journal_text=journal_text,
@@ -734,6 +735,12 @@ def create_entry(
             telemetry=(payload.telemetry if payload else None) or {},
             consent=consent_snapshot,
         )
+    except supabase_writer.NotAuthorized as exc:
+        # Not a 4xx: the submission itself is valid and its result is returned.
+        # Only the mirror is withheld, because there is no verified owner to
+        # write it under. Local development with no Supabase lands here.
+        logger.info("[submit] supabase sync skipped: %s", exc)
+        response.supabase_sync = {"status": "skipped", "reason": str(exc), "warnings": []}
     except Exception:
         logger.warning("[submit] supabase sync raised unexpectedly; entry remains in SQLite", exc_info=True)
         response.supabase_sync = {"status": "failed", "reason": "unexpected error", "warnings": []}

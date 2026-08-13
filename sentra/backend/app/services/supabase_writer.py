@@ -874,6 +874,91 @@ def _insert_eval_example(
     ).execute()
 
 
+# ── authorization ────────────────────────────────────────────────────────────
+
+
+class NotAuthorized(Exception):
+    """The caller could not be shown to own the participant it named."""
+
+
+def _bearer_token(authorization: Optional[str]) -> Optional[str]:
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+    return token.strip()
+
+
+def resolve_identity(authorization: Optional[str], participant_code: str) -> Dict[str, str]:
+    """Who is writing, and for which participant — derived, never accepted.
+
+    This function exists because the service-role key bypasses RLS. Everywhere
+    else in this codebase, Postgres decides whether a caller may touch a row;
+    here Postgres has been told not to ask. Whatever this returns is therefore
+    the *only* thing standing between a request and another student's data, so
+    it takes no identity from the caller at all:
+
+      * the owner is read out of the access token, verified against Supabase
+        Auth rather than decoded locally — an unverified JWT is just a string
+        the client chose;
+      * the participant is looked up by code and constrained to that owner, so
+        a code belonging to someone else resolves to nothing rather than to
+        their row.
+
+    An earlier version of this took `owner_user_id` and `participant_id` from
+    the request body and wrote them straight through. Any caller could name any
+    participant and have rows created under it. There is no partial version of
+    this check: a request that cannot be resolved writes nothing.
+
+    Raises NotAuthorized. Callers treat that as "do not sync", never as
+    "sync anyway".
+    """
+    token = _bearer_token(authorization)
+    if not token:
+        raise NotAuthorized("no bearer token on the request")
+    if not participant_code:
+        raise NotAuthorized("no participant code on the request")
+
+    client = get_client()
+    if client is None:
+        raise NotAuthorized("supabase client unavailable")
+
+    # Verified with Supabase, not decoded here. Local decoding would need the
+    # JWT secret and would still miss revocation; this asks the issuer.
+    try:
+        user_response = client.auth.get_user(token)
+    except Exception as exc:
+        raise NotAuthorized(f"access token rejected: {exc}") from exc
+
+    user = getattr(user_response, "user", None)
+    owner_user_id = getattr(user, "id", None)
+    if not owner_user_id:
+        raise NotAuthorized("access token resolved to no user")
+
+    # The owner filter is explicit because the service-role client bypasses the
+    # RLS policy that would otherwise apply it. Dropping this `.eq` turns the
+    # lookup into "any participant with this code", which across tenants is any
+    # student at all.
+    try:
+        found = (
+            client.table("participants")
+            .select("id")
+            .eq("owner_user_id", owner_user_id)
+            .eq("code", participant_code)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        raise NotAuthorized(f"participant lookup failed: {exc}") from exc
+
+    rows = _rows(found)
+    if not rows:
+        raise NotAuthorized("participant not found for this user")
+
+    return {"owner_user_id": str(owner_user_id), "participant_id": str(rows[0]["id"])}
+
+
 # ── entry point ──────────────────────────────────────────────────────────────
 
 
@@ -890,12 +975,16 @@ def write_entry_result(
 ) -> Dict[str, Any]:
     """Mirror one computed submission into Supabase. Never raises.
 
+    `owner_user_id` and `participant_id` must come from `resolve_identity`.
+    Passing values that reached the process from a request body would hand the
+    caller the service role's authority.
+
     Returns a status record suitable for embedding in the API response, so the
     caller can tell a genuine skip (no Supabase configured) from a failure, and
     the frontend can adopt the Supabase row ids when they exist.
     """
     if not owner_user_id or not participant_id:
-        return {"status": "skipped", "reason": "owner_user_id/participant_id not supplied", "warnings": []}
+        return {"status": "skipped", "reason": "owner_user_id/participant_id not resolved", "warnings": []}
 
     url, _ = supabase_credentials()
     if not url:

@@ -398,10 +398,12 @@ export class ApiClient {
    * insight row. Splitting the two would mean two round trips to Supabase from
    * different processes, with the row written by one of them.
    *
-   * The identity the backend needs to write on this user's behalf is resolved
-   * here, because only the browser has the session: `owner_user_id` is the
-   * Supabase Auth user id and `participant_id` the participants row. Without
-   * them the backend computes and returns but mirrors nothing.
+   * No identity is sent. The backend derives the owner from the caller's
+   * session — the cookie for the route handler, the bearer token for FastAPI —
+   * and resolves the participant from `userId` scoped to that owner. An earlier
+   * version posted `owner_user_id` and `participant_id` in the body; because
+   * the write uses the service-role key, which bypasses RLS, that let any
+   * caller name any participant and have rows created under it.
    *
    * `supabase_sync` on the response reports what the backend wrote. When it
    * carries row ids, those replace the backend's own ids so the returned object
@@ -418,8 +420,6 @@ export class ApiClient {
       consent?: ConsentSnapshot;
     },
   ): Promise<EntrySubmissionResponse> {
-    const ownerUserId = await this.requireOwnerId();
-    const participant = await this.getParticipant(userId);
     const computed = await this.fetch<EntrySubmissionResponse>(`/entries?user_id=${encodeURIComponent(userId)}&observation_type=${encodeURIComponent(observationType)}`, {
       method: "POST",
       body: JSON.stringify({
@@ -428,8 +428,6 @@ export class ApiClient {
         recall_text: researchPayload?.recall_text ?? "",
         telemetry: researchPayload?.telemetry,
         consent: researchPayload?.consent,
-        owner_user_id: ownerUserId,
-        participant_id: participant.id,
       }),
     });
 
