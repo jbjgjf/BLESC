@@ -3,6 +3,19 @@ from typing import Dict, List, Optional, Tuple
 from ..schemas.analytics import DailyFeatureAggregation, BaselineStats
 
 # Days of the user's own history required before a baseline is usable.
+#
+# Measured, no longer assumed. `docs/data_sufficiency_study.md` swept this over
+# {1,3,5,7,10,14,21,30} days against synthetic participants with a known answer:
+# baseline estimation error is exactly sampling noise (0.798/√n to within 2%) and
+# reaches its pre-declared plateau at 14, while detection separation has flattened
+# by day 10–14 at every entry density. 3 — the value the gate carried before #91
+# floored it — costs 0.467 standard deviations of baseline error against 0.214
+# here. Unchanged as a result of that study rather than in the absence of one.
+#
+# Note it is also the baseline WINDOW, not only the gate: the orchestrator selects
+# history with `.limit(MIN_REFLECTION_BASELINE_DAYS)`, so a participant with thirty
+# days is scored against the most recent fourteen. Measured, not inferred — see the
+# study's `--supply-check`.
 RAMP_UP_DAYS = 14
 
 

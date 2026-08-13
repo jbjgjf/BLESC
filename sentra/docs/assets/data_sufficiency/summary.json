@@ -1,0 +1,748 @@
+{
+  "baseline_error_plateau": {
+    "by_density": {
+      "1": {
+        "curve": [
+          {
+            "mean_error_in_sd": 0.78068,
+            "window_days": 1
+          },
+          {
+            "mean_error_in_sd": 0.474864,
+            "window_days": 3
+          },
+          {
+            "mean_error_in_sd": 0.364857,
+            "window_days": 5
+          },
+          {
+            "mean_error_in_sd": 0.312038,
+            "window_days": 7
+          },
+          {
+            "mean_error_in_sd": 0.259849,
+            "window_days": 10
+          },
+          {
+            "mean_error_in_sd": 0.218845,
+            "window_days": 14
+          },
+          {
+            "mean_error_in_sd": 0.173392,
+            "window_days": 21
+          },
+          {
+            "mean_error_in_sd": 0.148601,
+            "window_days": 30
+          }
+        ],
+        "plateau_window_days": 14
+      },
+      "3": {
+        "curve": [
+          {
+            "mean_error_in_sd": 0.831578,
+            "window_days": 1
+          },
+          {
+            "mean_error_in_sd": 0.467237,
+            "window_days": 3
+          },
+          {
+            "mean_error_in_sd": 0.350714,
+            "window_days": 5
+          },
+          {
+            "mean_error_in_sd": 0.305376,
+            "window_days": 7
+          },
+          {
+            "mean_error_in_sd": 0.255406,
+            "window_days": 10
+          },
+          {
+            "mean_error_in_sd": 0.214023,
+            "window_days": 14
+          },
+          {
+            "mean_error_in_sd": 0.175086,
+            "window_days": 21
+          },
+          {
+            "mean_error_in_sd": 0.147179,
+            "window_days": 30
+          }
+        ],
+        "plateau_window_days": 14
+      },
+      "5": {
+        "curve": [
+          {
+            "mean_error_in_sd": 0.815425,
+            "window_days": 1
+          },
+          {
+            "mean_error_in_sd": 0.459286,
+            "window_days": 3
+          },
+          {
+            "mean_error_in_sd": 0.352616,
+            "window_days": 5
+          },
+          {
+            "mean_error_in_sd": 0.299228,
+            "window_days": 7
+          },
+          {
+            "mean_error_in_sd": 0.251236,
+            "window_days": 10
+          },
+          {
+            "mean_error_in_sd": 0.210479,
+            "window_days": 14
+          },
+          {
+            "mean_error_in_sd": 0.173455,
+            "window_days": 21
+          },
+          {
+            "mean_error_in_sd": 0.14673,
+            "window_days": 30
+          }
+        ],
+        "plateau_window_days": 14
+      }
+    },
+    "criterion": {
+      "marginal_gain_per_added_day_below": 0.01,
+      "units": "standard deviations"
+    }
+  },
+  "data_classification": "synthetic",
+  "decidability": {
+    "false_positives_allowed": 1,
+    "negatives_per_cell": 120,
+    "note": "How many stable participants may be flagged in a cell before its false-positive interval stops clearing the target. `null` means no count clears it — the cell size is too small for the criterion to be decidable, and every cell would fail for want of participants rather than for want of accuracy."
+  },
+  "design": {
+    "bootstrap_resamples": 2000,
+    "calibration_seeds": 20,
+    "densities": [
+      1,
+      3,
+      5
+    ],
+    "evaluation_seeds": 120,
+    "personas": [
+      {
+        "description": "Nothing changes. The evaluation day is drawn from the same regime as every history day, so every signal on it is a false positive.",
+        "kind": "stable",
+        "name": "stable",
+        "signal_expected": false
+      },
+      {
+        "description": "A change of the size a week of exam pressure might produce. The realised effect size per feature is measured, not asserted — see `effect_sizes`.",
+        "kind": "shift",
+        "name": "shift_moderate",
+        "signal_expected": true
+      },
+      {
+        "description": "An unmistakable change. Present so that a failure to detect it can be read as 'the window is too short' rather than 'the change was too small to ask about'.",
+        "kind": "shift",
+        "name": "shift_large",
+        "signal_expected": true
+      }
+    ],
+    "quick": false,
+    "reference_draws": 5000,
+    "runs": 10080,
+    "windows": [
+      1,
+      3,
+      5,
+      7,
+      10,
+      14,
+      21,
+      30
+    ]
+  },
+  "effect_sizes_in_baseline_sd": {
+    "shift_large": {
+      "1": {
+        "behavior_count": 0.5297,
+        "event_avg_duration": 0.0,
+        "event_count": -0.0191,
+        "event_transition_signal": -0.0256,
+        "isolation_signal": 4.0045,
+        "protective_buffer_ratio": -0.4293,
+        "protective_count": -0.5505,
+        "protective_ratio": -0.5853,
+        "relation_density": 0.0707,
+        "state_count": 1.3544,
+        "trigger_count": 1.0191
+      },
+      "3": {
+        "behavior_count": 1.004,
+        "event_avg_duration": 0.0,
+        "event_count": -0.0012,
+        "event_transition_signal": 0.007,
+        "isolation_signal": 6.8661,
+        "protective_buffer_ratio": -0.8648,
+        "protective_count": -0.9628,
+        "protective_ratio": -0.9205,
+        "relation_density": -0.052,
+        "state_count": 2.3923,
+        "trigger_count": 1.5952
+      },
+      "5": {
+        "behavior_count": 1.3092,
+        "event_avg_duration": 0.0,
+        "event_count": 0.0057,
+        "event_transition_signal": -0.0242,
+        "isolation_signal": 8.8349,
+        "protective_buffer_ratio": -1.1593,
+        "protective_count": -1.2138,
+        "protective_ratio": -1.3375,
+        "relation_density": -0.0667,
+        "state_count": 3.159,
+        "trigger_count": 2.0494
+      }
+    },
+    "shift_moderate": {
+      "1": {
+        "behavior_count": 0.2613,
+        "event_avg_duration": 0.0,
+        "event_count": 0.0049,
+        "event_transition_signal": -0.0037,
+        "isolation_signal": 1.8111,
+        "protective_buffer_ratio": -0.3456,
+        "protective_count": -0.3518,
+        "protective_ratio": -0.4118,
+        "relation_density": -0.0405,
+        "state_count": 0.6276,
+        "trigger_count": 0.4084
+      },
+      "3": {
+        "behavior_count": 0.4477,
+        "event_avg_duration": 0.0,
+        "event_count": 0.0115,
+        "event_transition_signal": 0.0204,
+        "isolation_signal": 3.132,
+        "protective_buffer_ratio": -0.6982,
+        "protective_count": -0.6464,
+        "protective_ratio": -0.6436,
+        "relation_density": -0.1404,
+        "state_count": 1.0484,
+        "trigger_count": 0.6912
+      },
+      "5": {
+        "behavior_count": 0.5302,
+        "event_avg_duration": 0.0,
+        "event_count": 0.013,
+        "event_transition_signal": -0.0185,
+        "isolation_signal": 4.0579,
+        "protective_buffer_ratio": -0.9363,
+        "protective_count": -0.804,
+        "protective_ratio": -0.9932,
+        "relation_density": -0.1784,
+        "state_count": 1.3775,
+        "trigger_count": 0.9176
+      }
+    }
+  },
+  "feature_order": [
+    "state_count",
+    "trigger_count",
+    "protective_count",
+    "behavior_count",
+    "event_count",
+    "event_avg_duration",
+    "event_transition_signal",
+    "protective_ratio",
+    "protective_buffer_ratio",
+    "relation_density",
+    "isolation_signal"
+  ],
+  "generated_at_utc": "2026-08-13T16:45:38Z",
+  "minimum_data": {
+    "fpr_controlled": {
+      "criterion": {
+        "f1_ci_low_at_least": 0.9,
+        "false_positive_rate_ci_high_at_most": 0.05,
+        "stated": "before the sweep was run; see the constants at the top of this script"
+      },
+      "minimum_window_days": {
+        "all_shift@1": null,
+        "all_shift@3": null,
+        "all_shift@5": null,
+        "shift_large@1": null,
+        "shift_large@3": null,
+        "shift_large@5": null,
+        "shift_moderate@1": null,
+        "shift_moderate@3": null,
+        "shift_moderate@5": null
+      },
+      "threshold_policy": "fpr_controlled"
+    },
+    "max_f1": {
+      "criterion": {
+        "f1_ci_low_at_least": 0.9,
+        "false_positive_rate_ci_high_at_most": 0.05,
+        "stated": "before the sweep was run; see the constants at the top of this script"
+      },
+      "minimum_window_days": {
+        "all_shift@1": null,
+        "all_shift@3": null,
+        "all_shift@5": null,
+        "shift_large@1": null,
+        "shift_large@3": null,
+        "shift_large@5": null,
+        "shift_moderate@1": null,
+        "shift_moderate@3": null,
+        "shift_moderate@5": null
+      },
+      "threshold_policy": "max_f1"
+    }
+  },
+  "prevalence_caveat": "Precision and F1 depend on how often a real change day occurs, and this design fixes that at one shifted participant per stable one inside a magnitude group (two per stable one in all_shift). A day on which a student's state genuinely changes is far rarer than that in life, and at a lower base rate the same false-positive rate buys much worse precision. Every F1 here is therefore an upper bound. AUROC and the false-positive rate do not move with prevalence, which is why the recommendation rests on them.",
+  "rule_profile": {
+    "firing_rate_by_window_and_persona": {
+      "1": {
+        "shift_large": {
+          "event_sequence_shift": 0.1556,
+          "isolation_spike": 0.9083,
+          "protective_decline": 0.9278,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.9139
+        },
+        "shift_moderate": {
+          "event_sequence_shift": 0.1556,
+          "isolation_spike": 0.6139,
+          "protective_decline": 0.7833,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.8333
+        },
+        "stable": {
+          "event_sequence_shift": 0.1639,
+          "isolation_spike": 0.1361,
+          "protective_decline": 0.5056,
+          "relation_reweighting": 0.0028,
+          "state_trigger_inflation": 0.6389
+        }
+      },
+      "10": {
+        "shift_large": {
+          "event_sequence_shift": 0.0944,
+          "isolation_spike": 0.9083,
+          "protective_decline": 0.9278,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.8417
+        },
+        "shift_moderate": {
+          "event_sequence_shift": 0.1028,
+          "isolation_spike": 0.5806,
+          "protective_decline": 0.7833,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.6528
+        },
+        "stable": {
+          "event_sequence_shift": 0.1028,
+          "isolation_spike": 0.0722,
+          "protective_decline": 0.5056,
+          "relation_reweighting": 0.0028,
+          "state_trigger_inflation": 0.2778
+        }
+      },
+      "14": {
+        "shift_large": {
+          "event_sequence_shift": 0.1,
+          "isolation_spike": 0.9056,
+          "protective_decline": 0.9278,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.8361
+        },
+        "shift_moderate": {
+          "event_sequence_shift": 0.0944,
+          "isolation_spike": 0.5778,
+          "protective_decline": 0.7833,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.6139
+        },
+        "stable": {
+          "event_sequence_shift": 0.1,
+          "isolation_spike": 0.0639,
+          "protective_decline": 0.5056,
+          "relation_reweighting": 0.0028,
+          "state_trigger_inflation": 0.2722
+        }
+      },
+      "21": {
+        "shift_large": {
+          "event_sequence_shift": 0.0944,
+          "isolation_spike": 0.9083,
+          "protective_decline": 0.9278,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.85
+        },
+        "shift_moderate": {
+          "event_sequence_shift": 0.0944,
+          "isolation_spike": 0.5861,
+          "protective_decline": 0.7833,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.5972
+        },
+        "stable": {
+          "event_sequence_shift": 0.0972,
+          "isolation_spike": 0.0722,
+          "protective_decline": 0.5056,
+          "relation_reweighting": 0.0028,
+          "state_trigger_inflation": 0.2417
+        }
+      },
+      "3": {
+        "shift_large": {
+          "event_sequence_shift": 0.1278,
+          "isolation_spike": 0.9,
+          "protective_decline": 0.9278,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.875
+        },
+        "shift_moderate": {
+          "event_sequence_shift": 0.1167,
+          "isolation_spike": 0.5972,
+          "protective_decline": 0.7833,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.7472
+        },
+        "stable": {
+          "event_sequence_shift": 0.1333,
+          "isolation_spike": 0.0861,
+          "protective_decline": 0.5056,
+          "relation_reweighting": 0.0028,
+          "state_trigger_inflation": 0.4556
+        }
+      },
+      "30": {
+        "shift_large": {
+          "event_sequence_shift": 0.0944,
+          "isolation_spike": 0.9056,
+          "protective_decline": 0.9278,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.8444
+        },
+        "shift_moderate": {
+          "event_sequence_shift": 0.0917,
+          "isolation_spike": 0.575,
+          "protective_decline": 0.7833,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.6028
+        },
+        "stable": {
+          "event_sequence_shift": 0.1083,
+          "isolation_spike": 0.0639,
+          "protective_decline": 0.5056,
+          "relation_reweighting": 0.0028,
+          "state_trigger_inflation": 0.2222
+        }
+      },
+      "5": {
+        "shift_large": {
+          "event_sequence_shift": 0.1167,
+          "isolation_spike": 0.9056,
+          "protective_decline": 0.9278,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.85
+        },
+        "shift_moderate": {
+          "event_sequence_shift": 0.1139,
+          "isolation_spike": 0.5972,
+          "protective_decline": 0.7833,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.6611
+        },
+        "stable": {
+          "event_sequence_shift": 0.1083,
+          "isolation_spike": 0.1028,
+          "protective_decline": 0.5056,
+          "relation_reweighting": 0.0028,
+          "state_trigger_inflation": 0.35
+        }
+      },
+      "7": {
+        "shift_large": {
+          "event_sequence_shift": 0.0917,
+          "isolation_spike": 0.9083,
+          "protective_decline": 0.9278,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.8444
+        },
+        "shift_moderate": {
+          "event_sequence_shift": 0.1167,
+          "isolation_spike": 0.5917,
+          "protective_decline": 0.7833,
+          "relation_reweighting": 0.0056,
+          "state_trigger_inflation": 0.6833
+        },
+        "stable": {
+          "event_sequence_shift": 0.1139,
+          "isolation_spike": 0.0889,
+          "protective_decline": 0.5056,
+          "relation_reweighting": 0.0028,
+          "state_trigger_inflation": 0.3056
+        }
+      }
+    },
+    "note": "Share of evaluation runs on which the rule contributed, pooled over entry densities. The stable row is the base rate: what the rule says about a participant nothing happened to."
+  },
+  "shipped_constants_under_test": {
+    "MIN_REFLECTION_BASELINE_DAYS": "max(env, RAMP_UP_DAYS) = 14",
+    "POPULATION_BASELINE": "deleted in #91; not re-estimated here and not restored",
+    "RAMP_UP_DAYS": 14
+  },
+  "study_version": "data-sufficiency-1",
+  "supply_check": {
+    "all_arms_identical": true,
+    "finding": "The baseline window is the gate. `.limit(MIN_REFLECTION_BASELINE_DAYS)` means a participant with thirty days of history is scored against fourteen of them, so 'days of history supplied' stops being an independent variable above the gate.",
+    "gate_days": 14,
+    "participants": 30,
+    "rows": [
+      {
+        "persona": "stable",
+        "seed": 1000,
+        "supplied_14": 1.317,
+        "supplied_21": 1.317,
+        "supplied_30": 1.317
+      },
+      {
+        "persona": "stable",
+        "seed": 1001,
+        "supplied_14": 1.147,
+        "supplied_21": 1.147,
+        "supplied_30": 1.147
+      },
+      {
+        "persona": "stable",
+        "seed": 1002,
+        "supplied_14": 2.422,
+        "supplied_21": 2.422,
+        "supplied_30": 2.422
+      },
+      {
+        "persona": "stable",
+        "seed": 1003,
+        "supplied_14": 10.0,
+        "supplied_21": 10.0,
+        "supplied_30": 10.0
+      },
+      {
+        "persona": "stable",
+        "seed": 1004,
+        "supplied_14": 3.65,
+        "supplied_21": 3.65,
+        "supplied_30": 3.65
+      },
+      {
+        "persona": "stable",
+        "seed": 1005,
+        "supplied_14": 3.686,
+        "supplied_21": 3.686,
+        "supplied_30": 3.686
+      },
+      {
+        "persona": "stable",
+        "seed": 1006,
+        "supplied_14": 3.411,
+        "supplied_21": 3.411,
+        "supplied_30": 3.411
+      },
+      {
+        "persona": "stable",
+        "seed": 1007,
+        "supplied_14": 3.01,
+        "supplied_21": 3.01,
+        "supplied_30": 3.01
+      },
+      {
+        "persona": "stable",
+        "seed": 1008,
+        "supplied_14": 2.881,
+        "supplied_21": 2.881,
+        "supplied_30": 2.881
+      },
+      {
+        "persona": "stable",
+        "seed": 1009,
+        "supplied_14": 2.285,
+        "supplied_21": 2.285,
+        "supplied_30": 2.285
+      },
+      {
+        "persona": "shift_moderate",
+        "seed": 1000,
+        "supplied_14": 3.427,
+        "supplied_21": 3.427,
+        "supplied_30": 3.427
+      },
+      {
+        "persona": "shift_moderate",
+        "seed": 1001,
+        "supplied_14": 1.275,
+        "supplied_21": 1.275,
+        "supplied_30": 1.275
+      },
+      {
+        "persona": "shift_moderate",
+        "seed": 1002,
+        "supplied_14": 4.424,
+        "supplied_21": 4.424,
+        "supplied_30": 4.424
+      },
+      {
+        "persona": "shift_moderate",
+        "seed": 1003,
+        "supplied_14": 4.339,
+        "supplied_21": 4.339,
+        "supplied_30": 4.339
+      },
+      {
+        "persona": "shift_moderate",
+        "seed": 1004,
+        "supplied_14": 5.513,
+        "supplied_21": 5.513,
+        "supplied_30": 5.513
+      },
+      {
+        "persona": "shift_moderate",
+        "seed": 1005,
+        "supplied_14": 4.216,
+        "supplied_21": 4.216,
+        "supplied_30": 4.216
+      },
+      {
+        "persona": "shift_moderate",
+        "seed": 1006,
+        "supplied_14": 10.0,
+        "supplied_21": 10.0,
+        "supplied_30": 10.0
+      },
+      {
+        "persona": "shift_moderate",
+        "seed": 1007,
+        "supplied_14": 2.965,
+        "supplied_21": 2.965,
+        "supplied_30": 2.965
+      },
+      {
+        "persona": "shift_moderate",
+        "seed": 1008,
+        "supplied_14": 3.717,
+        "supplied_21": 3.717,
+        "supplied_30": 3.717
+      },
+      {
+        "persona": "shift_moderate",
+        "seed": 1009,
+        "supplied_14": 2.585,
+        "supplied_21": 2.585,
+        "supplied_30": 2.585
+      },
+      {
+        "persona": "shift_large",
+        "seed": 1000,
+        "supplied_14": 5.699,
+        "supplied_21": 5.699,
+        "supplied_30": 5.699
+      },
+      {
+        "persona": "shift_large",
+        "seed": 1001,
+        "supplied_14": 7.081,
+        "supplied_21": 7.081,
+        "supplied_30": 7.081
+      },
+      {
+        "persona": "shift_large",
+        "seed": 1002,
+        "supplied_14": 4.682,
+        "supplied_21": 4.682,
+        "supplied_30": 4.682
+      },
+      {
+        "persona": "shift_large",
+        "seed": 1003,
+        "supplied_14": 10.0,
+        "supplied_21": 10.0,
+        "supplied_30": 10.0
+      },
+      {
+        "persona": "shift_large",
+        "seed": 1004,
+        "supplied_14": 10.0,
+        "supplied_21": 10.0,
+        "supplied_30": 10.0
+      },
+      {
+        "persona": "shift_large",
+        "seed": 1005,
+        "supplied_14": 1.929,
+        "supplied_21": 1.929,
+        "supplied_30": 1.929
+      },
+      {
+        "persona": "shift_large",
+        "seed": 1006,
+        "supplied_14": 6.06,
+        "supplied_21": 6.06,
+        "supplied_30": 6.06
+      },
+      {
+        "persona": "shift_large",
+        "seed": 1007,
+        "supplied_14": 10.0,
+        "supplied_21": 10.0,
+        "supplied_30": 10.0
+      },
+      {
+        "persona": "shift_large",
+        "seed": 1008,
+        "supplied_14": 5.918,
+        "supplied_21": 5.918,
+        "supplied_30": 5.918
+      },
+      {
+        "persona": "shift_large",
+        "seed": 1009,
+        "supplied_14": 5.11,
+        "supplied_21": 5.11,
+        "supplied_30": 5.11
+      }
+    ],
+    "supplied_arms": [
+      14,
+      21,
+      30
+    ]
+  },
+  "thresholds": {
+    "fitted": {
+      "fpr_controlled": {
+        "calibration_false_positive_rate": 0.05,
+        "f1": 0.8558139534883721,
+        "threshold": 4.5285
+      },
+      "max_f1": {
+        "candidates": 159,
+        "f1": 0.892857,
+        "threshold": 3.8805
+      }
+    },
+    "fitted_on": {
+      "densities": "pooled",
+      "runs": 180,
+      "split": "calibration",
+      "window_days": 14
+    },
+    "note": "The product ships no decision threshold — nothing in the codebase turns final_score into signal / no signal. These exist only so precision and recall are defined at all. Both are fitted once, on participants no reported number is computed from, and held fixed across every cell. AUROC is reported alongside because it does not depend on either."
+  }
+}

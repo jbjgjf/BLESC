@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" width="760" height="420" font-family="Inter, Segoe UI, sans-serif" role="img">
+<title>Reflection Signal F1 against window length (fpr_controlled threshold)</title>
+<rect width="760" height="420" fill="#ffffff"/>
+<text x="70" y="26" font-size="15" font-weight="600" fill="#1b1f24">Reflection Signal F1 against window length (fpr_controlled threshold)</text>
+<line x1="70" y1="364.0" x2="550" y2="364.0" stroke="#e4e7eb" stroke-width="1"/>
+<text x="60" y="368.0" font-size="11" fill="#6b7280" text-anchor="end">0.00</text>
+<line x1="70" y1="300.4" x2="550" y2="300.4" stroke="#e4e7eb" stroke-width="1"/>
+<text x="60" y="304.4" font-size="11" fill="#6b7280" text-anchor="end">0.20</text>
+<line x1="70" y1="236.8" x2="550" y2="236.8" stroke="#e4e7eb" stroke-width="1"/>
+<text x="60" y="240.8" font-size="11" fill="#6b7280" text-anchor="end">0.40</text>
+<line x1="70" y1="173.2" x2="550" y2="173.2" stroke="#e4e7eb" stroke-width="1"/>
+<text x="60" y="177.2" font-size="11" fill="#6b7280" text-anchor="end">0.60</text>
+<line x1="70" y1="109.6" x2="550" y2="109.6" stroke="#e4e7eb" stroke-width="1"/>
+<text x="60" y="113.6" font-size="11" fill="#6b7280" text-anchor="end">0.80</text>
+<line x1="70" y1="46.0" x2="550" y2="46.0" stroke="#e4e7eb" stroke-width="1"/>
+<text x="60" y="50.0" font-size="11" fill="#6b7280" text-anchor="end">1.00</text>
+<text x="70.0" y="384" font-size="11" fill="#6b7280" text-anchor="middle">1</text>
+<text x="103.1" y="384" font-size="11" fill="#6b7280" text-anchor="middle">3</text>
+<text x="136.2" y="384" font-size="11" fill="#6b7280" text-anchor="middle">5</text>
+<text x="169.3" y="384" font-size="11" fill="#6b7280" text-anchor="middle">7</text>
+<text x="219.0" y="384" font-size="11" fill="#6b7280" text-anchor="middle">10</text>
+<text x="285.2" y="384" font-size="11" fill="#6b7280" text-anchor="middle">14</text>
+<text x="401.0" y="384" font-size="11" fill="#6b7280" text-anchor="middle">21</text>
+<text x="550.0" y="384" font-size="11" fill="#6b7280" text-anchor="middle">30</text>
+<text x="310.0" y="404" font-size="12" fill="#374151" text-anchor="middle">baseline window / gate (days of the participant's own history)</text>
+<text transform="translate(20,205.0) rotate(-90)" font-size="12" fill="#374151" text-anchor="middle">F1 (band: 95% bootstrap CI)</text>
+<line x1="70" y1="77.8" x2="550" y2="77.8" stroke="#9ca3af" stroke-width="1" stroke-dasharray="5 4"/>
+<text x="76" y="71.8" font-size="11" fill="#6b7280">practical bar F1 = 0.90</text>
+<polygon points="70.0,100.8 103.1,115.2 136.2,117.3 169.3,115.9 219.0,115.6 285.2,122.1 401.0,126.5 550.0,122.8 550.0,154.8 401.0,161.2 285.2,154.3 219.0,146.7 169.3,147.6 136.2,148.4 103.1,144.4 70.0,126.7" fill="#2f6fdb" fill-opacity="0.12"/>
+<polyline points="70.0,113.3 103.1,128.7 136.2,132.0 169.3,131.1 219.0,131.3 285.2,137.3 401.0,143.7 550.0,138.4" fill="none" stroke="#2f6fdb" stroke-width="2"/>
+<circle cx="70.0" cy="113.3" r="3" fill="#2f6fdb"/>
+<circle cx="103.1" cy="128.7" r="3" fill="#2f6fdb"/>
+<circle cx="136.2" cy="132.0" r="3" fill="#2f6fdb"/>
+<circle cx="169.3" cy="131.1" r="3" fill="#2f6fdb"/>
+<circle cx="219.0" cy="131.3" r="3" fill="#2f6fdb"/>
+<circle cx="285.2" cy="137.3" r="3" fill="#2f6fdb"/>
+<circle cx="401.0" cy="143.7" r="3" fill="#2f6fdb"/>
+<circle cx="550.0" cy="138.4" r="3" fill="#2f6fdb"/>
+<line x1="566" y1="54" x2="590" y2="54" stroke="#2f6fdb" stroke-width="2"/>
+<text x="596" y="58" font-size="11" fill="#374151">1 entries/day</text>
+<polygon points="70.0,87.7 103.1,80.5 136.2,78.9 169.3,74.9 219.0,70.3 285.2,74.2 401.0,75.3 550.0,74.9 550.0,94.7 401.0,95.9 285.2,94.9 219.0,89.1 169.3,94.6 136.2,100.3 103.1,101.6 70.0,108.3" fill="#c0562f" fill-opacity="0.12"/>
+<polyline points="70.0,97.7 103.1,90.3 136.2,88.9 169.3,84.3 219.0,79.8 285.2,83.7 401.0,85.0 550.0,84.0" fill="none" stroke="#c0562f" stroke-width="2"/>
+<circle cx="70.0" cy="97.7" r="3" fill="#c0562f"/>
+<circle cx="103.1" cy="90.3" r="3" fill="#c0562f"/>
+<circle cx="136.2" cy="88.9" r="3" fill="#c0562f"/>
+<circle cx="169.3" cy="84.3" r="3" fill="#c0562f"/>
+<circle cx="219.0" cy="79.8" r="3" fill="#c0562f"/>
+<circle cx="285.2" cy="83.7" r="3" fill="#c0562f"/>
+<circle cx="401.0" cy="85.0" r="3" fill="#c0562f"/>
+<circle cx="550.0" cy="84.0" r="3" fill="#c0562f"/>
+<line x1="566" y1="74" x2="590" y2="74" stroke="#c0562f" stroke-width="2"/>
+<text x="596" y="78" font-size="11" fill="#374151">3 entries/day</text>
+<polygon points="70.0,86.3 103.1,70.1 136.2,61.4 169.3,59.2 219.0,60.2 285.2,59.0 401.0,59.8 550.0,59.8 550.0,74.4 401.0,74.2 285.2,73.3 219.0,75.3 169.3,74.4 136.2,76.6 103.1,87.8 70.0,106.9" fill="#2c8a5f" fill-opacity="0.12"/>
+<polyline points="70.0,96.0 103.1,78.6 136.2,68.6 169.3,66.4 219.0,67.3 285.2,65.7 401.0,66.6 550.0,66.7" fill="none" stroke="#2c8a5f" stroke-width="2"/>
+<circle cx="70.0" cy="96.0" r="3" fill="#2c8a5f"/>
+<circle cx="103.1" cy="78.6" r="3" fill="#2c8a5f"/>
+<circle cx="136.2" cy="68.6" r="3" fill="#2c8a5f"/>
+<circle cx="169.3" cy="66.4" r="3" fill="#2c8a5f"/>
+<circle cx="219.0" cy="67.3" r="3" fill="#2c8a5f"/>
+<circle cx="285.2" cy="65.7" r="3" fill="#2c8a5f"/>
+<circle cx="401.0" cy="66.6" r="3" fill="#2c8a5f"/>
+<circle cx="550.0" cy="66.7" r="3" fill="#2c8a5f"/>
+<line x1="566" y1="94" x2="590" y2="94" stroke="#2c8a5f" stroke-width="2"/>
+<text x="596" y="98" font-size="11" fill="#374151">5 entries/day</text>
+</svg>
