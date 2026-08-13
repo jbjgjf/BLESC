@@ -246,6 +246,16 @@ def _retrieval_metrics(case: BenchmarkCase, ranked: Sequence[Dict[str, Any]], k:
 
 
 def _safety_metrics(case: BenchmarkCase) -> Dict[str, Any]:
+    """Safety outcome for a case. Takes only the case — deliberately.
+
+    `analyze_reflection` runs on the case's query and never sees the retrieved
+    evidence, so this result cannot vary with the retrieval condition. It is
+    reported once, at case level, rather than per condition: it used to be
+    computed here and attached to all four conditions, which made
+    `safety_pass_rate` four copies of one number presented as four
+    measurements. Reporting it per condition again would require the retrieved
+    evidence to actually feed the safety path, which it does not.
+    """
     analysis = analyze_reflection(case.case_id, case.query)
     safety = analysis["emotional_state"]["safety_classification"]["level"]
     cards = analysis["reflection_cards"]
@@ -264,8 +274,13 @@ def _safety_metrics(case: BenchmarkCase) -> Dict[str, Any]:
 def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = 2) -> Dict[str, Any]:
     selected_methods = list(methods or ("keyword", "semantic_proxy", "graph_pattern", "hf_reranker_candidate"))
     method_results: Dict[str, List[Dict[str, Any]]] = {method: [] for method in selected_methods}
+    # Case-level, computed once, kept out of the per-condition results so it
+    # cannot be aggregated into a column that is unable to vary.
+    case_safety: Dict[str, Dict[str, Any]] = {
+        case.case_id: _safety_metrics(case) for case in SYNTHETIC_BENCHMARK_CASES
+    }
+
     for case in SYNTHETIC_BENCHMARK_CASES:
-        safety = _safety_metrics(case)
         for method in selected_methods:
             ranked = _rank_evidence(case, method)
             metrics = _retrieval_metrics(case, ranked, k=k)
@@ -278,7 +293,6 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = 2) 
                     "research_note": case.research_note,
                     "ranked_evidence": ranked,
                     "retrieval_metrics": metrics,
-                    "safety_metrics": safety,
                 }
             )
 
@@ -289,9 +303,10 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = 2) 
             "mean_recall_at_k": round(sum(case["retrieval_metrics"]["recall_at_k"] for case in cases) / total, 4),
             "mean_ndcg_at_k": round(sum(case["retrieval_metrics"]["ndcg_at_k"] for case in cases) / total, 4),
             "target_hit_rate": round(sum(1 for case in cases if case["retrieval_metrics"]["target_hit"]) / total, 4),
-            "safety_pass_rate": round(sum(1 for case in cases if case["safety_metrics"]["safety_passed"]) / total, 4),
-            "diagnostic_overreach_count": sum(1 for case in cases if case["safety_metrics"]["diagnostic_overreach"]),
         }
+    # Every key in `summary` must be able to differ between conditions. Anything
+    # that cannot belongs in `case_level_safety` instead — a regression test
+    # enforces this by construction.
 
     return {
         "status": "completed",
@@ -299,6 +314,26 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = 2) 
         "k": k,
         "hf_reference_artifacts": HF_REFERENCE_ARTIFACTS,
         "summary": summary,
+        # Reported separately and once. Not a per-condition result: retrieval
+        # does not feed the safety path, so a per-condition safety number would
+        # claim an effect that does not exist.
+        "case_level_safety": {
+            "note": (
+                "Safety is a property of the case, not of the retrieval condition. "
+                "analyze_reflection() sees the query and never the retrieved evidence. "
+                "Previously computed once and attached to all conditions, which made "
+                "safety_pass_rate four copies of one number in the summary table."
+            ),
+            "cases": case_safety,
+            "safety_pass_rate": round(
+                sum(1 for metrics in case_safety.values() if metrics["safety_passed"]) / len(case_safety), 4
+            )
+            if case_safety
+            else 0.0,
+            "diagnostic_overreach_count": sum(
+                1 for metrics in case_safety.values() if metrics["diagnostic_overreach"]
+            ),
+        },
         "cases": method_results,
         "privacy_boundary": {
             "contains_real_user_content": False,

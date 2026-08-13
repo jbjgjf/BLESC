@@ -23,9 +23,19 @@ def test_hf_research_benchmark_has_reproducible_ablation_summary():
 
     summary = result["summary"]
     assert set(summary.keys()) == {"keyword", "semantic_proxy", "graph_pattern", "hf_reranker_candidate"}
+
+    # NOTE (#89): `>=` passes when the two conditions are equal, which is what
+    # they currently are — every metric is 1.0 for every condition. This
+    # assertion therefore demonstrates nothing about the reranker. Left in
+    # place rather than deleted so #89 has the exact line to replace with a
+    # separation assertion and a baseline ceiling.
     assert summary["hf_reranker_candidate"]["mean_recall_at_k"] >= summary["keyword"]["mean_recall_at_k"]
-    assert summary["hf_reranker_candidate"]["diagnostic_overreach_count"] == 0
-    assert summary["hf_reranker_candidate"]["safety_pass_rate"] == 1.0
+
+    # Safety moved out of the per-condition summary in #85: it is a property of
+    # the case, and reporting it per condition made one number look like four.
+    case_safety = result["case_level_safety"]
+    assert case_safety["diagnostic_overreach_count"] == 0
+    assert case_safety["safety_pass_rate"] == 1.0
 
 
 def test_hf_dataset_rows_are_synthetic_and_exportable():
