@@ -1,0 +1,462 @@
+{
+  "contract": "participant_temporal_graph_fixtures",
+  "version": 1,
+  "purpose": "Synthetic snapshot series for the #95 assembler. Two participants describing structurally identical seven-day histories, one in Japanese and one in English, so a language-specific defect cannot hide — the defect this work started from (#107) was exactly that shape: Japanese labels produced empty slugs, positional node ids, and a graph with no edges, while the English path was fine.",
+  "notes": [
+    "Synthetic. No real participant wrote any of this, and the `provenance` blocks are authored to exercise the curated/personal split, not to make a clinical claim.",
+    "`temporal_diff` is the stored `temporal_diff_json` verbatim, including two rows that are deliberately wrong: s-*-3 carries the stateless route handler's `no_previous_lookup` placeholder and s-*-4 claims `previous_snapshot` while holding arrays that disagree with the snapshots. The assembler must cross-check rather than consume, and must report both.",
+    "The day-7 snapshot uses a different node id for a concept already in the graph, resolvable only through the `aliases` table. Aliases are curator-declared; nothing here is inferred."
+  ],
+  "parity": {
+    "ja": "ja-001",
+    "en": "en-001",
+    "why": "Assembled event streams must be identical after mapping node ids. `test_language_parity` translates one into the other and compares.",
+    "node_map": {
+      "眠れない": "cannot_sleep",
+      "テスト前のプレッシャー": "exam_pressure",
+      "部活を休んだ": "skipped_club",
+      "先生の言葉": "teacher_words",
+      "先生の言葉_2": "words_from_teacher"
+    }
+  },
+  "participants": {
+    "ja-001": {
+      "language": "ja",
+      "aliases": { "不眠": "眠れない" },
+      "snapshots": [
+        {
+          "snapshot_id": "s-ja-1",
+          "day": "2026-08-01",
+          "entry_id": "e-ja-1",
+          "extraction_provider": "openai",
+          "extraction_model": "gpt-4o-mini",
+          "extractor_version": "extraction-v3",
+          "nodes": [
+            {
+              "id": "眠れない",
+              "label": "眠れない",
+              "category": "State",
+              "intensity": 0.7,
+              "confidence": 0.8,
+              "provenance": {
+                "matched": true,
+                "match_rule": "normalised_label",
+                "subgraph_id": "sleep_disruption",
+                "seed_id": "insomnia",
+                "source_refs": ["nice_ng134"]
+              }
+            },
+            {
+              "id": "テスト前のプレッシャー",
+              "label": "テスト前のプレッシャー",
+              "category": "Trigger",
+              "intensity": 0.8,
+              "confidence": 0.85,
+              "provenance": { "matched": false, "match_rule": null, "source_refs": [] }
+            }
+          ],
+          "relations": [
+            {
+              "source_id": "テスト前のプレッシャー",
+              "target_id": "眠れない",
+              "type": "causes",
+              "confidence": 0.5,
+              "provenance": {
+                "matched": true,
+                "endpoints_matched": true,
+                "subgraph_id": "sleep_disruption",
+                "source_refs": ["nice_ng134"],
+                "evidence_strength": "association",
+                "seed_relation_type": "causes",
+                "type_matches_seed": true
+              }
+            }
+          ],
+          "temporal_diff": {
+            "diff_basis": "first_snapshot_for_participant",
+            "relation_shift_summary": "first snapshot for this participant; no previous day to compare",
+            "added_nodes": [{ "id": "眠れない" }, { "id": "テスト前のプレッシャー" }],
+            "removed_nodes": [],
+            "added_relations": [
+              { "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes" }
+            ],
+            "removed_relations": [],
+            "changed_relations": []
+          }
+        },
+        {
+          "snapshot_id": "s-ja-2",
+          "day": "2026-08-02",
+          "entry_id": "e-ja-2",
+          "extraction_provider": "openai",
+          "extraction_model": "gpt-4o-mini",
+          "extractor_version": "extraction-v3",
+          "nodes": [
+            { "id": "眠れない", "label": "眠れない", "category": "State", "intensity": 0.72, "confidence": 0.81 },
+            { "id": "部活を休んだ", "label": "部活を休んだ", "category": "Behavior", "intensity": 0.5, "confidence": 0.7 }
+          ],
+          "relations": [
+            { "source_id": "眠れない", "target_id": "部活を休んだ", "type": "causes", "confidence": 0.7 }
+          ],
+          "temporal_diff": {
+            "diff_basis": "previous_snapshot",
+            "relation_shift_summary": "1 node(s) added, 1 removed, 1 relation(s) added, 1 removed, 0 changed",
+            "added_nodes": [{ "id": "部活を休んだ" }],
+            "removed_nodes": [{ "id": "テスト前のプレッシャー" }],
+            "added_relations": [
+              { "source_id": "眠れない", "target_id": "部活を休んだ", "type": "causes" }
+            ],
+            "removed_relations": [
+              { "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes" }
+            ],
+            "changed_relations": []
+          }
+        },
+        {
+          "snapshot_id": "s-ja-3",
+          "day": "2026-08-03",
+          "entry_id": "e-ja-3",
+          "extraction_provider": "openai",
+          "extraction_model": "gpt-4o-mini",
+          "extractor_version": "extraction-v3",
+          "nodes": [
+            { "id": "眠れない", "label": "眠れない", "category": "State", "intensity": 0.7, "confidence": 0.8 },
+            { "id": "テスト前のプレッシャー", "label": "テスト前のプレッシャー", "category": "Trigger", "intensity": 0.78, "confidence": 0.8 }
+          ],
+          "relations": [
+            { "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes", "confidence": 0.9 }
+          ],
+          "temporal_diff": {
+            "diff_basis": "no_previous_lookup",
+            "relation_shift_summary": "not computed at the route handler; no history available here",
+            "added_nodes": [{ "id": "眠れない" }, { "id": "テスト前のプレッシャー" }],
+            "removed_nodes": [],
+            "added_relations": [
+              { "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes" }
+            ],
+            "removed_relations": [],
+            "changed_relations": []
+          }
+        },
+        {
+          "snapshot_id": "s-ja-4",
+          "day": "2026-08-04",
+          "entry_id": "e-ja-4",
+          "extraction_provider": "openai",
+          "extraction_model": "gpt-4o-mini",
+          "extractor_version": "extraction-v3",
+          "nodes": [
+            { "id": "眠れない", "label": "眠れない", "category": "State", "intensity": 0.7, "confidence": 0.8 },
+            { "id": "テスト前のプレッシャー", "label": "テスト前のプレッシャー", "category": "Trigger", "intensity": 0.78, "confidence": 0.8 }
+          ],
+          "relations": [
+            { "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes", "confidence": 0.7 }
+          ],
+          "temporal_diff": {
+            "diff_basis": "previous_snapshot",
+            "relation_shift_summary": "2 node(s) added, 0 removed, 1 relation(s) added, 0 removed, 0 changed",
+            "added_nodes": [{ "id": "眠れない" }, { "id": "テスト前のプレッシャー" }],
+            "removed_nodes": [],
+            "added_relations": [
+              { "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes" }
+            ],
+            "removed_relations": [],
+            "changed_relations": []
+          }
+        },
+        {
+          "snapshot_id": "s-ja-5",
+          "day": "2026-08-05",
+          "entry_id": "e-ja-5",
+          "extraction_provider": "openai",
+          "extraction_model": "gpt-4o-mini",
+          "extractor_version": "extraction-v3",
+          "nodes": [
+            { "id": "眠れない", "label": "眠れない", "category": "State", "intensity": 0.7, "confidence": 0.8 },
+            { "id": "テスト前のプレッシャー", "label": "テスト前のプレッシャー", "category": "Trigger", "intensity": 0.78, "confidence": 0.8 },
+            { "id": "先生の言葉", "label": "先生の言葉", "category": "Trigger", "intensity": 0.6, "confidence": 0.6 },
+            { "id": "先生の言葉_2", "label": "先生の言葉", "category": "Protective", "intensity": 0.4, "confidence": 0.55 }
+          ],
+          "relations": [
+            { "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "co_occurs", "confidence": 0.7 }
+          ]
+        },
+        {
+          "snapshot_id": "s-ja-6",
+          "day": "2026-08-06",
+          "entry_id": "e-ja-6",
+          "extraction_provider": "openai",
+          "extraction_model": "gpt-4o-mini",
+          "extractor_version": "extraction-v3",
+          "nodes": [
+            { "id": "眠れない", "label": "眠れない", "category": "Behavior", "intensity": 0.65, "confidence": 0.78 },
+            { "id": "テスト前のプレッシャー", "label": "テスト前のプレッシャー", "category": "Trigger", "intensity": 0.75, "confidence": 0.8 },
+            { "id": "部活を休んだ", "label": "部活を休んだ", "category": "Behavior", "intensity": 0.55, "confidence": 0.7 }
+          ],
+          "relations": [
+            { "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes", "confidence": 0.6 },
+            { "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "buffers", "confidence": 0.55 },
+            { "source_id": "眠れない", "target_id": "部活を休んだ", "type": "buffers", "confidence": 0.6 }
+          ],
+          "temporal_diff": {
+            "diff_basis": "legacy_id_scheme_boundary",
+            "relation_shift_summary": "previous snapshot predates label-derived node identity; not comparable",
+            "added_nodes": [],
+            "removed_nodes": [],
+            "added_relations": [],
+            "removed_relations": [],
+            "changed_relations": []
+          }
+        },
+        {
+          "snapshot_id": "s-ja-7",
+          "day": "2026-08-07",
+          "entry_id": "e-ja-7",
+          "extraction_provider": "openai",
+          "extraction_model": "gpt-4o-mini",
+          "extractor_version": "extraction-v3",
+          "nodes": [
+            { "id": "不眠", "label": "不眠", "category": "State", "intensity": 0.6, "confidence": 0.75 }
+          ],
+          "relations": [],
+          "temporal_diff": {
+            "diff_basis": "previous_snapshot",
+            "relation_shift_summary": "1 node(s) added, 3 removed, 0 relation(s) added, 3 removed, 0 changed",
+            "added_nodes": [{ "id": "不眠" }],
+            "removed_nodes": [
+              { "id": "眠れない" },
+              { "id": "テスト前のプレッシャー" },
+              { "id": "部活を休んだ" }
+            ],
+            "added_relations": [],
+            "removed_relations": [
+              { "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "causes" },
+              { "source_id": "テスト前のプレッシャー", "target_id": "眠れない", "type": "buffers" },
+              { "source_id": "眠れない", "target_id": "部活を休んだ", "type": "buffers" }
+            ],
+            "changed_relations": []
+          }
+        }
+      ]
+    },
+    "en-001": {
+      "language": "en",
+      "aliases": { "insomnia": "cannot_sleep" },
+      "snapshots": [
+        {
+          "snapshot_id": "s-en-1",
+          "day": "2026-08-01",
+          "entry_id": "e-en-1",
+          "extraction_provider": "openai",
+          "extraction_model": "gpt-4o-mini",
+          "extractor_version": "extraction-v3",
+          "nodes": [
+            {
+              "id": "cannot_sleep",
+              "label": "Cannot sleep",
+              "category": "State",
+              "intensity": 0.7,
+              "confidence": 0.8,
+              "provenance": {
+                "matched": true,
+                "match_rule": "normalised_label",
+                "subgraph_id": "sleep_disruption",
+                "seed_id": "insomnia",
+                "source_refs": ["nice_ng134"]
+              }
+            },
+            {
+              "id": "exam_pressure",
+              "label": "Exam pressure",
+              "category": "Trigger",
+              "intensity": 0.8,
+              "confidence": 0.85,
+              "provenance": { "matched": false, "match_rule": null, "source_refs": [] }
+            }
+          ],
+          "relations": [
+            {
+              "source_id": "exam_pressure",
+              "target_id": "cannot_sleep",
+              "type": "causes",
+              "confidence": 0.5,
+              "provenance": {
+                "matched": true,
+                "endpoints_matched": true,
+                "subgraph_id": "sleep_disruption",
+                "source_refs": ["nice_ng134"],
+                "evidence_strength": "association",
+                "seed_relation_type": "causes",
+                "type_matches_seed": true
+              }
+            }
+          ],
+          "temporal_diff": {
+            "diff_basis": "first_snapshot_for_participant",
+            "relation_shift_summary": "first snapshot for this participant; no previous day to compare",
+            "added_nodes": [{ "id": "cannot_sleep" }, { "id": "exam_pressure" }],
+            "removed_nodes": [],
+            "added_relations": [
+              { "source_id": "exam_pressure", "target_id": "cannot_sleep", "type": "causes" }
+            ],
+            "removed_relations": [],
+            "changed_relations": []
+          }
+        },
+        {
+          "snapshot_id": "s-en-2",
+          "day": "2026-08-02",
+          "entry_id": "e-en-2",
+          "extraction_provider": "openai",
+          "extraction_model": "gpt-4o-mini",
+          "extractor_version": "extraction-v3",
+          "nodes": [
+            { "id": "cannot_sleep", "label": "Cannot sleep", "category": "State", "intensity": 0.72, "confidence": 0.81 },
+            { "id": "skipped_club", "label": "Skipped club", "category": "Behavior", "intensity": 0.5, "confidence": 0.7 }
+          ],
+          "relations": [
+            { "source_id": "cannot_sleep", "target_id": "skipped_club", "type": "causes", "confidence": 0.7 }
+          ],
+          "temporal_diff": {
+            "diff_basis": "previous_snapshot",
+            "relation_shift_summary": "1 node(s) added, 1 removed, 1 relation(s) added, 1 removed, 0 changed",
+            "added_nodes": [{ "id": "skipped_club" }],
+            "removed_nodes": [{ "id": "exam_pressure" }],
+            "added_relations": [
+              { "source_id": "cannot_sleep", "target_id": "skipped_club", "type": "causes" }
+            ],
+            "removed_relations": [
+              { "source_id": "exam_pressure", "target_id": "cannot_sleep", "type": "causes" }
+            ],
+            "changed_relations": []
+          }
+        },
+        {
+          "snapshot_id": "s-en-3",
+          "day": "2026-08-03",
+          "entry_id": "e-en-3",
+          "extraction_provider": "openai",
+          "extraction_model": "gpt-4o-mini",
+          "extractor_version": "extraction-v3",
+          "nodes": [
+            { "id": "cannot_sleep", "label": "Cannot sleep", "category": "State", "intensity": 0.7, "confidence": 0.8 },
+            { "id": "exam_pressure", "label": "Exam pressure", "category": "Trigger", "intensity": 0.78, "confidence": 0.8 }
+          ],
+          "relations": [
+            { "source_id": "exam_pressure", "target_id": "cannot_sleep", "type": "causes", "confidence": 0.9 }
+          ],
+          "temporal_diff": {
+            "diff_basis": "no_previous_lookup",
+            "relation_shift_summary": "not computed at the route handler; no history available here",
+            "added_nodes": [{ "id": "cannot_sleep" }, { "id": "exam_pressure" }],
+            "removed_nodes": [],
+            "added_relations": [
+              { "source_id": "exam_pressure", "target_id": "cannot_sleep", "type": "causes" }
+            ],
+            "removed_relations": [],
+            "changed_relations": []
+          }
+        },
+        {
+          "snapshot_id": "s-en-4",
+          "day": "2026-08-04",
+          "entry_id": "e-en-4",
+          "extraction_provider": "openai",
+          "extraction_model": "gpt-4o-mini",
+          "extractor_version": "extraction-v3",
+          "nodes": [
+            { "id": "cannot_sleep", "label": "Cannot sleep", "category": "State", "intensity": 0.7, "confidence": 0.8 },
+            { "id": "exam_pressure", "label": "Exam pressure", "category": "Trigger", "intensity": 0.78, "confidence": 0.8 }
+          ],
+          "relations": [
+            { "source_id": "exam_pressure", "target_id": "cannot_sleep", "type": "causes", "confidence": 0.7 }
+          ],
+          "temporal_diff": {
+            "diff_basis": "previous_snapshot",
+            "relation_shift_summary": "2 node(s) added, 0 removed, 1 relation(s) added, 0 removed, 0 changed",
+            "added_nodes": [{ "id": "cannot_sleep" }, { "id": "exam_pressure" }],
+            "removed_nodes": [],
+            "added_relations": [
+              { "source_id": "exam_pressure", "target_id": "cannot_sleep", "type": "causes" }
+            ],
+            "removed_relations": [],
+            "changed_relations": []
+          }
+        },
+        {
+          "snapshot_id": "s-en-5",
+          "day": "2026-08-05",
+          "entry_id": "e-en-5",
+          "extraction_provider": "openai",
+          "extraction_model": "gpt-4o-mini",
+          "extractor_version": "extraction-v3",
+          "nodes": [
+            { "id": "cannot_sleep", "label": "Cannot sleep", "category": "State", "intensity": 0.7, "confidence": 0.8 },
+            { "id": "exam_pressure", "label": "Exam pressure", "category": "Trigger", "intensity": 0.78, "confidence": 0.8 },
+            { "id": "teacher_words", "label": "Teacher's words", "category": "Trigger", "intensity": 0.6, "confidence": 0.6 },
+            { "id": "words_from_teacher", "label": "Teacher's words", "category": "Protective", "intensity": 0.4, "confidence": 0.55 }
+          ],
+          "relations": [
+            { "source_id": "exam_pressure", "target_id": "cannot_sleep", "type": "co_occurs", "confidence": 0.7 }
+          ]
+        },
+        {
+          "snapshot_id": "s-en-6",
+          "day": "2026-08-06",
+          "entry_id": "e-en-6",
+          "extraction_provider": "openai",
+          "extraction_model": "gpt-4o-mini",
+          "extractor_version": "extraction-v3",
+          "nodes": [
+            { "id": "cannot_sleep", "label": "Cannot sleep", "category": "Behavior", "intensity": 0.65, "confidence": 0.78 },
+            { "id": "exam_pressure", "label": "Exam pressure", "category": "Trigger", "intensity": 0.75, "confidence": 0.8 },
+            { "id": "skipped_club", "label": "Skipped club", "category": "Behavior", "intensity": 0.55, "confidence": 0.7 }
+          ],
+          "relations": [
+            { "source_id": "exam_pressure", "target_id": "cannot_sleep", "type": "causes", "confidence": 0.6 },
+            { "source_id": "exam_pressure", "target_id": "cannot_sleep", "type": "buffers", "confidence": 0.55 },
+            { "source_id": "cannot_sleep", "target_id": "skipped_club", "type": "buffers", "confidence": 0.6 }
+          ],
+          "temporal_diff": {
+            "diff_basis": "legacy_id_scheme_boundary",
+            "relation_shift_summary": "previous snapshot predates label-derived node identity; not comparable",
+            "added_nodes": [],
+            "removed_nodes": [],
+            "added_relations": [],
+            "removed_relations": [],
+            "changed_relations": []
+          }
+        },
+        {
+          "snapshot_id": "s-en-7",
+          "day": "2026-08-07",
+          "entry_id": "e-en-7",
+          "extraction_provider": "openai",
+          "extraction_model": "gpt-4o-mini",
+          "extractor_version": "extraction-v3",
+          "nodes": [
+            { "id": "insomnia", "label": "Insomnia", "category": "State", "intensity": 0.6, "confidence": 0.75 }
+          ],
+          "relations": [],
+          "temporal_diff": {
+            "diff_basis": "previous_snapshot",
+            "relation_shift_summary": "1 node(s) added, 3 removed, 0 relation(s) added, 3 removed, 0 changed",
+            "added_nodes": [{ "id": "insomnia" }],
+            "removed_nodes": [
+              { "id": "cannot_sleep" },
+              { "id": "exam_pressure" },
+              { "id": "skipped_club" }
+            ],
+            "added_relations": [],
+            "removed_relations": [
+              { "source_id": "exam_pressure", "target_id": "cannot_sleep", "type": "causes" },
+              { "source_id": "exam_pressure", "target_id": "cannot_sleep", "type": "buffers" },
+              { "source_id": "cannot_sleep", "target_id": "skipped_club", "type": "buffers" }
+            ],
+            "changed_relations": []
+          }
+        }
+      ]
+    }
+  }
+}
