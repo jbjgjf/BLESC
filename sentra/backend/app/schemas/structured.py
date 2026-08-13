@@ -104,3 +104,9 @@ class EntrySubmissionResponse(SQLModel):
     anomaly_result: Optional[AnomalyResult] = None
     explanation: Optional[HybridExplanation] = None
     research_artifacts: Dict[str, Any] = Field(default_factory=dict)
+    # Outcome of mirroring this submission into Supabase (see
+    # `services/supabase_writer.py`). Carries `status` plus the ids of the rows
+    # that were created, so the caller can refer to the Supabase copy rather
+    # than to the local integer ids. Empty when the endpoint is used without a
+    # Supabase identity, which is the local-development case.
+    supabase_sync: Dict[str, Any] = Field(default_factory=dict)

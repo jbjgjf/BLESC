@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import Body, Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -63,6 +63,7 @@ from .services.research_pipeline import (
     update_eval_example_review_status,
 )
 from .services.static_knowledge import get_or_create_blesc_vector_store, static_knowledge_config
+from .services import supabase_writer
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,11 @@ class EntryCreateRequest(BaseModel):
     recall_text: Optional[str] = None
     telemetry: Optional[Dict[str, Any]] = None
     consent: Optional[Dict[str, Any]] = None
+    # No identity fields. The Supabase owner and participant are derived from
+    # the caller's access token in `supabase_writer.resolve_identity`, never
+    # read from the body — the sync writes with the service-role key, which
+    # bypasses RLS, so a body-supplied id would let any caller write under any
+    # participant.
 
 
 class ExportCreateRequest(BaseModel):
@@ -398,6 +404,7 @@ def create_entry(
     payload: Optional[EntryCreateRequest] = Body(default=None),
     text: Optional[str] = None,
     observation_type: str = "daily",
+    authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ):
     journal_text = (payload.journal_text if payload else None) or (payload.text if payload else None) or text or ""
@@ -691,9 +698,8 @@ def create_entry(
         logger.exception("[submit] explanation resolution failed; using empty explanation")
         explanation = _empty_explanation(user_id, entry.created_at, graph_snapshot)
 
-    # ── 9. Serialize response ───────────────────────────────────────────────
-    logger.info("[submit] returning EntrySubmissionResponse for entry id=%s", entry.id)
-    return EntrySubmissionResponse(
+    # ── 9. Assemble response ────────────────────────────────────────────────
+    response = EntrySubmissionResponse(
         entry=entry,
         extraction=_to_extraction_response(extraction),
         graph_snapshot=graph_snapshot,
@@ -707,6 +713,44 @@ def create_entry(
             "personalization": personalization_profile,
         },
     )
+
+    # ── 10. Mirror into Supabase ────────────────────────────────────────────
+    # Everything above is committed to SQLite, which is the compute cache for
+    # the baseline. This is the write that makes the submission durable and
+    # visible to the UI. It is deliberately non-fatal: a submission that
+    # computed correctly must not become a 500 because a remote write failed,
+    # and the caller can see what happened in `supabase_sync`.
+    #
+    # The identity is derived from the access token, not from the request body.
+    # Nothing the caller can set decides which participant these rows land
+    # under; an unauthenticated call computes and returns but writes nothing.
+    try:
+        identity = supabase_writer.resolve_identity(authorization, participant_code)
+        response.supabase_sync = supabase_writer.write_entry_result(
+            owner_user_id=identity["owner_user_id"],
+            participant_id=identity["participant_id"],
+            computed=response,
+            observation_type=observation_type,
+            journal_text=journal_text,
+            recall_text=recall_text,
+            telemetry=(payload.telemetry if payload else None) or {},
+            consent=consent_snapshot,
+        )
+    except supabase_writer.NotAuthorized as exc:
+        # Not a 4xx: the submission itself is valid and its result is returned.
+        # Only the mirror is withheld, because there is no verified owner to
+        # write it under. Local development with no Supabase lands here.
+        logger.info("[submit] supabase sync skipped: %s", exc)
+        response.supabase_sync = {"status": "skipped", "reason": str(exc), "warnings": []}
+    except Exception:
+        logger.warning("[submit] supabase sync raised unexpectedly; entry remains in SQLite", exc_info=True)
+        response.supabase_sync = {"status": "failed", "reason": "unexpected error", "warnings": []}
+    logger.info(
+        "[submit] returning EntrySubmissionResponse for entry id=%s supabase=%s",
+        entry.id,
+        response.supabase_sync.get("status"),
+    )
+    return response
 
 
 @app.get("/api/entries", response_model=List[Entry])

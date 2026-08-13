@@ -15,6 +15,9 @@ httpx
 openai
 python-dotenv
 python-multipart
+# Server-side Supabase writes (app/services/supabase_writer.py). Optional at
+# runtime: without it, and without SUPABASE_URL, submissions stay in SQLite.
+supabase>=2.0.0
 pyyaml
 pyarrow
 pytest
