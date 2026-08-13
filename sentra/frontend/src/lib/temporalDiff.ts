@@ -79,6 +79,27 @@ function confidenceOf(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 1.0;
 }
 
+/** Positional ids from the pre-`canonicalNodeId` era: `node_1`, `node_2`, … */
+const LEGACY_POSITIONAL_ID = /^node_\d+$/;
+
+/**
+ * Whether a snapshot predates label-derived node identity.
+ *
+ * Before the extraction fix, a Japanese label produced an empty slug and fell
+ * through to `node_${index}` — an id determined by array position. `node_1` on
+ * Monday and `node_1` on Tuesday are unrelated observations that happened to be
+ * listed first, so diffing across that boundary compares nothing.
+ *
+ * Without this check the first entry after deploy would report every node as
+ * removed and every node as added, and that spurious churn would render in the
+ * student's temporal view as a dramatic change on a day nothing happened.
+ */
+export function usesLegacyPositionalIds(snapshot: SnapshotShape): boolean {
+  const nodes = snapshot.nodes ?? [];
+  if (nodes.length === 0) return false;
+  return nodes.some((node) => LEGACY_POSITIONAL_ID.test(String(node?.id ?? "")));
+}
+
 /**
  * `previous` is the participant's most recent snapshot strictly before this
  * one. Pass `EMPTY_SNAPSHOT` for a genuine first entry — and only then. Passing

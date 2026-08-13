@@ -8,6 +8,7 @@ import {
   CONFIDENCE_CHANGE_THRESHOLD,
   buildTemporalDiff,
   relationShiftSummary,
+  usesLegacyPositionalIds,
 } from "../src/lib/temporalDiff.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -92,5 +93,45 @@ describe("temporal diff — properties the production writer violated", () => {
   it("does not crash on malformed input", () => {
     const diff = buildTemporalDiff({ nodes: [{}], relations: [{}] }, { nodes: [], relations: [] });
     assert.ok(Array.isArray(diff.added_relations));
+  });
+});
+
+describe("the id-scheme boundary", () => {
+  it("recognises a snapshot written under positional ids", () => {
+    assert.ok(usesLegacyPositionalIds({
+      nodes: [{ id: "node_1", category: "State", label: "眠れない", intensity: 0.7, confidence: 0.8 }],
+      relations: [],
+    }));
+  });
+
+  it("does not mistake label-derived ids for legacy ones", () => {
+    assert.equal(usesLegacyPositionalIds({
+      nodes: [
+        { id: "眠れない", category: "State", label: "眠れない", intensity: 0.7, confidence: 0.8 },
+        { id: "exam_pressure", category: "Trigger", label: "Exam pressure", intensity: 0.8, confidence: 0.85 },
+      ],
+      relations: [],
+    }), false);
+  });
+
+  it("does not fire on an empty previous snapshot", () => {
+    // A first entry must stay a first entry, not become a legacy boundary.
+    assert.equal(usesLegacyPositionalIds({ nodes: [], relations: [] }), false);
+  });
+
+  it("shows what suppressing it avoids", () => {
+    // Without the boundary check this is what a student would see on the first
+    // day after deploy: their entire graph replaced, on a day nothing changed.
+    const legacy = {
+      nodes: [{ id: "node_1", category: "State", label: "眠れない", intensity: 0.7, confidence: 0.8 }],
+      relations: [],
+    };
+    const current = {
+      nodes: [{ id: "眠れない", category: "State", label: "眠れない", intensity: 0.7, confidence: 0.8 }],
+      relations: [],
+    };
+    const naive = buildTemporalDiff(current, legacy);
+    assert.equal(naive.added_nodes.length, 1);
+    assert.equal(naive.removed_nodes.length, 1, "the same observation, counted as both");
   });
 });

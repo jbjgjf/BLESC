@@ -26,7 +26,7 @@ import {
 import { supabase } from "@/lib/supabase/client";
 import { generateCounselorSummary, type CounselorTimelineEvent } from "@/lib/counselor-summary";
 import { buildAuditTrails, type ModelRunRecord } from "@/lib/audit-trail";
-import { EMPTY_SNAPSHOT, buildTemporalDiff, relationShiftSummary, type SnapshotShape } from "@/lib/temporalDiff";
+import { EMPTY_SNAPSHOT, buildTemporalDiff, relationShiftSummary, usesLegacyPositionalIds, type SnapshotShape } from "@/lib/temporalDiff";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
@@ -818,23 +818,33 @@ export class ApiClient {
           }
         : EMPTY_SNAPSHOT;
       const hadPrevious = Boolean(previousSnapshot.data);
+      // The node id scheme changed when label-derived identity landed. Diffing
+      // a new snapshot against a positional-id one compares `node_1` to a real
+      // concept, so every node reads as both removed and added. Suppress the
+      // comparison for that one boundary rather than showing a student a
+      // dramatic change on a day nothing happened.
+      const legacyBoundary = hadPrevious && usesLegacyPositionalIds(previous);
       const recomputedDiff = buildTemporalDiff(
         {
           nodes: (computed.graph_snapshot.nodes_json ?? []) as SnapshotShape["nodes"],
           relations: (computed.graph_snapshot.relations_json ?? []) as SnapshotShape["relations"],
         },
-        previous,
+        legacyBoundary ? EMPTY_SNAPSHOT : previous,
       );
       const existingDiff = (computed.graph_snapshot.temporal_diff_json ?? {}) as unknown as Record<string, unknown>;
       const temporalDiff = {
         ...existingDiff,
         ...recomputedDiff,
-        relation_shift_summary: relationShiftSummary(recomputedDiff, hadPrevious),
+        relation_shift_summary: legacyBoundary
+          ? "previous snapshot predates label-derived node identity; not comparable"
+          : relationShiftSummary(recomputedDiff, hadPrevious),
         diff_basis: lookupFailed
           ? "lookup_failed"
-          : hadPrevious
-            ? "previous_snapshot"
-            : "first_snapshot_for_participant",
+          : legacyBoundary
+            ? "legacy_id_scheme_boundary"
+            : hadPrevious
+              ? "previous_snapshot"
+              : "first_snapshot_for_participant",
       };
 
       const graphInsert = await supabase
