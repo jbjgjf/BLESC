@@ -224,8 +224,24 @@ def observations_from_vectors(
     observation. It is not a zero. This is the single most important line in the
     module and the defect it avoids is live in
     `research_pipeline.recompute_longitudinal_features`.
+
+    **One day is one observation.** `DailyFeatureAggregation` has no uniqueness
+    constraint on `(user_id, day)` and `InferenceOrchestrator.process_day`
+    inserts unconditionally, so a participant who submits twice on Tuesday has
+    two rows for Tuesday. Each row is a full recomputation over *every*
+    extraction that existed for the day at the time it ran, so the rows are not
+    parts to be combined — they are successive answers to the same question, and
+    the last is the one computed over the most entries. Later rows therefore
+    supersede earlier ones for the same day.
+
+    Left uncollapsed, a duplicated day was counted twice in every window's
+    variance, anchored two rolling points on one date, and — because `_lag1_pairs`
+    keeps one value per day in its lookup while iterating every observation —
+    contributed two different x-values against one y. The result depended on
+    which duplicate the query happened to return last. The day is the unit here
+    for the same reason it is in `temporal.assemble`.
     """
-    series: List[Observation] = []
+    latest: Dict[date, float] = {}
     for day, vector in sorted(rows, key=lambda item: item[0]):
         if feature not in vector:
             continue
@@ -233,10 +249,23 @@ def observations_from_vectors(
         if raw is None or isinstance(raw, bool):
             continue
         try:
-            series.append(Observation(day=day, value=float(raw)))
+            latest[day] = float(raw)
         except (TypeError, ValueError):
             continue
-    return tuple(series)
+    return tuple(Observation(day=day, value=latest[day]) for day in sorted(latest))
+
+
+def days_with_multiple_rows(rows: Sequence[Tuple[date, Mapping[str, Any]]]) -> Tuple[date, ...]:
+    """Days carrying more than one feature-vector row.
+
+    Reported rather than silently collapsed. A day with three aggregations is a
+    day the orchestrator ran three times, which is worth seeing even though the
+    analysis is unaffected by it.
+    """
+    counts: Dict[date, int] = {}
+    for day, _vector in rows:
+        counts[day] = counts.get(day, 0) + 1
+    return tuple(sorted(day for day, count in counts.items() if count > 1))
 
 
 # ── statistics (pure, and deliberately hand-written) ──────────────────────────
@@ -260,14 +289,29 @@ def pearson(xs: Sequence[float], ys: Sequence[float], variance_floor: float) -> 
     would report "no persistence" and returning 1 "perfect persistence"; both are
     inventions, and a student whose ratio sat at exactly the same value all
     fortnight is a case this will meet.
+
+    The floor is applied to EACH side's variance, which is what
+    `DynamicsParameters.variance_floor` promises. Applying it to the Pearson
+    denominator instead — `sqrt(Sxx * Syy)`, as this did — compared a variance
+    against a quantity that is not one. The denominator multiplies the two
+    sides together, so a normal spread on one side lifts a flat other side over
+    the guard: with `var(x) = 3e-13`, far below the 1e-9 floor, and `var(y)` a
+    routine 0.04, the denominator lands near 4e-7 and the correlation is
+    computed on x's floating-point noise. It also grows with the pair count, so
+    the threshold meant something different for a long series than a short one.
     """
     if len(xs) != len(ys) or len(xs) < 2:
+        return None
+    variance_x, variance_y = sample_variance(xs), sample_variance(ys)
+    if variance_x is None or variance_y is None:
+        return None
+    if variance_x <= variance_floor or variance_y <= variance_floor:
         return None
     mean_x, mean_y = fmean(xs), fmean(ys)
     dx = [x - mean_x for x in xs]
     dy = [y - mean_y for y in ys]
     denominator = (sum(value * value for value in dx) * sum(value * value for value in dy)) ** 0.5
-    if denominator <= variance_floor:
+    if denominator <= 0:
         return None
     return sum(a * b for a, b in zip(dx, dy)) / denominator
 
@@ -454,12 +498,19 @@ def _windows(series: Sequence[Observation], params: DynamicsParameters) -> List[
     Anchored on observed days rather than on every calendar day in the span: a
     window ending on a day the participant did not write adds no information and
     would make the rolling series longer without making it more informed.
+
+    A sliding left edge rather than a scan of the whole series per anchor. Anchor
+    days increase and so does each window's start, so the edge only ever moves
+    forward. The scan was O(n²) and ran 200 times per trend inside the surrogate
+    null, which is where it stopped being a micro-optimisation.
     """
     result: List[Tuple[date, List[Observation]]] = []
-    for anchor in series:
+    left = 0
+    for right, anchor in enumerate(series):
         start = anchor.day - timedelta(days=params.window_days - 1)
-        window = [point for point in series if start <= point.day <= anchor.day]
-        result.append((anchor.day, window))
+        while series[left].day < start:
+            left += 1
+        result.append((anchor.day, list(series[left : right + 1])))
     return result
 
 
@@ -604,25 +655,33 @@ def _rolling(
 def _surrogate_taus(
     series: Sequence[Observation],
     params: DynamicsParameters,
-    use_variance: bool,
-) -> List[float]:
-    """Taus from this series' own values, permuted across its own days."""
+) -> Tuple[List[float], List[float]]:
+    """Taus from this series' own values, permuted across its own days.
+
+    Returns `(variance_taus, lag1_taus)` from ONE set of permutations. Each
+    permutation already yields both rolling series — `_rolling` computes them
+    together — so running the loop once per trend did the same 200 permutations
+    twice and discarded half of each result. The seed is fixed, so permutation k
+    was identical across the two runs; taking both taus from it produces exactly
+    the numbers the separate runs did, for half the work.
+    """
     values = [point.value for point in series]
     days = [point.day for point in series]
     rng = random.Random(SURROGATE_SEED)
-    taus: List[float] = []
+    variance_taus: List[float] = []
+    lag1_taus: List[float] = []
     for _ in range(SURROGATE_TRIALS):
         shuffled = list(values)
         rng.shuffle(shuffled)
         permuted = [Observation(day, value) for day, value in zip(days, shuffled)]
         variance_points, lag1_points = _rolling(permuted, params)
-        points = variance_points if use_variance else lag1_points
-        if len(points) < params.min_trend_points:
-            continue
-        tau = kendall_tau_against_time([point.value for point in points])
-        if tau is not None:
-            taus.append(tau)
-    return sorted(taus)
+        for points, taus in ((variance_points, variance_taus), (lag1_points, lag1_taus)):
+            if len(points) < params.min_trend_points:
+                continue
+            tau = kendall_tau_against_time([point.value for point in points])
+            if tau is not None:
+                taus.append(tau)
+    return sorted(variance_taus), sorted(lag1_taus)
 
 
 def _percentile(ordered: Sequence[float], fraction: float) -> float:
@@ -634,10 +693,9 @@ def _percentile(ordered: Sequence[float], fraction: float) -> float:
 
 def _measure_trend(
     points: Sequence[RollingPoint],
-    series: Sequence[Observation],
+    surrogates: Sequence[float],
     params: DynamicsParameters,
     label: str,
-    use_variance: bool,
 ) -> Measure:
     if len(points) < params.min_trend_points:
         return Measure(
@@ -649,7 +707,6 @@ def _measure_trend(
     if value is None:
         return Measure(status=MeasureStatus.NOT_COMPUTABLE, support=len(points), reason="tau undefined")
 
-    surrogates = _surrogate_taus(series, params, use_variance)
     calibration = (
         Calibration(
             trials=len(surrogates),
@@ -682,6 +739,17 @@ def analyse_feature(
     spacing = describe_spacing(series)
     rolling_variance, rolling_lag1 = _rolling(series, params)
 
+    # The surrogate null is by far the most expensive thing here — 200 full
+    # rolling pipelines. Building it for a series that cannot support a trend
+    # anyway would be paying for a calibration nothing will read.
+    needs_null = (
+        len(rolling_variance) >= params.min_trend_points
+        or len(rolling_lag1) >= params.min_trend_points
+    )
+    variance_surrogates, lag1_surrogates = (
+        _surrogate_taus(series, params) if needs_null else ([], [])
+    )
+
     return FeatureDynamics(
         feature=feature,
         rationale=SELECTED_FEATURES.get(feature, "not in the documented selection"),
@@ -693,10 +761,10 @@ def analyse_feature(
         lag1_autocorrelation=_measure_lag1(series, params),
         successive_observation_correlation=_measure_successive(series, params),
         variance_trend=_measure_trend(
-            rolling_variance, series, params, "rolling-variance", use_variance=True
+            rolling_variance, variance_surrogates, params, "rolling-variance"
         ),
         autocorrelation_trend=_measure_trend(
-            rolling_lag1, series, params, "rolling-autocorrelation", use_variance=False
+            rolling_lag1, lag1_surrogates, params, "rolling-autocorrelation"
         ),
     )
 
@@ -707,6 +775,9 @@ class ParticipantDynamics:
     features: Tuple[FeatureDynamics, ...]
     parameters: DynamicsParameters
     days_observed: int
+    #: Days that arrived with more than one feature-vector row. The later row
+    #: was used; this says so rather than leaving the collapse invisible.
+    days_with_multiple_rows: Tuple[date, ...] = ()
     version: str = DYNAMICS_VERSION
 
     def as_dict(self) -> Dict[str, Any]:
@@ -721,6 +792,7 @@ class ParticipantDynamics:
                 "comparison against anyone else."
             ),
             "days_observed": self.days_observed,
+            "days_with_multiple_rows": [day.isoformat() for day in self.days_with_multiple_rows],
             "parameters": self.parameters.as_dict(),
             "feature_selection": {
                 "selected": dict(sorted(SELECTED_FEATURES.items())),
@@ -749,6 +821,7 @@ def analyse_participant(
         ),
         parameters=params,
         days_observed=len({day for day, _ in rows}),
+        days_with_multiple_rows=days_with_multiple_rows(rows),
     )
 
 

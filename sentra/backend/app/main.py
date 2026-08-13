@@ -96,6 +96,12 @@ AUDIO_CONTENT_TYPES = {
     "video/webm",
 }
 
+#: Longest window `/api/research/dynamics` will analyse in one request. A year
+#: is already far more history than any participant in this study has, and the
+#: surrogate calibration is O(window) work repeated 200 times per trend per
+#: feature — so this is the difference between a slow read and an unbounded one.
+MAX_DYNAMICS_DAYS = 366
+
 #: Snapshots assembled when resolving one edge against a participant's own
 #: history. Matches the default on `/api/research/temporal-graph`, so the two
 #: endpoints answer from the same window rather than from two opinions about it.
@@ -1059,6 +1065,16 @@ def get_participant_dynamics(
     """
     if days < 1:
         raise HTTPException(status_code=400, detail="days must be at least 1")
+    if days > MAX_DYNAMICS_DAYS:
+        # Rejected rather than clamped: an analysis silently run over a shorter
+        # window than the caller asked for is a different analysis wearing the
+        # caller's label. The bound exists because the surrogate null runs 200
+        # rolling pipelines per trend per feature, so the work grows with the
+        # window and an unbounded `days` is an unbounded synchronous request.
+        raise HTTPException(
+            status_code=400,
+            detail=f"days must be at most {MAX_DYNAMICS_DAYS}",
+        )
 
     window_start = date.today() - timedelta(days=days - 1)
     rows = session.exec(
