@@ -5,6 +5,7 @@ from ..analytics.graph_features import build_graph_summary
 # Same contents as the sets that used to be declared here; schema.py adds the
 # provenance and scope notes that a bare set could not carry. Behaviour is
 # unchanged — this is an import, not a vocabulary change.
+from .provenance import annotate
 from .schema import VALID_CATEGORIES, VALID_RELATIONS
 
 logger = logging.getLogger(__name__)
@@ -152,6 +153,13 @@ def validate_extraction(data: Dict[str, Any]) -> Dict[str, Any]:
                 }
             )
 
+    # Annotate against the curated seed graphs. This adds a `provenance` key to
+    # each node and relation and changes nothing else — categories, relation
+    # types and labels stay exactly as the model produced them. Using the seed
+    # graph to correct the extraction would make the graph condition score
+    # against its own answer key.
+    provenance_summary = annotate(clean_nodes, clean_relations)
+
     graph_summary = build_graph_summary(clean_nodes, clean_relations)
 
     # Denominator is what survived validation, so the rate answers "what share
@@ -171,5 +179,8 @@ def validate_extraction(data: Dict[str, Any]) -> Dict[str, Any]:
         "safety_flags": data.get("safety_flags", []),
         "coercion_count": len(coercions),
         "coerced_fields": coercions,
+        # Same style as the coercion fields above, and for the same reason: a
+        # number that says how much of this graph is the model's own invention.
+        "provenance": provenance_summary,
         "coercion_rate": round(len(coercions) / element_count, 6) if element_count else 0.0,
     }

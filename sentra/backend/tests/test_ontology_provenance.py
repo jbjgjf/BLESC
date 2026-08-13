@@ -180,3 +180,93 @@ class TestSleepSubgraph:
 
         with pytest.raises(seed_graph.SeedGraphError):
             seed_graph._load_file(bad)
+
+
+class TestGeneratedGraphAnnotation:
+    """#80 — the curated subgraphs were inert until the extraction path saw them."""
+
+    @staticmethod
+    def _extract():
+        return validate_extraction({
+            "nodes": [
+                {"node_id": "sleep_deprivation", "label": "睡眠不足", "class": "Trigger"},
+                {"node_id": "x1", "label": "認知機能の低下", "class": "State"},
+                {"node_id": "weird", "label": "テスト前の胃痛", "class": "State"},
+            ],
+            "relations": [
+                {"source_id": "sleep_deprivation", "target_id": "x1", "type": "causes"},
+                {"source_id": "sleep_deprivation", "target_id": "weird", "type": "causes"},
+                {"source_id": "x1", "target_id": "sleep_deprivation", "type": "escalates"},
+            ],
+        })
+
+    def test_curated_elements_are_annotated(self):
+        result = self._extract()
+        by_id = {node["id"]: node for node in result["nodes"]}
+        assert by_id["sleep_deprivation"]["provenance"]["matched"] is True
+        assert by_id["sleep_deprivation"]["provenance"]["source_refs"]
+
+    def test_a_node_matches_on_its_japanese_label_not_only_its_id(self):
+        result = self._extract()
+        by_id = {node["id"]: node for node in result["nodes"]}
+        # id "x1" means nothing; the label 認知機能の低下 is what matches.
+        assert by_id["x1"]["provenance"]["matched"] is True
+        assert by_id["x1"]["provenance"]["match_rule"] == "normalised_label"
+
+    def test_unmatched_is_stated_never_absent(self):
+        # An absent key reads as "not checked", which is a different claim
+        # from "checked and not found".
+        result = self._extract()
+        by_id = {node["id"]: node for node in result["nodes"]}
+        assert by_id["weird"]["provenance"]["matched"] is False
+        assert by_id["weird"]["provenance"]["source_refs"] == []
+        for relation in result["relations"]:
+            assert "matched" in relation["provenance"]
+
+    def test_matching_annotates_and_never_rewrites(self):
+        # The trap the issue names: correcting the model with the seed graph
+        # would make the graph condition score against its own answer key.
+        result = self._extract()
+        assert [rel["type"] for rel in result["relations"]] == ["causes", "causes", "escalates"]
+        by_id = {node["id"]: node for node in result["nodes"]}
+        assert by_id["weird"]["category"] == "State"
+        assert by_id["sleep_deprivation"]["category"] == "Trigger"
+
+    def test_disagreement_with_the_seed_is_recorded_not_corrected(self):
+        # x1 -> sleep_deprivation is `escalates` from the model; the curated
+        # edge is `causes`. The model's type stands and the mismatch is a flag.
+        result = self._extract()
+        escalates = [rel for rel in result["relations"] if rel["type"] == "escalates"][0]
+        assert escalates["type"] == "escalates"
+        if escalates["provenance"]["matched"]:
+            assert escalates["provenance"]["type_matches_seed"] is False
+
+    def test_an_edge_between_two_curated_nodes_that_is_not_curated_is_counted(self):
+        # Neither error nor success — the model asserting a relation the
+        # curation does not carry is the interesting set.
+        result = self._extract()
+        assert result["provenance"]["edges_between_curated_nodes_not_in_seed"] >= 0
+
+    def test_coverage_is_reported_in_the_coercion_style(self):
+        result = self._extract()
+        coverage = result["provenance"]
+        for key in ("nodes_with_source", "edges_with_source", "edges_by_strength",
+                    "unsourced_rate", "matched_seed_subgraphs", "match_rules"):
+            assert key in coverage
+
+    def test_the_matching_rule_is_stated(self):
+        # An unstated matching rule makes the coverage number unfalsifiable.
+        assert self._extract()["provenance"]["match_rules"] == ["exact_id", "normalised_label"]
+
+    def test_a_graph_with_nothing_curated_reports_zero_not_an_error(self):
+        result = validate_extraction({
+            "nodes": [{"node_id": "n", "label": "まったく無関係", "class": "State"}],
+            "relations": [],
+        })
+        assert result["provenance"]["nodes_with_source"] == 0.0
+        assert result["provenance"]["matched_seed_subgraphs"] == []
+
+    def test_coercion_behaviour_is_untouched(self):
+        result = validate_extraction({"nodes": [{"node_id": "a", "class": "Vibe"}]})
+        assert result["coercion_count"] == 1
+        assert result["nodes"][0]["category"] == "State"

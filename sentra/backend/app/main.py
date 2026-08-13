@@ -280,6 +280,11 @@ def _persist_graph_snapshot(
     previous_nodes = previous.nodes_json if previous else []
     previous_relations = previous.relations_json if previous else []
     graph_summary = cleaned.get("graph_summary") or build_graph_summary(cleaned.get("nodes", []), cleaned.get("relations", []))
+    # Provenance travels into the stored snapshot so coverage is inspectable
+    # after the fact. nodes_json/relations_json already carry the per-element
+    # annotation; this is the summary alongside it.
+    if isinstance(graph_summary, dict) and cleaned.get("provenance"):
+        graph_summary = {**graph_summary, "provenance": cleaned["provenance"]}
     diff = build_temporal_graph_diff(cleaned.get("nodes", []), cleaned.get("relations", []), previous_nodes, previous_relations)
     temporal_diff = summarize_temporal_diff(diff, graph_summary, previous.graph_summary_json if previous else None)
 
