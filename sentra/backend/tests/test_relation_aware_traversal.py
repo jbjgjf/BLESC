@@ -834,21 +834,31 @@ def _hops(motifs: Sequence[Sequence[str]], anchors: Sequence[str], depth: int = 
     return hop_distances(build_concept_graph(motifs), anchors, depth)
 
 
-def test_the_current_case_set_cannot_separate_directed_from_undirected():
-    """Documents the reason for the exemption, and fails if it stops being true.
+def test_the_case_set_separates_directed_from_undirected():
+    """The inverse of what this test asserted before #88.
 
-    If someone adds a discriminating case to `benchmark_cases.py`, this test goes
-    red and the exemption in `test_benchmark_separation.py` should be removed in
-    the same change.
+    It used to assert that NO case discriminated, and carried the instruction
+    that adding one should turn it red and take the `relation_aware` exemption
+    in `test_benchmark_separation.py` with it. #88 added them, so it now asserts
+    the property it was waiting for: at least one case where undirected
+    traversal reaches something directed traversal does not.
+
+    Kept as a floor rather than a count. The exact number moves whenever a case
+    is added; what must not come back is zero, because at zero the ablation is
+    reporting two arms that are one.
     """
     from app.services.benchmark_cases import BENCHMARK_CASES
 
-    for case in BENCHMARK_CASES:
-        motifs = [evidence.graph_motifs for evidence in case.evidence]
-        assert set(_reach(motifs, case.query_anchors)) == set(_hops(motifs, case.query_anchors)), (
-            f"{case.case_id} now discriminates: remove the relation_aware exemption in "
-            "test_benchmark_separation.py"
-        )
+    discriminating = [
+        case.case_id
+        for case in BENCHMARK_CASES
+        if set(_reach([e.graph_motifs for e in case.evidence], case.query_anchors))
+        != set(_hops([e.graph_motifs for e in case.evidence], case.query_anchors))
+    ]
+    assert discriminating, (
+        "no case separates directed from undirected traversal. The relation_aware "
+        "exemption in test_benchmark_separation.py has to go back if this is true"
+    )
 
 
 def test_a_distractor_reachable_only_against_an_arrow_separates_the_conditions():

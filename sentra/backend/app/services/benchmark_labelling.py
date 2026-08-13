@@ -32,15 +32,21 @@ hand-maintained list is the kind of thing that silently stops being true.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, Iterable, List, Sequence, Set, Tuple
 
 from .benchmark_cases import BENCHMARK_CASES, BenchmarkCase
+from .benchmark_cases._splits import SPLITS
 from .benchmark_retrieval import parse_motifs
 
 #: Bumped whenever the labelled set changes in a way that makes older results
 #: incomparable. #98 consumes a pinned version, never "latest".
-DATASET_VERSION = "0.2.0-dev"
+#:
+#: 0.3.0-dev: #88 grew the set from 6 cases to 82, added the
+#: `low_frequency_high_severity` and `heavy_decoy` families, and moved splits
+#: onto an authored partition of the curated edges. Results from 0.2.0 are not
+#: comparable to results from this version — different cases, different splits.
+DATASET_VERSION = "0.3.0-dev"
 
 DATASET_METADATA = {
     "name": "blesc-synthetic-retrieval-benchmark",
@@ -50,10 +56,14 @@ DATASET_METADATA = {
     "reviewer": None,  # set when a named human has signed off on the labels
     "privacy_class": "synthetic_non_user_data",
     "contains_real_user_content": False,
-    "labelling_status": "author-drafted; human labelling not yet performed (#88)",
+    "labelling_status": "drafted, not human-labelled; human labelling not yet performed (#88)",
 }
 
-SPLITS = ("train", "validation", "test")
+#: How many cases both raters label so an agreement coefficient can be computed.
+#: #88 asks for 20. Every case could be double-labelled instead, and that would
+#: be better — 20 is what the issue budgets for, and the number is named here so
+#: a smaller sample is a visible deviation rather than a quiet one.
+AGREEMENT_SAMPLE_SIZE = 20
 
 
 # ---------------------------------------------------------------------------
@@ -280,52 +290,272 @@ class SplitAssignment:
 
 
 def assign_splits(cases: Sequence[BenchmarkCase] = BENCHMARK_CASES) -> SplitAssignment:
-    """Deterministic group-level split, for #98 to consume.
+    """The authored split, checked against the grouping derived from content.
 
-    Groups are ordered by a hash of their members rather than by size or by
-    authoring order, so growing the set does not reshuffle existing assignments
-    in a way that quietly moves a case from test to train between runs.
+    Splits used to be assigned here, by rotating hash-ordered leakage groups
+    through train/validation/test. At 6 cases that was the only option. At 82 it
+    produced 8 / 48 / 24 with one group of 44 spanning two splits, because cases
+    reuse the ontology's edges and grouping is transitive — see
+    `benchmark_cases/_splits.py` for the whole argument.
+
+    So the split is now authored, by partitioning the curated edges themselves,
+    and this function's job changed from deciding to CHECKING. The grouping is
+    still derived from case content and still has the last word: a group that
+    spans two splits is a leak, and it is reported as one rather than resolved
+    by moving a case, because whichever case moved would be a decision made to
+    silence a check.
     """
+    assignment = {case.case_id: case.split for case in cases}
     groups = leakage_groups(cases)
-    ordered = sorted(groups, key=lambda members: hashlib.sha256("|".join(members).encode()).hexdigest())
-
-    assignment: Dict[str, str] = {}
-    # test first: the held-out set is the one that must exist. If there is only
-    # enough material for one split, it should be the one #98 is forbidden to
-    # train on.
-    for index, members in enumerate(ordered):
-        split = SPLITS[(index + 2) % len(SPLITS)]
-        for case_id in members:
-            assignment[case_id] = split
 
     warnings: List[str] = []
+    for members in groups:
+        spans = sorted({assignment[case_id] for case_id in members})
+        if len(spans) > 1:
+            warnings.append(
+                f"LEAKAGE: {len(members)} cases share content but are split across "
+                f"{spans} — {', '.join(sorted(members)[:4])}"
+                f"{' ...' if len(members) > 4 else ''}. A translation or a shared "
+                "chain is about to cross the train/test boundary."
+            )
     for split in SPLITS:
         if not any(value == split for value in assignment.values()):
-            warnings.append(
-                f"split {split!r} is empty: {len(ordered)} leakage group(s) cannot fill "
-                f"{len(SPLITS)} splits. #88 raises the case count; until then this "
-                f"dataset cannot support train/validation/test separation."
-            )
-    if len(ordered) < len(SPLITS):
-        warnings.append(
-            f"only {len(ordered)} independent group(s) exist across {len(cases)} cases — "
-            "the effective sample size for any held-out claim is the group count, not "
-            "the case count."
-        )
+            warnings.append(f"split {split!r} is empty")
+
+    # Reported on every run, not only when it is small. The count that limits a
+    # held-out claim is the number of independent groups, and at 82 cases over
+    # an ontology of ~40 edges it is an order of magnitude below the case count.
+    # Growing the case set does not raise it; growing the ontology does.
+    warnings.append(
+        f"effective sample size is {len(groups)} independent leakage group(s), not "
+        f"{len(cases)} cases. Report the group count for any held-out claim."
+    )
     return SplitAssignment(assignment=assignment, groups=groups, warnings=warnings)
 
 
-def labelling_status() -> Dict[str, object]:
-    """Reported alongside benchmark results so the gap is visible in the output."""
-    split = assign_splits()
+# ---------------------------------------------------------------------------
+# Handing cases to raters, and taking labels back
+# ---------------------------------------------------------------------------
+
+
+def agreement_sample(
+    size: int = AGREEMENT_SAMPLE_SIZE,
+    cases: Sequence[BenchmarkCase] = BENCHMARK_CASES,
+) -> List[BenchmarkCase]:
+    """The cases both raters label, stratified by family and language.
+
+    Drawn deterministically so the sample is fixed before any labelling starts —
+    choosing which cases to double-label after seeing the labels would let the
+    agreement figure be selected rather than measured.
+
+    Stratified because agreement is not one number: raters agree easily on the
+    `vocab_disjoint` cases, where one day obviously answers the query, and least
+    on `two_hop_chain`, where the judgement is whether a link in a chain counts
+    as evidence. A sample drawn at random would report whichever mix it happened
+    to draw.
+    """
+    buckets: Dict[Tuple[str, str], List[BenchmarkCase]] = {}
+    for case in cases:
+        buckets.setdefault((case.family, case.lang), []).append(case)
+    for bucket in buckets.values():
+        bucket.sort(key=lambda case: _shuffle_key("agreement", case.case_id))
+
+    chosen: List[BenchmarkCase] = []
+    keys = sorted(buckets)
+    index = 0
+    while len(chosen) < size and any(buckets[key] for key in keys):
+        bucket = buckets[keys[index % len(keys)]]
+        if bucket:
+            chosen.append(bucket.pop(0))
+        index += 1
+    return sorted(chosen, key=lambda case: case.case_id)
+
+
+def labelling_file(rater_id: str, cases: Sequence[BenchmarkCase] = BENCHMARK_CASES) -> List[Dict[str, object]]:
+    """What one rater is sent: their cases, with an empty slot to fill in.
+
+    `selected_evidence_ids` comes back as the rater's answer. It is the only
+    field they write, and the file carries no key to check it against — see
+    `labelling_task`, which strips everything that would amount to one.
+    """
+    return [
+        {
+            "rater_id": rater_id,
+            "dataset_version": DATASET_VERSION,
+            **labelling_task(case),
+            "selected_evidence_ids": [],
+        }
+        for case in cases
+    ]
+
+
+def read_rater_labels(rows: Iterable[Dict[str, object]]) -> RaterLabels:
+    """A returned labelling file, as `RaterLabels`.
+
+    A case with an empty `selected_evidence_ids` is treated as UNLABELLED, not
+    as "this rater found nothing". The two are different claims and only one of
+    them is evidence — a rater who worked through a case and concluded nothing
+    helps records that by writing `["none"]`, which is the one sentinel this
+    format has.
+    """
+    rows = list(rows)
+    rater_ids = {str(row.get("rater_id", "")) for row in rows}
+    if len(rater_ids) != 1:
+        raise ValueError(f"a labelling file holds exactly one rater, found {sorted(rater_ids)}")
+
+    selections: Dict[str, Set[str]] = {}
+    for row in rows:
+        picks = list(row.get("selected_evidence_ids") or [])
+        if not picks:
+            continue
+        selections[str(row["case_id"])] = set() if picks == ["none"] else {str(pick) for pick in picks}
+    return RaterLabels(rater_id=rater_ids.pop(), selections=selections)
+
+
+@dataclass(frozen=True)
+class Adjudication:
+    """What the two raters settled on, and what they could not."""
+
+    agreed: Dict[str, Set[str]]
+    disputed: Dict[str, Tuple[Set[str], Set[str]]]
+    resolved: Dict[str, Set[str]]
+
+    @property
+    def usable(self) -> Dict[str, Set[str]]:
+        return {**self.agreed, **self.resolved}
+
+
+def adjudicate(
+    first: RaterLabels,
+    second: RaterLabels,
+    resolutions: Dict[str, Set[str]] | None = None,
+) -> Adjudication:
+    """Merge two raters, keeping unresolved disagreement unresolved.
+
+    The pre-registration excludes a case where "the two raters disagree and no
+    adjudication was recorded". This is where that exclusion is produced: a
+    disputed case stays in `disputed` and out of `usable` until someone records
+    a decision in `resolutions`. Taking the union or the intersection instead
+    would manufacture an answer key out of a disagreement and there would be
+    nothing left to exclude.
+    """
+    resolutions = dict(resolutions or {})
+    agreed: Dict[str, Set[str]] = {}
+    disputed: Dict[str, Tuple[Set[str], Set[str]]] = {}
+
+    for case_id in sorted(set(first.selections) & set(second.selections)):
+        picks_a, picks_b = first.selections[case_id], second.selections[case_id]
+        if picks_a == picks_b:
+            agreed[case_id] = set(picks_a)
+        else:
+            disputed[case_id] = (set(picks_a), set(picks_b))
+
+    # A case only one rater saw is that rater's label. Most of the set is
+    # single-labelled by design; only `agreement_sample()` is double-labelled.
+    for source, other in ((first, second), (second, first)):
+        for case_id, picks in source.selections.items():
+            if case_id not in other.selections:
+                agreed[case_id] = set(picks)
+
+    resolved = {case_id: set(picks) for case_id, picks in resolutions.items() if case_id in disputed}
+    return Adjudication(agreed=agreed, disputed=disputed, resolved=resolved)
+
+
+def apply_human_labels(
+    adjudication: Adjudication,
+    cases: Sequence[BenchmarkCase] = BENCHMARK_CASES,
+) -> List[BenchmarkCase]:
+    """Cases with human `expected_evidence_ids`, and `labelled_by="human"`.
+
+    The one place a drafted key becomes an answer key. A case the raters did not
+    reach keeps its drafted ids and its `labelled_by="draft"`, so it stays
+    excluded from the confirmatory analysis rather than being silently promoted
+    by the fact that a labelling pass happened.
+
+    Selections are ordered by the case's own evidence order rather than by
+    whatever the rater typed, so two raters who picked the same days in a
+    different order produce the same case.
+    """
+    usable = adjudication.usable
+    out: List[BenchmarkCase] = []
+    for case in cases:
+        if case.case_id not in usable:
+            out.append(case)
+            continue
+        picks = usable[case.case_id]
+        known = {day.evidence_id for day in case.evidence}
+        unknown = picks - known
+        if unknown:
+            raise ValueError(
+                f"{case.case_id}: rater selected {sorted(unknown)}, which is not among its candidates"
+            )
+        out.append(
+            replace(
+                case,
+                expected_evidence_ids=tuple(
+                    day.evidence_id for day in case.evidence if day.evidence_id in picks
+                ),
+                labelled_by="human",
+            )
+        )
+    return out
+
+
+def labelling_status(
+    agreement: AgreementResult | None = None,
+    cases: Sequence[BenchmarkCase] = BENCHMARK_CASES,
+) -> Dict[str, object]:
+    """Reported alongside benchmark results so the gap is visible in the output.
+
+    `agreement` is passed in rather than computed, because computing it requires
+    two rater files and there are none. A `None` here means "not measured", and
+    it is reported as that word — never as 0, which would read as "the raters
+    disagreed completely".
+    """
+    split = assign_splits(cases)
+    human = [case for case in cases if case.labelled_by == "human"]
+    sample = agreement_sample(cases=cases)
+
+    warnings = list(split.warnings)
+    if len(human) < len(cases):
+        warnings.append(
+            f"{len(human)}/{len(cases)} cases carry a human label. Every retrieval "
+            "number from this dataset is PRELIMINARY until that reaches the case "
+            "count — the rest are drafted keys (#88)."
+        )
+    if agreement is None:
+        warnings.append(
+            "inter-rater agreement has not been measured: no rater files exist. "
+            "The pre-registration makes an unmeasured coefficient grounds for "
+            "making no claim from the retrieval numbers at all."
+        )
+    elif not agreement.meets_threshold:
+        warnings.append(
+            f"inter-rater agreement is {agreement.kappa if agreement.is_defined else 'undefined'}, "
+            "below the 0.67 convention fixed in advance. The labels are not yet "
+            "reliable enough to interpret a retrieval result."
+        )
+
     return {
         "dataset": dict(DATASET_METADATA),
-        "case_count": len(BENCHMARK_CASES),
+        "case_count": len(cases),
         "target_case_count": "60-100 (#88)",
-        "human_labelled_count": len([case for case in BENCHMARK_CASES if case.labelled_by == "human"]),
-        "inter_rater_agreement": None,
+        "composition": {
+            family: len([case for case in cases if case.family == family])
+            for family in sorted({case.family for case in cases})
+        },
+        "by_language": {
+            lang: len([case for case in cases if case.lang == lang])
+            for lang in sorted({case.lang for case in cases})
+        },
+        "human_labelled_count": len(human),
+        "drafted_not_labelled_count": len([case for case in cases if case.labelled_by == "draft"]),
+        "inter_rater_agreement": agreement.kappa if agreement and agreement.is_defined else None,
+        "inter_rater_agreement_measured": agreement is not None,
+        "agreement_sample": [case.case_id for case in sample],
+        "agreement_sample_size": len(sample),
         "leakage_groups": split.groups,
         "independent_group_count": len(split.groups),
         "splits": {name: split.cases_in(name) for name in SPLITS},
-        "warnings": split.warnings,
+        "warnings": warnings,
     }
