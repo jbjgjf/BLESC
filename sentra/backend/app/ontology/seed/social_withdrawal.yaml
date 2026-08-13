@@ -24,6 +24,18 @@ subgraph_id: social_withdrawal
 #    it is recorded here rather than fixed, because widening the vocabulary is
 #    a separate change needing its own argument (#75).
 #
+# 3. THREE EDGES ARE SHARED WITH sleep.yaml, ON PURPOSE.
+#    `depressed_mood -> social_withdrawal`, `school_absence ->
+#    social_withdrawal` and `trusted_adult_contact -> depressed_mood` appear in
+#    both files. They are stated
+#    identically — same type, same strength, same source_refs — so a merge that
+#    de-duplicates on (source, target, type) keeps one copy and loses nothing.
+#    They are ONE piece of support appearing twice, not two independent ones,
+#    and a merge that concatenated would double-count a single reading of
+#    NG134. Nothing merges the subgraphs today; this is written down, and
+#    pinned by a test, so that whoever writes that step is not the one who has
+#    to notice.
+#
 # Curation rule, unchanged from sleep.yaml: no edge goes in because it sounds
 # right. Where the cited material reports an association, evidence_strength is
 # `association` even when the relation type is `causes`. Where nothing can be
@@ -92,12 +104,6 @@ nodes:
     label_ja: いじめ・友人関係のトラブル
     label_en: bullying or trouble with friends
     source_refs: [who_adolescent_mh, mext_seitoshido]
-
-  - id: academic_difficulty
-    category: Event
-    label_ja: 学業のつまずき
-    label_en: difficulty keeping up at school
-    source_refs: [mext_seitoshido]
 
   - id: school_absence
     category: Event
@@ -169,8 +175,15 @@ edges:
       NG134 includes withdrawal among the features clinicians assess in
       depression. That makes withdrawal a FEATURE OF the condition as much as a
       consequence of it — the direction is a modelling choice the guideline does
-      not make. Same caveat as the equivalent edge in sleep.yaml, and it is the
-      same claim, so the two files must not be read as independent evidence.
+      not make.
+
+      SHARED CLAIM. sleep.yaml carries this same edge from the same reading of
+      NG134. It is stated identically in both files — same type, same strength,
+      same source_refs — so a merge that de-duplicates on
+      (source, target, type) loses nothing and never has to choose between two
+      versions. The two files are ONE piece of support, not two, and a merge
+      that concatenated instead of de-duplicating would double-count it.
+      `test_shared_claims_are_stated_identically` is what keeps that safe.
 
   - source: shame_about_returning
     target: social_withdrawal
@@ -238,16 +251,6 @@ edges:
       citation. The citation records what was consulted, not what was
       established.
 
-  - source: social_withdrawal
-    target: peer_friendship
-    type: avoids
-    evidence_strength: expert_judgement
-    source_refs: [expert_judgement]
-    scope_note: >-
-      Not sourced. Included because a decline picture built only from adult
-      contact would miss the resource adolescents actually lose first, and its
-      absence would be filled by a generated graph anyway.
-
   - source: trusted_adult_contact
     target: depressed_mood
     type: buffers
@@ -256,8 +259,11 @@ edges:
     scope_note: >-
       mhGAP and 生徒指導提要 both describe routing a young person to a trusted
       adult or professional. Both are about PROCESS — neither quantifies an
-      effect on mood. The weakest kind of support in this file, and identical to
-      the claim made in sleep.yaml.
+      effect on mood. The weakest kind of support in this file.
+
+      SHARED CLAIM, the third of them: sleep.yaml carries this edge with the
+      same type, strength and source_refs, so it counts once through a
+      de-duplicating merge.
 
   - source: peer_friendship
     target: loneliness
@@ -292,26 +298,18 @@ edges:
       because only the ordering is defensible.
 
   # --- school non-attendance ----------------------------------------------
-  - source: academic_difficulty
-    target: school_absence
-    type: precedes
-    evidence_strength: expert_judgement
-    source_refs: [expert_judgement]
-    scope_note: >-
-      Not sourced as a causal claim. 生徒指導提要 describes the school's role
-      when a student struggles; it does not model why. Typed `precedes` so the
-      file does not assert a direction it cannot support.
-
   - source: school_absence
     target: social_withdrawal
     type: co_occurs
     evidence_strength: expert_judgement
     source_refs: [expert_judgement]
     scope_note: >-
-      Undirected, and deliberately the same orientation as the equivalent edge
-      in sleep.yaml so the two files do not contradict each other. Both are
-      things a school observes; neither this file nor its sources establish
-      which comes first.
+      Undirected. Both are things a school observes; neither this file nor its
+      sources establish which comes first.
+
+      SHARED CLAIM, like the depressed_mood edge above: sleep.yaml carries it
+      with the same orientation, type, strength and source_refs, so it survives
+      a de-duplicating merge unchanged and counts once.
 
   - source: school_absence
     target: futoko

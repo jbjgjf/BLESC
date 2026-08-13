@@ -226,19 +226,35 @@ class TestSocialWithdrawalSubgraph:
         protective = {n.id for n in withdrawal.nodes.values() if n.category == "Protective"}
         assert len(protective) >= 3
 
-        touching_protective = [
-            edge for edge in withdrawal.edges
-            if edge.source in protective or edge.target in protective
-        ]
-        assert len(touching_protective) >= 6
+        # No decorative protective nodes — one that participates in no edge
+        # would pad the category without connecting anything.
+        for node_id in protective:
+            assert [e for e in withdrawal.edges if node_id in (e.source, e.target)], node_id
 
-        # The decline is encoded as a pair per resource: `buffers` while it
-        # holds, `avoids` for the disengagement. A resource carrying only the
-        # buffers half cannot express decline at all.
-        buffered = {e.source for e in withdrawal.edges if e.type == "buffers"}
-        disengaged = {e.target for e in withdrawal.edges if e.type == "avoids"}
-        assert buffered & protective
-        assert disengaged & protective
+        # The decline is a pair on one resource: `buffers` while it holds,
+        # `avoids` for the disengagement. A file where no single resource
+        # carries both halves cannot express decline at all — it would only
+        # have resources that help and, separately, resources that are dropped.
+        buffers_out = {e.source for e in withdrawal.edges if e.type == "buffers"}
+        avoids_in = {e.target for e in withdrawal.edges if e.type == "avoids"}
+        assert protective & buffers_out & avoids_in
+
+    def test_shared_claims_are_stated_identically(self, withdrawal):
+        # Two edges are carried by sleep.yaml as well. They are one reading of
+        # NG134 appearing twice, not two independent supports — so they must
+        # agree exactly, and a merge that de-duplicates on (source, target,
+        # type) can then drop a copy without choosing between versions. If they
+        # ever diverge, that merge silently picks a winner.
+        sleep = load_seed_subgraphs()["sleep_deprivation"]
+        here = {(e.source, e.target, e.type): e for e in withdrawal.edges}
+        there = {(e.source, e.target, e.type): e for e in sleep.edges}
+
+        shared = set(here) & set(there)
+        assert shared, "expected the withdrawal edges sleep.yaml also carries"
+
+        for key in shared:
+            assert here[key].evidence_strength is there[key].evidence_strength, key
+            assert sorted(here[key].source_refs) == sorted(there[key].source_refs), key
 
     def test_withdrawal_reaches_a_protective_resource(self, withdrawal):
         # The benchmark case walks from Behavior:withdrawal to the support the
