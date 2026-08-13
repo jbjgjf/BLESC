@@ -98,12 +98,19 @@ Create local env files manually. Do not commit them.
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_publishable_or_anon_key
 NEXT_PUBLIC_API_URL=http://localhost:8000/api
+
+# Server-side only: used by src/app/api/entries/ to write a submission.
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=
 ```
 
 Notes:
 
 - `NEXT_PUBLIC_*` values are exposed to the browser.
-- Never put a Supabase service role key in the frontend.
+- Never expose a Supabase service role key to the browser: it bypasses RLS.
+  `SUPABASE_SERVICE_ROLE_KEY` is read only inside route handlers
+  (`src/lib/server/supabaseWriter.ts`) and must never gain a `NEXT_PUBLIC_`
+  prefix or be imported into a client component.
 - If `NEXT_PUBLIC_API_URL` is absent in production, the frontend may fall back to
   Next.js `/api` routes.
 
@@ -124,6 +131,13 @@ BLESC_STATIC_KNOWLEDGE_MAX_RESULTS=5
 DATABASE_URL=sqlite:///./sentra.db
 CORS_ALLOW_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 USE_MOCK_LLM=false
+
+# Supabase sync. With SUPABASE_URL set, each submission is computed against
+# SQLite and then written to Supabase, which is what the UI reads. Unset, the
+# submission stays local and the response reports supabase_sync.status
+# = "skipped". See app/services/supabase_writer.py.
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
 ```
 
 Optional research tuning variables:

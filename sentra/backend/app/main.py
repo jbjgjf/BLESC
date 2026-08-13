@@ -54,6 +54,7 @@ from .services.research_pipeline import (
     update_eval_example_review_status,
 )
 from .services.static_knowledge import get_or_create_blesc_vector_store, static_knowledge_config
+from .services import supabase_writer
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,12 @@ class EntryCreateRequest(BaseModel):
     recall_text: Optional[str] = None
     telemetry: Optional[Dict[str, Any]] = None
     consent: Optional[Dict[str, Any]] = None
+    # Supabase identity for the row this submission belongs to. Both come from
+    # the caller (`owner_user_id` is the Supabase Auth user id, `participant_id`
+    # the participants row). Absent, the submission still computes and persists
+    # locally — it just isn't mirrored.
+    owner_user_id: Optional[str] = None
+    participant_id: Optional[str] = None
 
 
 class ExportCreateRequest(BaseModel):
@@ -389,6 +396,8 @@ def create_entry(
     payload: Optional[EntryCreateRequest] = Body(default=None),
     text: Optional[str] = None,
     observation_type: str = "daily",
+    owner_user_id: Optional[str] = None,
+    participant_id: Optional[str] = None,
     session: Session = Depends(get_session),
 ):
     journal_text = (payload.journal_text if payload else None) or (payload.text if payload else None) or text or ""
@@ -682,9 +691,8 @@ def create_entry(
         logger.exception("[submit] explanation resolution failed; using empty explanation")
         explanation = _empty_explanation(user_id, entry.created_at, graph_snapshot)
 
-    # ── 9. Serialize response ───────────────────────────────────────────────
-    logger.info("[submit] returning EntrySubmissionResponse for entry id=%s", entry.id)
-    return EntrySubmissionResponse(
+    # ── 9. Assemble response ────────────────────────────────────────────────
+    response = EntrySubmissionResponse(
         entry=entry,
         extraction=_to_extraction_response(extraction),
         graph_snapshot=graph_snapshot,
@@ -698,6 +706,35 @@ def create_entry(
             "personalization": personalization_profile,
         },
     )
+
+    # ── 10. Mirror into Supabase ────────────────────────────────────────────
+    # Everything above is committed to SQLite, which is the compute cache for
+    # the baseline. This is the write that makes the submission durable and
+    # visible to the UI. It is deliberately non-fatal: a submission that
+    # computed correctly must not become a 500 because a remote write failed,
+    # and the caller can see what happened in `supabase_sync`.
+    supabase_owner = (payload.owner_user_id if payload else None) or owner_user_id
+    supabase_participant = (payload.participant_id if payload else None) or participant_id
+    try:
+        response.supabase_sync = supabase_writer.write_entry_result(
+            owner_user_id=supabase_owner,
+            participant_id=supabase_participant,
+            computed=response,
+            observation_type=observation_type,
+            journal_text=journal_text,
+            recall_text=recall_text,
+            telemetry=(payload.telemetry if payload else None) or {},
+            consent=consent_snapshot,
+        )
+    except Exception:
+        logger.warning("[submit] supabase sync raised unexpectedly; entry remains in SQLite", exc_info=True)
+        response.supabase_sync = {"status": "failed", "reason": "unexpected error", "warnings": []}
+    logger.info(
+        "[submit] returning EntrySubmissionResponse for entry id=%s supabase=%s",
+        entry.id,
+        response.supabase_sync.get("status"),
+    )
+    return response
 
 
 @app.get("/api/entries", response_model=List[Entry])

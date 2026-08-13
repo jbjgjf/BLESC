@@ -333,6 +333,22 @@ export interface EntrySubmissionResponse {
     } | null;
     pipeline_version?: string;
   };
+  /**
+   * What the backend wrote to Supabase for this submission (#2). `written`
+   * carries the row ids; `skipped` means no Supabase was configured, which is
+   * the local-development path; `failed` means the entry computed but is not
+   * in Supabase and so will not appear in any subsequent read. `warnings` name
+   * the research mirrors that did not land.
+   */
+  supabase_sync?: {
+    status: "written" | "skipped" | "failed";
+    entry_id?: string;
+    graph_snapshot_id?: string | null;
+    insight_id?: string | null;
+    entry_session_id?: string | null;
+    reason?: string;
+    warnings?: string[];
+  };
 }
 
 export type GraphSnapshotResponse = GraphSnapshot;

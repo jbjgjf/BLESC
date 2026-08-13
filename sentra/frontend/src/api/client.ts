@@ -26,7 +26,6 @@ import {
 import { supabase } from "@/lib/supabase/client";
 import { generateCounselorSummary, type CounselorTimelineEvent } from "@/lib/counselor-summary";
 import { buildAuditTrails, type ModelRunRecord } from "@/lib/audit-trail";
-import { EMPTY_SNAPSHOT, buildTemporalDiff, relationShiftSummary, usesLegacyPositionalIds, type SnapshotShape } from "@/lib/temporalDiff";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
@@ -346,380 +345,6 @@ export class ApiClient {
     return data;
   }
 
-  private static async persistResearchTelemetry(params: {
-    ownerUserId: string;
-    participantId: string;
-    entryId: string;
-    journalText: string;
-    recallText: string;
-    telemetry?: EntryTelemetryPayload;
-    consent?: ConsentSnapshot;
-  }): Promise<string | null> {
-    const { ownerUserId, participantId, entryId, journalText, recallText, telemetry, consent } = params;
-    if (!telemetry) return null;
-
-    try {
-      const consentSnapshot = consent ?? {
-        app_use: true,
-        research_analysis: true,
-        anonymized_export: false,
-        future_fine_tuning: false,
-        consent_version: "research-consent-v1",
-      };
-
-      await supabase.from("consent_records").insert({
-        owner_user_id: ownerUserId,
-        participant_id: participantId,
-        app_use: consentSnapshot.app_use,
-        research_analysis: consentSnapshot.research_analysis,
-        anonymized_export: consentSnapshot.anonymized_export,
-        future_fine_tuning: consentSnapshot.future_fine_tuning,
-        consent_version: consentSnapshot.consent_version,
-        source: "student_ui",
-      });
-
-      const sessionInsert = await supabase
-        .from("entry_sessions")
-        .insert({
-          owner_user_id: ownerUserId,
-          participant_id: participantId,
-          client_session_id: telemetry.session_id,
-          status: "submitted",
-          started_at: telemetry.started_at,
-          submitted_at: telemetry.submitted_at,
-          client_timezone: telemetry.client_timezone ?? null,
-          user_agent: telemetry.user_agent ?? null,
-          consent_snapshot_json: consentSnapshot as unknown as Record<string, JsonValue>,
-          aggregate_metrics_json: telemetry.aggregate_metrics,
-        })
-        .select("id")
-        .single();
-
-      if (sessionInsert.error || !sessionInsert.data) {
-        console.warn("[research] entry_sessions insert skipped", sessionInsert.error);
-        return null;
-      }
-
-      const entrySessionId = sessionInsert.data.id;
-      const fieldRows = await Promise.all([
-        {
-          field_name: "journal_entry",
-          final_text_hash: await stableHash(journalText),
-          char_count: journalText.length,
-          word_count: journalText.trim() ? journalText.trim().split(/\s+/).length : 0,
-          metrics_json: telemetry.field_metrics.journal_entry ?? {},
-        },
-        {
-          field_name: "first_recall_30",
-          final_text_hash: await stableHash(recallText),
-          char_count: recallText.length,
-          word_count: recallText.trim() ? recallText.trim().split(/\s+/).length : 0,
-          metrics_json: telemetry.field_metrics.first_recall_30 ?? {},
-        },
-      ].map(async (row) => ({
-        owner_user_id: ownerUserId,
-        participant_id: participantId,
-        entry_session_id: entrySessionId,
-        ...row,
-        started_at: typeof row.metrics_json.first_input_at === "string" ? row.metrics_json.first_input_at : null,
-        completed_at: typeof row.metrics_json.last_input_at === "string" ? row.metrics_json.last_input_at : null,
-      })));
-
-      await supabase.from("entry_fields").insert(fieldRows);
-
-      const eventRows = telemetry.events.slice(0, 1200).map((event) => ({
-        owner_user_id: ownerUserId,
-        participant_id: participantId,
-        entry_session_id: entrySessionId,
-        field_name: event.field_name,
-        event_type: event.event_type,
-        occurred_at: event.occurred_at,
-        relative_ms: event.relative_ms,
-        value_length: event.value_length ?? null,
-        selection_start: event.selection_start ?? null,
-        selection_end: event.selection_end ?? null,
-        metadata_json: event.metadata ?? {},
-      }));
-      if (eventRows.length > 0) await supabase.from("interaction_events").insert(eventRows);
-
-      await supabase.from("entry_research_links").insert({
-        owner_user_id: ownerUserId,
-        participant_id: participantId,
-        entry_id: entryId,
-        entry_session_id: entrySessionId,
-        field_name: "combined_submission",
-        source_hash: await stableHash(`${journalText}\n\n${recallText}`),
-      });
-      return entrySessionId;
-    } catch (err) {
-      console.warn("[research] telemetry persistence skipped", err);
-      return null;
-    }
-  }
-
-  private static async persistResearchArtifacts(params: {
-    ownerUserId: string;
-    participantId: string;
-    entryId: string;
-    entrySessionId: string | null;
-    computed: EntrySubmissionResponse;
-  }): Promise<void> {
-    const artifacts = params.computed.research_artifacts?.embedding_artifacts ?? [];
-    const writingArtifacts = params.computed.research_artifacts?.writing_feature_artifacts ?? [];
-    const cognitiveArtifact = params.computed.research_artifacts?.cognitive_probe_artifact ?? null;
-    try {
-      if (artifacts.length > 0) {
-        const rows = artifacts.map((artifact) => ({
-          owner_user_id: params.ownerUserId,
-          participant_id: params.participantId,
-          entry_id: params.entryId,
-          content_kind: artifact.content_kind,
-          embedding_model: artifact.embedding_model,
-          embedding: artifact.vector_json && artifact.vector_json.length > 0 ? `[${artifact.vector_json.join(",")}]` : null,
-          content_hash: artifact.content_hash,
-          metadata_json: {
-            ...(artifact.metadata_json ?? {}),
-            backend_local_id: artifact.local_id ?? null,
-            synced_from_backend_response: true,
-            pipeline_version: params.computed.research_artifacts?.pipeline_version ?? "research-pipeline-v1",
-          },
-        }));
-        const { error } = await supabase.from("entry_embeddings").insert(rows);
-        if (error) console.warn("[research] entry_embeddings insert skipped", error);
-      }
-
-      if (params.entrySessionId && writingArtifacts.length > 0) {
-        const writingRows = writingArtifacts.map((artifact) => ({
-          owner_user_id: params.ownerUserId,
-          participant_id: params.participantId,
-          entry_id: params.entryId,
-          entry_session_id: params.entrySessionId,
-          field_name: artifact.field_name,
-          feature_json: artifact.feature_json as Record<string, JsonValue>,
-          pipeline_version: artifact.pipeline_version,
-        }));
-        const { error } = await supabase.from("writing_features").insert(writingRows);
-        if (error) console.warn("[research] writing_features insert skipped", error);
-      }
-
-      if (cognitiveArtifact) {
-        const { error } = await supabase.from("cognitive_probe_features").insert({
-          owner_user_id: params.ownerUserId,
-          participant_id: params.participantId,
-          entry_id: params.entryId,
-          entry_session_id: params.entrySessionId,
-          probe_name: cognitiveArtifact.probe_name,
-          journal_text_hash: cognitiveArtifact.journal_text_hash,
-          recall_text_hash: cognitiveArtifact.recall_text_hash,
-          feature_json: cognitiveArtifact.feature_json as Record<string, JsonValue>,
-          pipeline_version: cognitiveArtifact.pipeline_version,
-        });
-        if (error) console.warn("[research] cognitive_probe_features insert skipped", error);
-      }
-    } catch (err) {
-      console.warn("[research] artifact persistence skipped", err);
-    }
-  }
-
-  private static async persistResearchMetadata(params: {
-    ownerUserId: string;
-    participantId: string;
-    entryId: string;
-    graphSnapshotId: string | null;
-    journalText: string;
-    recallText: string;
-    computed: EntrySubmissionResponse;
-    consent?: ConsentSnapshot;
-  }): Promise<void> {
-    const { ownerUserId, participantId, entryId, graphSnapshotId, journalText, recallText, computed, consent } = params;
-    const pipelineVersion = computed.research_artifacts?.pipeline_version ?? "research-pipeline-v1";
-    const provider = computed.extraction.extraction_provider ?? "unknown";
-    const model = computed.extraction.extraction_model ?? "unknown";
-
-    try {
-      const modelRunInsert = await supabase
-        .from("model_runs")
-        .insert({
-          owner_user_id: ownerUserId,
-          participant_id: participantId,
-          artifact_type: "extraction",
-          artifact_id: String(entryId),
-          provider,
-          model,
-          prompt_version: "sentra-production-extraction-v1",
-          schema_version: "sentra-entry-extraction-v1",
-          pipeline_version: pipelineVersion,
-          temperature: 0.2,
-          retrieval_config_json: {
-            embedding_model: computed.research_artifacts?.embedding_artifacts?.[0]?.embedding_model ?? "unknown",
-            source: "next_api_route",
-          },
-          input_provenance_json: {
-            entry_id: entryId,
-            field_names: ["journal_entry", "first_recall_30"],
-            journal_text_hash: await stableHash(journalText),
-            recall_text_hash: await stableHash(recallText),
-          },
-          output_hash: await stableHash(JSON.stringify(computed.extraction)),
-          status: computed.explanation?.uncertainty_json?.extraction_status === "completed" ? "completed" : "completed",
-        })
-        .select("id")
-        .single();
-
-      const modelRunId = modelRunInsert.data?.id ?? null;
-      if (modelRunInsert.error) console.warn("[research] model_runs insert skipped", modelRunInsert.error);
-
-      const safetyAssessment = computed.extraction.safety_assessment_json;
-      if (safetyAssessment) {
-        const { error: safetyAuditError } = await supabase.from("model_runs").insert({
-          owner_user_id: ownerUserId,
-          participant_id: participantId,
-          artifact_type: "safety_assessment",
-          artifact_id: String(entryId),
-          provider: "rules",
-          model: "safety-assessment-v1",
-          prompt_version: "safety-assessment-v1",
-          schema_version: "safety-assessment-v1",
-          pipeline_version: pipelineVersion,
-          temperature: 0,
-          retrieval_config_json: {
-            risk_level: safetyAssessment.risk_level,
-            escalation_required: safetyAssessment.escalation_required,
-            reasons: safetyAssessment.reasons,
-            policy_refs: safetyAssessment.policy_refs,
-          },
-          input_provenance_json: { entry_id: entryId },
-          output_hash: await stableHash(JSON.stringify(safetyAssessment)),
-          status: "completed",
-        });
-        if (safetyAuditError) console.warn("[research] safety model_runs insert skipped", safetyAuditError);
-      }
-
-      await supabase.from("extractions").insert({
-        owner_user_id: ownerUserId,
-        participant_id: participantId,
-        entry_id: entryId,
-        model_run_id: modelRunId,
-        nodes_json: computed.extraction.nodes_json as unknown as JsonValue,
-        relations_json: computed.extraction.relations_json as unknown as JsonValue,
-        temporal_json: { summary: computed.extraction.temporal_summary },
-        uncertainty_json: computed.explanation?.uncertainty_json ?? {},
-        safety_flags: computed.extraction.safety_flags_json ?? [],
-      });
-
-      if (computed.graph_snapshot) {
-        const existingVersions = await supabase
-          .from("graph_versions")
-          .select("id", { count: "exact", head: true })
-          .eq("owner_user_id", ownerUserId)
-          .eq("participant_id", participantId);
-        const versionIndex = (existingVersions.count ?? 0) + 1;
-        const graphVersionInsert = await supabase
-          .from("graph_versions")
-          .insert({
-            owner_user_id: ownerUserId,
-            participant_id: participantId,
-            entry_id: entryId,
-            graph_snapshot_id: graphSnapshotId,
-            version_index: versionIndex,
-            nodes_json: computed.graph_snapshot.nodes_json as unknown as JsonValue,
-            relations_json: computed.graph_snapshot.relations_json as unknown as JsonValue,
-            summary_json: computed.graph_snapshot.graph_summary_json as unknown as JsonValue,
-          })
-          .select("id")
-          .single();
-
-        const graphVersionId = graphVersionInsert.data?.id;
-        if (graphVersionInsert.error) console.warn("[research] graph_versions insert skipped", graphVersionInsert.error);
-        if (graphVersionId) {
-          const changeRows = [
-            ...computed.graph_snapshot.nodes_json.slice(0, 24).map((node) => ({
-              owner_user_id: ownerUserId,
-              participant_id: participantId,
-              graph_version_id: graphVersionId,
-              change_type: "added",
-              entity_type: "node",
-              entity_key: node.id,
-              previous_json: null,
-              current_json: node as unknown as JsonValue,
-              semantic_drift_score: 0,
-              trajectory_tags: [node.category],
-            })),
-            ...computed.graph_snapshot.relations_json.slice(0, 24).map((relation) => ({
-              owner_user_id: ownerUserId,
-              participant_id: participantId,
-              graph_version_id: graphVersionId,
-              change_type: "added",
-              entity_type: "relation",
-              entity_key: `${relation.source_id}:${relation.type}:${relation.target_id}`,
-              previous_json: null,
-              current_json: relation as unknown as JsonValue,
-              semantic_drift_score: 0,
-              trajectory_tags: [relation.type],
-            })),
-          ];
-          if (changeRows.length > 0) await supabase.from("graph_change_events").insert(changeRows);
-        }
-      }
-
-      const day = computed.graph_snapshot?.day ?? computed.anomaly_result?.day ?? new Date().toISOString().slice(0, 10);
-      const nodeCount = computed.graph_snapshot?.nodes_json.length ?? 0;
-      const protectiveCount = computed.graph_snapshot?.nodes_json.filter((node) => node.category === "Protective").length ?? 0;
-      const triggerCount = computed.graph_snapshot?.nodes_json.filter((node) => node.category === "Trigger").length ?? 0;
-      const relationCount = computed.graph_snapshot?.relations_json.length ?? 0;
-      const windowRows = [7, 30].map((windowDays) => {
-        const end = new Date(`${day}T00:00:00.000Z`);
-        const start = new Date(end);
-        start.setUTCDate(start.getUTCDate() - windowDays + 1);
-        return {
-          owner_user_id: ownerUserId,
-          participant_id: participantId,
-          window_days: windowDays,
-          window_start: start.toISOString().slice(0, 10),
-          window_end: day,
-          pipeline_version: "longitudinal-v1",
-          feature_json: {
-            latest_anomaly_score: computed.anomaly_result?.anomaly_score ?? null,
-            node_count: nodeCount,
-            relation_count: relationCount,
-            protective_count: protectiveCount,
-            trigger_count: triggerCount,
-            protective_ratio: nodeCount ? protectiveCount / nodeCount : 0,
-            trigger_ratio: nodeCount ? triggerCount / nodeCount : 0,
-            consistency_proxy: relationCount ? nodeCount / relationCount : nodeCount,
-            change_rate_proxy: computed.graph_snapshot?.temporal_diff_json?.added_nodes?.length ?? nodeCount,
-          },
-        };
-      });
-      await supabase.from("longitudinal_features").insert(windowRows);
-
-      if (consent?.research_analysis ?? true) {
-        await supabase.from("eval_examples").insert({
-          owner_user_id: ownerUserId,
-          participant_id: participantId,
-          source_entry_id: entryId,
-          task_type: "entry_extraction",
-          input_json: {
-            journal_text_hash: await stableHash(journalText),
-            recall_text_hash: await stableHash(recallText),
-            field_names: ["journal_entry", "first_recall_30"],
-            journal_char_count: journalText.length,
-            recall_char_count: recallText.length,
-          },
-          expected_output_json: {
-            nodes_json: computed.extraction.nodes_json,
-            relations_json: computed.extraction.relations_json,
-            graph_summary_json: computed.graph_snapshot?.graph_summary_json ?? {},
-          },
-          consent_snapshot_json: consent ?? {},
-          review_status: "unreviewed",
-        });
-      }
-    } catch (err) {
-      console.warn("[research] metadata persistence skipped", err);
-    }
-  }
-
   static async getEntries(userId: string): Promise<Entry[]> {
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
@@ -732,6 +357,28 @@ export class ApiClient {
     return (data ?? []).map((row) => toEntry(row as unknown as EntryRow, userId));
   }
 
+  /**
+   * Submit an entry. The backend computes it, writes it to Supabase, and
+   * returns the result; this method does not write to Supabase at all (#2).
+   * Either backend does the write — FastAPI when `NEXT_PUBLIC_API_URL` points
+   * at it, otherwise the route handler in `src/app/api/entries/`.
+   *
+   * It used to. The backend computed against SQLite, returned the result, and
+   * this method then inserted that response into `entries`, `graph_snapshots`,
+   * `insights` and a dozen research tables — a second write, from a browser
+   * tab, with no retry. A closed tab or one failed request left Supabase
+   * holding part of a submission while SQLite held all of it, and the two
+   * drifted apart with nothing to reconcile them.
+   *
+   * The identity the backend needs to write on this user's behalf is resolved
+   * here, because only the browser has the session: `owner_user_id` is the
+   * Supabase Auth user id and `participant_id` the participants row. Without
+   * them the backend computes and persists locally but mirrors nothing.
+   *
+   * `supabase_sync` on the response reports what the backend wrote. When it
+   * carries row ids, those replace the backend's local integer ids so the
+   * returned object matches what a subsequent read from Supabase will show.
+   */
   static async createEntry(
     userId: string,
     text: string,
@@ -753,184 +400,35 @@ export class ApiClient {
         recall_text: researchPayload?.recall_text ?? "",
         telemetry: researchPayload?.telemetry,
         consent: researchPayload?.consent,
+        owner_user_id: ownerUserId,
+        participant_id: participant.id,
       }),
     });
 
-    const entryInsert = await supabase
-      .from("entries")
-      .insert({
-        owner_user_id: ownerUserId,
-        participant_id: participant.id,
-        raw_text: null,
-        is_masked: true,
-        extraction_json: computed.extraction as unknown as Record<string, JsonValue>,
-        extraction_provider: computed.extraction.extraction_provider,
-        extraction_model: computed.extraction.extraction_model,
-        expires_at: computed.entry.expires_at ?? null,
-        observation_type: observationType,
-      })
-      .select("id, raw_text, is_masked, extraction_json, expires_at, created_at, participant_id, observation_type, extraction_provider, extraction_model, participants!entries_participant_id_fkey(code)")
-      .single();
-
-    if (entryInsert.error) throwSupabaseError("Save entry failed", entryInsert.error);
-    console.info("[entries] supabase insert completed", { id: entryInsert.data.id, observationType });
-    const entry = toEntry(entryInsert.data as unknown as EntryRow, userId);
-    const entrySessionId = await this.persistResearchTelemetry({
-      ownerUserId,
-      participantId: participant.id,
-      entryId: entry.id as string,
-      journalText: researchPayload?.journal_text ?? text,
-      recallText: researchPayload?.recall_text ?? "",
-      telemetry: researchPayload?.telemetry,
-      consent: researchPayload?.consent,
-    });
-    let graphSnapshot: GraphSnapshot | null = null;
-    let graphSnapshotId: string | null = null;
-    if (computed.graph_snapshot) {
-      // The route handler cannot see this participant's history, so the diff it
-      // returned is a diff against nothing and is labelled `no_previous_lookup`.
-      // This is the only place with both the database connection and the
-      // participant id, so the real day-over-day comparison happens here.
-      //
-      // Before #106 there was no recomputation and no lookup: every production
-      // row said every node and relation was newly added, on every day, and the
-      // temporal view rendered accordingly.
-      const previousSnapshot = await supabase
-        .from("graph_snapshots")
-        .select("nodes_json, relations_json, day, created_at")
-        .eq("participant_id", participant.id)
-        .lt("day", computed.graph_snapshot.day)
-        .order("day", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      // A failed lookup must not silently become "no previous day" — that is
-      // indistinguishable from the bug being fixed. Record it instead.
-      const lookupFailed = Boolean(previousSnapshot.error);
-      if (lookupFailed) {
-        console.warn("[entries] previous snapshot lookup failed; diff basis degraded", previousSnapshot.error);
-      }
-      const previous: SnapshotShape = previousSnapshot.data
-        ? {
-            nodes: (previousSnapshot.data.nodes_json ?? []) as SnapshotShape["nodes"],
-            relations: (previousSnapshot.data.relations_json ?? []) as SnapshotShape["relations"],
-          }
-        : EMPTY_SNAPSHOT;
-      const hadPrevious = Boolean(previousSnapshot.data);
-      // The node id scheme changed when label-derived identity landed. Diffing
-      // a new snapshot against a positional-id one compares `node_1` to a real
-      // concept, so every node reads as both removed and added. Suppress the
-      // comparison for that one boundary rather than showing a student a
-      // dramatic change on a day nothing happened.
-      const legacyBoundary = hadPrevious && usesLegacyPositionalIds(previous);
-      const recomputedDiff = buildTemporalDiff(
-        {
-          nodes: (computed.graph_snapshot.nodes_json ?? []) as SnapshotShape["nodes"],
-          relations: (computed.graph_snapshot.relations_json ?? []) as SnapshotShape["relations"],
-        },
-        legacyBoundary ? EMPTY_SNAPSHOT : previous,
-      );
-      const existingDiff = (computed.graph_snapshot.temporal_diff_json ?? {}) as unknown as Record<string, unknown>;
-      const temporalDiff = {
-        ...existingDiff,
-        ...recomputedDiff,
-        relation_shift_summary: legacyBoundary
-          ? "previous snapshot predates label-derived node identity; not comparable"
-          : relationShiftSummary(recomputedDiff, hadPrevious),
-        diff_basis: lookupFailed
-          ? "lookup_failed"
-          : legacyBoundary
-            ? "legacy_id_scheme_boundary"
-            : hadPrevious
-              ? "previous_snapshot"
-              : "first_snapshot_for_participant",
-      };
-
-      const graphInsert = await supabase
-        .from("graph_snapshots")
-        .insert({
-          owner_user_id: ownerUserId,
-          participant_id: participant.id,
-          entry_id: entry.id,
-          day: computed.graph_snapshot.day,
-          nodes_json: computed.graph_snapshot.nodes_json as unknown as JsonValue,
-          relations_json: computed.graph_snapshot.relations_json as unknown as JsonValue,
-          graph_summary_json: computed.graph_snapshot.graph_summary_json as unknown as JsonValue,
-          temporal_diff_json: temporalDiff as unknown as JsonValue,
-          extraction_provider: computed.extraction.extraction_provider,
-          extraction_model: computed.extraction.extraction_model,
-        })
-        .select("id, entry_id, day, nodes_json, relations_json, graph_summary_json, temporal_diff_json, extraction_provider, extraction_model, created_at, participants!graph_snapshots_participant_id_fkey(code)")
-        .single();
-
-      if (graphInsert.error) throwSupabaseError("Save graph snapshot failed", graphInsert.error);
-      graphSnapshotId = graphInsert.data.id;
-      graphSnapshot = toGraphSnapshot(graphInsert.data as unknown as GraphSnapshotRow, userId);
+    const sync = computed.supabase_sync;
+    if (sync?.status === "failed") {
+      // Not thrown: the submission itself succeeded and the student's result
+      // is in hand. But the row is not in Supabase, so the next read will not
+      // show it, and that has to be visible rather than inferred from a gap.
+      console.error("[entries] backend Supabase sync failed; this entry will not appear in history", sync.reason);
+    } else if (sync?.warnings?.length) {
+      console.warn("[entries] backend Supabase sync incomplete", sync.warnings);
     }
 
-    let anomalyResult: AnomalyResult | null = null;
-    let explanation: ExplanationPayload | null = null;
-    if (computed.anomaly_result || computed.explanation) {
-      const day = computed.anomaly_result?.day ?? computed.explanation?.day ?? new Date().toISOString().slice(0, 10);
-      const insightInsert = await supabase
-        .from("insights")
-        .insert({
-          owner_user_id: ownerUserId,
-          participant_id: participant.id,
-          entry_id: entry.id,
-          graph_snapshot_id: graphSnapshotId,
-          day,
-          anomaly_score: computed.anomaly_result?.anomaly_score ?? 0,
-          z_scores_json: computed.anomaly_result?.z_scores_json ?? {},
-          triggered_rules_json: computed.explanation?.triggered_rules_json ?? [],
-          baseline_deviation_json: computed.explanation?.baseline_deviation_json ?? {},
-          changed_relations_json: computed.explanation?.changed_relations_json ?? [],
-          protective_decline_json: computed.explanation?.protective_decline_json ?? {},
-          uncertainty_json: computed.explanation?.uncertainty_json ?? {},
-          evidence_summaries: computed.explanation?.evidence_summaries ?? [],
-          graph_summary_json: computed.explanation?.graph_summary_json ?? graphSnapshot?.graph_summary_json ?? {},
-          score_breakdown_json: computed.explanation?.score_breakdown_json ?? {},
-          key_relations: computed.explanation?.key_relations ?? [],
-          extraction_provider: computed.extraction.extraction_provider,
-          extraction_model: computed.extraction.extraction_model,
-        })
-        .select("id, day, anomaly_score, z_scores_json, triggered_rules_json, baseline_deviation_json, changed_relations_json, protective_decline_json, uncertainty_json, evidence_summaries, graph_summary_json, score_breakdown_json, key_relations, extraction_provider, extraction_model, created_at, participants!insights_participant_id_fkey(code)")
-        .single();
-
-      if (insightInsert.error) throwSupabaseError("Save insight failed", insightInsert.error);
-      anomalyResult = toAnomaly(insightInsert.data as unknown as InsightRow, userId);
-      explanation = toExplanation(insightInsert.data as unknown as InsightRow, userId);
-    }
-
-    await this.persistResearchArtifacts({
-      ownerUserId,
-      participantId: participant.id,
-      entryId: entry.id as string,
-      entrySessionId,
-      computed,
-    });
-    await this.persistResearchMetadata({
-      ownerUserId,
-      participantId: participant.id,
-      entryId: entry.id as string,
-      graphSnapshotId,
-      journalText: researchPayload?.journal_text ?? text,
-      recallText: researchPayload?.recall_text ?? "",
-      computed,
-      consent: researchPayload?.consent,
-    });
-
+    if (!sync?.entry_id) return computed;
     return {
-      entry,
-      extraction: {
-        ...computed.extraction,
-        entry_id: entry.id,
-      },
-      graph_snapshot: graphSnapshot ?? computed.graph_snapshot,
-      anomaly_result: anomalyResult,
-      explanation,
-      research_artifacts: computed.research_artifacts,
+      ...computed,
+      entry: { ...computed.entry, id: sync.entry_id },
+      extraction: { ...computed.extraction, entry_id: sync.entry_id },
+      graph_snapshot: computed.graph_snapshot && sync.graph_snapshot_id
+        ? { ...computed.graph_snapshot, id: sync.graph_snapshot_id, entry_id: sync.entry_id }
+        : computed.graph_snapshot,
+      anomaly_result: computed.anomaly_result && sync.insight_id
+        ? { ...computed.anomaly_result, id: sync.insight_id, explanation_id: sync.insight_id }
+        : computed.anomaly_result,
+      explanation: computed.explanation && sync.insight_id
+        ? { ...computed.explanation, id: sync.insight_id }
+        : computed.explanation,
     };
   }
 

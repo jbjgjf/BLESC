@@ -6,6 +6,7 @@ import {
   type ExtractionPayload,
 } from "@/lib/extraction";
 import { buildTemporalDiff, EMPTY_SNAPSHOT } from "@/lib/temporalDiff";
+import { writeEntryResult } from "@/lib/server/supabaseWriter";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -18,6 +19,10 @@ type EntryRequest = {
   recall_text?: string;
   telemetry?: Record<string, JsonValue>;
   consent?: Record<string, JsonValue>;
+  // Supabase identity, resolved by the caller because only the browser holds
+  // the session. Absent, the handler computes and returns but writes nothing.
+  owner_user_id?: string;
+  participant_id?: string;
 };
 
 const EXTRACTION_MODEL = process.env.OPENAI_EXTRACTION_MODEL || process.env.LLM_MODEL_NAME || "gpt-4.1-mini";
@@ -240,7 +245,7 @@ export async function POST(request: NextRequest) {
     embeddingArtifact("combined_submission", entryText, { pipeline_version: PIPELINE_VERSION, field_name: "combined_submission" }),
   ]);
 
-  return NextResponse.json({
+  const computed = {
     entry: {
       id: entryId,
       user_id: userId,
@@ -363,5 +368,24 @@ export async function POST(request: NextRequest) {
       embedding_artifacts: artifacts,
       pipeline_version: PIPELINE_VERSION,
     },
-  });
+  };
+
+  // The write used to happen in the browser after this response was received
+  // (#2). It happens here now, with the service-role key, so that a submission
+  // is durable the moment the handler returns rather than depending on the tab
+  // staying open. `supabase_sync` tells the caller what landed; a failure is
+  // reported, not thrown, because the computed result is still worth returning.
+  const supabaseSync = await writeEntryResult(
+    { ownerUserId: payload.owner_user_id, participantId: payload.participant_id },
+    computed,
+    {
+      observationType,
+      journalText,
+      recallText,
+      telemetry: payload.telemetry,
+      consent: payload.consent,
+    },
+  );
+
+  return NextResponse.json({ ...computed, supabase_sync: supabaseSync });
 }
