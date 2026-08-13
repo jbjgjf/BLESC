@@ -220,9 +220,6 @@ export async function POST(request: NextRequest) {
   const { extraction, provider, model, status } = await extractWithOpenAI(entryText);
   const safetyAssessment = assessSafety(entryText);
   const day = createdAt.slice(0, 10);
-  const protectiveCount = extraction.nodes.filter((node) => node.category === "Protective").length;
-  const triggerCount = extraction.nodes.filter((node) => node.category === "Trigger").length;
-  const anomalyScore = Math.max(0, Math.min(10, Number((1 + triggerCount * 0.8 - protectiveCount * 0.25 + extraction.relations.length * 0.05).toFixed(2))));
   const graphSummary = {
     node_count: extraction.nodes.length,
     relation_count: extraction.relations.length,
@@ -323,39 +320,56 @@ export async function POST(request: NextRequest) {
       extraction_model: model,
       created_at: createdAt,
     },
+    // Present so the caller knows to write an insight row, and empty because
+    // this handler cannot fill it.
+    //
+    // It has no Supabase client and cannot see the participant's history, so it
+    // cannot estimate a baseline, and without a baseline there is no z-score
+    // and no deviation — the same reason `temporal_diff_json` above is emitted
+    // as `no_previous_lookup` and recomputed by the caller.
+    //
+    // What used to be here instead:
+    //
+    //     anomaly_score = 1 + triggers*0.8 - protective*0.25 + relations*0.05
+    //     z_scores_json = { trigger_count, protective_count, relation_count }
+    //
+    // A number with a floor of 1.0, computed from one submission, written
+    // straight into `insights.anomaly_score` and rendered to the student as
+    // "Hybrid Reflection Signal". Its `z_scores_json` held raw counts under a
+    // name that says they had been divided by a standard deviation. The real
+    // computation lives in `lib/baseline.ts` and runs in `api/client.ts`, which
+    // is the only place with both the database connection and the participant.
     anomaly_result: {
       id: `${entryId}_anomaly`,
       user_id: userId,
       day,
-      anomaly_score: anomalyScore,
-      z_scores_json: {
-        trigger_count: triggerCount,
-        protective_count: protectiveCount,
-        relation_count: extraction.relations.length,
-      },
+      anomaly_score: null,
+      z_scores_json: {},
+      score_basis: "not_computed_at_route_handler",
       explanation_id: `${entryId}_explanation`,
     },
     explanation: {
       id: `${entryId}_explanation`,
       user_id: userId,
       day,
-      triggered_rules_json: extraction.evidence_summaries.map((evidence, index) => ({
-        rule: `evidence_${index + 1}`,
-        evidence,
-        weight: 0.5,
-      })),
-      baseline_deviation_json: { baseline_available: false, reason: "single production submission" },
+      // Rule hits require z-scores, which require a baseline, which requires
+      // history this handler cannot see. Previously each extracted evidence
+      // string was emitted as a rule named `evidence_1`, `evidence_2` … with a
+      // flat weight of 0.5 — the shape of a rule engine's output with none of
+      // its content, and those weights fed the score. The real rules are in
+      // `lib/baseline.ts:checkRules`, run by the caller.
+      triggered_rules_json: [],
+      baseline_deviation_json: {
+        status: "not_computed_at_route_handler",
+        baseline_available: false,
+        reason: "no participant history available in a stateless route handler",
+      },
       changed_relations_json: [],
       protective_decline_json: {},
       uncertainty_json: { extraction_status: status, model, pipeline_version: PIPELINE_VERSION },
       evidence_summaries: extraction.evidence_summaries,
       graph_summary_json: graphSummary,
-      score_breakdown_json: {
-        trigger_component: triggerCount * 0.8,
-        protective_component: protectiveCount * -0.25,
-        relation_component: extraction.relations.length * 0.05,
-        final_score: anomalyScore,
-      },
+      score_breakdown_json: { status: "not_computed_at_route_handler", final_score: null },
       key_relations: extraction.relations.slice(0, 5),
       created_at: createdAt,
     },

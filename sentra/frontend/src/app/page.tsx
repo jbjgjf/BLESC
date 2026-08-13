@@ -16,6 +16,7 @@ import {
 } from "@/api/models";
 import { AlertCircle, ArrowRight, CheckCircle2, Loader2, MessageCircle, Send, Sparkles } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { readBaselineProvenance } from "@/lib/baseline";
 import { supabase } from "@/lib/supabase/client";
 import { ProcessingTimeline } from "@/components/ProcessingTimeline";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
@@ -391,6 +392,7 @@ export default function Home() {
   const score = lastSubmission?.anomaly_result?.anomaly_score;
   const reflectionStatus = lastSubmission?.explanation?.baseline_deviation_json?.status;
   const reflectionUnavailable = !lastSubmission || score === undefined || score === null || reflectionStatus === "not_enough_data";
+  const rampUpProvenance = readBaselineProvenance(lastSubmission?.explanation?.baseline_deviation_json);
 
   const topNodes = useMemo(() => {
     const nodes = [...(lastSubmission?.graph_snapshot?.nodes_json ?? [])];
@@ -617,7 +619,9 @@ export default function Home() {
                 </div>
                 <div className="mt-2 max-w-52 text-xs leading-relaxed" style={{ color: "var(--ink-mid)", ...bodyFont }}>
                   {reflectionUnavailable
-                    ? "BLESC needs more personal history before calculating a non-diagnostic signal."
+                    ? rampUpProvenance
+                      ? `${rampUpProvenance.days_remaining} more day(s) of entries needed. A signal compares today against your own previous ${rampUpProvenance.ramp_up_days} days.`
+                      : "BLESC needs more personal history before calculating a non-diagnostic signal."
                     : "Non-diagnostic pattern difference. Use it as a prompt to reflect, not as a clinical conclusion."
                   }
                 </div>
