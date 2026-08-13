@@ -177,3 +177,92 @@ def test_a_participant_with_no_snapshots_gets_an_empty_graph_not_an_error():
     assert payload["nodes"] == [] and payload["edges"] == [] and payload["events"] == []
     assert payload["report"]["snapshots_seen"] == 0
     assert payload["report"]["identity_is_usable"] is True
+
+
+# ---- the traversal endpoint (#96) -----------------------------------------
+#
+# Same seeded participant, walked rather than assembled. The walk itself is
+# covered in test_relation_aware_traversal.py; what these cover is the seam —
+# that seeds resolve against stored rows, that the fixed rule table reaches the
+# response, and that the educator audience actually withholds.
+
+
+def test_traversal_walks_the_stored_graph_and_returns_an_attributable_path():
+    response = client.get(
+        "/api/research/traversal",
+        params={"user_id": USER, "seeds": "テスト前のプレッシャー"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["seed_resolution"]["resolved_node_ids"] == ["テスト前のプレッシャー"]
+    assert payload["seed_resolution"]["coverage"] == 1.0
+
+    node = payload["nodes"][0]
+    assert node["node_id"] == "眠れない"
+
+    path = node["paths"][0]
+    assert path["relation_types"] == ["causes"]
+    assert path["hop_count"] == 1
+    assert path["influence_summary"] == "raises"
+    assert path["source_snapshot_ids"], "the path traces back to stored snapshots"
+    assert path["is_fully_attributed"] is True
+    assert set(path["score_breakdown"]["components"]) >= {"relation_path", "edge_confidence"}
+
+
+def test_the_response_carries_the_rule_table_and_refuses_to_call_it_learned():
+    payload = client.get(
+        "/api/research/traversal", params={"user_id": USER, "seeds": "テスト前のプレッシャー"}
+    ).json()
+
+    assert payload["relation_rules"]["rules"], "a stored result must be auditable on its own"
+    assert payload["relation_rules"]["relation_rules_version"]
+    assert "not trained, not fitted" in payload["not_learned"]
+
+
+def test_upstream_and_downstream_answer_different_questions():
+    downstream = client.get(
+        "/api/research/traversal",
+        params={"user_id": USER, "seeds": "テスト前のプレッシャー", "mode": "downstream"},
+    ).json()
+    upstream = client.get(
+        "/api/research/traversal",
+        params={"user_id": USER, "seeds": "テスト前のプレッシャー", "mode": "upstream"},
+    ).json()
+
+    assert [node["node_id"] for node in downstream["nodes"]] == ["眠れない"]
+    assert upstream["nodes"] == [], "nothing in this graph leads INTO the trigger"
+
+    rejected = client.get(
+        "/api/research/traversal",
+        params={"user_id": USER, "seeds": "眠れない", "mode": "sideways"},
+    )
+    assert rejected.status_code == 400
+
+
+def test_an_unresolved_seed_is_reported_rather_than_read_as_an_empty_graph():
+    payload = client.get(
+        "/api/research/traversal", params={"user_id": USER, "seeds": "存在しない概念"}
+    ).json()
+
+    assert payload["nodes"] == []
+    assert payload["seed_resolution"]["coverage"] == 0.0
+    assert payload["seed_resolution"]["mappings"][0]["rule"] == "unmatched"
+    assert any("no seeds were given" in warning for warning in payload["report"]["warnings"])
+
+
+def test_the_educator_audience_returns_what_it_withheld():
+    payload = client.get(
+        "/api/research/traversal",
+        params={"user_id": USER, "seeds": "テスト前のプレッシャー", "audience": "educator"},
+    ).json()
+
+    assert payload["audience"] == "educator"
+    assert "withheld" in payload, "what was removed is part of the answer"
+    assert payload["nodes"], "an attributable path is not withheld"
+
+    rejected = client.get(
+        "/api/research/traversal",
+        params={"user_id": USER, "seeds": "眠れない", "audience": "the internet"},
+    )
+    assert rejected.status_code == 400

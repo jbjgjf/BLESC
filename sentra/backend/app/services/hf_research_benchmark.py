@@ -68,14 +68,18 @@ from .benchmark_cases import (
     BenchmarkCase,
     EvidenceDay,
 )
+from ..traversal.relations import RELATION_RULES_VERSION
 from .benchmark_labelling import DATASET_VERSION, assign_splits, labelling_status
 from .benchmark_retrieval import (
+    METHOD_FAMILIES,
     METHODS,
     build_concept_graph,
+    build_relation_graph,
     char_ngrams,
     chance_level,
     hop_distances,
     ndcg_at_k,
+    relation_aware_reach,
     score_candidate,
     tokens,
 )
@@ -92,8 +96,13 @@ DEFAULT_DEPTH = 3
 def _rank_evidence(case: BenchmarkCase, method: str, max_depth: int = DEFAULT_DEPTH) -> List[Dict[str, Any]]:
     query_tokens = tokens(case.query)
     query_ngrams = char_ngrams(case.query)
-    graph = build_concept_graph([evidence.graph_motifs for evidence in case.evidence])
+    motif_lists = [evidence.graph_motifs for evidence in case.evidence]
+    graph = build_concept_graph(motif_lists)
     distance = hop_distances(graph, case.query_anchors, max_depth)
+    # The directed, typed view of the same motifs. Built alongside the undirected
+    # one rather than replacing it: `graph_pattern` is the baseline
+    # `relation_aware` has to beat, and both need their own graph to do it.
+    reach = relation_aware_reach(build_relation_graph(motif_lists), case.query_anchors, max_depth)
     expects_crisis = case.expected_safety == "crisis"
 
     ranked: List[Dict[str, Any]] = []
@@ -107,6 +116,7 @@ def _rank_evidence(case: BenchmarkCase, method: str, max_depth: int = DEFAULT_DE
             distance,
             evidence.safety_label,
             expects_crisis,
+            reach=reach,
         )
         ranked.append(
             {
@@ -212,6 +222,10 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = TOP
     for method, cases in method_results.items():
         total = len(cases)
         summary[method] = {
+            # #96: fixed-rule traversal is reported separately from anything
+            # learned. Carried on every row rather than left to a legend, so a
+            # summary read out of context still says which kind of method it is.
+            "method_family": METHOD_FAMILIES[method],
             "mean_recall_at_k": round(sum(case["retrieval_metrics"]["recall_at_k"] for case in cases) / total, 4),
             "mean_ndcg_at_k": round(sum(case["retrieval_metrics"]["ndcg_at_k"] for case in cases) / total, 4),
             "target_hit_rate": round(sum(1 for case in cases if case["retrieval_metrics"]["target_hit"]) / total, 4),
@@ -233,6 +247,7 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = TOP
         "k": k,
         "hf_reference_artifacts": HF_REFERENCE_ARTIFACTS,
         "summary": summary,
+        "method_families": _method_families(selected_methods),
         "by_family": _grouped(method_results, "family"),
         "by_language": _grouped(method_results, "lang"),
         # by_language is the row a reader will treat as "how well does it work
@@ -346,6 +361,28 @@ def _comparison_validity() -> Dict[str, Any]:
         )
         if unbalanced
         else "families hold equal counts per language; the per-language split is interpretable.",
+    }
+
+
+def _method_families(selected_methods: Sequence[str]) -> Dict[str, Any]:
+    """Which conditions are fixed rules and which are learned. #96's reporting AC.
+
+    A separate block rather than only a per-row label, because the claim the
+    benchmark is used to support — "traversal beats keyword" — is a claim about
+    families, and a reader comparing two columns should not have to know which
+    kind each one is.
+    """
+    grouped: Dict[str, List[str]] = {}
+    for method in selected_methods:
+        grouped.setdefault(METHOD_FAMILIES[method], []).append(method)
+    return {
+        "families": {family: sorted(methods) for family, methods in sorted(grouped.items())},
+        "note": (
+            "fixed_rule_traversal applies the hand-written per-relation parameters in "
+            "app/traversal/relations.py. Nothing in it is trained, fitted or learned, and "
+            "no result from it may be reported as learned attention (#96, #100)."
+        ),
+        "relation_rules_version": RELATION_RULES_VERSION,
     }
 
 

@@ -25,6 +25,13 @@ from .schemas.research import EvalExample
 from .schemas.structured import EntrySubmissionResponse, ExtractionResponse, GraphSnapshot, HybridExplanation
 from .analytics.baseline import baseline_provenance
 from .temporal import assemble_participant_graph, snapshot_inputs
+from .traversal import (
+    SeedCandidate,
+    TraversalMode,
+    filter_reportable,
+    resolve_seeds,
+    traverse,
+)
 from .services.inference_orchestrator import InferenceOrchestrator
 from .services.hf_research_benchmark import hf_dataset_rows, run_hf_research_benchmark
 from .services.llm_adapter import llm_adapter
@@ -807,6 +814,81 @@ def get_participant_temporal_graph(
         len(graph.edges),
         graph.report.identity_is_usable,
         len(graph.report.diff_disagreements),
+    )
+    return payload
+
+
+@app.get("/api/research/traversal")
+def get_relation_aware_traversal(
+    user_id: str,
+    seeds: str,
+    mode: str = "downstream",
+    limit: int = 120,
+    max_hops: int = 3,
+    audience: str = "research",
+    session: Session = Depends(get_session),
+):
+    """Deterministic relation-aware traversal (#96), assembled and walked on read.
+
+    `seeds` is a comma-separated list of labels or node ids; each is resolved
+    through `resolve_seeds`, and the resolution — including anything ambiguous or
+    unmatched — is returned alongside the paths. A caller cannot tell an empty
+    result from an unasked question without it.
+
+    `audience=educator` applies the issue's invariant: paths without attributable
+    observations, and every path for a participant whose cross-day identity is
+    unusable, are withheld. The withheld list is still returned, with reasons —
+    what was removed is part of the answer.
+
+    Nothing here is learned. The fixed parameter table travels with the response.
+    """
+    try:
+        traversal_mode = TraversalMode(mode)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="mode must be 'downstream' or 'upstream'"
+        ) from None
+    if audience not in ("research", "educator"):
+        raise HTTPException(status_code=400, detail="audience must be 'research' or 'educator'")
+
+    rows = session.exec(
+        select(GraphSnapshot)
+        .where(GraphSnapshot.user_id == user_id)
+        .order_by(GraphSnapshot.day.asc(), GraphSnapshot.created_at.asc())
+        .limit(limit)
+    ).all()
+    graph = assemble_participant_graph(user_id, snapshot_inputs(rows))
+
+    candidates = [
+        SeedCandidate(source_id=term.strip(), label=term.strip())
+        for term in seeds.split(",")
+        if term.strip()
+    ]
+    resolution = resolve_seeds(graph, candidates)
+    result = traverse(
+        graph, resolution.resolved_node_ids, mode=traversal_mode, max_hops=max_hops
+    )
+
+    payload = result.as_dict()
+    payload["seed_resolution"] = resolution.as_dict()
+    payload["audience"] = audience
+
+    if audience == "educator":
+        allowed, withheld = filter_reportable(result)
+        payload["nodes"] = [node.as_dict() for node in allowed]
+        payload["withheld"] = [item.as_dict() for item in withheld]
+
+    logger.info(
+        "[traversal] user=%s mode=%s seeds=%s/%s nodes=%s paths=%s dropped=%s identity_usable=%s audience=%s",
+        user_id,
+        mode,
+        len(resolution.resolved_node_ids),
+        len(candidates),
+        len(payload["nodes"]),
+        result.report.paths_found,
+        result.report.paths_dropped_by_cap,
+        result.report.identity_is_usable,
+        audience,
     )
     return payload
 
