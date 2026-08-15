@@ -86,3 +86,8 @@ language model and are not students. Floor every standard deviation at 0.01, as
 - **M-02** — no accuracy validation of any risk output exists. Removing the
   guessed baseline makes the z-scores honest as *deviation from this student's
   own typical*; it says nothing about whether deviation predicts anything.
+  `data_sufficiency_study.md` narrows this: on synthetic participants with a
+  known answer, `RAMP_UP_DAYS = 14` is confirmed as the point where baseline
+  estimation error plateaus, and the false-positive floor is shown to come from
+  the scoring terms rather than from a shortage of days. It does not restore
+  `POPULATION_BASELINE`, and it says nothing about clinical validity either.

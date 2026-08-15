@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" width="760" height="420" font-family="Inter, Segoe UI, sans-serif" role="img">
+<title>Separation of shift from stable participants (threshold-free)</title>
+<rect width="760" height="420" fill="#ffffff"/>
+<text x="70" y="26" font-size="15" font-weight="600" fill="#1b1f24">Separation of shift from stable participants (threshold-free)</text>
+<line x1="70" y1="364.0" x2="550" y2="364.0" stroke="#e4e7eb" stroke-width="1"/>
+<text x="60" y="368.0" font-size="11" fill="#6b7280" text-anchor="end">0.00</text>
+<line x1="70" y1="300.4" x2="550" y2="300.4" stroke="#e4e7eb" stroke-width="1"/>
+<text x="60" y="304.4" font-size="11" fill="#6b7280" text-anchor="end">0.20</text>
+<line x1="70" y1="236.8" x2="550" y2="236.8" stroke="#e4e7eb" stroke-width="1"/>
+<text x="60" y="240.8" font-size="11" fill="#6b7280" text-anchor="end">0.40</text>
+<line x1="70" y1="173.2" x2="550" y2="173.2" stroke="#e4e7eb" stroke-width="1"/>
+<text x="60" y="177.2" font-size="11" fill="#6b7280" text-anchor="end">0.60</text>
+<line x1="70" y1="109.6" x2="550" y2="109.6" stroke="#e4e7eb" stroke-width="1"/>
+<text x="60" y="113.6" font-size="11" fill="#6b7280" text-anchor="end">0.80</text>
+<line x1="70" y1="46.0" x2="550" y2="46.0" stroke="#e4e7eb" stroke-width="1"/>
+<text x="60" y="50.0" font-size="11" fill="#6b7280" text-anchor="end">1.00</text>
+<text x="70.0" y="384" font-size="11" fill="#6b7280" text-anchor="middle">1</text>
+<text x="103.1" y="384" font-size="11" fill="#6b7280" text-anchor="middle">3</text>
+<text x="136.2" y="384" font-size="11" fill="#6b7280" text-anchor="middle">5</text>
+<text x="169.3" y="384" font-size="11" fill="#6b7280" text-anchor="middle">7</text>
+<text x="219.0" y="384" font-size="11" fill="#6b7280" text-anchor="middle">10</text>
+<text x="285.2" y="384" font-size="11" fill="#6b7280" text-anchor="middle">14</text>
+<text x="401.0" y="384" font-size="11" fill="#6b7280" text-anchor="middle">21</text>
+<text x="550.0" y="384" font-size="11" fill="#6b7280" text-anchor="middle">30</text>
+<text x="310.0" y="404" font-size="12" fill="#374151" text-anchor="middle">baseline window / gate (days of the participant's own history)</text>
+<text transform="translate(20,205.0) rotate(-90)" font-size="12" fill="#374151" text-anchor="middle">AUROC (band: 95% bootstrap CI)</text>
+<line x1="70" y1="205.0" x2="550" y2="205.0" stroke="#9ca3af" stroke-width="1" stroke-dasharray="5 4"/>
+<text x="76" y="199.0" font-size="11" fill="#6b7280">chance = 0.50</text>
+<polygon points="70.0,121.6 103.1,120.5 136.2,112.0 169.3,100.9 219.0,91.1 285.2,88.7 401.0,88.2 550.0,85.3 550.0,111.5 401.0,115.0 285.2,116.8 219.0,122.2 169.3,134.4 136.2,147.5 103.1,156.2 70.0,154.9" fill="#2f6fdb" fill-opacity="0.12"/>
+<polyline points="70.0,137.9 103.1,138.6 136.2,129.3 169.3,117.0 219.0,106.1 285.2,102.1 401.0,100.8 550.0,98.0" fill="none" stroke="#2f6fdb" stroke-width="2"/>
+<circle cx="70.0" cy="137.9" r="3" fill="#2f6fdb"/>
+<circle cx="103.1" cy="138.6" r="3" fill="#2f6fdb"/>
+<circle cx="136.2" cy="129.3" r="3" fill="#2f6fdb"/>
+<circle cx="169.3" cy="117.0" r="3" fill="#2f6fdb"/>
+<circle cx="219.0" cy="106.1" r="3" fill="#2f6fdb"/>
+<circle cx="285.2" cy="102.1" r="3" fill="#2f6fdb"/>
+<circle cx="401.0" cy="100.8" r="3" fill="#2f6fdb"/>
+<circle cx="550.0" cy="98.0" r="3" fill="#2f6fdb"/>
+<line x1="566" y1="54" x2="590" y2="54" stroke="#2f6fdb" stroke-width="2"/>
+<text x="596" y="58" font-size="11" fill="#374151">1 entries/day</text>
+<polygon points="70.0,125.7 103.1,86.2 136.2,72.1 169.3,66.6 219.0,62.6 285.2,62.5 401.0,63.1 550.0,63.1 550.0,80.7 401.0,79.8 285.2,79.3 219.0,78.9 169.3,88.6 136.2,98.3 103.1,115.4 70.0,156.6" fill="#c0562f" fill-opacity="0.12"/>
+<polyline points="70.0,141.1 103.1,100.8 136.2,84.4 169.3,77.2 219.0,70.3 285.2,70.7 401.0,70.9 550.0,71.4" fill="none" stroke="#c0562f" stroke-width="2"/>
+<circle cx="70.0" cy="141.1" r="3" fill="#c0562f"/>
+<circle cx="103.1" cy="100.8" r="3" fill="#c0562f"/>
+<circle cx="136.2" cy="84.4" r="3" fill="#c0562f"/>
+<circle cx="169.3" cy="77.2" r="3" fill="#c0562f"/>
+<circle cx="219.0" cy="70.3" r="3" fill="#c0562f"/>
+<circle cx="285.2" cy="70.7" r="3" fill="#c0562f"/>
+<circle cx="401.0" cy="70.9" r="3" fill="#c0562f"/>
+<circle cx="550.0" cy="71.4" r="3" fill="#c0562f"/>
+<line x1="566" y1="74" x2="590" y2="74" stroke="#c0562f" stroke-width="2"/>
+<text x="596" y="78" font-size="11" fill="#374151">3 entries/day</text>
+<polygon points="70.0,124.3 103.1,70.6 136.2,54.4 169.3,52.5 219.0,50.9 285.2,50.8 401.0,51.0 550.0,50.6 550.0,59.6 401.0,60.0 285.2,60.5 219.0,60.3 169.3,68.2 136.2,71.8 103.1,99.6 70.0,155.0" fill="#2c8a5f" fill-opacity="0.12"/>
+<polyline points="70.0,139.8 103.1,84.3 136.2,62.1 169.3,59.8 219.0,55.3 285.2,55.3 401.0,55.0 550.0,54.7" fill="none" stroke="#2c8a5f" stroke-width="2"/>
+<circle cx="70.0" cy="139.8" r="3" fill="#2c8a5f"/>
+<circle cx="103.1" cy="84.3" r="3" fill="#2c8a5f"/>
+<circle cx="136.2" cy="62.1" r="3" fill="#2c8a5f"/>
+<circle cx="169.3" cy="59.8" r="3" fill="#2c8a5f"/>
+<circle cx="219.0" cy="55.3" r="3" fill="#2c8a5f"/>
+<circle cx="285.2" cy="55.3" r="3" fill="#2c8a5f"/>
+<circle cx="401.0" cy="55.0" r="3" fill="#2c8a5f"/>
+<circle cx="550.0" cy="54.7" r="3" fill="#2c8a5f"/>
+<line x1="566" y1="94" x2="590" y2="94" stroke="#2c8a5f" stroke-width="2"/>
+<text x="596" y="98" font-size="11" fill="#374151">5 entries/day</text>
+</svg>
