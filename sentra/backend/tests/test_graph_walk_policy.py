@@ -421,14 +421,36 @@ def test_splits_are_never_pooled_into_one_number():
 def test_a_split_that_separates_nothing_says_so_rather_than_reporting_a_ceiling():
     """The saturation failure #86 removed from the retrieval harness.
 
-    On the current `vocab_disjoint` cases the answer sits one hop from the
-    anchor, so every policy including the random walk scores 1.0. That is not
-    four good policies; it is a split that measures nothing.
+    This used to assert against the real `test` split, because before #88 that
+    split held only one-hop `vocab_disjoint` cases and every policy including
+    the random walk scored 1.0 on it. The real splits all discriminate now, so
+    the check is made against a split constructed to be degenerate — which is
+    the right target anyway: what must not regress is the *reporting* of
+    saturation, and pointing the assertion at whichever split happens to be
+    saturated made it a test of the case set instead.
     """
-    report = evaluate("test")
+    one_hop = [
+        case
+        for case in BENCHMARK_CASES
+        if case.family == "vocab_disjoint"
+        and case.required_hops <= 1
+        and case.split == "test"
+    ][:4]
+    assert one_hop, "the fixture for this test needs one-hop cases in the test split"
+    report = evaluate("test", cases=one_hop)
     assert report.discriminates is False
     assert any("does not discriminate" in warning for warning in report.warnings)
     assert report.as_dict()["discriminates"] is False
+
+
+def test_the_real_splits_do_discriminate():
+    """The state #88 delivered, asserted so that losing it is a failure.
+
+    A split where every policy scores alike cannot rank policies, which is the
+    only thing #98 will ask of it.
+    """
+    for split in ("train", "validation", "test"):
+        assert evaluate(split).discriminates is True, split
 
 
 def test_the_training_family_does_discriminate():
@@ -442,7 +464,10 @@ def test_the_dataset_shortfall_is_carried_into_every_report():
     joined = " ".join(report.warnings)
     assert "human label" in joined
     assert "#88" in joined
-    assert any("independent group" in warning for warning in report.warnings)
+    # Reported on every run now, not only when a split could not be filled —
+    # 82 cases are 12 independent groups, and the group count is what any
+    # held-out claim rests on.
+    assert any("effective sample size" in warning for warning in report.warnings)
 
 
 # ---- AC: training is gated, reproducible, and versioned --------------------
@@ -455,7 +480,13 @@ def test_the_training_gate_is_shut_on_this_dataset():
     joined = " ".join(gate.blocking_reasons)
     assert "human-labelled" in joined
     assert "inter-rater agreement" in joined
-    assert "independent leakage group" in joined
+    # The group-count blocker is SATISFIED now — #88 took the set from 1
+    # independent group to 12 — so it is no longer among the reasons. The gate
+    # stays shut on the two that matter and that #88 could not clear from a
+    # keyboard: labels have to come from people, and their agreement has to be
+    # measured.
+    assert "independent leakage group" not in joined
+    assert gate.independent_groups >= 3
 
 
 def test_fitting_raises_rather_than_returning_an_unfitted_policy():
@@ -582,6 +613,8 @@ def test_the_endpoint_serves_the_decision_process_and_the_shut_gate():
 
     splits = payload["evaluation"]["splits"]
     assert set(splits) == {"train", "validation", "test"}
-    assert splits["test"]["discriminates"] is False
+    # Was False before #88, when the held-out split held only one-hop cases and
+    # every policy scored 1.0 on it.
+    assert splits["test"]["discriminates"] is True
     assert splits["train"]["discriminates"] is True
     assert any("#88" in warning for warning in splits["train"]["warnings"])

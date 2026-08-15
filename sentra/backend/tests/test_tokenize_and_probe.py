@@ -6,6 +6,8 @@ nothing. Every lexicon metric read ~0 for Japanese users while still returning
 a value, so nothing looked broken.
 """
 
+import os
+
 import pytest
 
 from app.analytics.cognitive_probe import (
@@ -26,6 +28,41 @@ requires_dictionary = pytest.mark.skipif(
     not japanese_analysis_available(),
     reason="fugashi/unidic-lite not installed",
 )
+
+
+@pytest.mark.skipif(
+    not os.environ.get("CI"),
+    reason="a local checkout may legitimately lack the dictionary; CI may not",
+)
+def test_japanese_analysis_is_available_in_ci():
+    """The one place a missing dictionary FAILS instead of skipping.
+
+    Every other Japanese test in this repository is guarded by
+    `requires_dictionary`, which is right for a contributor who has not
+    installed a multi-megabyte dictionary — and wrong for CI, where the same
+    guard means a broken install turns the suite GREEN WITH FEWER TESTS. The
+    only other signals are a log line from `tokenize.py` and
+    `japanese_analysis_available: false` inside the probe payload, and nothing
+    reads either in a passing run.
+
+    Found the hard way: `fugashi` and `unidic-lite` are both declared in
+    `requirements.txt` and neither was present in a local environment, so
+    `tokenize()` fell back to its ASCII path and 「またあの感じが戻ってきた。」
+    tokenised as a single token. What surfaced was
+    `test_exact_lexical_matching_does_not_beat_chance_on_this_case_set` going
+    red with a message about targets sharing vocabulary with their query —
+    a case-design problem that did not exist. The tokeniser should say so
+    itself.
+
+    Both requirements are unpinned, so this also catches a future resolver
+    picking a `fugashi` with no wheel for the runner's Python.
+    """
+    assert japanese_analysis_available(), (
+        "fugashi/unidic-lite are in requirements.txt but the tagger did not load. "
+        "Every Japanese result in this suite is measured on the ASCII fallback, "
+        "which splits on punctuation and yields clause-sized tokens. Half the #88 "
+        "benchmark is Japanese; those numbers mean nothing until this passes."
+    )
 
 
 class TestTokeniser:
