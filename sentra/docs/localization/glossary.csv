@@ -1,0 +1,11 @@
+English,Japanese,Category,Notes
+alert,お知らせ,教員向け,「警告」は強すぎるため文脈に応じて「通知」「お知らせ」等に
+insight,気づき,共通,専門用語「インサイト」を避ける
+risk,気がかりな点,共通,「リスク」は不安を煽るため避ける
+reflection,振り返り,生徒向け,
+observation,観測,教員向け,
+support summary,サポート要約,教員向け,
+dashboard,ダッシュボード,教員向け,
+timeline,タイムライン,生徒向け,
+entry,記録,共通,
+submit,保存する / 送信する,共通,ボタンのラベル
