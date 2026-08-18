@@ -1,0 +1,223 @@
+/* 自分の振り返り — 企画書 4-5 */
+
+.head { padding: 2px 2px 0; }
+.head p { margin-top: 3px; }
+
+/* ── 気分の内訳 ─────────────────────────────────────── */
+.moodBars {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.moodBar {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.moodBarIcon {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--bl-pill);
+}
+
+.moodBarLabel {
+  width: 5.5rem;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--bl-ink-2);
+}
+
+.moodBarCount {
+  width: 2.8rem;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--bl-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── よく書いている出来事 ───────────────────────────── */
+.catList {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.catRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.catRow > :global(.bl-chip) { width: 8.4rem; flex-shrink: 0; }
+
+.catCount {
+  width: 2.8rem;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--bl-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 520px) {
+  .moodBarLabel { display: none; }
+  .catRow > :global(.bl-chip) { width: auto; }
+  .catRow { flex-wrap: wrap; }
+}
+
+/* ── 連続記録 ───────────────────────────────────────── */
+.streak {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 20px 22px;
+  border-radius: var(--bl-radius-lg);
+  background: var(--bl-mist);
+  border: 1px solid var(--bl-line-soft);
+}
+
+.streak > :global(.blesc-icon) {
+  color: var(--bl-blue);
+  flex-shrink: 0;
+}
+
+.streak p { margin-top: 3px; }
+
+/* ── 過去の日記 ─────────────────────────────────────── */
+.entry {
+  border: 1px solid var(--bl-line);
+  border-radius: var(--bl-radius);
+  overflow: hidden;
+  transition: border-color 0.16s var(--bl-ease);
+}
+
+.entry[data-open="true"] { border-color: var(--bl-blue); }
+
+.entryHead {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: none;
+  border: 0;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s var(--bl-ease);
+}
+
+.entryHead:hover { background: var(--bl-mist); }
+.entryHead:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: -2px; }
+
+.entryMood {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--bl-pill);
+}
+
+.entryTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 8.6rem;
+  flex-shrink: 0;
+}
+
+.entryCats {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.entryChevron {
+  color: var(--bl-ink-3);
+  flex-shrink: 0;
+  transition: transform 0.2s var(--bl-ease);
+}
+
+.entry[data-open="true"] .entryChevron { transform: rotate(180deg); }
+
+@media (max-width: 640px) {
+  .entryCats { display: none; }
+}
+
+.entryBody {
+  padding: 4px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  animation: bl-rise 0.3s var(--bl-ease) both;
+}
+
+.field {
+  padding: 11px 14px;
+  border-radius: var(--bl-radius-sm);
+  background: var(--bl-mist);
+}
+
+.fieldLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--bl-ink-2);
+}
+
+.fieldLabel :global(.blesc-icon) { color: var(--bl-blue); }
+
+.fieldEmpty {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--bl-ink-3);
+  font-style: italic;
+}
+
+/* ── その日のAIとのやりとり ─────────────────────────── */
+.followUp {
+  padding: 14px;
+  border-radius: var(--bl-radius-sm);
+  border: 1px solid var(--bl-line);
+}
+
+.followUp :global(.blesc-icon) { color: var(--bl-blue); }
+
+.followUpTurns {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.turn {
+  max-width: 85%;
+  padding: 9px 14px;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  border-radius: var(--bl-radius);
+  background: #ffffff;
+  border: 1px solid hsla(var(--bl-hue) 74% 72% / 0.45);
+  color: var(--bl-ink);
+}
+
+.turnStudent {
+  align-self: flex-end;
+  background: var(--bl-blue);
+  border-color: var(--bl-blue);
+}

@@ -2,25 +2,25 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ApiClient } from "@/api/client";
-import { AnomalyResult } from "@/api/models";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, ReferenceLine,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from "recharts";
-import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
+import { ApiClient } from "@/api/client";
+import type { AnomalyResult } from "@/api/models";
 import { useAuth } from "@/lib/auth";
+import { Icon } from "@/components/ui/Icon";
 
-const S = {
-  panel: {
-    backgroundColor: "var(--ivory)",
-    border: "1px solid var(--limestone)",
-  } as React.CSSProperties,
-  displayFont: { fontFamily: "var(--font-sans), sans-serif" } as React.CSSProperties,
-  bodyFont:    { fontFamily: "var(--font-sans), sans-serif" } as React.CSSProperties,
-};
+/** 2.0 を超えた日は、教員が内容を確認する目安になる。 */
+const REVIEW_THRESHOLD = 2.0;
 
-export default function Timeline() {
+export default function TimelinePage() {
   const { userId } = useAuth();
   const [data, setData] = useState<AnomalyResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -30,273 +30,162 @@ export default function Timeline() {
     setIsLoading(true);
     setError(null);
     try {
-      const timeline = await ApiClient.getTimeline(userId);
-      setData(timeline);
+      setData(await ApiClient.getTimeline(userId));
     } catch (err) {
       setData([]);
-      setError(err instanceof Error ? err.message : "Live timeline unavailable.");
+      setError(err instanceof Error ? err.message : "タイムラインの読み込みに失敗しました。");
     } finally {
       setIsLoading(false);
     }
   }, [userId]);
 
-  useEffect(() => { loadTimeline(); }, [loadTimeline]);
+  useEffect(() => {
+    void loadTimeline();
+  }, [loadTimeline]);
 
   const latest = data.at(-1);
-  const highSignalDays = useMemo(() => data.filter((d) => d.anomaly_score >= 2).length, [data]);
-  const status = latest && latest.anomaly_score >= 2 ? "Review Needed" : "Within Baseline";
+  const highSignalDays = useMemo(
+    () => data.filter((day) => day.anomaly_score >= REVIEW_THRESHOLD).length,
+    [data],
+  );
+  const needsReview = Boolean(latest && latest.anomaly_score >= REVIEW_THRESHOLD);
 
   if (isLoading) {
     return (
-      <div className="flex h-96 items-center justify-center">
-        <Loader2 className="h-7 w-7 animate-spin" style={{ color: "var(--sandstone)" }} />
+      <div className="bl-wrap" style={{ display: "grid", placeItems: "center", minHeight: "50vh" }}>
+        <span className="bl-loader" aria-label="読み込み中" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="bl-wrap bl-stack">
+      <header style={{ padding: "2px 2px 0" }}>
+        <h1 className="bl-h1">変化のタイムライン</h1>
+        <p className="bl-meta" style={{ marginTop: 3 }}>
+          その人自身のふだんの状態と比べて、どれくらい変化があったかを日ごとに表しています。
+        </p>
+      </header>
 
-      {/* Page header */}
-      <section
-        className="relative px-8 py-7"
-        style={{
-          ...S.panel,
-          backgroundColor: "var(--ivory-warm)",
-        }}
-      >
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <div
-              className="mb-3"
-              style={{
-                fontFamily: "var(--font-sans), sans-serif",
-                fontSize: "0.6rem",
-                fontWeight: 600,
-                letterSpacing: "0.28em",
-                textTransform: "uppercase",
-                color: "var(--ink-faint)",
-              }}
-            >
-              Temporal Drift
-            </div>
-            <h1
-              className="text-3xl"
-              style={{ ...S.displayFont, fontWeight: 700, letterSpacing: "0.04em", color: "var(--ink)" }}
-            >
-              Baseline Deviation Trajectory
-            </h1>
-            <p
-              className="mt-2 max-w-xl text-base leading-relaxed"
-              style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}
-            >
-              Entity-level deviations over time, measured against the participant&apos;s rolling baseline manifold.
-            </p>
-          </div>
-          <div
-            className="px-4 py-2 text-xs"
-            style={{
-              ...S.displayFont,
-              border: "1px solid var(--limestone)",
-              color: "var(--ink-faint)",
-              fontSize: "0.6rem",
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-            }}
-          >
-            Participant · {userId}
-          </div>
+      {error && (
+        <div className="bl-notice bl-notice--watch" role="alert">
+          <Icon name="warning" size={19} fill />
+          <span>{error}</span>
         </div>
-      </section>
+      )}
 
       {data.length === 0 ? (
-        <div
-          className="p-12 text-center text-sm"
-          style={{
-            border: "1px dashed var(--limestone)",
-            backgroundColor: "var(--ivory-warm)",
-            color: "var(--ink-faint)",
-            fontStyle: "italic",
-            ...S.bodyFont,
-          }}
-        >
-          Insufficient data to generate a trajectory.
+        <div className="bl-card bl-empty">
+          <Icon name="timeline" size={40} />
+          <p className="bl-body">
+            グラフを作るにはまだ記録が足りません。日記を続けると表示されます。
+          </p>
         </div>
       ) : (
-        <section style={S.panel}>
-          {error && (
-            <div
-              className="flex items-center gap-2 px-5 py-3 text-sm"
-              style={{
-                borderBottom: "1px solid var(--sandstone)",
-                backgroundColor: "rgba(196,150,42,0.06)",
-                color: "var(--ochre)",
-                ...S.bodyFont,
-                fontStyle: "italic",
-              }}
-            >
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* Stat row */}
-          <div
-            className="grid md:grid-cols-3"
-            style={{ borderBottom: "1px solid var(--limestone)" }}
-          >
-            {/* Inference state */}
-            <div
-              className="p-5"
-              style={{ borderRight: "1px solid var(--limestone)" }}
-            >
-              <div
-                className="mb-2"
-                style={{
-                  fontFamily: "var(--font-sans), sans-serif",
-                  fontSize: "0.55rem",
-                  fontWeight: 600,
-                  letterSpacing: "0.22em",
-                  textTransform: "uppercase",
-                  color: "var(--ink-faint)",
-                }}
-              >
-                Inference State
-              </div>
-              <div
-                className="text-xl"
-                style={{ ...S.displayFont, fontWeight: 700, color: "var(--ink)" }}
-              >
-                {status}
-              </div>
-              <div className="mt-1 text-sm" style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}>
-                Latest reflection signal {Number.isFinite(latest?.anomaly_score) ? latest!.anomaly_score.toFixed(2) : "—"}
-              </div>
+        <>
+          <section className="bl-grid bl-grid--3">
+            <div className="bl-card">
+              <span className={`bl-chip ${needsReview ? "bl-chip--watch" : "bl-chip--calm"}`}>
+                <Icon name={needsReview ? "warning" : "check_circle"} size={15} fill />
+                {needsReview ? "確認をおすすめします" : "ふだんの範囲です"}
+              </span>
+              <p className="bl-meta" style={{ marginTop: 10 }}>
+                直近の値{" "}
+                {Number.isFinite(latest?.anomaly_score) ? latest!.anomaly_score.toFixed(2) : "—"}
+              </p>
             </div>
 
-            {/* Excursion days */}
-            <div
-              className="p-5"
-              style={{ borderRight: "1px solid var(--limestone)" }}
-            >
-              <div
-                className="mb-2"
-                style={{
-                  fontFamily: "var(--font-sans), sans-serif",
-                  fontSize: "0.55rem",
-                  fontWeight: 600,
-                  letterSpacing: "0.22em",
-                  textTransform: "uppercase",
-                  color: "var(--ink-faint)",
-                }}
-              >
-                Excursion Days
-              </div>
-              <div
-                className="text-xl"
-                style={{ ...S.displayFont, fontWeight: 700, color: "var(--ink)" }}
-              >
+            <div className="bl-card">
+              <span className="bl-num">
                 {highSignalDays}
-              </div>
-              <div className="mt-1 text-sm" style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}>
-                Review threshold 2.0
-              </div>
+                <span style={{ fontSize: "0.9rem", fontWeight: 600, marginLeft: 3 }}>日</span>
+              </span>
+              <p className="bl-meta">目安の {REVIEW_THRESHOLD.toFixed(1)} を超えた日</p>
             </div>
 
-            {/* Next pass link */}
-            <div className="p-5">
-              <div
-                className="mb-2"
-                style={{
-                  fontFamily: "var(--font-sans), sans-serif",
-                  fontSize: "0.55rem",
-                  fontWeight: 600,
-                  letterSpacing: "0.22em",
-                  textTransform: "uppercase",
-                  color: "var(--ink-faint)",
-                }}
-              >
-                Next Inference Pass
-              </div>
-              <Link
-                href="/insights"
-                className="inline-flex items-center gap-2 text-sm"
-                style={{ ...S.bodyFont, color: "var(--aegean)" }}
-              >
-                Review Inference Ledger
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
-          </div>
+            <Link href="/insights" className="bl-card bl-card--link" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <Icon name="insights" size={24} style={{ color: "var(--bl-blue)" }} />
+              <span style={{ flex: 1 }}>
+                <span className="bl-h3">内訳を見る</span>
+                <span className="bl-micro" style={{ display: "block", marginTop: 2 }}>
+                  何がこの値につながったか
+                </span>
+              </span>
+              <Icon name="chevron_right" size={20} style={{ color: "var(--bl-ink-3)" }} />
+            </Link>
+          </section>
 
-          {/* Chart */}
-          <div className="h-96 w-full p-6 text-xs" style={{ backgroundColor: "var(--ivory)" }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data} margin={{ top: 8, right: 20, left: -20, bottom: 0 }}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="var(--limestone)"
-                  opacity={0.8}
-                />
-                <XAxis
-                  dataKey="day"
-                  stroke="var(--ink-faint)"
-                  tickLine={false}
-                  tick={{ fontFamily: "var(--font-sans), sans-serif", fontSize: 10, letterSpacing: 1 }}
-                />
-                <YAxis
-                  stroke="var(--ink-faint)"
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fontFamily: "var(--font-sans), sans-serif", fontSize: 10 }}
-                />
-                <Tooltip
-                  contentStyle={{
-                    border: "1px solid var(--limestone)",
-                    backgroundColor: "var(--ivory)",
-                    fontFamily: "var(--font-sans), sans-serif",
-                    fontSize: "13px",
-                    color: "var(--ink)",
-                    borderRadius: 0,
-                  }}
-                  labelStyle={{
-                    fontFamily: "var(--font-sans), sans-serif",
-                    fontSize: "11px",
-                    letterSpacing: "0.1em",
-                    textTransform: "uppercase",
-                    color: "var(--ink-soft)",
-                    fontWeight: 700,
-                  }}
-                />
-                <ReferenceLine
-                  y={2.0}
-                  label={{
-                    value: "Review Threshold",
-                    fill: "var(--terracotta)",
-                    fontSize: 10,
-                    fontFamily: "var(--font-sans), sans-serif",
-                    letterSpacing: 1,
-                  }}
-                  stroke="var(--terracotta)"
-                  strokeDasharray="5 5"
-                  opacity={0.6}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="anomaly_score"
-                  stroke="var(--aegean)"
-                  strokeWidth={2}
-                  dot={{ r: 3.5, fill: "var(--aegean)", strokeWidth: 2, stroke: "var(--ivory)" }}
-                  activeDot={{ r: 6, strokeWidth: 0, fill: "var(--gold)" }}
-                  name="Hybrid reflection signal"
-                  animationDuration={900}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
+          <section className="bl-card">
+            <div className="bl-card-head">
+              <Icon name="monitoring" size={21} />
+              <h2 className="bl-h2">日ごとの変化</h2>
+            </div>
+
+            <div style={{ height: "22rem", width: "100%", fontSize: "0.75rem" }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={data} margin={{ top: 8, right: 16, left: -18, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--bl-line-soft)" />
+                  <XAxis
+                    dataKey="day"
+                    stroke="var(--bl-ink-3)"
+                    tickLine={false}
+                    tick={{ fontFamily: "var(--bl-font)", fontSize: 11 }}
+                  />
+                  <YAxis
+                    stroke="var(--bl-ink-3)"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontFamily: "var(--bl-font)", fontSize: 11 }}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      border: "1px solid var(--bl-line)",
+                      backgroundColor: "#ffffff",
+                      fontFamily: "var(--bl-font)",
+                      fontSize: "13px",
+                      color: "var(--bl-ink)",
+                      borderRadius: "var(--bl-radius-sm)",
+                    }}
+                    labelStyle={{
+                      fontFamily: "var(--bl-font)",
+                      fontSize: "11px",
+                      color: "var(--bl-ink-3)",
+                      fontWeight: 700,
+                    }}
+                  />
+                  <ReferenceLine
+                    y={REVIEW_THRESHOLD}
+                    label={{
+                      value: "確認の目安",
+                      fill: "var(--bl-watch-ink)",
+                      fontSize: 11,
+                      fontFamily: "var(--bl-font)",
+                    }}
+                    stroke="var(--bl-watch)"
+                    strokeDasharray="5 5"
+                    opacity={0.7}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="anomaly_score"
+                    stroke="var(--bl-blue)"
+                    strokeWidth={2.5}
+                    dot={{ r: 3.5, fill: "var(--bl-blue)", strokeWidth: 2, stroke: "#ffffff" }}
+                    activeDot={{ r: 6, strokeWidth: 0, fill: "var(--bl-blue)" }}
+                    name="変化の大きさ"
+                    animationDuration={900}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+        </>
       )}
+
+      <p className="bl-disclaimer">
+        <Icon name="medical_information" size={15} />
+        この値は日記の書き方の変化をまとめたものです。診断ではありません。
+      </p>
     </div>
   );
 }

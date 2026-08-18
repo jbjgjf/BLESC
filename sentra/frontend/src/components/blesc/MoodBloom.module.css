@@ -1,0 +1,78 @@
+.bloom {
+  display: flex;
+  align-items: center;
+  gap: 34px;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 6px 0 2px;
+}
+
+.legendPetal {
+  flex-shrink: 0;
+}
+
+.svg {
+  flex-shrink: 0;
+  /* 花びらどうしの重なりだけで濃淡をつくる。影も grade も使わない。 */
+  isolation: isolate;
+}
+
+.petals {
+  mix-blend-mode: multiply;
+}
+
+.petal {
+  transform-origin: 50px 50px;
+  transform: scale(var(--bl-petal-scale));
+  stroke-width: 0.9;
+  animation: bl-bloom-petal 0.72s var(--bl-pop) both;
+}
+
+@keyframes bl-bloom-petal {
+  from { transform: scale(0.06); opacity: 0; }
+  to   { transform: scale(var(--bl-petal-scale)); opacity: 1; }
+}
+
+.core {
+  fill: var(--bl-surface);
+}
+
+/* ── 凡例 ───────────────────────────────────────────── */
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 156px;
+}
+
+.legendRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 0.86rem;
+}
+
+.legendLabel {
+  color: var(--bl-ink-2);
+  flex: 1;
+}
+
+.legendCount {
+  color: var(--bl-ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.legendCount[data-zero="true"] {
+  color: var(--bl-ink-3);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .petal {
+    animation: none;
+    transform: scale(var(--bl-petal-scale));
+  }
+}

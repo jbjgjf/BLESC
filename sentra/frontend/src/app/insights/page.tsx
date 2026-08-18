@@ -3,43 +3,25 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiClient } from "@/api/client";
 import { AnomalyResult, ExplanationPayload } from "@/api/models";
-import { AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { Icon, type IconName } from "@/components/ui/Icon";
+import styles from "./insights.module.css";
 
 function formatRecord(value: unknown): string {
   return JSON.stringify(value ?? {}, null, 2);
 }
 
-const S = {
-  panel: {
-    backgroundColor: "var(--ivory)",
-    border: "1px solid var(--limestone)",
-  } as React.CSSProperties,
-  displayFont: { fontFamily: "var(--font-sans), sans-serif" } as React.CSSProperties,
-  bodyFont:    { fontFamily: "var(--font-sans), sans-serif" } as React.CSSProperties,
-};
-
-function SectionHeader({ icon, label }: { icon?: string; label: string }) {
+function SectionHead({ icon, label }: { icon: IconName; label: string }) {
   return (
-    <div
-      className="flex items-center gap-3 px-5 py-4"
-      style={{ borderBottom: "1px solid var(--limestone)" }}
-    >
-      {icon && <span style={{ color: "var(--gold)" }}>{icon}</span>}
-      <span
-        style={{
-          fontFamily: "var(--font-sans), sans-serif",
-          fontSize: "0.6rem",
-          fontWeight: 600,
-          letterSpacing: "0.22em",
-          textTransform: "uppercase",
-          color: "var(--ink-soft)",
-        }}
-      >
-        {label}
-      </span>
+    <div className="bl-card-head">
+      <Icon name={icon} size={21} />
+      <h2 className="bl-h2">{label}</h2>
     </div>
   );
+}
+
+function Empty({ text }: { text: string }) {
+  return <p className={styles.empty}>{text}</p>;
 }
 
 export default function Insights() {
@@ -56,353 +38,158 @@ export default function Insights() {
       const currentAnomaly = await ApiClient.getAnomaly(userId);
       setAnomaly(currentAnomaly);
       if (currentAnomaly.explanation_id) {
-        const detail = await ApiClient.getExplanation(currentAnomaly.explanation_id);
-        setExplanation(detail);
+        setExplanation(await ApiClient.getExplanation(currentAnomaly.explanation_id));
       }
     } catch (err) {
       setAnomaly(null);
       setExplanation(null);
-      setError(err instanceof Error ? err.message : "Live insights unavailable.");
+      setError(err instanceof Error ? err.message : "内訳の読み込みに失敗しました。");
     } finally {
       setIsLoading(false);
     }
   }, [userId]);
 
-  useEffect(() => { loadInsights(); }, [loadInsights]);
+  useEffect(() => {
+    void loadInsights();
+  }, [loadInsights]);
 
   if (isLoading) {
     return (
-      <div className="flex h-96 items-center justify-center">
-        <Loader2 className="h-7 w-7 animate-spin" style={{ color: "var(--sandstone)" }} />
+      <div className="bl-wrap" style={{ display: "grid", placeItems: "center", minHeight: "50vh" }}>
+        <span className="bl-loader" aria-label="読み込み中" />
       </div>
     );
   }
 
-  return (
-    <div className="space-y-6">
+  const zscores = Object.entries(explanation?.baseline_deviation_json?.feature_zscores ?? {});
 
-      {/* Page header */}
-      <section
-        className="relative px-8 py-7"
-        style={{
-          ...S.panel,
-          backgroundColor: "var(--ivory-warm)",
-        }}
-      >
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <div
-              className="mb-3"
-              style={{
-                fontFamily: "var(--font-sans), sans-serif",
-                fontSize: "0.6rem",
-                fontWeight: 600,
-                letterSpacing: "0.28em",
-                textTransform: "uppercase",
-                color: "var(--ink-faint)",
-              }}
-            >
-              Inference Ledger
-            </div>
-            <h1
-              className="text-3xl"
-              style={{ ...S.displayFont, fontWeight: 700, letterSpacing: "0.04em", color: "var(--ink)" }}
-            >
-              Hybrid Inference Dossier
-            </h1>
-            <p
-              className="mt-2 max-w-xl text-base leading-relaxed"
-              style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}
-            >
-              The score is explained through rule activations, baseline manifold deviation, and ontological drift.
-            </p>
-          </div>
-          <div
-            className="px-4 py-2 text-xs"
-            style={{
-              ...S.displayFont,
-              border: "1px solid var(--limestone)",
-              color: "var(--ink-faint)",
-              fontSize: "0.6rem",
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-            }}
-          >
-            Participant · {userId}
-          </div>
+  return (
+    <div className="bl-wrap bl-wrap--wide bl-stack">
+      <header style={{ padding: "2px 2px 0" }}>
+        <h1 className="bl-h1">変化の内訳</h1>
+        <p className="bl-meta" style={{ marginTop: 3 }}>
+          タイムラインの値が、どんな要素から出てきたのかを分解して見られます。
+        </p>
+      </header>
+
+      {error && (
+        <div className="bl-notice bl-notice--watch" role="alert">
+          <Icon name="warning" size={19} fill />
+          <span>{error}</span>
         </div>
-      </section>
+      )}
 
       {!anomaly ? (
-        <div
-          className="p-12 text-center text-sm"
-          style={{
-            border: "1px dashed var(--limestone)",
-            backgroundColor: "var(--ivory-warm)",
-            color: "var(--ink-faint)",
-            fontStyle: "italic",
-            ...S.bodyFont,
-          }}
-        >
-          No inference dossier available yet.
+        <div className="bl-card bl-empty">
+          <Icon name="insights" size={40} />
+          <p className="bl-body">まだ内訳を出せる記録がありません。日記を提出すると表示されます。</p>
         </div>
       ) : (
-        <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
-          {error && (
-            <div
-              className="flex items-center gap-2 px-5 py-3 text-sm lg:col-span-2"
-              style={{
-                border: "1px solid var(--sandstone)",
-                backgroundColor: "rgba(196,150,42,0.06)",
-                color: "var(--ochre)",
-                ...S.bodyFont,
-                fontStyle: "italic",
-              }}
-            >
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* Left column — score + deviation */}
-          <section className="space-y-5">
-
-            {/* Anomaly score stele */}
-            <div
-              style={{
-                backgroundColor: "var(--ivory-warm)",
-                border: "1px solid var(--limestone)",
-              }}
-            >
-              <div className="px-6 py-6">
-                <div
-                  className="mb-2"
-                  style={{
-                    fontFamily: "var(--font-sans), sans-serif",
-                    fontSize: "0.55rem",
-                    fontWeight: 600,
-                    letterSpacing: "0.22em",
-                    textTransform: "uppercase",
-                    color: "var(--ink-faint)",
-                  }}
-                >
-                  Hybrid Reflection Signal
-                </div>
-                <div
-                  className="text-6xl leading-none"
-                  style={{ ...S.displayFont, fontWeight: 700, color: "var(--ink)", letterSpacing: "0.04em" }}
-                >
-                  {anomaly.anomaly_score.toFixed(2)}
-                </div>
-                <p
-                  className="mt-4 text-sm leading-relaxed"
-                  style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}
-                >
-                  Non-diagnostic signal from rule activations, baseline deviation, and temporal drift.
-                </p>
-              </div>
+        <div className={styles.grid}>
+          <section className="bl-stack">
+            <div className={styles.score}>
+              <span className="bl-eyebrow">変化の大きさ</span>
+              <div className={styles.scoreValue}>{anomaly.anomaly_score.toFixed(2)}</div>
+              <p className="bl-body" style={{ marginTop: 12 }}>
+                ルールの反応、ふだんとの差、日ごとの移り変わりをまとめた値です。診断ではありません。
+              </p>
             </div>
 
-            {/* Baseline manifold deviation */}
-            <div style={S.panel}>
-              <SectionHeader icon="⚖" label="Baseline Manifold Deviation" />
-              <div>
-                {Object.entries(explanation?.baseline_deviation_json?.feature_zscores ?? {})
-                  .slice(0, 6)
-                  .map(([feature, z]) => (
-                    <div
-                      key={feature}
-                      className="flex items-center justify-between gap-4 px-5 py-3 text-sm"
-                      style={{ borderBottom: "1px solid var(--ivory-aged)" }}
-                    >
-                      <span style={{ ...S.bodyFont, color: "var(--ink-soft)", fontWeight: 500 }}>
-                        {feature}
-                      </span>
-                      <span
-                        style={{
-                          fontFamily: "monospace",
-                          color: "var(--ink-mid)",
-                          fontSize: "0.85rem",
-                        }}
-                      >
+            <div className="bl-card">
+              <SectionHead icon="monitoring" label="ふだんとの差" />
+              {zscores.length === 0 ? (
+                <Empty text="差を出せる項目がありません。" />
+              ) : (
+                <div className={styles.rows}>
+                  {zscores.slice(0, 6).map(([feature, z]) => (
+                    <div key={feature} className={styles.row}>
+                      <span>{feature}</span>
+                      <span className={styles.mono}>
                         {Number.isFinite(Number(z)) ? Number(z).toFixed(2) : "—"}
                       </span>
                     </div>
                   ))}
-                {Object.keys(explanation?.baseline_deviation_json?.feature_zscores ?? {}).length === 0 && (
-                  <div className="px-5 py-6 text-sm" style={{ color: "var(--ink-faint)", fontStyle: "italic", ...S.bodyFont }}>
-                    No deviation metrics.
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </section>
 
-          {/* Right column — rules, deltas, drift */}
-          <section className="space-y-5">
-
-            {/* Rule activations */}
-            <div style={S.panel}>
-              <SectionHeader icon="⚡" label="Rule Activations" />
-              <div>
-                {explanation?.triggered_rules_json?.map((rule) => (
-                  <div
-                    key={rule.rule}
-                    className="px-5 py-4"
-                    style={{ borderBottom: "1px solid var(--ivory-aged)" }}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div
-                        className="font-medium"
-                        style={{ ...S.bodyFont, color: "var(--ink)", fontSize: "0.95rem" }}
-                      >
-                        {rule.rule.replaceAll("_", " ")}
+          <section className="bl-stack">
+            <div className="bl-card">
+              <SectionHead icon="auto_awesome" label="反応したルール" />
+              {!explanation || explanation.triggered_rules_json.length === 0 ? (
+                <Empty text="反応したルールはありません。" />
+              ) : (
+                <div className={styles.rules}>
+                  {explanation.triggered_rules_json.map((rule) => (
+                    <div key={rule.rule} className={styles.rule}>
+                      <div className="bl-row-between" style={{ flexWrap: "wrap", gap: 8 }}>
+                        <span className="bl-h3">{rule.rule.replaceAll("_", " ")}</span>
+                        <span className="bl-chip bl-chip--tint">重み {rule.weight.toFixed(2)}</span>
                       </div>
-                      <div
-                        className="px-3 py-1 text-xs"
-                        style={{
-                          ...S.displayFont,
-                          border: "1px solid var(--limestone)",
-                          color: "var(--ink-mid)",
-                          fontSize: "0.55rem",
-                          letterSpacing: "0.12em",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        weight {rule.weight.toFixed(2)}
-                      </div>
+                      <p className="bl-body" style={{ fontSize: "0.87rem", marginTop: 5 }}>
+                        {rule.evidence}
+                      </p>
                     </div>
-                    <p
-                      className="mt-2 text-sm leading-relaxed"
-                      style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}
-                    >
-                      {rule.evidence}
-                    </p>
-                  </div>
-                ))}
-                {(!explanation || explanation.triggered_rules_json.length === 0) && (
-                  <div className="px-5 py-6 text-sm" style={{ color: "var(--ink-faint)", fontStyle: "italic", ...S.bodyFont }}>
-                    No rule activations emitted.
-                  </div>
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Deltas & drift in a 2-column grid */}
-            <div className="grid gap-5 md:grid-cols-2">
-
-              {/* Relation deltas */}
-              <div style={S.panel}>
-                <SectionHeader icon="△" label="Relation Deltas" />
-                <details open>
-                  <summary
-                    className="cursor-pointer px-5 py-3 text-sm transition-all"
-                    style={{ ...S.bodyFont, color: "var(--ink-soft)", fontWeight: 500 }}
-                  >
-                    Delta records
-                  </summary>
-                  <div style={{ borderTop: "1px solid var(--limestone)" }}>
-                    {explanation?.changed_relations_json?.map((rel, idx) => (
-                      <pre
-                        key={idx}
-                        className="overflow-auto px-5 py-3 text-xs leading-5"
-                        style={{
-                          color: "var(--ink-mid)",
-                          borderBottom: "1px solid var(--ivory-aged)",
-                          fontFamily: "monospace",
-                          backgroundColor: "var(--ivory-warm)",
-                        }}
-                      >
+            <div className="bl-grid bl-grid--2">
+              <div className="bl-card">
+                <SectionHead icon="timeline" label="関係の変化" />
+                {!explanation || explanation.changed_relations_json.length === 0 ? (
+                  <Empty text="関係の変化は検出されていません。" />
+                ) : (
+                  <div className={styles.rows}>
+                    {explanation.changed_relations_json.map((rel, index) => (
+                      <pre key={index} className={styles.code}>
                         {formatRecord(rel)}
                       </pre>
                     ))}
-                    {(!explanation || explanation.changed_relations_json.length === 0) && (
-                      <div className="px-5 py-6 text-sm" style={{ color: "var(--ink-faint)", fontStyle: "italic", ...S.bodyFont }}>
-                        No relation deltas detected.
-                      </div>
-                    )}
                   </div>
-                </details>
+                )}
               </div>
 
-              {/* Drift / uncertainty */}
-              <div style={S.panel}>
-                <SectionHeader icon="◈" label="Drift · Uncertainty" />
-                <details style={{ borderBottom: "1px solid var(--limestone)" }} open>
-                  <summary
-                    className="cursor-pointer px-5 py-3 text-sm transition-all"
-                    style={{ ...S.bodyFont, color: "var(--ink-soft)", fontWeight: 500 }}
-                  >
-                    Protective-factor attenuation
-                  </summary>
-                  <pre
-                    className="overflow-auto px-5 py-3 text-xs leading-5"
-                    style={{
-                      borderTop: "1px solid var(--limestone)",
-                      color: "var(--ink-mid)",
-                      fontFamily: "monospace",
-                      backgroundColor: "var(--ivory-warm)",
-                    }}
-                  >
-                    {formatRecord(explanation?.protective_decline_json)}
-                  </pre>
+              <div className="bl-card">
+                <SectionHead icon="psychology" label="支えの変化と不確かさ" />
+                <details className={styles.details} open>
+                  <summary>支えになっていたものの減り方</summary>
+                  <pre className={styles.code}>{formatRecord(explanation?.protective_decline_json)}</pre>
                 </details>
-                <details>
-                  <summary
-                    className="cursor-pointer px-5 py-3 text-sm transition-all"
-                    style={{ ...S.bodyFont, color: "var(--ink-soft)", fontWeight: 500 }}
-                  >
-                    Epistemic uncertainty
-                  </summary>
-                  <pre
-                    className="overflow-auto px-5 py-3 text-xs leading-5"
-                    style={{
-                      borderTop: "1px solid var(--limestone)",
-                      color: "var(--ink-mid)",
-                      fontFamily: "monospace",
-                      backgroundColor: "var(--ivory-warm)",
-                    }}
-                  >
-                    {formatRecord(explanation?.uncertainty_json)}
-                  </pre>
+                <details className={styles.details}>
+                  <summary>どこまで確かか</summary>
+                  <pre className={styles.code}>{formatRecord(explanation?.uncertainty_json)}</pre>
                 </details>
               </div>
             </div>
 
-            {/* Relation axioms */}
-            <div style={S.panel}>
-              <SectionHeader icon="⊢" label="Relation Axioms" />
-              <div>
-                {explanation?.key_relations?.slice(0, 8).map((rel) => (
-                  <div
-                    key={`${rel.source_id}-${rel.target_id}-${rel.type}`}
-                    className="grid gap-3 px-5 py-3 text-sm"
-                    style={{
-                      borderBottom: "1px solid var(--ivory-aged)",
-                      gridTemplateColumns: "1fr 130px",
-                    }}
-                  >
-                    <div style={{ ...S.bodyFont, color: "var(--ink-soft)", fontWeight: 500 }}>
-                      {rel.source_id} {rel.type.replaceAll("_", " ")} {rel.target_id}
+            <div className="bl-card">
+              <SectionHead icon="graphic_eq" label="主な関係" />
+              {!explanation || explanation.key_relations.length === 0 ? (
+                <Empty text="表示できる関係がありません。" />
+              ) : (
+                <div className={styles.rows}>
+                  {explanation.key_relations.slice(0, 8).map((rel) => (
+                    <div key={`${rel.source_id}-${rel.target_id}-${rel.type}`} className={styles.row}>
+                      <span>
+                        {rel.source_id} → {rel.type.replaceAll("_", " ")} → {rel.target_id}
+                      </span>
+                      <span className={styles.mono}>確度 {rel.confidence.toFixed(2)}</span>
                     </div>
-                    <div
-                      className="text-right"
-                      style={{ fontFamily: "monospace", color: "var(--ink-mid)", fontSize: "0.82rem", fontStyle: "italic" }}
-                    >
-                      conf. {rel.confidence.toFixed(2)}
-                    </div>
-                  </div>
-                ))}
-                {(!explanation || explanation.key_relations.length === 0) && (
-                  <div className="px-5 py-6 text-sm" style={{ color: "var(--ink-faint)", fontStyle: "italic", ...S.bodyFont }}>
-                    No relation axioms available.
-                  </div>
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </section>
         </div>
       )}
+
+      <p className="bl-disclaimer">
+        <Icon name="medical_information" size={15} />
+        ここに出る値と根拠は、教員や本人が状況を確認するための材料です。診断ではありません。
+      </p>
     </div>
   );
 }

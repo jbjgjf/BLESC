@@ -1,132 +1,218 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { Icon } from "@/components/ui/Icon";
+import { BandChip, TrendChip } from "@/components/blesc/BandChip";
+import { CLASS_ROSTER } from "@/lib/blesc/fixtures";
+import { BANDS, BAND_ORDER, STATUSES, THEMES, formatDate, relativeDays } from "@/lib/blesc/labels";
+import type { RiskBand } from "@/lib/blesc/types";
+import styles from "./roster.module.css";
 
-import { ApiClient } from "@/api/client";
-import type { EducatorStudentStatus } from "@/api/models";
-import { BandChip, SafetyChip, panel } from "@/components/educator/StatusChips";
+type Filter = RiskBand | "all";
 
-type Filter = "all" | "flagged" | "inactive";
+const FILTERS: Array<{ value: Filter; label: string }> = [
+  { value: "all", label: "すべて" },
+  { value: "alert", label: "高リスク" },
+  { value: "watch", label: "要注意" },
+  { value: "calm", label: "安定" },
+];
 
-const BAND_RANK: Record<EducatorStudentStatus["state_band"], number> = { review: 3, watch: 2, unknown: 1, settled: 0 };
+export default function RosterPage() {
+  const params = useSearchParams();
+  const initial = (params.get("band") as Filter | null) ?? "all";
+  const [filter, setFilter] = useState<Filter>(
+    FILTERS.some((f) => f.value === initial) ? initial : "all",
+  );
+  const [query, setQuery] = useState("");
 
-function needsAttention(student: EducatorStudentStatus): number {
-  const safety = student.safety_level === "crisis" ? 8 : student.safety_level === "elevated" ? 4 : 0;
-  return safety + BAND_RANK[student.state_band];
-}
-
-function isInactive(student: EducatorStudentStatus, referenceTime: number): boolean {
-  if (!student.last_active_day) return true;
-  return referenceTime - new Date(student.last_active_day).getTime() > 7 * 24 * 60 * 60 * 1000;
-}
-
-export default function EducatorRosterPage() {
-  const [roster, setRoster] = useState<EducatorStudentStatus[] | null>(null);
-  const [loadedAt, setLoadedAt] = useState(0);
-  const [filter, setFilter] = useState<Filter>("all");
-  const [error, setError] = useState<string | null>(null);
-  const logged = useRef(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    ApiClient.getCohortRoster()
-      .then((students) => {
-        if (cancelled) return;
-        setRoster(students);
-        setLoadedAt(Date.now());
-        setError(null);
-        if (!logged.current && students.length) {
-          logged.current = true;
-          void ApiClient.recordCohortAccess(students, "roster");
-        }
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load roster.");
-      });
-    return () => { cancelled = true; };
-  }, []);
-
-  const visible = useMemo(() => {
-    if (!roster) return [];
-    const filtered = roster.filter((student) =>
-      filter === "all" ? true
-      : filter === "flagged" ? (student.safety_level === "crisis" || student.safety_level === "elevated" || student.state_band === "review")
-      : isInactive(student, loadedAt),
+  const rows = useMemo(() => {
+    const term = query.trim();
+    return CLASS_ROSTER.filter((student) => {
+      if (filter !== "all" && student.band !== filter) return false;
+      if (term && !student.name.includes(term)) return false;
+      return true;
+    }).sort(
+      (a, b) =>
+        BAND_ORDER.indexOf(a.band) - BAND_ORDER.indexOf(b.band) ||
+        b.missedDays - a.missedDays ||
+        a.name.localeCompare(b.name, "ja"),
     );
-    return [...filtered].sort((a, b) => needsAttention(b) - needsAttention(a) || a.code.localeCompare(b.code));
-  }, [roster, filter, loadedAt]);
-
-  if (error) {
-    return <div className="flex items-center gap-2 px-6 py-4 text-sm" style={{ ...panel, color: "var(--sienna)" }}><AlertCircle className="h-4 w-4" />{error}</div>;
-  }
-  if (!roster) {
-    return <div className="flex h-48 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--sandstone)" }} /></div>;
-  }
+  }, [filter, query]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        {(["all", "flagged", "inactive"] as Filter[]).map((option) => (
-          <button
-            key={option}
-            type="button"
-            onClick={() => setFilter(option)}
-            className="rounded-full px-4 py-1.5 text-xs font-semibold transition-all"
-            style={{
-              border: filter === option ? "1px solid transparent" : "1px solid var(--blue-base)",
-              background: filter === option ? "var(--blue-base)" : "#ffffff",
-              color: "var(--ink)",
-              cursor: "pointer",
-            }}
-          >
-            {option === "all" ? `All (${roster.length})` : option === "flagged" ? "Needs attention" : "Inactive"}
-          </button>
+    <div className="bl-stack">
+      <header className={styles.head}>
+        <div>
+          <h1 className="bl-h1">生徒一覧</h1>
+          <p className="bl-meta">2年A組 ・ {CLASS_ROSTER.length}名</p>
+        </div>
+
+        <label className={styles.search}>
+          <Icon name="search" size={19} />
+          <input
+            className={styles.searchInput}
+            type="search"
+            placeholder="生徒名で絞り込む"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label="生徒名で絞り込む"
+          />
+        </label>
+      </header>
+
+      <div className={styles.filters}>
+        {FILTERS.map((option) => {
+          const count =
+            option.value === "all"
+              ? CLASS_ROSTER.length
+              : CLASS_ROSTER.filter((student) => student.band === option.value).length;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className="bl-choice"
+              aria-pressed={filter === option.value}
+              onClick={() => setFilter(option.value)}
+            >
+              {option.value !== "all" && <span className={`bl-dot ${BANDS[option.value].dot}`} />}
+              {option.label}
+              <span className={styles.filterCount}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── 表（デスクトップ） ─────────────────────── */}
+      <div className="bl-card bl-card--flush bl-rise">
+        <div className={styles.tableScroll}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th scope="col">生徒名</th>
+                <th scope="col">状態</th>
+                <th scope="col">傾向</th>
+                <th scope="col">最終提出</th>
+                <th scope="col">未提出</th>
+                <th scope="col">AI補足</th>
+                <th scope="col">主な観点</th>
+                <th scope="col">対応</th>
+                <th scope="col">担当</th>
+                <th scope="col"><span className="sr-only">詳細</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((student) => (
+                <tr key={student.id} data-band={student.band}>
+                  <th scope="row">
+                    <Link href={`/educator/student/${student.id}`} className={styles.name}>
+                      {student.name}
+                    </Link>
+                    <span className={styles.klass}>
+                      {student.grade}
+                      {student.className}
+                    </span>
+                  </th>
+                  <td><BandChip band={student.band} size="sm" /></td>
+                  <td><TrendChip trend={student.trend} /></td>
+                  <td className={styles.num}>{relativeDays(student.lastEntry)}</td>
+                  <td className={styles.num}>
+                    {student.missedDays > 0 ? (
+                      <span className="bl-chip bl-chip--watch" style={{ padding: "3px 9px", fontSize: "0.73rem" }}>
+                        {student.missedDays}日
+                      </span>
+                    ) : (
+                      <span className="bl-micro">—</span>
+                    )}
+                  </td>
+                  <td>
+                    {student.hasFollowUp ? (
+                      <span className={styles.hasFollowUp} title="対話型AIによる補足あり">
+                        <Icon name="forum" size={18} fill />
+                      </span>
+                    ) : (
+                      <span className="bl-micro">—</span>
+                    )}
+                  </td>
+                  <td>
+                    <span className={styles.themes}>
+                      {student.topThemes.length === 0 ? (
+                        <span className="bl-micro">—</span>
+                      ) : (
+                        student.topThemes.map((theme) => (
+                          <span key={theme} className="bl-chip bl-chip--tint" style={{ padding: "3px 9px", fontSize: "0.72rem" }}>
+                            <Icon name={THEMES[theme].icon} size={13} />
+                            {THEMES[theme].label}
+                          </span>
+                        ))
+                      )}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="bl-micro" style={{ whiteSpace: "nowrap" }}>
+                      {STATUSES[student.status].label}
+                    </span>
+                  </td>
+                  <td className="bl-micro" style={{ whiteSpace: "nowrap" }}>{student.teacher}</td>
+                  <td>
+                    <Link
+                      href={`/educator/student/${student.id}`}
+                      className="bl-icon-btn"
+                      aria-label={`${student.name}の詳細`}
+                    >
+                      <Icon name="chevron_right" size={20} />
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {rows.length === 0 && (
+          <div className="bl-empty">
+            <Icon name="search" size={40} />
+            <p className="bl-body">該当する生徒がいません。</p>
+          </div>
+        )}
+      </div>
+
+      {/* ── カード（モバイル） ─────────────────────── */}
+      <div className={styles.cards}>
+        {rows.map((student) => (
+          <Link key={student.id} href={`/educator/student/${student.id}`} className={`bl-card bl-card--link ${styles.card}`}>
+            <div className="bl-row-between">
+              <span className="bl-h3">{student.name}</span>
+              <BandChip band={student.band} size="sm" />
+            </div>
+            <div className="bl-row" style={{ gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+              <TrendChip trend={student.trend} />
+              {student.hasFollowUp && (
+                <span className="bl-chip bl-chip--tint">
+                  <Icon name="forum" size={14} fill />
+                  AI補足
+                </span>
+              )}
+              {student.missedDays > 0 && (
+                <span className="bl-chip bl-chip--watch">
+                  <Icon name="event_busy" size={14} />
+                  {student.missedDays}日未提出
+                </span>
+              )}
+            </div>
+            <p className="bl-micro" style={{ marginTop: 8 }}>
+              最終提出 {student.lastEntry ? formatDate(student.lastEntry, false) : "記録なし"} ・{" "}
+              {STATUSES[student.status].label}
+            </p>
+          </Link>
         ))}
       </div>
 
-      {roster.length === 0 ? (
-        <section className="px-8 py-10 text-center text-sm" style={{ ...panel, color: "var(--ink-mid)" }}>
-          No students are sharing derived signals with you yet.
-        </section>
-      ) : visible.length === 0 ? (
-        <section className="px-8 py-8 text-center text-sm" style={{ ...panel, color: "var(--ink-faint)" }}>
-          No students match this filter.
-        </section>
-      ) : (
-        <section style={panel}>
-          {visible.map((student) => (
-            <Link
-              key={student.participant_id}
-              href={`/educator/student/${student.participant_id}`}
-              className="flex flex-wrap items-center justify-between gap-3 px-6 py-4"
-              style={{ borderBottom: "1px solid var(--limestone)", textDecoration: "none" }}
-            >
-              <div className="min-w-0">
-                <div className="font-semibold" style={{ color: "var(--ink)" }}>
-                  {student.display_name ?? student.code}
-                  <span className="ml-2 font-mono text-xs" style={{ color: "var(--ink-faint)" }}>{student.code}</span>
-                </div>
-                <div className="mt-1 text-xs" style={{ color: "var(--ink-faint)" }}>
-                  {student.last_active_day
-                    ? `Last reflection ${new Date(student.last_active_day).toLocaleDateString()}`
-                    : "No reflections yet"}
-                  {student.latest_score !== null && Number.isFinite(student.latest_score)
-                    ? ` · signal ${student.latest_score.toFixed(2)}`
-                    : ""}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <BandChip band={student.state_band} />
-                <SafetyChip level={student.safety_level} />
-                <ArrowRight className="h-4 w-4" style={{ color: "var(--ink-faint)" }} />
-              </div>
-            </Link>
-          ))}
-        </section>
-      )}
+      <p className="bl-disclaimer">
+        <Icon name="shield" size={15} />
+        日記の本文と対話の全文はここには表示されません。閲覧の記録は生徒側からも確認できます。
+      </p>
     </div>
   );
 }

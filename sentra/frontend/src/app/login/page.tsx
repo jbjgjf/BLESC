@@ -3,8 +3,33 @@
 import { useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
+import { Icon } from "@/components/ui/Icon";
+import styles from "./login.module.css";
+
+/** Supabase の英語メッセージを、生徒にも読める日本語に置き換える。 */
+function localizeAuthError(message: string): string {
+  const lower = message.toLowerCase();
+  if (lower.includes("invalid login credentials")) {
+    return "メールアドレスまたはパスワードが正しくありません。";
+  }
+  if (lower.includes("email not confirmed")) {
+    return "メールアドレスの確認が完了していません。届いたメールのリンクを開いてください。";
+  }
+  if (lower.includes("user already registered")) {
+    return "このメールアドレスはすでに登録されています。ログインを選んでください。";
+  }
+  if (lower.includes("password should be at least")) {
+    return "パスワードは6文字以上で入力してください。";
+  }
+  if (lower.includes("rate limit") || lower.includes("too many")) {
+    return "試行回数が多すぎます。しばらく待ってからもう一度お試しください。";
+  }
+  if (lower.includes("fetch") || lower.includes("network")) {
+    return "通信に失敗しました。接続を確認してもう一度お試しください。";
+  }
+  return message;
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -21,64 +46,49 @@ export default function LoginPage() {
     setMessage(null);
 
     const authRedirectUrl = `${window.location.origin}/login`;
-    const result = mode === "signin"
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: authRedirectUrl,
-          },
-        });
+    const result =
+      mode === "signin"
+        ? await supabase.auth.signInWithPassword({ email, password })
+        : await supabase.auth.signUp({
+            email,
+            password,
+            options: { emailRedirectTo: authRedirectUrl },
+          });
 
     setIsSubmitting(false);
 
     if (result.error) {
-      setMessage(result.error.message);
+      setMessage(localizeAuthError(result.error.message));
       return;
     }
 
     if (mode === "signup" && !result.data.session) {
-      setMessage("Check your email to confirm your account, then sign in.");
+      setMessage("確認メールを送りました。メール内のリンクを開いたあと、ログインしてください。");
       return;
     }
 
     router.replace(searchParams.get("next") || "/");
   };
 
-  const inputClass =
-    "mt-2 h-11 w-full rounded-full border px-4 text-sm outline-none transition " +
-    "border-[hsl(206,62%,86%)] bg-[hsl(206,80%,97%)] text-[hsl(206,60%,18%)] " +
-    "focus:border-[hsl(206,74%,72%)] focus:bg-white";
-
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-10">
-      <section
-        className="w-full max-w-md border p-7"
-        style={{
-          borderColor: "var(--limestone)",
-          borderRadius: "var(--radius)",
-          backgroundColor: "#ffffff",
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <Image
-            src="/flower.png"
-            width={40}
-            height={40}
-            unoptimized
-            className="h-10 w-10 shrink-0 object-contain"
-            alt="blesc logo"
-          />
+    <main className={styles.page}>
+      <section className={`${styles.card} bl-pop`}>
+        <div className={styles.brand}>
+          <Image src="/flower.png" width={44} height={44} unoptimized alt="" className={styles.flower} />
           <div>
-            <h1 className="text-lg font-bold" style={{ color: "hsl(206, 60%, 18%)" }}>blesc</h1>
-            <p className="text-sm" style={{ color: "hsl(206, 32%, 36%)" }}>Sign in to continue</p>
+            <h1 className="bl-h2">blesc</h1>
+            <p className="bl-meta">
+              {mode === "signin" ? "ログインしてはじめる" : "アカウントを作成する"}
+            </p>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <form onSubmit={handleSubmit} className={styles.form}>
           <div>
-            <label className="block text-sm font-medium" style={{ color: "hsl(206, 46%, 27%)" }} htmlFor="email">Email</label>
+            <label className="bl-label" htmlFor="email">
+              <Icon name="person" size={19} />
+              メールアドレス
+            </label>
             <input
               id="email"
               type="email"
@@ -86,12 +96,16 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className={inputClass}
+              className="bl-input"
+              placeholder="you@example.com"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium" style={{ color: "hsl(206, 46%, 27%)" }} htmlFor="password">Password</label>
+            <label className="bl-label" htmlFor="password">
+              <Icon name="lock" size={19} />
+              パスワード
+            </label>
             <input
               id="password"
               type="password"
@@ -100,27 +114,21 @@ export default function LoginPage() {
               minLength={6}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className={inputClass}
+              className="bl-input"
+              placeholder={mode === "signup" ? "6文字以上" : ""}
             />
           </div>
 
           {message && (
-            <div className="border px-3 py-2 text-sm" style={{ borderRadius: "var(--radius)", borderColor: "hsl(36, 80%, 75%)", backgroundColor: "hsl(36, 90%, 95%)", color: "hsl(36, 85%, 26%)" }}>
-              {message}
+            <div className="bl-notice bl-notice--watch" role="alert">
+              <Icon name="info" size={19} />
+              <span>{message}</span>
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold transition hover:bg-[hsl(206,74%,78%)] disabled:cursor-not-allowed disabled:opacity-50"
-            style={{
-              background: "hsl(206, 74%, 72%)",
-              color: "hsl(206, 60%, 18%)",
-            }}
-          >
-            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {mode === "signin" ? "Sign in" : "Create account"}
+          <button type="submit" disabled={isSubmitting} className="bl-btn bl-btn--primary bl-btn--block bl-btn--lg">
+            {isSubmitting && <span className={styles.spinner} aria-hidden="true" />}
+            {mode === "signin" ? "ログイン" : "アカウントを作成"}
           </button>
         </form>
 
@@ -130,11 +138,16 @@ export default function LoginPage() {
             setMode(mode === "signin" ? "signup" : "signin");
             setMessage(null);
           }}
-          className="mt-4 w-full cursor-pointer rounded-full px-3 py-2 text-sm font-medium transition hover:bg-[hsla(206,74%,72%,0.15)]"
-          style={{ color: "hsl(206, 60%, 18%)" }}
+          className="bl-btn bl-btn--ghost bl-btn--block"
+          style={{ marginTop: 10 }}
         >
-          {mode === "signin" ? "Create an email/password account" : "Use an existing account"}
+          {mode === "signin" ? "アカウントをお持ちでない方はこちら" : "すでにアカウントをお持ちの方はこちら"}
         </button>
+
+        <p className="bl-disclaimer" style={{ marginTop: 18, justifyContent: "center" }}>
+          <Icon name="shield" size={15} />
+          blescは診断や緊急対応を行うものではありません。
+        </p>
       </section>
     </main>
   );

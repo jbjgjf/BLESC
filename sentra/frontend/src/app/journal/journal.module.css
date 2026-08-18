@@ -1,0 +1,282 @@
+/* 日記入力 — 企画書 4-1 / 4-2 / 4-3 / 4-6 */
+
+.head { padding: 2px 2px 0; }
+.head p { margin-top: 3px; }
+
+/* ── 4-2 感情の必須入力 ─────────────────────────────── */
+.moods {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.mood {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 6px 13px;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--bl-ink-2);
+  background: var(--bl-surface);
+  border: 1.5px solid var(--bl-line);
+  border-radius: var(--bl-radius);
+  cursor: pointer;
+  transition: background 0.16s var(--bl-ease), border-color 0.16s var(--bl-ease),
+    color 0.16s var(--bl-ease), transform 0.12s var(--bl-pop);
+}
+
+.mood :global(.blesc-icon) { color: var(--bl-ink-3); transition: color 0.16s var(--bl-ease); }
+
+.mood:hover { border-color: var(--bl-blue); background: var(--bl-mist); }
+.mood:active { transform: scale(0.96); }
+.mood:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+
+.mood[data-selected="true"] {
+  font-weight: 700;
+  transform: translateY(-2px);
+}
+.mood[data-selected="true"] :global(.blesc-icon) { color: inherit; }
+
+@media (max-width: 560px) {
+  .moods { gap: 5px; }
+  .mood {
+    padding: 12px 1px 10px;
+    /* Keep 「とても良い」「少しつらい」on one line at 375px */
+    font-size: 0.62rem;
+    letter-spacing: -0.02em;
+    gap: 6px;
+  }
+  .mood :global(.blesc-icon) { font-size: 28px !important; width: 28px; height: 28px; }
+}
+
+/* ── 4-3 出来事の必須入力 ───────────────────────────── */
+.categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+/* ── 4-1 本文 ───────────────────────────────────────── */
+.bodyInput {
+  min-height: 190px;
+  line-height: 1.8;
+}
+
+/* ── 検証メッセージ ─────────────────────────────────── */
+.error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 11px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--bl-alert-ink);
+}
+.error :global(.blesc-icon) { color: var(--bl-alert); }
+
+/* ── 提出バー ───────────────────────────────────────── */
+.submitBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 2px 2px 6px;
+}
+
+@media (max-width: 560px) {
+  .submitBar :global(.bl-btn) { width: 100%; }
+}
+
+/* ── 1問ずつの進み方 ─────────────────────────────────── */
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 2px;
+}
+
+.progressTrack {
+  display: flex;
+  gap: 5px;
+  flex: 1;
+}
+
+.progressSeg {
+  flex: 1;
+  height: 5px;
+  border-radius: var(--bl-pill);
+  background: var(--bl-veil);
+  transition: background 0.32s var(--bl-ease);
+}
+
+.progressSeg[data-done="true"] {
+  background: var(--bl-blue);
+}
+
+/* 設問を切り替えたときだけプログラムで焦点を移すので、枠線は出さない。
+   キーボード操作で入る要素ではない。 */
+.step:focus {
+  outline: none;
+}
+
+.stepBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 2px 2px 6px;
+}
+
+.stepNav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+@media (max-width: 560px) {
+  .stepNav { width: 100%; }
+  .stepNav :global(.bl-btn--primary) { flex: 1; }
+}
+
+/* ── 4-6 対話型AIサポート ───────────────────────────── */
+.followUp {
+  position: relative;
+  overflow: hidden;
+  padding: 18px;
+  border-radius: var(--bl-radius-lg);
+  border: 1px solid var(--bl-blue);
+  background: var(--bl-mist);
+}
+
+.followUpHead {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 16px;
+}
+
+.followUpHead img { object-fit: contain; flex-shrink: 0; }
+.followUpHead > div { flex: 1; min-width: 0; }
+.followUpHead p { margin-top: 2px; }
+
+.turns {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.turn {
+  max-width: 88%;
+  padding: 11px 16px;
+  font-size: 0.94rem;
+  line-height: 1.6;
+  border-radius: var(--bl-radius);
+  background: #ffffff;
+  border: 1px solid hsla(var(--bl-hue) 74% 72% / 0.45);
+  color: var(--bl-ink);
+}
+
+.turnStudent {
+  align-self: flex-end;
+  background: var(--bl-blue);
+  border-color: var(--bl-blue);
+}
+
+/* タイピングインジケータ — chat.module.css と同じ動き */
+.typing {
+  display: inline-flex;
+  gap: 5px;
+  padding: 15px 17px;
+}
+
+.typing span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bl-blue);
+  animation: bl-bounce 1.2s infinite ease-in-out;
+}
+.typing span:nth-child(2) { animation-delay: 0.15s; }
+.typing span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes bl-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30%           { transform: translateY(-7px); opacity: 1; }
+}
+
+.answers {
+  position: relative;
+  z-index: 2;
+  margin-top: 15px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.answers :global(.bl-choice) { font-size: 0.85rem; padding: 9px 15px; }
+
+.answerInput {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing span { animation: none; opacity: 0.7; }
+}
+
+/* ── 提出完了 ───────────────────────────────────────── */
+.done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 9px;
+  padding: 48px 20px;
+}
+
+.doneFlower {
+  margin-bottom: 6px;
+  /* 咲き終わってから、ゆっくり漂いはじめる。 */
+  animation: bl-floaty 4s ease-in-out 1.4s infinite;
+}
+
+.doneStats {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.doneStats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 15px 30px;
+  border-radius: var(--bl-radius);
+  background: var(--bl-mist);
+}
+
+.doneActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .doneFlower { animation: none; }
+}

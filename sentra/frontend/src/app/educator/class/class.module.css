@@ -1,0 +1,121 @@
+/* クラス全体ヒートマップ・分析 — 企画書 6-1 / 6-2 */
+
+.legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* ── 6-1 ヒートマップ ───────────────────────────────── */
+.heatmap {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 13px;
+  border-radius: var(--bl-radius-sm);
+  border: 1px solid;
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: transform 0.14s var(--bl-ease), box-shadow 0.14s var(--bl-ease);
+}
+
+.cell:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 1px currentColor;
+}
+
+.cell:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+
+.cellName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cellBadge {
+  display: inline-flex;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+@media (max-width: 560px) {
+  .heatmap { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+  .cell { padding: 10px; font-size: 0.78rem; gap: 6px; }
+}
+
+.unit {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-left: 3px;
+}
+
+/* ── 6-2 クラス全体分析 ─────────────────────────────── */
+.breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.breakRow {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.share {
+  width: 3rem;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--bl-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.delta {
+  width: 4rem;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.delta[data-dir="up"]   { color: var(--bl-watch-ink); }
+.delta[data-dir="down"] { color: var(--bl-calm-ink); }
+.delta[data-dir="flat"] { color: var(--bl-ink-3); }
+
+@media (max-width: 560px) {
+  .breakRow { flex-wrap: wrap; gap: 8px; }
+  .breakRow > :global(.bl-chip) { width: auto; }
+  .breakRow > :global(.bl-bar) { order: 3; flex-basis: 100%; }
+}
+
+/* ── ヒント ─────────────────────────────────────────── */
+.hints {
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.hints li {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--bl-ink-2);
+}

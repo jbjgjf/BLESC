@@ -1,0 +1,128 @@
+/* AI処理の記録 */
+
+.intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 20px 22px;
+  border-radius: var(--bl-radius-lg);
+  background: var(--bl-mist);
+  border: 1px solid var(--bl-line-soft);
+}
+
+.intro > :global(.blesc-icon) {
+  color: var(--bl-blue);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.filterForm {
+  display: flex;
+  gap: 9px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.filterForm :global(.bl-input) { flex: 1; min-width: 12rem; }
+
+.spinner {
+  width: 15px;
+  height: 15px;
+  border-radius: var(--bl-pill);
+  border: 2px solid hsl(var(--bl-hue) 40% 100% / 0.5);
+  border-top-color: var(--bl-ink);
+  animation: bl-spin 0.7s linear infinite;
+}
+
+/* ── 履歴カード ─────────────────────────────────────── */
+.trailHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--bl-line);
+}
+
+.trailId {
+  margin-top: 4px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--bl-ink);
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+/* ── 1件の処理 ──────────────────────────────────────── */
+.event {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--bl-line-soft);
+}
+
+.event:last-child { border-bottom: 0; }
+
+.eventHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 24px;
+  margin: 13px 0 0;
+  font-size: 0.78rem;
+  color: var(--bl-ink-2);
+}
+
+@media (max-width: 560px) {
+  .meta { grid-template-columns: minmax(0, 1fr); }
+}
+
+.meta > div { display: flex; gap: 6px; }
+.meta .wide { grid-column: 1 / -1; }
+.meta dt { font-weight: 700; color: var(--bl-ink-3); white-space: nowrap; }
+.meta dd { margin: 0; min-width: 0; }
+
+.safety {
+  margin-top: 13px;
+  padding: 12px 15px;
+  border-radius: var(--bl-radius-sm);
+  background: var(--bl-alert-bg);
+  border: 1px solid var(--bl-alert-line);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--bl-alert-ink);
+}
+
+.safety :global(.blesc-icon) { color: var(--bl-alert); }
+.safety p { margin: 0; }
+
+.evidence {
+  margin-top: 13px;
+  font-size: 0.76rem;
+  color: var(--bl-ink-3);
+}
+
+.evidence ul {
+  margin: 5px 0 0;
+  padding-left: 19px;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.error {
+  margin-top: 10px;
+  font-size: 0.79rem;
+  color: var(--bl-alert-ink);
+}

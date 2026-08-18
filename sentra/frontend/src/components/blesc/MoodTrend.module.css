@@ -1,0 +1,64 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.scale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.scale > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.scaleDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.guide {
+  stroke: var(--bl-line-soft);
+  stroke-width: 1;
+}
+
+.line {
+  fill: none;
+  stroke: var(--bl-blue);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dates {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0 6px;
+}
+
+.dates > span {
+  font-size: 0.68rem;
+  color: var(--bl-ink-3);
+  white-space: nowrap;
+  flex: 1;
+  text-align: center;
+}
+
+.dates > span[data-show="false"] {
+  visibility: hidden;
+}

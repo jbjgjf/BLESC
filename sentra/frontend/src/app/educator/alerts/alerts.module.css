@@ -1,0 +1,99 @@
+/* アラート — 企画書 6-5 / 7-2 / 7-5 */
+
+.name {
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: var(--bl-ink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.name:hover { text-decoration: underline; }
+.name:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; border-radius: 4px; }
+
+/* ── 7-5 優先度の高いアラート ───────────────────────── */
+.urgentCard {
+  padding: 18px 20px;
+  border-radius: var(--bl-radius-lg);
+  border: 1px solid var(--bl-alert-line);
+  background: var(--bl-alert-bg);
+}
+
+.urgentTop {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex-wrap: wrap;
+}
+
+.reasons,
+.flow {
+  margin-top: 13px;
+  padding: 12px 15px;
+  border-radius: var(--bl-radius-sm);
+  background: #ffffff;
+  border: 1px solid var(--bl-alert-line);
+}
+
+.reasons ul {
+  margin: 6px 0 0;
+  padding-left: 19px;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.flow ol {
+  margin: 6px 0 0;
+  padding-left: 19px;
+  list-style: decimal;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.reasons li,
+.flow li {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--bl-ink-2);
+}
+
+.cardActions {
+  display: flex;
+  gap: 9px;
+  margin-top: 15px;
+  flex-wrap: wrap;
+}
+
+/* ── 6-5 未提出 / 7-2 フォロー漏れ ──────────────────── */
+.alertRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--bl-radius-sm);
+  border: 1px solid var(--bl-line);
+  transition: opacity 0.2s var(--bl-ease), background 0.2s var(--bl-ease);
+}
+
+.alertRow[data-done="true"] {
+  opacity: 0.55;
+  background: var(--bl-mist);
+}
+
+.alertIcon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--bl-pill);
+  background: var(--bl-watch-bg);
+  color: var(--bl-watch);
+}
+
+@media (max-width: 620px) {
+  .alertRow { flex-wrap: wrap; }
+}

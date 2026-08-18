@@ -18,9 +18,9 @@ type Message = {
 };
 
 const STARTERS = [
-  "I want to talk about my day",
-  "I've been feeling stressed lately",
-  "Help me sort out my thoughts",
+  "今日あったことを話したい",
+  "最近ちょっとしんどい",
+  "考えを整理したい",
 ];
 
 const WAVE_PATHS = [
@@ -92,7 +92,7 @@ export default function ChatPage() {
             role: "ai",
             error: true,
             retryText: text,
-            text: err instanceof Error ? err.message : "Something went wrong.",
+            text: err instanceof Error ? err.message : "うまく送信できませんでした。",
           },
         ]);
       } finally {
@@ -133,9 +133,9 @@ export default function ChatPage() {
   };
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} data-bl-context="student">
       <header className={styles.header}>
-        <Link href="/" aria-label="Back to home" className={styles.headerHome}>
+        <Link href="/" aria-label="ホームに戻る" className={styles.headerHome}>
           <Image src="/flower.png" alt="blesc" width={34} height={34} className={styles.headerFlower} />
           <span className={styles.headerTitle}>blesc</span>
         </Link>
@@ -146,8 +146,8 @@ export default function ChatPage() {
           {messages.length === 0 && !isThinking && (
             <div className={styles.empty}>
               <Image src="/flower.png" alt="" width={88} height={88} className={styles.emptyFlower} priority />
-              <div className={styles.emptyTitle}>Hi, I&apos;m blesc</div>
-              <div className={styles.emptySub}>Whatever&apos;s on your mind — let&apos;s talk about it.</div>
+              <div className={styles.emptyTitle}>こんにちは、blescです</div>
+              <div className={styles.emptySub}>気になっていること、そのまま話してください。</div>
               <div className={styles.starters}>
                 {STARTERS.map((starter) => (
                   <button key={starter} type="button" className={styles.starter} onClick={() => void send(starter)}>
@@ -170,7 +170,7 @@ export default function ChatPage() {
                   {message.text}
                   {message.error && message.retryText && (
                     <button type="button" className={styles.retry} onClick={() => retry(message)}>
-                      Try again
+                      もう一度試す
                     </button>
                   )}
                 </div>
@@ -181,7 +181,7 @@ export default function ChatPage() {
           {isThinking && (
             <div className={styles.row}>
               <Image src="/flower.png" alt="" width={32} height={32} className={styles.avatar} />
-              <div className={`${styles.bubble} ${styles.bubbleAi} ${styles.typing}`} aria-label="blesc is thinking">
+              <div className={`${styles.bubble} ${styles.bubbleAi} ${styles.typing}`} aria-label="blescが考えています">
                 <span />
                 <span />
                 <span />
@@ -213,7 +213,7 @@ export default function ChatPage() {
             ref={textareaRef}
             className={styles.textarea}
             rows={1}
-            placeholder="Message blesc…"
+            placeholder="blescに話す…"
             value={input}
             onChange={(e) => {
               setInput(e.target.value);
@@ -229,7 +229,7 @@ export default function ChatPage() {
             className={styles.send}
             onClick={sendFromInput}
             disabled={isThinking || !input.trim()}
-            aria-label="Send message"
+            aria-label="送信"
           >
             <svg viewBox="0 0 100 100" className={styles.sendShape} aria-hidden="true">
               <path
@@ -244,7 +244,7 @@ export default function ChatPage() {
           </button>
         </div>
       </div>
-      <div className={styles.disclaimer}>blesc is not a clinical assessment or an emergency service.</div>
+      <div className={styles.disclaimer}>blescは診断や緊急対応を行うものではありません。</div>
     </div>
   );
 }

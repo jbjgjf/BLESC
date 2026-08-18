@@ -66,9 +66,9 @@ function outputText(response: Record<string, unknown>): string | null {
 
 function fallbackAnswer(mode: ChatPayload["mode"]) {
   if (mode === "recall_workspace") {
-    return "I have recorded that turn. Let us keep this cautious and non-diagnostic: what part of that feels most important to remember next time?";
+    return "いまの内容を記録しました。決めつけずに進めたいので、ひとつだけ教えてください。そのなかで、次に覚えておきたいのはどの部分ですか。";
   }
-  return "I can reflect on the latest message, but the model provider is temporarily unavailable. Treat this as a prompt for reflection rather than a conclusion.";
+  return "いまはAIの応答を生成できませんでした。しばらくしてからもう一度お試しください。";
 }
 
 function summarize(messages: ChatMessageRow[]) {
@@ -170,8 +170,9 @@ async function callOpenAI(message: string, payload: ChatPayload, recentMessages:
   }
 
   const instructions = [
-    "You are Sentra's student-facing research assistant.",
-    "Use simple, supportive, non-diagnostic language.",
+    "You are blesc, a student-facing support assistant for a Japanese school.",
+    "Always reply in Japanese unless the student clearly writes in another language, in which case reply in that language.",
+    "Use simple, warm, non-diagnostic language a junior-high or high-school student can read easily. Prefer plain wording over clinical terms.",
     "Do not claim to diagnose, treat, predict, or replace doctors, therapists, school counselors, guardians, emergency services, or licensed professionals.",
     payload.mode === "recall_workspace"
       ? "For the 30-turn recall workspace, briefly reflect the latest answer and ask one concise next question."

@@ -1,0 +1,55 @@
+/* ログイン */
+
+.page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 40px 18px;
+  font-family: var(--bl-font);
+  color: var(--bl-ink);
+  background: var(--bl-surface);
+}
+
+.card {
+  width: 100%;
+  max-width: 26rem;
+  padding: 28px;
+  border-radius: var(--bl-radius-lg);
+  border: 1px solid var(--bl-line);
+  background: #ffffff;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 24px;
+}
+
+.flower {
+  object-fit: contain;
+  flex-shrink: 0;
+  animation: bl-floaty 5s ease-in-out infinite;
+}
+
+.brand p { margin-top: 2px; }
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.spinner {
+  width: 15px;
+  height: 15px;
+  border-radius: var(--bl-pill);
+  border: 2px solid hsl(var(--bl-hue) 40% 100% / 0.5);
+  border-top-color: var(--bl-ink);
+  animation: bl-spin 0.7s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flower { animation: none; }
+  .spinner { animation-duration: 2s; }
+}

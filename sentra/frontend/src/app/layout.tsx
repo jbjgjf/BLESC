@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import "./globals.css";
+import "./blesc.css";
 import { AuthProvider } from "@/lib/auth";
 import { AuthShell } from "@/components/AuthShell";
+import { TransitionProvider } from "@/components/ui/Transition";
 
 export const metadata: Metadata = {
-  title: "BLESC",
-  description: "Education risk monitoring",
+  title: "blesc",
+  description: "生徒の変化に気づき、支援につなげるプラットフォーム",
 };
 
 export default function RootLayout({
@@ -15,11 +17,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="ja">
       <body>
         <AuthProvider>
           <Suspense fallback={null}>
-            <AuthShell>{children}</AuthShell>
+            <TransitionProvider>
+              <AuthShell>{children}</AuthShell>
+            </TransitionProvider>
           </Suspense>
         </AuthProvider>
       </body>

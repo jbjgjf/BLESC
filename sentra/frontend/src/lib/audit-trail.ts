@@ -29,9 +29,9 @@ export interface ModelRunRecord {
 }
 
 const STAGE_LABELS: Record<string, string> = {
-  extraction: "Emotional extraction",
-  safety_assessment: "Safety assessment",
-  counselor_summary: "Counselor summary",
+  extraction: "感情の抽出",
+  safety_assessment: "安全性の判定",
+  counselor_summary: "支援用まとめの作成",
 };
 
 // Provenance keys that are safe to surface: hashes, ids, counts, model names.

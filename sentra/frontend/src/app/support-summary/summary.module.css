@@ -1,0 +1,95 @@
+/* 支援サマリー */
+
+.intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 20px 22px;
+  border-radius: var(--bl-radius-lg);
+  background: var(--bl-mist);
+  border: 1px solid var(--bl-line-soft);
+}
+
+.intro > :global(.blesc-icon) {
+  color: var(--bl-blue);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.spinner {
+  width: 15px;
+  height: 15px;
+  border-radius: var(--bl-pill);
+  border: 2px solid hsl(var(--bl-hue) 40% 100% / 0.5);
+  border-top-color: var(--bl-ink);
+  animation: bl-spin 0.7s linear infinite;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--bl-line);
+}
+
+.flags {
+  padding: 15px 20px;
+  background: var(--bl-alert-bg);
+  border-bottom: 1px solid var(--bl-alert-line);
+  color: var(--bl-alert-ink);
+}
+
+.flags :global(.blesc-icon) { color: var(--bl-alert); }
+
+.sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 640px) {
+  .sections { grid-template-columns: minmax(0, 1fr); }
+}
+
+.section {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--bl-line-soft);
+}
+
+.section:nth-child(odd) { border-right: 1px solid var(--bl-line-soft); }
+
+@media (max-width: 640px) {
+  .section:nth-child(odd) { border-right: 0; }
+}
+
+.items {
+  margin: 8px 0 0;
+  padding-left: 19px;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.items li {
+  font-size: 0.88rem;
+  line-height: 1.65;
+  color: var(--bl-ink-2);
+}
+
+.empty {
+  margin: 8px 0 0;
+  font-size: 0.86rem;
+  font-style: italic;
+  color: var(--bl-ink-3);
+}
+
+.limits {
+  margin: 0;
+  padding: 16px 20px;
+  font-size: 0.78rem;
+  line-height: 1.7;
+  color: var(--bl-ink-3);
+}

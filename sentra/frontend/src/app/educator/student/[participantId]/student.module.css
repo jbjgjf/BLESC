@@ -1,0 +1,334 @@
+/* 生徒詳細 — 企画書 5-3 / 6-3 / 6-6 / 7-2 / 7-3 / 7-4 */
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 6px 13px 6px 9px;
+  border-radius: var(--bl-pill);
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--bl-ink-2);
+  text-decoration: none;
+  transition: background 0.15s var(--bl-ease);
+}
+
+.back:hover { background: var(--bl-mist); color: var(--bl-ink); }
+.back:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 0 2px;
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.avatar {
+  width: 54px;
+  height: 54px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--bl-pill);
+  background: var(--bl-mist);
+  color: var(--bl-blue);
+}
+
+.identity p { margin-top: 3px; }
+
+.headChips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── 7-5 緊急アラート ───────────────────────────────── */
+.urgent {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 17px 19px;
+  border-radius: var(--bl-radius-lg);
+  border: 1px solid var(--bl-alert-line);
+  background: var(--bl-alert-bg);
+}
+
+.urgent > :global(.blesc-icon) {
+  color: var(--bl-alert);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.urgent h2 { color: var(--bl-alert-ink); }
+
+.reasons {
+  margin: 10px 0 0;
+  padding-left: 19px;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.reasons li {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--bl-alert-ink);
+}
+
+/* ── 出来事の傾向 ───────────────────────────────────── */
+.catRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.catCount {
+  width: 1.9rem;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--bl-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 6-6 AIタイムライン ─────────────────────────────── */
+.timeline {
+  position: relative;
+  margin: 0;
+  padding: 0 0 0 4px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.timelineItem {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 11px 0 11px 26px;
+}
+
+/* 縦の連結線 */
+.timelineItem::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--bl-line-soft);
+}
+
+.timelineItem:first-child::before { top: 50%; }
+.timelineItem:last-child::before { bottom: 50%; }
+
+.timelineDot {
+  position: absolute;
+  left: 0;
+  top: calc(50% - 7px);
+  width: 14px;
+  height: 14px;
+  border-radius: var(--bl-pill);
+  background: #ffffff;
+  border: 3px solid var(--bl-ink-3);
+}
+
+.timelineItem[data-dir="worse"]   .timelineDot { border-color: var(--bl-alert); }
+.timelineItem[data-dir="better"]  .timelineDot { border-color: var(--bl-calm); }
+.timelineItem[data-dir="neutral"] .timelineDot { border-color: var(--bl-blue); }
+
+.timelineDate {
+  width: 4.6rem;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--bl-ink-3);
+  font-variant-numeric: tabular-nums;
+  padding-top: 1px;
+}
+
+.timelineText {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.91rem;
+  line-height: 1.6;
+  color: var(--bl-ink);
+}
+
+.timelineSource {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 9px;
+  padding: 2px 8px;
+  border-radius: var(--bl-pill);
+  background: var(--bl-mist);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--bl-ink-3);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* ── 対話型AIによる補足 ─────────────────────────────── */
+.summaryRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: var(--bl-radius-sm);
+  background: var(--bl-mist);
+}
+
+.summaryDate {
+  width: 4.6rem;
+  flex-shrink: 0;
+  font-size: 0.79rem;
+  font-weight: 700;
+  color: var(--bl-ink-3);
+  font-variant-numeric: tabular-nums;
+  padding-top: 2px;
+}
+
+/* ── 7-3 支援アクション提案 ─────────────────────────── */
+.suggestion {
+  padding: 15px 17px;
+  border-radius: var(--bl-radius);
+  border: 1px solid var(--bl-line);
+}
+
+.suggestion :global(.blesc-icon) { color: var(--bl-blue); }
+
+.actionList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.actionList li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--bl-ink-2);
+}
+
+.actionList li :global(.blesc-icon) {
+  color: var(--bl-blue);
+  margin-top: 2px;
+}
+
+/* ── 7-2 フォローアップ ─────────────────────────────── */
+.followUp {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+  padding: 17px 19px;
+  border-radius: var(--bl-radius-lg);
+  border: 1px solid var(--bl-line);
+  background: var(--bl-mist);
+}
+
+.followUp > :global(.blesc-icon) { color: var(--bl-blue); flex-shrink: 0; }
+
+.followUp[data-state="worsening"] {
+  background: var(--bl-watch-bg);
+  border-color: var(--bl-watch-line);
+}
+.followUp[data-state="worsening"] > :global(.blesc-icon) { color: var(--bl-watch); }
+
+.followUp[data-state="improving"] {
+  background: var(--bl-calm-bg);
+  border-color: var(--bl-calm-line);
+}
+.followUp[data-state="improving"] > :global(.blesc-icon) { color: var(--bl-calm); }
+
+/* ── 6-3 面談記録 ───────────────────────────────────── */
+.meeting {
+  padding: 15px 17px;
+  border-radius: var(--bl-radius);
+  border: 1px solid var(--bl-line);
+}
+
+.meetingField + .meetingField { margin-top: 10px; }
+
+.meetingLabel {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.73rem;
+  font-weight: 700;
+  color: var(--bl-ink-3);
+}
+
+/* ── 7-4 対応履歴 ───────────────────────────────────── */
+.actions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.actionRow {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 11px 14px;
+  border-radius: var(--bl-radius-sm);
+  background: var(--bl-mist);
+}
+
+.actionIcon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--bl-pill);
+  background: #ffffff;
+  color: var(--bl-blue);
+}
+
+.actionRow[data-tone="alert"] .actionIcon { color: var(--bl-alert); }
+.actionRow[data-tone="calm"]  .actionIcon { color: var(--bl-calm); }
+.actionRow[data-tone="neutral"] .actionIcon { color: var(--bl-ink-3); }
+
+.actionDate {
+  width: 4.6rem;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--bl-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.actionText {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.91rem;
+  color: var(--bl-ink);
+}
+
+@media (max-width: 620px) {
+  .timelineDate, .actionDate, .summaryDate { width: 4rem; font-size: 0.74rem; }
+  .timelineSource { display: none; }
+}

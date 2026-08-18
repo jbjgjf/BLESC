@@ -1,0 +1,198 @@
+/* 面談記録 + AI面談サポート — 企画書 6-3 / 追加機能 */
+
+.name {
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: var(--bl-ink);
+  text-decoration: none;
+}
+
+.name:hover { text-decoration: underline; }
+.name:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; border-radius: 4px; }
+
+.select {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: var(--bl-ink);
+  background: #ffffff;
+  border: 1px solid var(--bl-line);
+  border-radius: var(--bl-radius-sm);
+  padding: 12px 15px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.16s var(--bl-ease);
+}
+
+.select:focus { border-color: var(--bl-blue); }
+
+/* ── AI面談サポートの誘導 ───────────────────────────── */
+.supportBar {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: var(--bl-radius);
+  background: var(--bl-mist);
+  border: 1px solid var(--bl-line-soft);
+}
+
+.supportBar > :global(.blesc-icon) { color: var(--bl-blue); flex-shrink: 0; }
+
+/* ── AI面談サポート ─────────────────────────────────── */
+.support {
+  position: relative;
+  overflow: hidden;
+  padding: 18px;
+  border-radius: var(--bl-radius-lg);
+  border: 1px solid var(--bl-blue);
+  background: var(--bl-mist);
+}
+
+.supportHead {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.supportHead > :global(.blesc-icon):first-child { color: var(--bl-blue); }
+
+.supportBody {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.supportLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--bl-ink-3);
+}
+
+.questions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: q;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.questions li {
+  counter-increment: q;
+  position: relative;
+  padding: 12px 15px 12px 44px;
+  border-radius: var(--bl-radius-sm);
+  background: #ffffff;
+  border: 1px solid var(--bl-line-soft);
+}
+
+.questions li::before {
+  content: counter(q);
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--bl-pill);
+  background: var(--bl-blue);
+  color: var(--bl-ink);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.questionText {
+  display: block;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--bl-ink);
+  font-weight: 600;
+}
+
+.questionWhy {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--bl-ink-3);
+}
+
+.bullets {
+  margin: 0;
+  padding-left: 19px;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.bullets li {
+  font-size: 0.87rem;
+  line-height: 1.65;
+  color: var(--bl-ink-2);
+}
+
+.cautions {
+  padding: 14px 16px;
+  border-radius: var(--bl-radius-sm);
+  background: var(--bl-watch-bg);
+  border: 1px solid var(--bl-watch-line);
+}
+
+.cautions .supportLabel { color: var(--bl-watch-ink); }
+.cautions .supportLabel :global(.blesc-icon) { color: var(--bl-watch); }
+.cautions .bullets li { color: var(--bl-watch-ink); }
+
+/* ── 要約 ───────────────────────────────────────────── */
+.summaryBox {
+  padding: 15px 17px;
+  border-radius: var(--bl-radius);
+  border: 1px solid var(--bl-line);
+}
+
+.summaryBox > div > :global(.blesc-icon) { color: var(--bl-blue); }
+
+.summaryTyping {
+  display: inline-flex;
+  gap: 5px;
+  margin-top: 13px;
+}
+
+.summaryTyping span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bl-blue);
+  animation: bl-bounce-sm 1.2s infinite ease-in-out;
+}
+.summaryTyping span:nth-child(2) { animation-delay: 0.15s; }
+.summaryTyping span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes bl-bounce-sm {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30%           { transform: translateY(-7px); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .summaryTyping span { animation: none; opacity: 0.7; }
+}
+
+/* ── 面談一覧 ───────────────────────────────────────── */
+.meeting {
+  padding: 15px 17px;
+  border-radius: var(--bl-radius);
+  border: 1px solid var(--bl-line);
+}

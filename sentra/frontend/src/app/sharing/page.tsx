@@ -1,29 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, ShieldCheck, ShieldOff } from "lucide-react";
-
 import { ApiClient } from "@/api/client";
 import type { OversightRequest, StudentAccessRecord } from "@/api/models";
 import { useAuth } from "@/lib/auth";
+import { Icon } from "@/components/ui/Icon";
+import styles from "./sharing.module.css";
 
 const VIEW_LABELS: Record<string, string> = {
-  roster: "viewed your status in their roster",
-  alerts: "viewed alerts that include you",
-  student_overview: "opened your overview",
-  alert_ack: "acknowledged an alert about you",
+  roster: "一覧であなたの状態を確認しました",
+  alerts: "あなたを含むアラートを確認しました",
+  student_overview: "あなたの詳細画面を開きました",
+  alert_ack: "あなたに関するアラートを確認済みにしました",
 };
 
-const panel: React.CSSProperties = {
-  backgroundColor: "var(--ivory)",
-  border: "1px solid var(--limestone)",
-};
+/** 共有されない情報 — 生徒が一目で分かるように明示する。 */
+const NOT_SHARED = [
+  "日記の本文",
+  "対話型AIとのやりとりの内容",
+  "あなたが「話したくない」を選んだ内容",
+];
 
-function statusChip(request: OversightRequest): { label: string; color: string } {
-  if (request.roster_status !== "active") return { label: "Request inactive", color: "var(--ink-faint)" };
-  if (request.consent_status === "active") return { label: "Sharing derived signals", color: "var(--aegean)" };
-  if (request.consent_status === "revoked") return { label: "Sharing stopped", color: "var(--sienna)" };
-  return { label: "Awaiting your decision", color: "var(--ochre)" };
+function statusChip(request: OversightRequest): { label: string; className: string } {
+  if (request.roster_status !== "active") return { label: "申請は無効です", className: "" };
+  if (request.consent_status === "active") return { label: "共有中", className: "bl-chip--calm" };
+  if (request.consent_status === "revoked") return { label: "共有を停止しました", className: "bl-chip--alert" };
+  return { label: "あなたの判断待ち", className: "bl-chip--watch" };
 }
 
 export default function SharingPage() {
@@ -45,7 +47,7 @@ export default function SharingPage() {
       setRequests(nextRequests);
       setAccessLog(nextAccessLog);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load sharing settings.");
+      setError(err instanceof Error ? err.message : "共有設定の読み込みに失敗しました。");
     } finally {
       setIsLoading(false);
     }
@@ -59,109 +61,134 @@ export default function SharingPage() {
     setBusyOrgId(orgId);
     setError(null);
     try {
-      if (grant) {
-        await ApiClient.grantOversightConsent(userId, orgId);
-      } else {
-        await ApiClient.revokeOversightConsent(userId, orgId);
-      }
+      if (grant) await ApiClient.grantOversightConsent(userId, orgId);
+      else await ApiClient.revokeOversightConsent(userId, orgId);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Updating consent failed.");
+      setError(err instanceof Error ? err.message : "共有設定の更新に失敗しました。");
     } finally {
       setBusyOrgId(null);
     }
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <section className="px-8 py-7" style={{ ...panel, backgroundColor: "var(--ivory-warm)" }}>
-        <div className="inscription mb-3">You stay in control</div>
-        <h1 className="text-3xl font-bold" style={{ color: "var(--ink)" }}>Oversight sharing</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed" style={{ color: "var(--ink-mid)" }}>
-          Schools or programs listed here have asked to see your <strong>derived signals only</strong> — state
-          bands, trends, and safety flags. Your journal and chat text is never shared, every educator view is
-          logged, and you can stop sharing at any time. Nothing is shared until you say yes.
+    <div className="bl-wrap bl-stack">
+      <header style={{ padding: "2px 2px 0" }}>
+        <h1 className="bl-h1">共有の設定</h1>
+        <p className="bl-meta" style={{ marginTop: 3 }}>
+          決めるのはあなたです。あなたが「はい」と言うまで、何も共有されません。
         </p>
-        {error ? <p role="alert" className="mt-3 text-sm" style={{ color: "var(--sienna)" }}>{error}</p> : null}
+      </header>
+
+      <section className={`${styles.intro} bl-rise`}>
+        <Icon name="shield" size={24} />
+        <div>
+          <h2 className="bl-h3">共有されるのは、状態のまとめだけです</h2>
+          <p className="bl-body" style={{ marginTop: 5 }}>
+            ここに表示される学校や団体は、あなたの<strong>状態のまとめ</strong>（状態の区分・傾向・安全に関する記録）
+            を見ることを申請しています。閲覧はすべて記録され、下の一覧で確認できます。共有はいつでも止められます。
+          </p>
+          <ul className={styles.notShared}>
+            {NOT_SHARED.map((item) => (
+              <li key={item}>
+                <Icon name="lock" size={15} />
+                {item}は共有されません
+              </li>
+            ))}
+          </ul>
+        </div>
       </section>
 
-      {isLoading ? (
-        <div className="flex items-center gap-2 px-2 text-sm" style={{ color: "var(--ink-faint)" }}>
-          <Loader2 className="h-4 w-4 animate-spin" />Loading sharing settings…
+      {error && (
+        <div className="bl-notice bl-notice--alert" role="alert">
+          <Icon name="error" size={19} fill />
+          <span>{error}</span>
         </div>
-      ) : null}
+      )}
 
-      {requests && requests.length === 0 && !isLoading ? (
-        <section className="px-8 py-10 text-center" style={panel}>
-          <p className="text-sm" style={{ color: "var(--ink-mid)" }}>
-            No organization has requested oversight access. If your school starts using BLESC, their request
-            will appear here for you to approve or decline.
+      {isLoading && (
+        <div className="bl-row" style={{ gap: 10, padding: "0 2px", color: "var(--bl-ink-3)" }}>
+          <span className="bl-loader" style={{ width: 20, height: 20, borderWidth: 2 }} />
+          <span className="bl-meta">共有設定を読み込んでいます…</span>
+        </div>
+      )}
+
+      {requests && requests.length === 0 && !isLoading && (
+        <div className="bl-card bl-empty">
+          <Icon name="shield" size={40} />
+          <p className="bl-body">
+            いまのところ、共有を申請している学校・団体はありません。
+            <br />
+            学校がblescを使いはじめると、ここに申請が表示されます。
           </p>
-        </section>
-      ) : null}
+        </div>
+      )}
 
       {requests?.map((request) => {
         const chip = statusChip(request);
         const sharing = request.roster_status === "active" && request.consent_status === "active";
         const busy = busyOrgId === request.org_id;
         return (
-          <section key={request.org_id} className="flex flex-wrap items-center justify-between gap-4 px-7 py-5" style={panel}>
-            <div className="min-w-0">
-              <div className="font-semibold" style={{ color: "var(--ink)" }}>{request.org_name}</div>
-              <div className="mt-1 flex items-center gap-2 text-xs">
-                <span className="rounded-full px-2 py-0.5 font-semibold" style={{ border: `1px solid ${chip.color}`, color: chip.color }}>
-                  {chip.label}
-                </span>
-                {request.granted_at && sharing ? (
-                  <span style={{ color: "var(--ink-faint)" }}>since {new Date(request.granted_at).toLocaleDateString()}</span>
-                ) : null}
+          <section key={request.org_id} className={`bl-card ${styles.orgRow} bl-rise`}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="bl-h3">{request.org_name}</div>
+              <div className="bl-row" style={{ gap: 9, marginTop: 7, flexWrap: "wrap" }}>
+                <span className={`bl-chip ${chip.className}`}>{chip.label}</span>
+                {request.granted_at && sharing && (
+                  <span className="bl-micro">
+                    {new Date(request.granted_at).toLocaleDateString("ja-JP")}から
+                  </span>
+                )}
               </div>
             </div>
-            {request.roster_status === "active" ? (
-              sharing ? (
+
+            {request.roster_status === "active" &&
+              (sharing ? (
                 <button
                   type="button"
                   disabled={busy}
                   onClick={() => setConsent(request.org_id, false)}
-                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-60"
-                  style={{ border: "1px solid var(--sienna)", color: "var(--sienna)" }}
+                  className={`bl-btn ${styles.stopBtn}`}
                 >
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldOff className="h-4 w-4" />}
-                  Stop sharing
+                  <Icon name="lock" size={17} />
+                  共有を止める
                 </button>
               ) : (
                 <button
                   type="button"
                   disabled={busy}
                   onClick={() => setConsent(request.org_id, true)}
-                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-60"
-                  style={{ backgroundColor: "var(--blue-base)", color: "var(--ink)" }}
+                  className="bl-btn bl-btn--primary"
                 >
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                  Allow derived signals
+                  <Icon name="check" size={18} />
+                  共有を許可する
                 </button>
-              )
-            ) : null}
+              ))}
           </section>
         );
       })}
 
-      {!isLoading && accessLog.length > 0 ? (
-        <section style={panel}>
-          <header className="px-7 py-4" style={{ borderBottom: "1px solid var(--limestone)" }}>
-            <div className="inscription mb-1">Accountability</div>
-            <div className="font-semibold" style={{ color: "var(--ink)" }}>Who viewed your data</div>
-          </header>
-          <ul>
+      {!isLoading && accessLog.length > 0 && (
+        <section className="bl-card bl-rise">
+          <div className="bl-card-head">
+            <Icon name="visibility" size={21} />
+            <h2 className="bl-h2">だれが見たか</h2>
+          </div>
+
+          <ul className={styles.log}>
             {accessLog.map((record) => (
-              <li key={record.id} className="flex flex-wrap items-center justify-between gap-2 px-7 py-3 text-sm" style={{ borderBottom: "1px solid var(--limestone)", color: "var(--ink-mid)" }}>
-                <span><strong>{record.org_name}</strong> {VIEW_LABELS[record.view_type] ?? record.view_type}</span>
-                <time className="text-xs" style={{ color: "var(--ink-faint)" }}>{new Date(record.occurred_at).toLocaleString()}</time>
+              <li key={record.id}>
+                <span>
+                  <strong>{record.org_name}</strong>が{VIEW_LABELS[record.view_type] ?? record.view_type}
+                </span>
+                <time className="bl-micro">
+                  {new Date(record.occurred_at).toLocaleString("ja-JP")}
+                </time>
               </li>
             ))}
           </ul>
         </section>
-      ) : null}
+      )}
     </div>
   );
 }

@@ -1,0 +1,974 @@
+/* ================================================================
+   blesc design system
+   Extracted from the chat UI (src/app/chat/chat.module.css) so every
+   surface shares one language: aqua hue 206, flat, one radius, pill
+   controls, and the same motion curve.
+   ================================================================ */
+
+/* ── Google Symbols (self-hosted, subset) ───────────────────── */
+@font-face {
+  font-family: "Material Symbols Rounded";
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: block;
+  src: url("/fonts/material-symbols-rounded.woff2") format("woff2");
+}
+
+.blesc-icon {
+  font-family: "Material Symbols Rounded";
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  overflow: hidden;
+  font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* ── Tokens ─────────────────────────────────────────────────── */
+:root {
+  --bl-hue: 206;
+
+  --bl-blue: hsl(var(--bl-hue) 74% 72%);
+  --bl-blue-hover: hsl(var(--bl-hue) 74% 78%);
+  --bl-blue-press: hsl(var(--bl-hue) 66% 66%);
+  --bl-mist: hsl(var(--bl-hue) 80% 96.5%);
+  --bl-veil: hsl(var(--bl-hue) 72% 92%);
+  --bl-line: hsl(var(--bl-hue) 62% 87%);
+  --bl-line-soft: hsl(var(--bl-hue) 66% 93%);
+
+  --bl-ink: hsl(var(--bl-hue) 60% 20%);
+  --bl-ink-2: hsl(var(--bl-hue) 42% 33%);
+  --bl-ink-3: hsl(var(--bl-hue) 26% 47%);
+
+  --bl-surface: #ffffff;
+
+  /* 状態色 — 企画書 5-1 / 6-1 の 緑 安定・黄 要注意・赤 高リスク */
+  --bl-calm: hsl(158 54% 40%);
+  --bl-calm-bg: hsl(158 52% 95.5%);
+  --bl-calm-line: hsl(158 44% 82%);
+  --bl-calm-ink: hsl(158 60% 24%);
+
+  --bl-watch: hsl(38 82% 48%);
+  --bl-watch-bg: hsl(40 88% 95.5%);
+  --bl-watch-line: hsl(38 72% 80%);
+  --bl-watch-ink: hsl(30 84% 29%);
+
+  --bl-alert: hsl(6 68% 54%);
+  --bl-alert-bg: hsl(6 80% 96.5%);
+  --bl-alert-line: hsl(6 70% 87%);
+  --bl-alert-ink: hsl(6 62% 38%);
+
+  --bl-radius: 16px;
+  --bl-radius-sm: 12px;
+  --bl-radius-lg: 22px;
+  --bl-pill: 999px;
+
+  /* Motion. Three curves only, so every surface moves the same way:
+     pop   … entrances and toggles, overshoots once and settles
+     glide … something travelling between two places (nav pill, page)
+     ease  … everything else (colour, opacity, borders) */
+  --bl-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --bl-glide: cubic-bezier(0.32, 1.28, 0.5, 1);
+  --bl-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* A press should read as instant, the release as sprung — so the two
+     directions get different durations wherever a control is pressable. */
+  --bl-t-press: 0.07s;
+  --bl-t-release: 0.34s;
+
+  --bl-font: "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Hiragino Sans",
+    Helvetica, Arial, sans-serif;
+}
+
+/* ── Motion ─────────────────────────────────────────────────── */
+@keyframes bl-pop {
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes bl-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes bl-floaty {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50%      { transform: translateY(-9px) rotate(3deg); }
+}
+
+@keyframes bl-drift {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+.bl-pop  { animation: bl-pop 0.35s var(--bl-pop) both; }
+.bl-rise { animation: bl-rise 0.42s var(--bl-ease) both; }
+
+/* ── Layout ─────────────────────────────────────────────────── */
+.bl-page {
+  font-family: var(--bl-font);
+  color: var(--bl-ink);
+  background: var(--bl-surface);
+  min-height: 100vh;
+}
+
+.bl-wrap {
+  width: 100%;
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 0 18px;
+}
+
+.bl-wrap--wide { max-width: 1240px; }
+
+.bl-stack   { display: flex; flex-direction: column; gap: 16px; }
+.bl-stack-s { display: flex; flex-direction: column; gap: 10px; }
+.bl-row     { display: flex; align-items: center; gap: 10px; }
+.bl-row-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.bl-spacer  { flex: 1; }
+
+.bl-grid { display: grid; gap: 14px; }
+.bl-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.bl-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.bl-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+@media (max-width: 780px) {
+  .bl-grid--3, .bl-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 460px) {
+  .bl-grid--2, .bl-grid--3, .bl-grid--4 { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── Typography ─────────────────────────────────────────────── */
+.bl-h1 { font-size: 1.6rem;  font-weight: 700; letter-spacing: -0.01em; line-height: 1.35; margin: 0; }
+.bl-h2 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.005em; line-height: 1.4; margin: 0; }
+.bl-h3 { font-size: 0.97rem; font-weight: 700; line-height: 1.45; margin: 0; }
+
+.bl-body  { font-size: 0.94rem; line-height: 1.7; color: var(--bl-ink-2); margin: 0; }
+.bl-meta  { font-size: 0.8rem;  line-height: 1.6; color: var(--bl-ink-3); margin: 0; }
+.bl-micro { font-size: 0.72rem; line-height: 1.5; color: var(--bl-ink-3); margin: 0; }
+
+.bl-eyebrow {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  color: var(--bl-ink-3);
+  margin: 0;
+}
+
+.bl-num {
+  font-size: 1.85rem;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--bl-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Forms group fields in <fieldset> so a whole step can be disabled at once;
+   strip the browser chrome that comes with it. */
+fieldset {
+  border: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+/* ── Card ───────────────────────────────────────────────────── */
+.bl-card {
+  background: var(--bl-surface);
+  border: 1px solid var(--bl-line);
+  border-radius: var(--bl-radius);
+  padding: 18px;
+}
+
+.bl-card--tint { background: var(--bl-mist); }
+.bl-card--flush { padding: 0; overflow: hidden; }
+
+.bl-card-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 14px;
+}
+
+.bl-card-head .blesc-icon { color: var(--bl-blue); }
+
+/* Interactive card (roster rows, student links) */
+.bl-card--link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.16s var(--bl-ease), background 0.16s var(--bl-ease),
+    transform var(--bl-t-release) var(--bl-pop);
+}
+/* Lift, never shadow — the flat rule holds, so depth is a 2px move instead. */
+.bl-card--link:hover { border-color: var(--bl-blue); background: var(--bl-mist); transform: translateY(-2px); }
+.bl-card--link:active {
+  transform: translateY(0) scale(0.995);
+  transition-duration: var(--bl-t-press);
+  transition-timing-function: var(--bl-ease);
+}
+.bl-card--link:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+
+/* ── Buttons ────────────────────────────────────────────────── */
+.bl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 20px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: var(--bl-pill);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s var(--bl-ease), color 0.15s var(--bl-ease),
+    border-color 0.15s var(--bl-ease), opacity 0.15s var(--bl-ease),
+    transform var(--bl-t-release) var(--bl-pop);
+  white-space: nowrap;
+}
+
+.bl-btn:active:not(:disabled) {
+  transform: scale(0.96);
+  transition-duration: var(--bl-t-press);
+  transition-timing-function: var(--bl-ease);
+}
+.bl-btn:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+.bl-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.bl-btn--primary {
+  background: var(--bl-blue);
+  color: var(--bl-ink);
+}
+.bl-btn--primary:hover:not(:disabled) { background: var(--bl-blue-hover); }
+
+.bl-btn--secondary {
+  background: var(--bl-surface);
+  color: var(--bl-ink);
+  border-color: var(--bl-blue);
+}
+.bl-btn--secondary:hover:not(:disabled) { background: var(--bl-mist); }
+
+.bl-btn--ghost {
+  background: transparent;
+  color: var(--bl-ink-2);
+  border-color: transparent;
+}
+.bl-btn--ghost:hover:not(:disabled) { background: var(--bl-mist); color: var(--bl-ink); }
+
+.bl-btn--sm { padding: 7px 14px; font-size: 0.82rem; }
+.bl-btn--lg { padding: 14px 28px; font-size: 1rem; }
+.bl-btn--block { width: 100%; }
+
+/* Icon-only */
+.bl-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--bl-pill);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--bl-ink-2);
+  cursor: pointer;
+  transition: background 0.15s var(--bl-ease), color 0.15s var(--bl-ease),
+    transform var(--bl-t-release) var(--bl-pop);
+}
+.bl-icon-btn:hover:not(:disabled) { background: var(--bl-mist); color: var(--bl-ink); }
+.bl-icon-btn:active:not(:disabled) {
+  transform: scale(0.9);
+  transition-duration: var(--bl-t-press);
+  transition-timing-function: var(--bl-ease);
+}
+.bl-icon-btn:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+
+/* ── Chips ──────────────────────────────────────────────────── */
+.bl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: var(--bl-pill);
+  border: 1px solid var(--bl-line);
+  background: var(--bl-surface);
+  color: var(--bl-ink-2);
+  white-space: nowrap;
+}
+
+.bl-chip--tint  { background: var(--bl-mist); border-color: var(--bl-line-soft); }
+.bl-chip--calm  { background: var(--bl-calm-bg);  border-color: var(--bl-calm-line);  color: var(--bl-calm-ink); }
+.bl-chip--watch { background: var(--bl-watch-bg); border-color: var(--bl-watch-line); color: var(--bl-watch-ink); }
+.bl-chip--alert { background: var(--bl-alert-bg); border-color: var(--bl-alert-line); color: var(--bl-alert-ink); }
+
+/* Selectable chip (出来事カテゴリ etc.) */
+.bl-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 17px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--bl-ink);
+  background: var(--bl-surface);
+  border: 1px solid var(--bl-line);
+  border-radius: var(--bl-pill);
+  cursor: pointer;
+  transition: background 0.15s var(--bl-ease), border-color 0.15s var(--bl-ease),
+    transform var(--bl-t-release) var(--bl-pop);
+}
+.bl-choice .blesc-icon { color: var(--bl-ink-3); transition: color 0.15s var(--bl-ease); }
+.bl-choice:hover { background: var(--bl-mist); border-color: var(--bl-blue); }
+.bl-choice:active {
+  transform: scale(0.96);
+  transition-duration: var(--bl-t-press);
+  transition-timing-function: var(--bl-ease);
+}
+.bl-choice:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+
+.bl-choice[aria-pressed="true"] {
+  background: var(--bl-blue);
+  border-color: var(--bl-blue);
+  color: var(--bl-ink);
+}
+.bl-choice[aria-pressed="true"] .blesc-icon { color: var(--bl-ink); }
+
+/* ── Status dot ─────────────────────────────────────────────── */
+.bl-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--bl-pill);
+  flex-shrink: 0;
+}
+.bl-dot--calm  { background: var(--bl-calm); }
+.bl-dot--watch { background: var(--bl-watch); }
+.bl-dot--alert { background: var(--bl-alert); }
+.bl-dot--none  { background: var(--bl-line); }
+
+/* ── Fields ─────────────────────────────────────────────────── */
+.bl-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--bl-ink);
+  margin-bottom: 9px;
+}
+.bl-label .blesc-icon { color: var(--bl-blue); }
+
+.bl-required {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--bl-pill);
+  background: var(--bl-blue);
+  color: var(--bl-ink);
+}
+
+.bl-optional {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: var(--bl-pill);
+  background: var(--bl-mist);
+  border: 1px solid var(--bl-line-soft);
+  color: var(--bl-ink-3);
+}
+
+.bl-input,
+.bl-textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: var(--bl-ink);
+  background: var(--bl-surface);
+  border: 1px solid var(--bl-line);
+  border-radius: var(--bl-radius-sm);
+  padding: 12px 15px;
+  outline: none;
+  transition: border-color 0.16s var(--bl-ease), background 0.16s var(--bl-ease);
+}
+
+.bl-textarea { resize: vertical; min-height: 96px; }
+
+.bl-input::placeholder,
+.bl-textarea::placeholder { color: hsl(var(--bl-hue) 28% 62%); }
+
+.bl-input:focus,
+.bl-textarea:focus { border-color: var(--bl-blue); background: var(--bl-mist); }
+
+.bl-input:disabled,
+.bl-textarea:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.bl-select {
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--bl-ink);
+  background: var(--bl-surface);
+  border: 1px solid var(--bl-line);
+  border-radius: var(--bl-pill);
+  padding: 8px 16px;
+  cursor: pointer;
+  outline: none;
+}
+.bl-select:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+
+/* ── Divider ────────────────────────────────────────────────── */
+.bl-hr {
+  height: 1px;
+  background: var(--bl-line-soft);
+  border: 0;
+  margin: 0;
+}
+
+/* ── Notice ─────────────────────────────────────────────────── */
+.bl-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px 16px;
+  border-radius: var(--bl-radius-sm);
+  background: var(--bl-mist);
+  border: 1px solid var(--bl-line-soft);
+  font-size: 0.85rem;
+  line-height: 1.65;
+  color: var(--bl-ink-2);
+}
+.bl-notice .blesc-icon { color: var(--bl-blue); margin-top: 1px; }
+
+.bl-notice--alert {
+  background: var(--bl-alert-bg);
+  border-color: var(--bl-alert-line);
+  color: var(--bl-alert-ink);
+}
+.bl-notice--alert .blesc-icon { color: var(--bl-alert); }
+
+.bl-notice--watch {
+  background: var(--bl-watch-bg);
+  border-color: var(--bl-watch-line);
+  color: var(--bl-watch-ink);
+}
+.bl-notice--watch .blesc-icon { color: var(--bl-watch); }
+
+/* 「AIは診断を行いません」— 企画書 5-2 / 7-5 */
+.bl-disclaimer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--bl-ink-3);
+}
+.bl-disclaimer .blesc-icon { color: var(--bl-ink-3); }
+
+/* Organisation + non-diagnostic line above every educator surface. */
+.bl-orgbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px;
+}
+
+.bl-orgbar > .bl-row { flex-shrink: 0; }
+
+@media (max-width: 760px) {
+  .bl-orgbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 7px;
+  }
+}
+
+/* ── Empty state ────────────────────────────────────────────── */
+.bl-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 44px 20px;
+  color: var(--bl-ink-3);
+}
+.bl-empty .blesc-icon { color: var(--bl-veil); }
+
+/* ── Progress ───────────────────────────────────────────────── */
+.bl-bar {
+  height: 8px;
+  border-radius: var(--bl-pill);
+  background: var(--bl-veil);
+  overflow: hidden;
+}
+.bl-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--bl-blue);
+  transition: width 0.5s var(--bl-ease);
+}
+
+/* ── Waves (shared with chat) ───────────────────────────────── */
+.bl-waves {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.6s var(--bl-ease);
+}
+.bl-waves[data-active="true"] { opacity: 1; }
+
+.bl-wave { position: absolute; bottom: 0; left: 0; width: 200%; height: 100%; }
+.bl-wave--1 { animation: bl-drift 7s linear infinite;  opacity: 0.55; }
+.bl-wave--2 { animation: bl-drift 11s linear infinite reverse; opacity: 0.4; }
+.bl-wave--3 { animation: bl-drift 17s linear infinite; opacity: 0.3; }
+
+/* ── Demo badge ─────────────────────────────────────────────── */
+.bl-demo-badge {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 90;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border-radius: var(--bl-pill);
+  background: var(--bl-watch-bg);
+  border: 1px solid var(--bl-watch-line);
+  color: var(--bl-watch-ink);
+  font-family: var(--bl-font);
+  font-size: 0.72rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+/* ── Loader ─────────────────────────────────────────────────── */
+.bl-loader {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--bl-pill);
+  border: 3px solid var(--bl-veil);
+  border-top-color: var(--bl-blue);
+  animation: bl-spin 0.75s linear infinite;
+}
+
+@keyframes bl-spin { to { transform: rotate(360deg); } }
+
+/* ── App shell ──────────────────────────────────────────────── */
+.bl-app {
+  display: flex;
+  flex-direction: column;
+  background: var(--bl-surface);
+}
+
+.bl-app__main {
+  flex: 1;
+  width: 100%;
+  padding: 26px 0 40px;
+}
+
+@media (max-width: 640px) {
+  .bl-app__main { padding: 18px 0 calc(84px + env(safe-area-inset-bottom)); }
+}
+
+/* ── Top nav ────────────────────────────────────────────────── */
+.bl-nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: hsla(0, 0%, 100%, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid hsla(var(--bl-hue) 74% 72% / 0.35);
+}
+
+/* Without the blur, a translucent bar just shows the page scrolling through it. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .bl-nav { background: #ffffff; }
+}
+
+.bl-nav__inner {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 18px;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.bl-nav__brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  color: var(--bl-ink);
+  border-radius: var(--bl-pill);
+  flex-shrink: 0;
+}
+.bl-nav__brand:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 3px; }
+.bl-nav__brand img { object-fit: contain; }
+
+.bl-nav__wordmark {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.bl-nav__role {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: var(--bl-pill);
+  background: var(--bl-mist);
+  border: 1px solid var(--bl-line-soft);
+  color: var(--bl-ink-2);
+}
+
+.bl-nav__tabs {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.bl-nav__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 15px;
+  border-radius: var(--bl-pill);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--bl-ink-3);
+  transition: background 0.15s var(--bl-ease), color 0.15s var(--bl-ease);
+}
+.bl-nav__tab:hover { background: var(--bl-mist); color: var(--bl-ink); }
+.bl-nav__tab:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+.bl-nav__tab[data-active="true"] {
+  background: var(--bl-mist);
+  color: var(--bl-ink);
+  font-weight: 700;
+}
+.bl-nav__tab[data-active="true"] .blesc-icon { color: var(--bl-blue); }
+
+.bl-nav__account { position: relative; flex-shrink: 0; }
+
+/* ── Account menu ───────────────────────────────────────────── */
+.bl-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 50;
+  min-width: 244px;
+  padding: 8px;
+  background: var(--bl-surface);
+  border: 1px solid var(--bl-line);
+  border-radius: var(--bl-radius);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bl-menu__identity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px 11px;
+  color: var(--bl-ink-3);
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--bl-line-soft);
+  margin-bottom: 5px;
+}
+
+.bl-menu__email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.bl-menu__group {
+  padding: 8px 11px 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--bl-ink-3);
+}
+
+.bl-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border-radius: var(--bl-radius-sm);
+  text-decoration: none;
+  font-family: inherit;
+  font-size: 0.87rem;
+  font-weight: 600;
+  color: var(--bl-ink-2);
+  transition: background 0.14s var(--bl-ease), color 0.14s var(--bl-ease);
+}
+.bl-menu__item .blesc-icon { color: var(--bl-ink-3); }
+.bl-menu__item:hover { background: var(--bl-mist); color: var(--bl-ink); }
+.bl-menu__item:hover .blesc-icon { color: var(--bl-blue); }
+.bl-menu__item:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: -2px; }
+
+.bl-menu__item--button {
+  width: 100%;
+  margin-top: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+/* ── Mobile tab bar ─────────────────────────────────────────── */
+.bl-tabbar { display: none; }
+
+@media (max-width: 640px) {
+  .bl-nav__tabs { display: none; }
+
+  .bl-tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    display: flex;
+    justify-content: space-around;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    background: hsla(0, 0%, 100%, 0.9);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid hsla(var(--bl-hue) 74% 72% / 0.35);
+  }
+
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .bl-tabbar { background: #ffffff; }
+  }
+
+  .bl-tabbar__tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 2px;
+    border-radius: var(--bl-radius-sm);
+    text-decoration: none;
+    font-size: 0.67rem;
+    font-weight: 600;
+    color: var(--bl-ink-3);
+  }
+  .bl-tabbar__tab[data-active="true"] { color: var(--bl-ink); font-weight: 700; }
+  .bl-tabbar__tab[data-active="true"] .blesc-icon { color: var(--bl-blue); }
+
+  .bl-demo-badge { bottom: calc(72px + env(safe-area-inset-bottom)); }
+}
+
+/* ── Stagger ────────────────────────────────────────────────
+   Children of .bl-stagger rise in sequence. The index comes from
+   :nth-child so markup stays clean; --bl-step tunes the spacing. */
+.bl-stagger > * {
+  animation: bl-rise 0.44s var(--bl-ease) both;
+  animation-delay: calc(var(--bl-i, 0) * var(--bl-step, 55ms));
+}
+.bl-stagger > *:nth-child(1)  { --bl-i: 0; }
+.bl-stagger > *:nth-child(2)  { --bl-i: 1; }
+.bl-stagger > *:nth-child(3)  { --bl-i: 2; }
+.bl-stagger > *:nth-child(4)  { --bl-i: 3; }
+.bl-stagger > *:nth-child(5)  { --bl-i: 4; }
+.bl-stagger > *:nth-child(6)  { --bl-i: 5; }
+.bl-stagger > *:nth-child(7)  { --bl-i: 6; }
+.bl-stagger > *:nth-child(8)  { --bl-i: 7; }
+.bl-stagger > *:nth-child(9)  { --bl-i: 8; }
+.bl-stagger > *:nth-child(10) { --bl-i: 9; }
+.bl-stagger > *:nth-child(n + 11) { --bl-i: 10; }
+
+/* ── Scroll reveal ──────────────────────────────────────────
+   Where the browser has scroll-driven animations this costs no JS at
+   all: progress is tied to how far the element has entered the
+   viewport. Elements already on screen at load sit at 100%, so nothing
+   above the fold is ever hidden. */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .bl-reveal {
+      animation: bl-rise 1s linear both;
+      animation-timeline: view();
+      animation-range: entry 5% entry 85%;
+    }
+  }
+
+  /* Fallback: IntersectionObserver flips data-revealed. Gated on the
+     html flag the observer sets, so content is never stuck invisible
+     when JS fails. */
+  @supports not (animation-timeline: view()) {
+    html[data-bl-reveal="js"] .bl-reveal {
+      opacity: 0;
+      transform: translateY(12px);
+      transition: opacity 0.5s var(--bl-ease), transform 0.5s var(--bl-ease);
+    }
+    html[data-bl-reveal="js"] .bl-reveal[data-revealed="true"] {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+/* ── Page transitions ───────────────────────────────────────
+   The main region is lifted out of the root snapshot so it can rise on
+   its own while the nav stays put, and the active tab is lifted out so
+   it glides from the old tab to the new one instead of cross-fading. */
+.bl-app__main { view-transition-name: bl-main; }
+.bl-nav__tab[data-active="true"] { view-transition-name: bl-nav-pill; }
+.bl-tabbar__tab[data-active="true"] { view-transition-name: bl-tab-pill; }
+
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.2s;
+  }
+
+  ::view-transition-old(bl-main) {
+    animation: bl-vt-leave 0.18s var(--bl-ease) both;
+  }
+  ::view-transition-new(bl-main) {
+    animation: bl-vt-enter 0.36s var(--bl-ease) both;
+  }
+
+  ::view-transition-group(bl-nav-pill),
+  ::view-transition-group(bl-tab-pill) {
+    animation-duration: 0.42s;
+    animation-timing-function: var(--bl-glide);
+  }
+}
+
+@keyframes bl-vt-leave {
+  to { opacity: 0; transform: translateY(-8px); }
+}
+@keyframes bl-vt-enter {
+  from { opacity: 0; transform: translateY(14px); }
+}
+
+/* ── Nav condense on scroll ─────────────────────────────────
+   Once the page has moved, the bar tightens and its edge firms up, so
+   the content reads as sliding underneath something solid. */
+.bl-nav {
+  transition: background 0.3s var(--bl-ease), border-color 0.3s var(--bl-ease);
+}
+.bl-nav__inner { transition: min-height 0.32s var(--bl-ease); }
+
+.bl-nav[data-scrolled="true"] {
+  background: hsla(0, 0%, 100%, 0.93);
+  border-bottom-color: hsla(var(--bl-hue) 74% 68% / 0.55);
+}
+.bl-nav[data-scrolled="true"] .bl-nav__inner { min-height: 50px; }
+
+/* ── Selection pop ──────────────────────────────────────────
+   Fires when the element starts matching the selected state, which is
+   exactly the moment of choosing — no JS needed to trigger it. */
+.bl-choice[aria-pressed="true"] { animation: bl-tap 0.42s var(--bl-pop); }
+
+@keyframes bl-tap {
+  0%   { transform: scale(0.94); }
+  55%  { transform: scale(1.055); }
+  100% { transform: scale(1); }
+}
+
+/* ── Bloom ──────────────────────────────────────────────────
+   Used on 提出完了: the mark assembles petal by petal. Each petal is a
+   wedge of the real logo, so the brand is never redrawn. */
+@keyframes bl-petal {
+  from { opacity: 0; transform: rotate(-32deg) scale(0.24); }
+  to   { opacity: 1; transform: rotate(0deg) scale(1); }
+}
+
+@keyframes bl-settle {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+/* ── Motion preferences ─────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .bl-pop, .bl-rise,
+  .bl-wave--1, .bl-wave--2, .bl-wave--3,
+  .bl-stagger > *,
+  .bl-choice[aria-pressed="true"] {
+    animation: none;
+  }
+  .bl-pop, .bl-rise, .bl-stagger > * { opacity: 1; transform: none; }
+  .bl-loader { animation-duration: 2s; }
+
+  /* Keep the affordance, drop the travel. */
+  .bl-card--link:hover { transform: none; }
+  .bl-nav__inner { transition: none; }
+}
+
+/* ════════════════════════════════════════════════════════════
+   生徒テーマ
+   ロゴの花から取り出した形を、生徒が使う画面にだけ広げる層。
+   すべて [data-bl-context="student"] の下にあるので、教員・保護者の
+   画面には一切かからない（判定は lib/blesc/context.ts）。
+   ════════════════════════════════════════════════════════════ */
+
+/* ── 角 ─────────────────────────────────────────────────
+   同じ 16px でも、超楕円の角は円弧より張りがあって、花びらの
+   ふくらみと同じ抑揚になる。対応していないブラウザは今までどおり
+   border-radius の丸みで表示される。 */
+@supports (corner-shape: squircle) {
+  [data-bl-context="student"] .bl-card,
+  [data-bl-context="student"] .bl-notice,
+  [data-bl-context="student"] .bl-menu,
+  [data-bl-context="student"] .bl-input,
+  [data-bl-context="student"] .bl-textarea {
+    corner-shape: squircle;
+  }
+}
+
+/* ── 読み込み中 ─────────────────────────────────────────
+   輪が回るだけの表示をやめて、花がゆっくり開いたり閉じたりする。
+   待っている時間はどの画面にもあるので、ここが一番効く。 */
+[data-bl-context="student"] .bl-loader {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 0;
+  background: center / contain no-repeat
+    url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g fill="hsl(206 74% 72%)"><path d="M50 50 C 37 34, 33 17, 50 3 C 67 17, 63 34, 50 50 Z"/><path d="M50 50 C 37 34, 33 17, 50 3 C 67 17, 63 34, 50 50 Z" transform="rotate(72 50 50)"/><path d="M50 50 C 37 34, 33 17, 50 3 C 67 17, 63 34, 50 50 Z" transform="rotate(144 50 50)"/><path d="M50 50 C 37 34, 33 17, 50 3 C 67 17, 63 34, 50 50 Z" transform="rotate(216 50 50)"/><path d="M50 50 C 37 34, 33 17, 50 3 C 67 17, 63 34, 50 50 Z" transform="rotate(288 50 50)"/></g></svg>');
+  animation: bl-flower-turn 2.2s var(--bl-ease) infinite;
+}
+
+@keyframes bl-flower-turn {
+  0%   { transform: rotate(0deg) scale(0.82); opacity: 0.75; }
+  50%  { transform: rotate(180deg) scale(1); opacity: 1; }
+  100% { transform: rotate(360deg) scale(0.82); opacity: 0.75; }
+}
+
+@keyframes bl-flower-breathe {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-bl-context="student"] .bl-loader {
+    animation: bl-flower-breathe 2.4s var(--bl-ease) infinite;
+  }
+}

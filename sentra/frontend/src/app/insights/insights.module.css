@@ -1,0 +1,106 @@
+/* 変化の内訳 */
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.score {
+  padding: 22px;
+  border-radius: var(--bl-radius-lg);
+  background: var(--bl-mist);
+  border: 1px solid var(--bl-line-soft);
+}
+
+.scoreValue {
+  margin-top: 6px;
+  font-size: 3.4rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--bl-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  border-radius: var(--bl-radius-sm);
+  background: var(--bl-mist);
+  font-size: 0.87rem;
+  color: var(--bl-ink-2);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  color: var(--bl-ink);
+  white-space: nowrap;
+}
+
+.rules {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.rule {
+  padding: 13px 15px;
+  border-radius: var(--bl-radius-sm);
+  border: 1px solid var(--bl-line);
+}
+
+.empty {
+  margin: 0;
+  padding: 18px 2px;
+  font-size: 0.87rem;
+  font-style: italic;
+  color: var(--bl-ink-3);
+}
+
+.code {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--bl-radius-sm);
+  background: var(--bl-mist);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.74rem;
+  line-height: 1.6;
+  color: var(--bl-ink-2);
+  overflow-x: auto;
+}
+
+.details {
+  border-top: 1px solid var(--bl-line-soft);
+}
+
+.details:first-of-type { border-top: 0; }
+
+.details > summary {
+  padding: 11px 2px;
+  cursor: pointer;
+  font-size: 0.87rem;
+  font-weight: 600;
+  color: var(--bl-ink-2);
+  list-style: none;
+}
+
+.details > summary::-webkit-details-marker { display: none; }
+.details > summary::before { content: "▸ "; color: var(--bl-ink-3); }
+.details[open] > summary::before { content: "▾ "; }
+.details > summary:hover { color: var(--bl-ink); }

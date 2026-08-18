@@ -1,20 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertCircle, Loader2 } from "lucide-react";
 import { ApiClient } from "@/api/client";
 import { GraphSnapshot } from "@/api/models";
 import { GraphViewer3D } from "@/components/graph/GraphViewer3D";
 import { useAuth } from "@/lib/auth";
-
-const S = {
-  panel: {
-    backgroundColor: "var(--ivory)",
-    border: "1px solid var(--limestone)",
-  } as React.CSSProperties,
-  displayFont: { fontFamily: "var(--font-sans), sans-serif" } as React.CSSProperties,
-  bodyFont:    { fontFamily: "var(--font-sans), sans-serif" } as React.CSSProperties,
-};
+import { Icon } from "@/components/ui/Icon";
 
 export default function GraphPage() {
   const { userId } = useAuth();
@@ -26,119 +17,64 @@ export default function GraphPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await ApiClient.getGraphSnapshots(userId);
-      setSnapshots(data);
+      setSnapshots(await ApiClient.getGraphSnapshots(userId));
     } catch (err) {
       setSnapshots([]);
-      setError(err instanceof Error ? err.message : "Live graph snapshots unavailable.");
+      setError(err instanceof Error ? err.message : "グラフの読み込みに失敗しました。");
     } finally {
       setIsLoading(false);
     }
   }, [userId]);
 
-  useEffect(() => { loadSnapshots(); }, [loadSnapshots]);
+  useEffect(() => {
+    void loadSnapshots();
+  }, [loadSnapshots]);
 
   const currentSnapshot = snapshots.at(-1) ?? null;
 
   return (
-    <div className="space-y-6">
-
-      {/* Page header */}
-      <section
-        className="relative px-8 py-7"
-        style={{
-          ...S.panel,
-          backgroundColor: "var(--ivory-warm)",
-        }}
-      >
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <div
-              className="mb-3"
-              style={{
-                fontFamily: "var(--font-sans), sans-serif",
-                fontSize: "0.6rem",
-                fontWeight: 600,
-                letterSpacing: "0.28em",
-                textTransform: "uppercase",
-                color: "var(--ink-faint)",
-              }}
-            >
-              Ontology Workspace
-            </div>
-            <h1
-              className="text-3xl"
-              style={{ ...S.displayFont, fontWeight: 700, letterSpacing: "0.04em", color: "var(--ink)" }}
-            >
-              Temporal Ontology Atlas
-            </h1>
-            <p
-              className="mt-2 max-w-xl text-base leading-relaxed"
-              style={{ ...S.bodyFont, color: "var(--ink-mid)", fontStyle: "italic" }}
-            >
-              Inspect extracted entities, relation axioms, and temporal drift across the participant ontology.
-            </p>
-          </div>
-          <div
-            className="px-4 py-2 text-xs"
-            style={{
-              ...S.displayFont,
-              border: "1px solid var(--limestone)",
-              color: "var(--ink-faint)",
-              fontSize: "0.6rem",
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-            }}
-          >
-            {isLoading ? "Loading…" : `${snapshots.length} snapshots`}
-          </div>
+    <div className="bl-wrap bl-wrap--wide bl-stack">
+      <header className="bl-row-between" style={{ padding: "2px 2px 0", flexWrap: "wrap" }}>
+        <div>
+          <h1 className="bl-h1">関係グラフ</h1>
+          <p className="bl-meta" style={{ marginTop: 3 }}>
+            日記から抽出された出来事・気持ち・支えの関係と、その移り変わりを立体的に見られます。
+          </p>
         </div>
+        <span className="bl-chip bl-chip--tint">
+          {isLoading ? "読み込み中…" : `${snapshots.length}件の記録`}
+        </span>
+      </header>
 
-        {error && (
-          <div
-            className="mt-5 flex items-center gap-2 px-4 py-2.5 text-sm"
-            style={{
-              border: "1px solid var(--sandstone)",
-              backgroundColor: "rgba(196,150,42,0.06)",
-              color: "var(--ochre)",
-              ...S.bodyFont,
-              fontStyle: "italic",
-            }}
-          >
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-      </section>
+      {error && (
+        <div className="bl-notice bl-notice--watch" role="alert">
+          <Icon name="warning" size={19} fill />
+          <span>{error}</span>
+        </div>
+      )}
 
       {isLoading ? (
-        <div
-          className="flex h-80 items-center justify-center"
-          style={S.panel}
-        >
-          <Loader2 className="h-7 w-7 animate-spin" style={{ color: "var(--sandstone)" }} />
+        <div className="bl-card" style={{ display: "grid", placeItems: "center", minHeight: "20rem" }}>
+          <span className="bl-loader" aria-label="読み込み中" />
         </div>
       ) : snapshots.length === 0 ? (
-        <div
-          className="p-12 text-center text-sm"
-          style={{
-            border: "1px dashed var(--limestone)",
-            backgroundColor: "var(--ivory-warm)",
-            color: "var(--ink-faint)",
-            fontStyle: "italic",
-            ...S.bodyFont,
-          }}
-        >
-          No graph snapshots available yet.
+        <div className="bl-card bl-empty">
+          <Icon name="graphic_eq" size={40} />
+          <p className="bl-body">まだグラフを作れる記録がありません。日記を提出すると表示されます。</p>
         </div>
       ) : (
         <GraphViewer3D
           snapshots={snapshots}
           currentSnapshot={currentSnapshot}
           explanation={null}
-          title="Ontology Graph"
+          title="関係グラフ"
         />
       )}
+
+      <p className="bl-disclaimer">
+        <Icon name="medical_information" size={15} />
+        これは日記から抽出した関係の可視化です。診断ではありません。
+      </p>
     </div>
   );
 }

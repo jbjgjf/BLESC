@@ -1,0 +1,99 @@
+/* 保護者向けダッシュボード — 追加機能 */
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 2px 2px;
+}
+
+.flower { object-fit: contain; }
+.head p { margin-top: 3px; }
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 16px;
+  border-radius: var(--bl-radius-sm);
+  background: var(--bl-mist);
+}
+
+/* ── 週の提出状況 ───────────────────────────────────── */
+.week {
+  margin: 18px auto 0;
+  max-width: 480px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 0 8px;
+  border-radius: var(--bl-radius-sm);
+}
+
+.day[data-today="true"] {
+  background: var(--bl-mist);
+  outline: 1px solid var(--bl-line-soft);
+}
+
+.dayWeekday {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--bl-ink-3);
+}
+
+.dayLabel {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--bl-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.day[data-today="true"] .dayWeekday,
+.day[data-today="true"] .dayLabel { color: var(--bl-ink); font-weight: 700; }
+
+.dayDot {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--bl-pill);
+  border: 1.5px dashed var(--bl-line);
+  background: transparent;
+}
+
+.dayDot[data-filled="true"] { border-style: solid; }
+
+/* ── お知らせ ───────────────────────────────────────── */
+.notice {
+  padding: 13px 15px;
+  border-radius: var(--bl-radius-sm);
+  background: var(--bl-mist);
+}
+
+/* ── 表示されない情報 ───────────────────────────────── */
+.hidden {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hidden li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 14px;
+  border-radius: var(--bl-radius-sm);
+  border: 1px solid var(--bl-line-soft);
+  font-size: 0.88rem;
+  color: var(--bl-ink-2);
+}
+
+.hidden li :global(.blesc-icon) { color: var(--bl-ink-3); }

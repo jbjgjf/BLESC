@@ -1,0 +1,79 @@
+/* 共有の設定 */
+
+.intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 20px 22px;
+  border-radius: var(--bl-radius-lg);
+  background: var(--bl-mist);
+  border: 1px solid var(--bl-line-soft);
+}
+
+.intro > :global(.blesc-icon) {
+  color: var(--bl-blue);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.notShared {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.notShared li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border-radius: var(--bl-pill);
+  background: #ffffff;
+  border: 1px solid var(--bl-line);
+  font-size: 0.79rem;
+  font-weight: 600;
+  color: var(--bl-ink-2);
+}
+
+.notShared li :global(.blesc-icon) { color: var(--bl-ink-3); }
+
+.orgRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.stopBtn {
+  background: #ffffff;
+  color: var(--bl-alert-ink);
+  border-color: var(--bl-alert-line);
+}
+
+.stopBtn:hover:not(:disabled) { background: var(--bl-alert-bg); }
+
+.log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.log li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 2px;
+  font-size: 0.88rem;
+  color: var(--bl-ink-2);
+  border-bottom: 1px solid var(--bl-line-soft);
+}
+
+.log li:last-child { border-bottom: 0; padding-bottom: 0; }

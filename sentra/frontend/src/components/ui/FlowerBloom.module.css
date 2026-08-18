@@ -1,0 +1,28 @@
+.bloom {
+  position: relative;
+  flex-shrink: 0;
+  animation: bl-settle 0.52s var(--bl-ease) both;
+}
+
+.petal {
+  position: absolute;
+  inset: 0;
+  background-image: url("/flower.png");
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  transform-origin: 50% 50%;
+  animation: bl-petal 0.62s var(--bl-pop) both;
+}
+
+/* 開く動きを見せない設定のときは、最初から咲いた状態で置く。 */
+@media (prefers-reduced-motion: reduce) {
+  .bloom,
+  .petal {
+    animation: none;
+  }
+  .petal {
+    opacity: 1;
+    transform: none;
+  }
+}

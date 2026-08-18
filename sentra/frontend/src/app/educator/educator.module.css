@@ -1,0 +1,183 @@
+/* 教員向けダッシュボード — 企画書 第5〜7章 */
+
+.head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 2px 2px 0;
+}
+
+.head p { margin-top: 3px; }
+
+/* ── 7-5 緊急アラート ───────────────────────────────── */
+.urgent {
+  padding: 18px;
+  border-radius: var(--bl-radius-lg);
+  border: 1px solid var(--bl-alert-line);
+  background: var(--bl-alert-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.urgentHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.urgentHead > :global(.blesc-icon) {
+  color: var(--bl-alert);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.urgentHead h2 { color: var(--bl-alert-ink); }
+.urgentHead p { margin-top: 3px; color: var(--bl-alert-ink); }
+
+.urgentCard {
+  padding: 15px 17px;
+  border-radius: var(--bl-radius);
+  background: #ffffff;
+  border: 1px solid var(--bl-alert-line);
+}
+
+.urgentName {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--bl-ink);
+  text-decoration: none;
+}
+.urgentName:hover { color: var(--bl-alert-ink); }
+.urgentName:focus-visible { outline: 2px solid var(--bl-alert); outline-offset: 3px; border-radius: 6px; }
+
+.reasons {
+  margin-top: 11px;
+  padding: 11px 14px;
+  border-radius: var(--bl-radius-sm);
+  background: var(--bl-alert-bg);
+}
+
+.reasons ul {
+  margin: 5px 0 0;
+  padding-left: 18px;
+  /* Tailwind の preflight が list-style を落とすので戻す */
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.reasons li {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--bl-alert-ink);
+}
+
+/* ── 5-1 状態タイル ─────────────────────────────────── */
+.bandTile {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 17px 19px;
+  border-radius: var(--bl-radius);
+  border: 1px solid;
+  text-decoration: none;
+  transition: transform 0.14s var(--bl-ease);
+}
+
+.bandTile:hover { transform: translateY(-2px); }
+.bandTile:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+
+.bandUnit {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-left: 3px;
+}
+
+/* ── 生徒行 ─────────────────────────────────────────── */
+.studentRow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 13px;
+  border-radius: var(--bl-radius-sm);
+  background: var(--bl-mist);
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s var(--bl-ease);
+}
+
+.studentRow:hover { background: var(--bl-veil); }
+.studentRow:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: -2px; }
+
+.studentName {
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--bl-ink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.studentThemes {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.rowChevron { color: var(--bl-ink-3); flex-shrink: 0; }
+
+/* ── 6-5 未提出 ─────────────────────────────────────── */
+.alertRow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 13px;
+  border-radius: var(--bl-radius-sm);
+  background: var(--bl-watch-bg);
+  border: 1px solid var(--bl-watch-line);
+}
+
+.alertRow > :global(.blesc-icon) { color: var(--bl-watch); flex-shrink: 0; }
+
+/* ── 7-2 フォローアップ ─────────────────────────────── */
+.followRow {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  flex-wrap: wrap;
+  padding: 13px 15px;
+  border-radius: var(--bl-radius-sm);
+  border: 1px solid var(--bl-line);
+}
+
+.nextMeeting {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--bl-ink-2);
+  white-space: nowrap;
+}
+
+.nextMeeting :global(.blesc-icon) { color: var(--bl-ink-3); }
+
+/* ── 対応ステータス ─────────────────────────────────── */
+.statusList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .studentThemes { display: none; }
+  .followRow { gap: 9px; }
+}

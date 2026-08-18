@@ -1,17 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Copy, Download, Loader2, ShieldAlert } from "lucide-react";
-
 import { ApiClient } from "@/api/client";
 import type { CounselorSupportSummary } from "@/api/models";
 import { useAuth } from "@/lib/auth";
 import { counselorSummaryToText } from "@/lib/counselor-summary";
-
-const panel: React.CSSProperties = {
-  backgroundColor: "var(--ivory)",
-  border: "1px solid var(--limestone)",
-};
+import { Icon } from "@/components/ui/Icon";
+import styles from "./summary.module.css";
 
 export default function SupportSummaryPage() {
   const { userId } = useAuth();
@@ -27,7 +22,7 @@ export default function SupportSummaryPage() {
     try {
       setSummary(await ApiClient.generateCounselorSummary(userId, 10));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Summary generation failed.");
+      setError(err instanceof Error ? err.message : "まとめの作成に失敗しました。");
     } finally {
       setIsLoading(false);
     }
@@ -49,17 +44,16 @@ export default function SupportSummaryPage() {
       textarea.select();
       const succeeded = document.execCommand("copy");
       textarea.remove();
-      if (succeeded) {
-        setCopied(true);
-      } else {
-        setError("Copy failed — use Download text instead.");
-      }
+      if (succeeded) setCopied(true);
+      else setError("コピーできませんでした。「テキストで保存」をお使いください。");
     }
   };
 
   const download = () => {
     if (!summary) return;
-    const url = URL.createObjectURL(new Blob([counselorSummaryToText(summary)], { type: "text/plain;charset=utf-8" }));
+    const url = URL.createObjectURL(
+      new Blob([counselorSummaryToText(summary)], { type: "text/plain;charset=utf-8" }),
+    );
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = `blesc-support-summary-${summary.date_range.to?.slice(0, 10) ?? "empty"}.txt`;
@@ -68,67 +62,103 @@ export default function SupportSummaryPage() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const range = summary?.date_range.from && summary.date_range.to
-    ? `${new Date(summary.date_range.from).toLocaleDateString()} – ${new Date(summary.date_range.to).toLocaleDateString()}`
-    : "No reflection dates available";
+  const range =
+    summary?.date_range.from && summary.date_range.to
+      ? `${new Date(summary.date_range.from).toLocaleDateString("ja-JP")} 〜 ${new Date(summary.date_range.to).toLocaleDateString("ja-JP")}`
+      : "記録の期間が取得できません";
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <section className="px-8 py-7" style={{ ...panel, backgroundColor: "var(--ivory-warm)" }}>
-        <div className="inscription mb-3">Student-controlled sharing</div>
-        <h1 className="text-3xl font-bold" style={{ color: "var(--ink)" }}>Supportive reflection summary</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed" style={{ color: "var(--ink-mid)" }}>
-          Create a concise preview from recent structured reflections. Raw journal text is excluded, and nothing is shared automatically.
+    <div className="bl-wrap bl-stack">
+      <header style={{ padding: "2px 2px 0" }}>
+        <h1 className="bl-h1">支援サマリー</h1>
+        <p className="bl-meta" style={{ marginTop: 3 }}>
+          共有するかどうかは、あなたが決めます。
         </p>
-        <button
-          type="button"
-          onClick={generate}
-          disabled={isLoading}
-          className="mt-5 inline-flex items-center gap-2 rounded-full px-5 py-2.5 font-semibold disabled:opacity-60"
-          style={{ backgroundColor: "var(--blue-base)", color: "var(--ink)" }}
-        >
-          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {summary ? "Regenerate preview" : "Generate preview"}
-        </button>
-        {error ? <p role="alert" className="mt-3 text-sm" style={{ color: "var(--sienna)" }}>{error}</p> : null}
+      </header>
+
+      <section className={`${styles.intro} bl-rise`}>
+        <Icon name="summarize" size={24} />
+        <div style={{ flex: 1 }}>
+          <h2 className="bl-h3">相談のときに使えるまとめを作れます</h2>
+          <p className="bl-body" style={{ marginTop: 5 }}>
+            最近の日記の構造化された項目から、短いまとめを作ります。日記の本文は含まれません。
+            作っただけでは誰にも共有されません。内容を確認してから、渡すかどうかを決めてください。
+          </p>
+          <button
+            type="button"
+            onClick={generate}
+            disabled={isLoading}
+            className="bl-btn bl-btn--primary"
+            style={{ marginTop: 16 }}
+          >
+            {isLoading && <span className={styles.spinner} aria-hidden="true" />}
+            {summary ? "作り直す" : "まとめを作る"}
+          </button>
+        </div>
       </section>
 
-      {summary ? (
-        <section style={panel}>
-          <header className="flex flex-wrap items-start justify-between gap-4 px-7 py-5" style={{ borderBottom: "1px solid var(--limestone)" }}>
+      {error && (
+        <div className="bl-notice bl-notice--alert" role="alert">
+          <Icon name="error" size={19} fill />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {summary && (
+        <section className="bl-card bl-card--flush bl-rise">
+          <header className={styles.head}>
             <div>
-              <div className="inscription mb-2">Preview before sharing</div>
-              <div className="font-semibold" style={{ color: "var(--ink)" }}>{range}</div>
-              <div className="mt-1 text-xs" style={{ color: "var(--ink-faint)" }}>{summary.reflection_count} structured reflection{summary.reflection_count === 1 ? "" : "s"}</div>
+              <span className="bl-eyebrow">共有する前に確認してください</span>
+              <div className="bl-h3" style={{ marginTop: 4 }}>{range}</div>
+              <div className="bl-micro" style={{ marginTop: 2 }}>{summary.reflection_count}件の記録から作成</div>
             </div>
-            <div className="flex gap-2">
-              <button type="button" onClick={copy} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm" style={{ border: "1px solid var(--limestone)" }}>
-                {copied ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}{copied ? "Copied" : "Copy"}
+            <div className="bl-row" style={{ gap: 8 }}>
+              <button type="button" onClick={copy} className="bl-btn bl-btn--secondary bl-btn--sm">
+                <Icon name={copied ? "check_circle" : "description"} size={16} fill={copied} />
+                {copied ? "コピーしました" : "コピー"}
               </button>
-              <button type="button" onClick={download} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm" style={{ border: "1px solid var(--limestone)" }}>
-                <Download className="h-4 w-4" />Download text
+              <button type="button" onClick={download} className="bl-btn bl-btn--secondary bl-btn--sm">
+                <Icon name="description" size={16} />
+                テキストで保存
               </button>
             </div>
           </header>
 
-          {summary.safety_flags.length ? (
-            <div role="alert" className="px-7 py-5" style={{ borderBottom: "1px solid var(--terracotta)", backgroundColor: "rgba(244,63,94,0.08)" }}>
-              <div className="mb-2 flex items-center gap-2 font-semibold" style={{ color: "var(--sienna)" }}><ShieldAlert className="h-5 w-5" />Safety flags in this period</div>
-              {summary.safety_flags.map((flag) => <p key={`${flag.event_id}-${flag.timestamp}`} className="text-sm" style={{ color: "var(--ink-mid)" }}>{new Date(flag.timestamp).toLocaleDateString()} · {flag.level} · {flag.reasons.join(", ") || "flag recorded"}</p>)}
+          {summary.safety_flags.length > 0 && (
+            <div role="alert" className={styles.flags}>
+              <div className="bl-row" style={{ gap: 8, marginBottom: 7 }}>
+                <Icon name="shield" size={19} fill />
+                <span className="bl-h3">この期間に記録された安全に関する項目</span>
+              </div>
+              {summary.safety_flags.map((flag) => (
+                <p key={`${flag.event_id}-${flag.timestamp}`} className="bl-body" style={{ fontSize: "0.86rem" }}>
+                  {new Date(flag.timestamp).toLocaleDateString("ja-JP")} ・ {flag.level} ・{" "}
+                  {flag.reasons.join("、") || "記録あり"}
+                </p>
+              ))}
             </div>
-          ) : null}
+          )}
 
-          <div className="grid gap-0 md:grid-cols-2">
+          <div className={styles.sections}>
             {summary.sections.map((section) => (
-              <article key={section.key} className="px-7 py-5" style={{ borderBottom: "1px solid var(--limestone)" }}>
-                <h2 className="mb-2 font-semibold" style={{ color: "var(--ink)" }}>{section.title}</h2>
-                {section.items.length ? <ul className="list-disc space-y-1 pl-5 text-sm" style={{ color: "var(--ink-mid)" }}>{section.items.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="text-sm italic" style={{ color: "var(--ink-faint)" }}>No structured data available.</p>}
+              <article key={section.key} className={styles.section}>
+                <h2 className="bl-h3">{section.title}</h2>
+                {section.items.length ? (
+                  <ul className={styles.items}>
+                    {section.items.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className={styles.empty}>該当する記録はありません。</p>
+                )}
               </article>
             ))}
           </div>
-          <p className="px-7 py-5 text-xs leading-relaxed" style={{ color: "var(--ink-faint)" }}>{summary.limitations}</p>
+
+          <p className={styles.limits}>{summary.limitations}</p>
         </section>
-      ) : null}
+      )}
     </div>
   );
 }

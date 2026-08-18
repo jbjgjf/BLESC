@@ -2,9 +2,12 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { AppHeader } from "@/components/AppHeader";
+import { useDemoMode } from "@/lib/demo";
+import { contextForPath } from "@/lib/blesc/context";
+import { useIsHydrated } from "@/lib/hydration";
+import { Icon } from "@/components/ui/Icon";
+import { AppNav } from "@/components/AppNav";
 
 export function AuthShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -13,34 +16,52 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const isLoginRoute = pathname === "/login";
 
+  // Both the server and the hydrating render must show the loader: Supabase
+  // fires INITIAL_SESSION early enough to clear `isLoading` mid-hydration, and
+  // swapping in real content at that point would not match the server HTML.
+  // `demo` likewise only reads true once hydrated, so no one is bounced to
+  // /login on the strength of a not-yet-resolved flag.
+  const demo = useDemoMode();
+  const hydrated = useIsHydrated();
+  const authed = Boolean(user) || demo;
+
   useEffect(() => {
     if (isLoading) return;
-    if (!user && !isLoginRoute) {
+    if (!authed && !isLoginRoute) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     }
-    if (user && isLoginRoute) {
+    if (authed && isLoginRoute) {
       router.replace(searchParams.get("next") || "/");
     }
-  }, [isLoading, isLoginRoute, pathname, router, searchParams, user]);
+  }, [authed, isLoading, isLoginRoute, pathname, router, searchParams]);
 
-  if (isLoading || (!user && !isLoginRoute) || (user && isLoginRoute)) {
+  if (!hydrated || isLoading || (!authed && !isLoginRoute) || (authed && isLoginRoute)) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+      <div
+        className="bl-page"
+        style={{ display: "grid", placeItems: "center" }}
+        data-bl-context={contextForPath(pathname)}
+      >
+        <span className="bl-loader" aria-label="読み込み中" />
       </div>
     );
   }
 
-  if (isLoginRoute) {
-    return <>{children}</>;
-  }
+  if (isLoginRoute) return <>{children}</>;
+
+  // The chat surface is full-bleed and brings its own header.
+  if (pathname === "/chat") return <>{children}</>;
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <AppHeader />
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
-        {children}
-      </main>
+    <div className="bl-page bl-app" data-bl-context={contextForPath(pathname)}>
+      <AppNav />
+      <main className="bl-app__main">{children}</main>
+      {demo && (
+        <div className="bl-demo-badge">
+          <Icon name="visibility" size={14} />
+          デモデータ
+        </div>
+      )}
     </div>
   );
 }

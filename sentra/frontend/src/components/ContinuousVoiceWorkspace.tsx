@@ -21,12 +21,12 @@ type RealtimeSessionResponse = {
 };
 
 function phaseLabel(phase: VoicePhase) {
-  if (phase === "connecting") return "Connecting";
-  if (phase === "listening") return "Listening";
-  if (phase === "thinking") return "Thinking";
-  if (phase === "speaking") return "Speaking";
-  if (phase === "interrupted") return "Interrupted";
-  if (phase === "error") return "Needs attention";
+  if (phase === "connecting") return "接続中";
+  if (phase === "listening") return "聞いています";
+  if (phase === "thinking") return "考えています";
+  if (phase === "speaking") return "話しています";
+  if (phase === "interrupted") return "中断しました";
+  if (phase === "error") return "確認が必要です";
   return "Ready";
 }
 
@@ -87,7 +87,7 @@ export function ContinuousVoiceWorkspace() {
 
     const type = String(event.type ?? "");
     if (type === "error") {
-      setError(String((event.error as { message?: unknown } | undefined)?.message ?? "Realtime voice session error."));
+      setError(String((event.error as { message?: unknown } | undefined)?.message ?? "音声セッションでエラーが発生しました。"));
       setPhase("error");
       return;
     }
@@ -133,12 +133,12 @@ export function ContinuousVoiceWorkspace() {
   const start = async () => {
     if (phase !== "idle" && phase !== "error") return;
     if (!session?.access_token) {
-      setError("Authentication is required.");
+      setError("ログインが必要です。");
       setPhase("error");
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === "undefined") {
-      setError("Realtime voice is not supported in this browser.");
+      setError("このブラウザはリアルタイム音声に対応していません。");
       setPhase("error");
       return;
     }
@@ -167,7 +167,7 @@ export function ContinuousVoiceWorkspace() {
       pcRef.current = pc;
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
-          setError("Voice connection was interrupted.");
+          setError("音声の接続が切れました。");
           setPhase("error");
         }
       };
@@ -219,7 +219,7 @@ export function ContinuousVoiceWorkspace() {
       });
     } catch (err) {
       cleanup();
-      setError(err instanceof Error ? err.message : "Voice session failed.");
+      setError(err instanceof Error ? err.message : "音声セッションを開始できませんでした。");
       setPhase("error");
     }
   };
@@ -270,7 +270,7 @@ export function ContinuousVoiceWorkspace() {
 
         {error && <div className="voice-stage__error">{error}</div>}
 
-        <div className="voice-controls" aria-label="Voice controls">
+        <div className="voice-controls" aria-label="音声の操作">
           <button type="button" onClick={active ? stop : start} className="voice-control voice-control--primary" data-active={active}>
             {active ? <PhoneOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
           </button>
@@ -287,9 +287,9 @@ export function ContinuousVoiceWorkspace() {
       </section>
 
       <section className="voice-transcript" aria-live="polite">
-        <div className="inscription">Conversation</div>
+        <div className="inscription">会話の記録</div>
         {transcripts.length === 0 ? (
-          <p className="voice-transcript__empty">No transcript yet.</p>
+          <p className="voice-transcript__empty">まだ記録がありません。</p>
         ) : (
           <div className="voice-transcript__list">
             {transcripts.map((item) => (
