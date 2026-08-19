@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import { ApiClient } from "@/api/client";
 import { useAuth } from "@/lib/auth";
 import { AudioLines, Send } from "lucide-react";
@@ -151,14 +150,9 @@ export default function ChatPage() {
   };
 
   return (
+    // No page-local header: the app header above stays visible, and it is the
+    // one carrying the navigation.
     <div className={styles.root}>
-      <header className={styles.header}>
-        <Link href="/" aria-label="Back to home" className={styles.headerHome}>
-          <Image src="/flower.png" alt="blesc" width={34} height={34} className={styles.headerFlower} />
-          <span className={styles.headerTitle}>blesc</span>
-        </Link>
-      </header>
-
       <div ref={scrollRef} className={styles.scroll} onScroll={handleScroll}>
         <div className={styles.thread} aria-live="polite">
           {messages.length === 0 && !isThinking && (

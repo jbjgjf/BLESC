@@ -39,6 +39,44 @@ const panel: React.CSSProperties = {
 const displayFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
 const bodyFont: React.CSSProperties    = { fontFamily: "var(--font-sans), sans-serif" };
 const journalSteps = ["Saving observation", "Extracting graph", "Computing reflection signal", "Updating research artifacts", "Done"];
+
+/**
+ * The two prompts that used to be two boxes.
+ *
+ * They remain two FIELDS because the backend reads them as two. Production
+ * labels each one before handing the pair to the extractor, gives each its own
+ * embedding row and its own `entry_field_metrics` row; the research pipeline's
+ * `cognitive_probe_features(journal, recall)` takes every density from the
+ * recall alone and scores `semantic_distance_to_journal` between the two. One
+ * merged value would make that distance 0 by construction and leave every
+ * density dividing by an empty token count.
+ *
+ * Order is journal-then-recall, unchanged. It decides what the recall is a
+ * recall OF, so reversing it would change the measurement rather than the
+ * layout, and older rows would stop being comparable.
+ */
+const PROMPTS = [
+  {
+    field: "journal_entry" as const,
+    target: "journal" as const,
+    tab: "Today",
+    label: "Journal Entry",
+    rows: 5,
+    placeholder: "Write what happened today, how it felt, or what stood out.",
+    hint: "Take as long as you like.",
+  },
+  {
+    field: "first_recall_30" as const,
+    target: "recall" as const,
+    tab: "30s Recall",
+    label: "30-First-Recall",
+    rows: 3,
+    placeholder: "Without overthinking, write the first thing you remember from the last 30 seconds.",
+    hint: "Optional. First thing that comes to mind — don't edit it.",
+  },
+];
+
+type RecordField = (typeof PROMPTS)[number]["field"];
 const chatSteps = ["Preparing message", "Retrieving related entries", "Checking BLESC static knowledge", "Generating cautious response", "Done"];
 
 /* ================================================================
@@ -50,6 +88,8 @@ export default function Home() {
   const [safetyMessage, setSafetyMessage] = useState("");
   const [journalText, setJournalText] = useState("");
   const [recallText, setRecallText] = useState("");
+  const [activeField, setActiveField] = useState<RecordField>("journal_entry");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [chatText, setChatText] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
   const [graphSnapshots, setGraphSnapshots] = useState<GraphSnapshot[]>([]);
@@ -363,6 +403,32 @@ export default function Home() {
     });
   };
 
+  const activePrompt = PROMPTS.find((prompt) => prompt.field === activeField) ?? PROMPTS[0];
+  const activeValue = activeField === "journal_entry" ? journalText : recallText;
+
+  /**
+   * Move the single box from one prompt to the other.
+   *
+   * `focus_count`, `blur_count` and `field_order` are measurements, so the
+   * switch must produce exactly one of each. It does that by letting the DOM
+   * fire them rather than recording by hand:
+   *
+   *   - clicking the tab pulls focus out of the textarea, whose `onBlur` still
+   *     closes over the OLD field — one blur, correctly attributed;
+   *   - the refocus below runs after the re-render, so `onFocus` closes over
+   *     the NEW field — one focus.
+   *
+   * Recording either one here as well would double-count it, which matters:
+   * these are the hesitation features, not display state.
+   */
+  const switchField = (next: RecordField) => {
+    if (next === activeField) return;
+    setActiveField(next);
+    // After paint, so the caret lands in the box the student is now looking at
+    // and `onFocus` sees the field that is actually open.
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
   const insertTranscript = (target: "journal" | "recall" | "chat", text: string) => {
     const append = (current: string) => [current.trim(), text.trim()].filter(Boolean).join(current.trim() ? "\n" : "");
     if (target === "chat") {
@@ -402,8 +468,8 @@ export default function Home() {
       .slice(0, 5);
   }, [lastSubmission]);
 
-  const reflectionCards = lastSubmission?.extraction.reflection_cards_json ?? [];
-  const emotionalState = lastSubmission?.extraction.emotional_state_json;
+  const reflectionCards = lastSubmission?.extraction?.reflection_cards_json ?? [];
+  const emotionalState = lastSubmission?.extraction?.emotional_state_json;
   const recentEntries = entries.slice(0, 5);
 
   /* ── render ─────────────────────────────────────────────────── */
@@ -433,56 +499,87 @@ export default function Home() {
               Record Today
             </h1>
             <p className="mt-1 text-sm" style={{ color: "var(--ink-mid)", fontStyle: "italic" }}>
-              Two short notes are enough. Sentra keeps the student experience simple while recording research metadata transparently.
+              A short note is enough. Sentra keeps the student experience simple while recording research metadata transparently.
             </p>
           </div>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="px-7 py-6 space-y-4">
-          <div>
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <label className="inscription block" htmlFor="journal-entry">Journal Entry</label>
-              <VoiceInputButton
-                disabled={isSubmitting}
-                onTranscript={(text) => insertTranscript("journal", text)}
-              />
-            </div>
-            <textarea
-              id="journal-entry"
-              className="w-full resize-none p-4 text-base leading-relaxed outline-none transition-all"
-              rows={5}
-              style={{
-                ...bodyFont,
-                border: "1px solid var(--limestone)",
-                borderRadius: "var(--radius)",
-                backgroundColor: "var(--ivory-warm)",
-                color: "var(--ink)",
-                fontSize: "1rem",
-              }}
-              data-testid="journal-input"
-              placeholder="Write what happened today, how it felt, or what stood out."
-              value={journalText}
-              onFocus={() => handleFieldFocus("journal_entry", journalText.length)}
-              onBlur={() => handleFieldBlur("journal_entry", journalText.length)}
-              onPaste={() => handleFieldPaste("journal_entry", journalText.length)}
-              onChange={(e) => handleFieldChange("journal_entry", e.target.value, setJournalText, e.target.selectionStart, e.target.selectionEnd)}
-              disabled={isSubmitting}
-            />
+          {/* One box, two prompts.
+              The two texts stay separate all the way down — the LLM sees them
+              labelled, each gets its own embedding and its own writing-telemetry
+              row, and `cognitive_probe_features` measures the recall against the
+              journal. Merging them into one value would silently empty that
+              probe. What was two boxes is now one, switched by the tabs. */}
+          <div
+            className="flex items-stretch gap-1 p-1"
+            style={{
+              border: "1px solid var(--limestone)",
+              borderRadius: "999px",
+              backgroundColor: "var(--ivory-aged)",
+            }}
+            role="tablist"
+            aria-label="What to write"
+          >
+            {PROMPTS.map((prompt) => {
+              const isActive = prompt.field === activeField;
+              const written = (prompt.field === "journal_entry" ? journalText : recallText).trim().length > 0;
+              return (
+                <button
+                  key={prompt.field}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls="record-input"
+                  data-testid={`record-tab-${prompt.field}`}
+                  onClick={() => switchField(prompt.field)}
+                  disabled={isSubmitting}
+                  className="flex flex-1 items-center justify-center gap-2 px-4 py-2 transition-all cursor-pointer disabled:cursor-not-allowed"
+                  style={{
+                    ...displayFont,
+                    border: "1px solid transparent",
+                    borderRadius: "999px",
+                    background: isActive ? "var(--blue-base)" : "transparent",
+                    color: isActive ? "var(--ink)" : "var(--ink-mid)",
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    fontSize: "0.58rem",
+                    fontWeight: isActive ? 700 : 600,
+                  }}
+                >
+                  {prompt.tab}
+                  {/* Says whether the other prompt already has something in it,
+                      so a student cannot leave one behind without seeing that
+                      they did. */}
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 5,
+                      height: 5,
+                      borderRadius: "999px",
+                      background: written ? "var(--aegean)" : "var(--limestone)",
+                    }}
+                  />
+                  <span className="sr-only">{written ? " — written" : " — empty"}</span>
+                </button>
+              );
+            })}
           </div>
 
           <div>
             <div className="mb-2 flex items-center justify-between gap-3">
-              <label className="inscription block" htmlFor="first-recall">30-First-Recall</label>
+              <label className="inscription block" htmlFor="record-input">{activePrompt.label}</label>
               <VoiceInputButton
                 disabled={isSubmitting}
-                onTranscript={(text) => insertTranscript("recall", text)}
+                onTranscript={(text) => insertTranscript(activePrompt.target, text)}
               />
             </div>
             <textarea
-              id="first-recall"
+              id="record-input"
+              ref={inputRef}
               className="w-full resize-none p-4 text-base leading-relaxed outline-none transition-all"
-              rows={3}
+              rows={activePrompt.rows}
               style={{
                 ...bodyFont,
                 border: "1px solid var(--limestone)",
@@ -491,14 +588,28 @@ export default function Home() {
                 color: "var(--ink)",
                 fontSize: "1rem",
               }}
-              placeholder="Without overthinking, write the first thing you remember from the last 30 seconds."
-              value={recallText}
-              onFocus={() => handleFieldFocus("first_recall_30", recallText.length)}
-              onBlur={() => handleFieldBlur("first_recall_30", recallText.length)}
-              onPaste={() => handleFieldPaste("first_recall_30", recallText.length)}
-              onChange={(e) => handleFieldChange("first_recall_30", e.target.value, setRecallText, e.target.selectionStart, e.target.selectionEnd)}
+              /* The eval harness fills this and submits; it stays on the
+                 element regardless of which prompt is showing. */
+              data-testid="journal-input"
+              placeholder={activePrompt.placeholder}
+              value={activeValue}
+              onFocus={() => handleFieldFocus(activeField, activeValue.length)}
+              onBlur={() => handleFieldBlur(activeField, activeValue.length)}
+              onPaste={() => handleFieldPaste(activeField, activeValue.length)}
+              onChange={(e) =>
+                handleFieldChange(
+                  activeField,
+                  e.target.value,
+                  activeField === "journal_entry" ? setJournalText : setRecallText,
+                  e.target.selectionStart,
+                  e.target.selectionEnd,
+                )
+              }
               disabled={isSubmitting}
             />
+            <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--ink-faint)", fontStyle: "italic" }}>
+              {activePrompt.hint}
+            </p>
           </div>
 
           <p className="text-xs leading-relaxed" style={{ color: "var(--ink-faint)", fontStyle: "italic" }}>

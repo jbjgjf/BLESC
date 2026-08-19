@@ -4,6 +4,16 @@ This document describes the research-grade backend added behind the simple
 student UI. The UI should stay centered on two fields: `journal_entry` and
 `first_recall_30`.
 
+Two fields, not two boxes. Since the record form was unified they share one
+textarea, switched by a tab — the student sees one place to write, and the two
+values still travel separately all the way down. The distinction is load-bearing
+rather than presentational: `cognitive_probe_features(journal, recall)` takes
+every density from the recall alone and scores `semantic_distance_to_journal`
+across the pair, so a single merged value would fix that distance at 0 and
+divide every density by an empty token count. Production also labels each text
+before handing the pair to the extractor and writes one embedding row and one
+`entry_field_metrics` row per field.
+
 ## Data Collection
 
 The frontend records low-level interaction replay data without adding student

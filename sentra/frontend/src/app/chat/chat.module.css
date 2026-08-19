@@ -10,9 +10,13 @@
   --radius: 16px;
 
   font-family: "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Helvetica, Arial, sans-serif;
-  position: fixed;
-  inset: 0;
-  z-index: 60;
+  /* In flow, filling the area `AuthShell` gives a full-bleed route. This was
+     `position: fixed; inset: 0; z-index: 60`, which painted over the app
+     header — the composer got its bottom anchor by covering the navigation.
+     `relative` keeps that anchor, because everything pinned below is absolute
+     to this element, not to the viewport. */
+  position: relative;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background: #ffffff;
@@ -20,44 +24,9 @@
   overflow: hidden;
 }
 
-/* ── Header ─────────────────────────────────────────── */
-.header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 22px;
-  background: hsla(0, 0%, 100%, 0.72);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid hsla(var(--hue), 74%, 72%, 0.35);
-  z-index: 4;
-}
-
-.headerHome {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  text-decoration: none;
-  border-radius: 999px;
-}
-
-.headerHome:focus-visible {
-  outline: 2px solid var(--blue-base);
-  outline-offset: 3px;
-}
-
-.headerFlower {
-  width: 34px;
-  height: 34px;
-  object-fit: contain;
-}
-
-.headerTitle {
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--blue-ink);
-}
+/* The page-local header is gone. It repeated the brand the app header already
+   shows and carried no navigation, so the only way out of chat was the
+   browser's back button. */
 
 /* ── Messages ───────────────────────────────────────── */
 .scroll {
