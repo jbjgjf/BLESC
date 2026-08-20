@@ -14,6 +14,27 @@ divide every density by an empty token count. Production also labels each text
 before handing the pair to the extractor and writes one embedding row and one
 `entry_field_metrics` row per field.
 
+**The free recall is elicited first** (`cognitive-probe-v5`, 2026-08-20). It used
+to come second, which meant the student had just spent minutes composing an
+account of the same day before being asked what surfaced spontaneously — so what
+surfaced was that account, and the distance measured how much they repeated
+themselves rather than how a spontaneous sample differs from a considered one.
+`rumination_index_provenance.md` defines the construct as a *30-second free
+recall*; the old order could not deliver it.
+
+No formula changed, which is why the version had to. The same two texts reach
+the same code and every score is identical across the two orders — asserted by
+`test_reordering_does_not_touch_the_formulas`, so the reorder cannot have moved
+the measurement as well as the construct. What changed is which text existed
+when the other was written.
+
+The order is defaulted, not forced. `elicitation_order` on every probe row
+reports what the student actually did — `recall_first`, `journal_first`,
+`only_<field>`, or `unknown` when no field order was recorded. A journal-first
+session is a v4-shaped observation wearing a v5 version string, and this field is
+the only thing that separates them; absent telemetry reads as `unknown` rather
+than as the default having been followed.
+
 ## Data Collection
 
 The frontend records low-level interaction replay data without adding student

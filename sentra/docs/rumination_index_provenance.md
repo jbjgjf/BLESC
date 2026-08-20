@@ -146,6 +146,13 @@ Agreed description:  [ 助言 / レビュー / 共同研究 / 名前を出さな
 Q1 — is a 30-second free recall a valid elicitation for this construct?
      [ 未記入 ]
 
+     Note for the reviewer (2026-08-20): until `cognitive-probe-v5` the recall
+     was collected AFTER the journal entry, so it was not a free recall at all —
+     the student had just composed an account of the same day and the prompt
+     invited them to echo it. Rows before v5 answer a different question from
+     the one asked here. The order was corrected rather than defended; Q1 is
+     still open, and now at least it is open about the procedure it names.
+
 Q2 — is the two-component split the right one?
      [ 未記入 ]
 ```

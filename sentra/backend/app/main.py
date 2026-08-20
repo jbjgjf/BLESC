@@ -509,6 +509,13 @@ def create_entry(
             entry_session=research_session,
             journal_text=journal_text,
             recall_text=recall_text,
+            # Which prompt was answered first. The v5 probe reports it rather
+            # than assuming the UI's default was followed.
+            field_order=(
+                ((payload.telemetry if payload else None) or {})
+                .get("aggregate_metrics", {})
+                .get("field_order")
+            ),
         )
     except Exception:
         logger.exception("[research] writing/cognitive feature capture failed")

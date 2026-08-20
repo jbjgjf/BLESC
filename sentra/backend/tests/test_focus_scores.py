@@ -71,7 +71,56 @@ class TestNaming:
         assert "rumination_index" not in cognitive_probe_features("", "i feel tired")
 
     def test_pipeline_version_distinguishes_old_rows(self):
-        assert PIPELINE_VERSION == "cognitive-probe-v4"
+        """Pinned, so a construct change cannot ship without touching this line.
+
+        v5 (2026-08-20) moved the free recall in front of the journal. No
+        formula changed, which is exactly why the version had to: the same code
+        now reads two texts that mean something different, and a row that could
+        not be told apart from a v4 row would let two constructs be pooled.
+        """
+        assert PIPELINE_VERSION == "cognitive-probe-v5"
+
+    def test_the_row_records_which_prompt_was_answered_first(self):
+        """The v5 boundary is visible in the data, not only in a date.
+
+        The UI defaults to recall-first but does not force it, so a session that
+        went the other way is a v4-shaped observation carrying a v5 version
+        string. Only this field separates them.
+        """
+        recall_first = cognitive_probe_features(
+            "today was long", "tired", field_order=["first_recall_30", "journal_entry"]
+        )
+        journal_first = cognitive_probe_features(
+            "today was long", "tired", field_order=["journal_entry", "first_recall_30"]
+        )
+        assert recall_first["elicitation_order"] == "recall_first"
+        assert journal_first["elicitation_order"] == "journal_first"
+
+    def test_absent_telemetry_is_not_read_as_the_default_order(self):
+        """No field order recorded is not evidence the default was followed."""
+        assert cognitive_probe_features("a", "b")["elicitation_order"] == "unknown"
+        assert cognitive_probe_features("a", "b", field_order=[])["elicitation_order"] == "unknown"
+
+    def test_one_prompt_answered_is_not_an_order(self):
+        """A student who only wrote the journal ordered nothing against anything."""
+        only_journal = cognitive_probe_features("today", "", field_order=["journal_entry"])
+        assert only_journal["elicitation_order"] == "only_journal_entry"
+
+    def test_reordering_does_not_touch_the_formulas(self):
+        """v5 is a change of what the texts ARE, not of what is computed.
+
+        Every score must be identical across the two orders — if one moved, the
+        reorder would have quietly changed the measurement as well as the
+        construct, and the two effects could never be separated afterwards.
+        """
+        scored = [
+            cognitive_probe_features("today was long", "tired", field_order=order)
+            for order in (["first_recall_30", "journal_entry"], ["journal_entry", "first_recall_30"])
+        ]
+        for key, value in scored[0].items():
+            if key == "elicitation_order":
+                continue
+            assert scored[1][key] == value, f"{key} moved with the order"
 
     def test_history_is_readable_not_dropped(self):
         legacy = {"rumination_index": 0.42, "pipeline_version": "cognitive-probe-v2"}

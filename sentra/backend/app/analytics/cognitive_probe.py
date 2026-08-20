@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Sequence, Set
 
 from app.ontology.sources import resolve
 
@@ -23,7 +23,25 @@ from app.analytics.tokenize import (
 #: Found through the #87 retrieval benchmark rather than here: two Japanese
 #: sentences sharing only 「〜てきた」 matched lexically, which is the same class
 #: of defect as D-01 and was invisible in the probe's own output.
-PIPELINE_VERSION = "cognitive-probe-v4"
+PIPELINE_VERSION = "cognitive-probe-v5"
+
+#: v5 (2026-08-20): the free recall is elicited BEFORE the journal, not after.
+#:
+#: No formula changed. The same two texts reach the same code; what changed is
+#: which text existed when the other was written, and that decides what
+#: `semantic_distance_to_journal` is a distance BETWEEN.
+#:
+#: `rumination_index_provenance.md` defines the construct as a "30-second free
+#: recall" — unplanned, unedited, whatever surfaces. Eliciting it after the
+#: journal meant the student had just spent minutes composing an account of the
+#: same day, so what surfaced was that account: the distance measured how much
+#: they repeated themselves. Under v5 it measures what the dossier says, a
+#: spontaneous sample against a considered one.
+#:
+#: v4 and v5 distances are therefore NOT comparable, and neither are the
+#: densities — a rushed unedited sample and a recalled-after-composing one have
+#: different lexical statistics. `elicitation_order` is recorded on every row so
+#: the boundary is visible in the data rather than inferable only from a date.
 
 @dataclass(frozen=True)
 class VocabularyProvenance:
@@ -200,7 +218,38 @@ def _jaccard_distance(left: Set[str], right: Set[str]) -> float:
     return round(1 - (len(left.intersection(right)) / len(union)), 6)
 
 
-def cognitive_probe_features(journal_text: str, recall_text: str) -> Dict[str, Any]:
+#: What `field_order` has to look like for the recall to be a free recall.
+RECALL_FIRST = ("first_recall_30", "journal_entry")
+
+
+def elicitation_order(field_order: Optional[Sequence[str]]) -> str:
+    """Which prompt the student actually answered first.
+
+    Derived from telemetry rather than assumed from the UI, because the UI does
+    not force the order — it defaults to it. A session that went the other way
+    is a v4-shaped observation wearing a v5 version string, and an analysis that
+    cannot tell them apart would pool two different constructs.
+
+    `unknown` when no field order was recorded: absent telemetry is not evidence
+    that the default was followed.
+    """
+    if not field_order:
+        return "unknown"
+    ordered = [name for name in field_order if name in RECALL_FIRST]
+    if not ordered:
+        return "unknown"
+    if len(ordered) == 1:
+        # Only one prompt was ever touched, so nothing was ordered against
+        # anything. Named rather than folded into recall_first.
+        return f"only_{ordered[0]}"
+    return "recall_first" if tuple(ordered[:2]) == RECALL_FIRST else "journal_first"
+
+
+def cognitive_probe_features(
+    journal_text: str,
+    recall_text: str,
+    field_order: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
     recall_words = analyze(recall_text)
     journal_words = analyze(journal_text)
     recall_set = {word.canonical for word in recall_words}
@@ -246,6 +295,11 @@ def cognitive_probe_features(journal_text: str, recall_text: str) -> Dict[str, A
         "perseveration": round(perseveration, 6),
         "recency_marker_count": recency_count,
         "semantic_distance_to_journal": _jaccard_distance(recall_set, journal_set),
+        # Which text existed when the other was written. Under v5 the UI
+        # defaults to recall-first but does not force it, so this is measured,
+        # not assumed — and it is what tells a later analysis whether a row is
+        # the construct the dossier describes.
+        "elicitation_order": elicitation_order(field_order),
         "reflection_density": round(reflection_density, 6),
         # Renamed from rumination_index. Rumination is a clinical construct
         # with a reference instrument; this is a lexical density that shares

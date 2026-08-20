@@ -41,38 +41,49 @@ const bodyFont: React.CSSProperties    = { fontFamily: "var(--font-sans), sans-s
 const journalSteps = ["Saving observation", "Extracting graph", "Computing reflection signal", "Updating research artifacts", "Done"];
 
 /**
- * The two prompts that used to be two boxes.
+ * The two prompts that used to be two boxes. One box now, switched by a tab.
  *
- * They remain two FIELDS because the backend reads them as two. Production
- * labels each one before handing the pair to the extractor, gives each its own
- * embedding row and its own `entry_field_metrics` row; the research pipeline's
- * `cognitive_probe_features(journal, recall)` takes every density from the
- * recall alone and scores `semantic_distance_to_journal` between the two. One
- * merged value would make that distance 0 by construction and leave every
- * density dividing by an empty token count.
+ * They remain two FIELDS because the backend reads them as two, and because
+ * two independently elicited samples are the point. Production labels each one
+ * before handing the pair to the extractor and writes one embedding row and one
+ * `entry_field_metrics` row per field; `cognitive_probe_features` takes every
+ * density from the recall alone and scores `semantic_distance_to_journal`
+ * across the pair. A single merged value would fix that distance at 0 and
+ * divide every density by an empty token count.
  *
- * Order is journal-then-recall, unchanged. It decides what the recall is a
- * recall OF, so reversing it would change the measurement rather than the
- * layout, and older rows would stop being comparable.
+ * FREE RECALL COMES FIRST, and this is a correction rather than a preference.
+ * `docs/rumination_index_provenance.md` defines the construct as a "30-second
+ * free recall" — unplanned, unedited, whatever surfaces. Eliciting it AFTER the
+ * journal meant the student had just spent minutes composing an account of the
+ * same day, so what surfaced was that account. The distance measured how much
+ * they repeated themselves, not how a spontaneous recall differs from a
+ * considered one. Nothing downstream is dropped by the reorder; the same two
+ * texts reach the same formulas. What changes is that they now mean what the
+ * dossier says they mean, which is why the probe version moves with it.
+ *
+ * Not enforced as a wizard. `field_order` records what the student actually
+ * did, so an analysis can select correctly-ordered sessions — which is better
+ * than a forced sequence that costs the student something and still cannot
+ * prove the order was honoured.
  */
 const PROMPTS = [
   {
-    field: "journal_entry" as const,
-    target: "journal" as const,
-    tab: "Today",
-    label: "Journal Entry",
-    rows: 5,
-    placeholder: "Write what happened today, how it felt, or what stood out.",
-    hint: "Take as long as you like.",
-  },
-  {
     field: "first_recall_30" as const,
     target: "recall" as const,
-    tab: "30s Recall",
-    label: "30-First-Recall",
+    tab: "First",
+    label: "Free Recall",
     rows: 3,
-    placeholder: "Without overthinking, write the first thing you remember from the last 30 seconds.",
-    hint: "Optional. First thing that comes to mind — don't edit it.",
+    placeholder: "Whatever comes to mind first. Don't plan it, don't edit it.",
+    hint: "About 30 seconds. There is no right answer — the unedited version is the point.",
+  },
+  {
+    field: "journal_entry" as const,
+    target: "journal" as const,
+    tab: "Then Today",
+    label: "Journal Entry",
+    rows: 5,
+    placeholder: "Now, in your own time: what happened today, how it felt, what stood out.",
+    hint: "Take as long as you like.",
   },
 ];
 
@@ -88,7 +99,7 @@ export default function Home() {
   const [safetyMessage, setSafetyMessage] = useState("");
   const [journalText, setJournalText] = useState("");
   const [recallText, setRecallText] = useState("");
-  const [activeField, setActiveField] = useState<RecordField>("journal_entry");
+  const [activeField, setActiveField] = useState<RecordField>("first_recall_30");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [chatText, setChatText] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -588,9 +599,14 @@ export default function Home() {
                 color: "var(--ink)",
                 fontSize: "1rem",
               }}
-              /* The eval harness fills this and submits; it stays on the
-                 element regardless of which prompt is showing. */
-              data-testid="journal-input"
+              /* Two testids on one element, deliberately. `record-input`
+                 always resolves; `journal-input` resolves ONLY while the
+                 journal prompt is showing, so a harness that fills it without
+                 selecting the tab fails loudly instead of writing the journal
+                 into the recall field. Silence there would mislabel every row
+                 it produced. */
+              data-testid={activeField === "journal_entry" ? "journal-input" : "record-input"}
+              data-field={activeField}
               placeholder={activePrompt.placeholder}
               value={activeValue}
               onFocus={() => handleFieldFocus(activeField, activeValue.length)}

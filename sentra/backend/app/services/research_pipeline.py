@@ -10,7 +10,7 @@ import re
 from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -479,8 +479,13 @@ def record_cognitive_probe_features(
     entry_session: Optional[EntrySession],
     journal_text: str,
     recall_text: str,
+    field_order: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
-    feature_json = cognitive_probe_features(journal_text, recall_text)
+    # `field_order` decides `elicitation_order`, which is what marks a row as
+    # the v5 construct. Threaded from the caller's telemetry rather than
+    # defaulted here: assuming the UI's default order would record an
+    # assumption as a measurement.
+    feature_json = cognitive_probe_features(journal_text, recall_text, field_order=field_order)
     row = CognitiveProbeFeature(
         entry_id=entry.id,
         entry_session_id=entry_session.id if entry_session else None,

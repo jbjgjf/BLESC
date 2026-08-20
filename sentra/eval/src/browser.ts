@@ -42,6 +42,12 @@ export async function loginThroughUi(page: Page, email: string, password: string
 
 export async function submitJournal(page: Page, text: string): Promise<void> {
   await page.goto("/");
+  // Record is one box with two prompts, and it opens on the free recall — the
+  // order the probe's construct requires. Selecting the journal tab is what a
+  // student does before writing the journal, so the harness does it too.
+  // Without this the fill would land in the recall field; `journal-input` only
+  // resolves while the journal prompt is showing, so that failure is loud.
+  await page.getByTestId("record-tab-journal_entry").click();
   await page.getByTestId("journal-input").fill(text);
   await page.getByTestId("journal-submit").click();
   // The Record flow runs extraction; wait for the submit button to re-enable
