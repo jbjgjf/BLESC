@@ -302,7 +302,7 @@ export default function JournalPage() {
                   })}
                 </div>
                 {moodError && (
-                  <p className={styles.error}>
+                  <p role="alert" className={styles.error}>
                     <Icon name="error" size={16} fill />
                     今日の気分を選んでください。
                   </p>
@@ -340,7 +340,7 @@ export default function JournalPage() {
                   ))}
                 </div>
                 {categoryError && (
-                  <p className={styles.error}>
+                  <p role="alert" className={styles.error}>
                     <Icon name="error" size={16} fill />
                     出来事を1つ以上選んでください。
                   </p>
