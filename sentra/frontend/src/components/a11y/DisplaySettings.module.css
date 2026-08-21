@@ -1,0 +1,122 @@
+.dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(86vh, 780px);
+  /* Tailwind の preflight が全要素の margin を 0 にするため、モーダルを
+     中央に置くブラウザ既定の margin:auto が効かなくなる。ここで戻す。 */
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--bl-line);
+  border-radius: var(--bl-radius);
+  background: var(--bl-surface);
+  color: var(--bl-ink);
+  font-family: var(--bl-font);
+  overflow: auto;
+}
+
+.dialog::backdrop {
+  background: hsl(var(--bl-hue) 40% 12% / 0.42);
+}
+
+.inner {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.group {
+  border: 1px solid var(--bl-line-soft);
+  border-radius: var(--bl-radius-sm);
+  padding: 13px 15px 15px;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 6px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--bl-ink);
+}
+.legend .blesc-icon { color: var(--bl-blue-strong); }
+
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* 見た目はチップ、中身は素の radio。矢印キーでの移動も読み上げも
+   ブラウザの標準動作のまま使える。 */
+.option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 9px 17px;
+  border: 1px solid var(--bl-line);
+  border-radius: var(--bl-pill);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--bl-surface);
+  transition: background 0.15s var(--bl-ease), border-color 0.15s var(--bl-ease);
+}
+
+.option:hover { background: var(--bl-mist); }
+
+.option:has(.radio:checked) {
+  background: var(--bl-blue);
+  border-color: var(--bl-blue);
+  font-weight: 700;
+}
+
+.option:has(.radio:focus-visible) {
+  outline: 3px solid var(--bl-blue-strong);
+  outline-offset: 2px;
+}
+
+.radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+}
+
+.preview {
+  border: 1px dashed var(--bl-line);
+  border-radius: var(--bl-radius-sm);
+  padding: 12px 15px;
+  background: var(--bl-mist);
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (forced-colors: active) {
+  .option:has(.radio:checked) {
+    outline: 2px solid CanvasText;
+    outline-offset: -2px;
+  }
+}

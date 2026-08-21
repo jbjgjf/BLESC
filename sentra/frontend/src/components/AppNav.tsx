@@ -5,6 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { TransitionLink } from "@/components/ui/Transition";
 import { contextForPath } from "@/lib/blesc/context";
+import { DisplaySettings } from "@/components/a11y/DisplaySettings";
 import { useAuth } from "@/lib/auth";
 import { Icon, type IconName } from "@/components/ui/Icon";
 
@@ -49,6 +50,7 @@ export function AppNav() {
   const { user, signOut } = useAuth();
   const menuRef = useRef<HTMLDivElement>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Remember which route the menu was opened on rather than closing it from an
   // effect — navigating changes `pathname`, which closes the menu by derivation.
@@ -170,6 +172,18 @@ export function AppNav() {
                   type="button"
                   className="bl-menu__item bl-menu__item--button"
                   role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setSettingsOpen(true);
+                  }}
+                >
+                  <Icon name="settings" size={19} />
+                  表示設定
+                </button>
+                <button
+                  type="button"
+                  className="bl-menu__item bl-menu__item--button"
+                  role="menuitem"
                   onClick={() => void signOut().catch(() => undefined)}
                 >
                   <Icon name="logout" size={19} />
@@ -180,6 +194,8 @@ export function AppNav() {
           </div>
         </div>
       </header>
+
+      <DisplaySettings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       {/* Mobile tab bar — the tabs above collapse to icons off-screen below 640px. */}
       <nav className="bl-tabbar" aria-label="メインナビゲーション">

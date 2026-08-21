@@ -41,6 +41,10 @@
   --bl-blue: hsl(var(--bl-hue) 74% 72%);
   --bl-blue-hover: hsl(var(--bl-hue) 74% 78%);
   --bl-blue-press: hsl(var(--bl-hue) 66% 66%);
+  /* フォーカスリングと、意味を持つアイコン用。白地 3.85:1 で
+     WCAG 1.4.11（非テキストのコントラスト）を満たす。
+     --bl-blue は塗り専用に残す。 */
+  --bl-blue-strong: hsl(var(--bl-hue) 74% 48%);
   --bl-mist: hsl(var(--bl-hue) 80% 96.5%);
   --bl-veil: hsl(var(--bl-hue) 72% 92%);
   --bl-line: hsl(var(--bl-hue) 62% 87%);
@@ -48,7 +52,7 @@
 
   --bl-ink: hsl(var(--bl-hue) 60% 20%);
   --bl-ink-2: hsl(var(--bl-hue) 42% 33%);
-  --bl-ink-3: hsl(var(--bl-hue) 26% 47%);
+  --bl-ink-3: hsl(var(--bl-hue) 26% 41%);
 
   --bl-surface: #ffffff;
 
@@ -218,7 +222,7 @@ fieldset {
   transition-duration: var(--bl-t-press);
   transition-timing-function: var(--bl-ease);
 }
-.bl-card--link:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+.bl-card--link:focus-visible { outline: 3px solid var(--bl-blue-strong); outline-offset: 2px; }
 
 /* ── Buttons ────────────────────────────────────────────────── */
 .bl-btn {
@@ -244,7 +248,7 @@ fieldset {
   transition-duration: var(--bl-t-press);
   transition-timing-function: var(--bl-ease);
 }
-.bl-btn:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+.bl-btn:focus-visible { outline: 3px solid var(--bl-blue-strong); outline-offset: 2px; }
 .bl-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .bl-btn--primary {
@@ -292,7 +296,7 @@ fieldset {
   transition-duration: var(--bl-t-press);
   transition-timing-function: var(--bl-ease);
 }
-.bl-icon-btn:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+.bl-icon-btn:focus-visible { outline: 3px solid var(--bl-blue-strong); outline-offset: 2px; }
 
 /* ── Chips ──────────────────────────────────────────────────── */
 .bl-chip {
@@ -338,7 +342,7 @@ fieldset {
   transition-duration: var(--bl-t-press);
   transition-timing-function: var(--bl-ease);
 }
-.bl-choice:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+.bl-choice:focus-visible { outline: 3px solid var(--bl-blue-strong); outline-offset: 2px; }
 
 .bl-choice[aria-pressed="true"] {
   background: var(--bl-blue);
@@ -428,7 +432,7 @@ fieldset {
   cursor: pointer;
   outline: none;
 }
-.bl-select:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+.bl-select:focus-visible { outline: 3px solid var(--bl-blue-strong); outline-offset: 2px; }
 
 /* ── Divider ────────────────────────────────────────────────── */
 .bl-hr {
@@ -625,7 +629,7 @@ fieldset {
   border-radius: var(--bl-pill);
   flex-shrink: 0;
 }
-.bl-nav__brand:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 3px; }
+.bl-nav__brand:focus-visible { outline: 3px solid var(--bl-blue-strong); outline-offset: 3px; }
 .bl-nav__brand img { object-fit: contain; }
 
 .bl-nav__wordmark {
@@ -665,7 +669,7 @@ fieldset {
   transition: background 0.15s var(--bl-ease), color 0.15s var(--bl-ease);
 }
 .bl-nav__tab:hover { background: var(--bl-mist); color: var(--bl-ink); }
-.bl-nav__tab:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+.bl-nav__tab:focus-visible { outline: 3px solid var(--bl-blue-strong); outline-offset: 2px; }
 .bl-nav__tab[data-active="true"] {
   background: var(--bl-mist);
   color: var(--bl-ink);
@@ -728,7 +732,7 @@ fieldset {
 .bl-menu__item .blesc-icon { color: var(--bl-ink-3); }
 .bl-menu__item:hover { background: var(--bl-mist); color: var(--bl-ink); }
 .bl-menu__item:hover .blesc-icon { color: var(--bl-blue); }
-.bl-menu__item:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: -2px; }
+.bl-menu__item:focus-visible { outline: 3px solid var(--bl-blue-strong); outline-offset: -2px; }
 
 .bl-menu__item--button {
   width: 100%;
@@ -970,5 +974,171 @@ fieldset {
 @media (prefers-reduced-motion: reduce) {
   [data-bl-context="student"] .bl-loader {
     animation: bl-flower-breathe 2.4s var(--bl-ease) infinite;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════
+   アクセシビリティ
+   「特別な人のための設定」ではなく、既定で満たしておくべきもの。
+   学校配布端末では拡大表示や読み上げが日常的に使われる。
+   ════════════════════════════════════════════════════════════ */
+
+/* ── 読み上げ専用テキスト ───────────────────────────── */
+.bl-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── 本文へスキップ ─────────────────────────────────
+   キーボード利用者が毎ページでナビを 5 回 Tab しなくて済むように。
+   普段は隠れていて、フォーカスが当たった時だけ出てくる。 */
+.bl-skip {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 100;
+  padding: 11px 20px;
+  border-radius: var(--bl-pill);
+  background: var(--bl-surface);
+  border: 2px solid var(--bl-blue-strong);
+  color: var(--bl-ink);
+  font-family: var(--bl-font);
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateY(-160%);
+  transition: transform 0.18s var(--bl-ease);
+}
+.bl-skip:focus { transform: translateY(0); }
+
+/* ── タップ領域 ─────────────────────────────────────
+   見た目は変えずに、当たり判定だけ 44px 四方まで広げる
+   （WCAG 2.5.8 / 指や手の震えがある場合に効く）。 */
+.bl-icon-btn,
+.bl-nav__tab,
+.bl-tabbar__tab,
+.bl-btn--sm {
+  position: relative;
+}
+.bl-icon-btn::after,
+.bl-nav__tab::after,
+.bl-tabbar__tab::after,
+.bl-btn--sm::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+
+/* ── 文字の大きさ ───────────────────────────────────
+   rem を基準にしているので、根元を変えるだけで全体が追従する。 */
+html[data-bl-text="s"]  { font-size: 93.75%; }
+html[data-bl-text="m"]  { font-size: 100%; }
+html[data-bl-text="l"]  { font-size: 112.5%; }
+html[data-bl-text="xl"] { font-size: 131.25%; }
+
+/* ── 行間 ───────────────────────────────────────────
+   文字が詰まっていると、読字に困難がある場合に行を見失いやすい。 */
+html[data-bl-line="relaxed"] .bl-body,
+html[data-bl-line="relaxed"] .bl-meta,
+html[data-bl-line="relaxed"] .bl-micro,
+html[data-bl-line="relaxed"] p,
+html[data-bl-line="relaxed"] li,
+html[data-bl-line="relaxed"] .bl-textarea {
+  line-height: 2;
+  letter-spacing: 0.02em;
+}
+
+/* ── 書体 ───────────────────────────────────────────
+   UD フォントは端末に入っていれば使い、無ければ既定に戻る。
+   外部読み込みをしないので、回線の細い学校でも遅くならない。 */
+html[data-bl-face="ud"] {
+  --bl-font: "BIZ UDPGothic", "BIZ UDGothic", "UD デジタル 教科書体 N-R",
+    "UD Digi Kyokasho N-R", "Hiragino Kaku Gothic ProN", "Hiragino Sans",
+    Meiryo, sans-serif;
+}
+
+/* ── 高コントラスト ─────────────────────────────────
+   既定の配色はそのままに、必要な人だけ濃くできるようにする。 */
+html[data-bl-contrast="high"] {
+  --bl-ink: hsl(var(--bl-hue) 65% 12%);
+  --bl-ink-2: hsl(var(--bl-hue) 50% 20%);
+  --bl-ink-3: hsl(var(--bl-hue) 35% 28%);
+  --bl-line: hsl(var(--bl-hue) 42% 55%);
+  --bl-line-soft: hsl(var(--bl-hue) 42% 66%);
+  --bl-blue-strong: hsl(var(--bl-hue) 80% 34%);
+}
+html[data-bl-contrast="high"] .bl-btn--primary {
+  background: hsl(var(--bl-hue) 74% 30%);
+  color: #ffffff;
+}
+html[data-bl-contrast="high"] .bl-btn--primary:hover:not(:disabled) {
+  background: hsl(var(--bl-hue) 74% 24%);
+}
+html[data-bl-contrast="high"] .bl-card-head .blesc-icon,
+html[data-bl-contrast="high"] .bl-label .blesc-icon,
+html[data-bl-contrast="high"] .bl-nav__tab[data-active="true"] .blesc-icon,
+html[data-bl-contrast="high"] .bl-tabbar__tab[data-active="true"] .blesc-icon {
+  color: var(--bl-blue-strong);
+}
+html[data-bl-contrast="high"] .bl-card,
+html[data-bl-contrast="high"] .bl-input,
+html[data-bl-contrast="high"] .bl-textarea,
+html[data-bl-contrast="high"] .bl-choice,
+html[data-bl-contrast="high"] .bl-chip {
+  border-width: 2px;
+}
+
+/* ── 動きを減らす（本人の明示指定） ─────────────────
+   OS 側の設定は下の prefers-reduced-motion が拾う。ここは
+   「OS は変えたくないが、このアプリでは止めたい」人のため。 */
+html[data-bl-motion="reduced"] *,
+html[data-bl-motion="reduced"] *::before,
+html[data-bl-motion="reduced"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* ── Windows ハイコントラストモード ─────────────────
+   背景色が全て置き換わるため、境界を地の色で描き直す。 */
+@media (forced-colors: active) {
+  .bl-card,
+  .bl-choice,
+  .bl-chip,
+  .bl-input,
+  .bl-textarea,
+  .bl-btn {
+    border: 1px solid CanvasText;
+  }
+  .bl-nav,
+  .bl-tabbar {
+    border-color: CanvasText;
+  }
+  .bl-nav__tab[data-active="true"],
+  .bl-tabbar__tab[data-active="true"],
+  .bl-choice[aria-pressed="true"] {
+    outline: 2px solid CanvasText;
+    outline-offset: -2px;
+  }
+  /* 色だけで意味を持つ印は、システム配色に潰されないよう残す。 */
+  .bl-dot,
+  .bl-bar > span {
+    forced-color-adjust: none;
+  }
+  .bl-skip:focus,
+  *:focus-visible {
+    outline: 3px solid Highlight;
   }
 }

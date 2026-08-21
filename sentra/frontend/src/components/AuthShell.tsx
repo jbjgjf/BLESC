@@ -8,6 +8,7 @@ import { contextForPath } from "@/lib/blesc/context";
 import { useIsHydrated } from "@/lib/hydration";
 import { Icon } from "@/components/ui/Icon";
 import { AppNav } from "@/components/AppNav";
+import { RouteAnnouncer } from "@/components/a11y/RouteAnnouncer";
 
 export function AuthShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -54,8 +55,12 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="bl-page bl-app" data-bl-context={contextForPath(pathname)}>
+      <a className="bl-skip" href="#bl-main">本文へスキップ</a>
       <AppNav />
-      <main className="bl-app__main">{children}</main>
+      <main id="bl-main" className="bl-app__main" tabIndex={-1}>
+        {children}
+      </main>
+      <RouteAnnouncer />
       {demo && (
         <div className="bl-demo-badge">
           <Icon name="visibility" size={14} />
