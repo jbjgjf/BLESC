@@ -81,6 +81,7 @@
   gap: 15px;
   padding: 20px 22px;
   border-radius: var(--bl-radius-lg);
+  corner-shape: squircle;
   background: var(--bl-mist);
   border: 1px solid var(--bl-line-soft);
 }
@@ -97,6 +98,7 @@
   border: 1px solid var(--bl-line);
   /* カードの内側に並ぶので inner。外側 31 - 余白19 = 12 */
   border-radius: var(--bl-radius-inner);
+  corner-shape: squircle;
   overflow: hidden;
   transition: border-color 0.16s var(--bl-ease);
 }
@@ -168,6 +170,7 @@
 .field {
   padding: 11px 14px;
   border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
   background: var(--bl-mist);
 }
 
@@ -194,6 +197,7 @@
 .followUp {
   padding: 14px;
   border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
   border: 1px solid var(--bl-line);
 }
 
@@ -212,6 +216,7 @@
   font-size: 0.88rem;
   line-height: 1.55;
   border-radius: var(--bl-radius);
+  corner-shape: squircle;
   background: #ffffff;
   border: 1px solid hsla(var(--bl-hue) 74% 72% / 0.45);
   color: var(--bl-ink);

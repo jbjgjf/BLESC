@@ -18,6 +18,7 @@
   background: #ffffff;
   border: 1px solid var(--bl-line);
   border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
   padding: 12px 15px;
   cursor: pointer;
   outline: none;
@@ -34,6 +35,7 @@
   flex-wrap: wrap;
   padding: 14px 16px;
   border-radius: var(--bl-radius);
+  corner-shape: squircle;
   background: var(--bl-mist);
   border: 1px solid var(--bl-line-soft);
 }
@@ -46,6 +48,7 @@
   overflow: hidden;
   padding: 18px;
   border-radius: var(--bl-radius-lg);
+  corner-shape: squircle;
   border: 1px solid var(--bl-blue);
   background: var(--bl-mist);
 }
@@ -94,6 +97,7 @@
   position: relative;
   padding: 12px 15px 12px 44px;
   border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
   background: #ffffff;
   border: 1px solid var(--bl-line-soft);
 }
@@ -148,6 +152,7 @@
 .cautions {
   padding: 14px 16px;
   border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
   background: var(--bl-watch-bg);
   border: 1px solid var(--bl-watch-line);
 }
@@ -160,6 +165,7 @@
 .summaryBox {
   padding: 15px 17px;
   border-radius: var(--bl-radius);
+  corner-shape: squircle;
   border: 1px solid var(--bl-line);
 }
 
@@ -194,5 +200,6 @@
 .meeting {
   padding: 15px 17px;
   border-radius: var(--bl-radius);
+  corner-shape: squircle;
   border: 1px solid var(--bl-line);
 }

@@ -24,6 +24,7 @@
   background: var(--bl-surface);
   border: 1.5px solid var(--bl-line);
   border-radius: var(--bl-radius-inner);
+  corner-shape: squircle;
   cursor: pointer;
   transition: background 0.16s var(--bl-ease), border-color 0.16s var(--bl-ease),
     color 0.16s var(--bl-ease), transform 0.12s var(--bl-pop);
@@ -151,6 +152,7 @@
   overflow: hidden;
   padding: 18px;
   border-radius: var(--bl-radius-lg);
+  corner-shape: squircle;
   border: 1px solid var(--bl-blue);
   background: var(--bl-mist);
 }
@@ -184,6 +186,7 @@
   line-height: 1.6;
   /* .followUp（余白18・半径34）の内側なので 34 - 18 = 16 */
   border-radius: calc(var(--bl-radius-lg) - 18px);
+  corner-shape: squircle;
   background: #ffffff;
   border: 1px solid hsla(var(--bl-hue) 74% 72% / 0.45);
   color: var(--bl-ink);
@@ -267,6 +270,7 @@
   gap: 3px;
   padding: 15px 30px;
   border-radius: var(--bl-radius-inner);
+  corner-shape: squircle;
   background: var(--bl-mist);
 }
 

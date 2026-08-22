@@ -15,6 +15,7 @@
   max-width: 26rem;
   padding: 28px;
   border-radius: var(--bl-radius-lg);
+  corner-shape: squircle;
   border: 1px solid var(--bl-line);
   background: #ffffff;
 }

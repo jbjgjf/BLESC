@@ -23,6 +23,7 @@
   gap: 16px;
   padding: 22px;
   border-radius: var(--bl-radius-lg);
+  corner-shape: squircle;
   border: 1px solid var(--bl-blue);
   background: var(--bl-mist);
 }
@@ -71,6 +72,7 @@
   gap: 3px;
   padding: 14px 16px;
   border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
   background: var(--bl-mist);
 }
 
@@ -89,6 +91,7 @@
   gap: 6px;
   padding: 9px 0 8px;
   border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
 }
 
 .day[data-today="true"] {
@@ -149,6 +152,7 @@
   gap: 13px;
   padding: 13px 14px;
   border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
   background: var(--bl-mist);
 }
 

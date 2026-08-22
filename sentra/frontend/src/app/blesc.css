@@ -201,6 +201,7 @@ fieldset {
   background: var(--bl-surface);
   border: 1px solid var(--bl-line);
   border-radius: var(--bl-radius);
+  corner-shape: squircle;
   padding: var(--bl-pad-card);
 }
 
@@ -413,6 +414,7 @@ fieldset {
   background: var(--bl-surface);
   border: 1px solid var(--bl-line);
   border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
   padding: 12px 15px;
   outline: none;
   transition: border-color 0.16s var(--bl-ease), background 0.16s var(--bl-ease);
@@ -458,6 +460,7 @@ fieldset {
   gap: 10px;
   padding: 13px 16px;
   border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
   background: var(--bl-mist);
   border: 1px solid var(--bl-line-soft);
   font-size: 0.85rem;
@@ -731,6 +734,7 @@ fieldset {
   gap: 10px;
   padding: 10px 11px;
   border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
   text-decoration: none;
   font-family: inherit;
   font-size: 0.87rem;
@@ -785,6 +789,7 @@ fieldset {
     gap: 2px;
     padding: 6px 2px;
     border-radius: var(--bl-radius-sm);
+    corner-shape: squircle;
     text-decoration: none;
     font-size: 0.67rem;
     font-weight: 600;
@@ -942,19 +947,13 @@ fieldset {
    画面には一切かからない（判定は lib/blesc/context.ts）。
    ════════════════════════════════════════════════════════════ */
 
-/* ── 角 ─────────────────────────────────────────────────
-   同じ 16px でも、超楕円の角は円弧より張りがあって、花びらの
-   ふくらみと同じ抑揚になる。対応していないブラウザは今までどおり
-   border-radius の丸みで表示される。 */
-@supports (corner-shape: squircle) {
-  [data-bl-context="student"] .bl-card,
-  [data-bl-context="student"] .bl-notice,
-  [data-bl-context="student"] .bl-menu,
-  [data-bl-context="student"] .bl-input,
-  [data-bl-context="student"] .bl-textarea {
-    corner-shape: squircle;
-  }
-}
+/* ── 角の形 ─────────────────────────────────────────────
+   角丸の四角はすべて連続曲線（スクワークル）。円弧より直線部分が長く
+   続いてから曲がるので、半径が大きいほど素直に見える。
+   指定は border-radius を書いている各所に添えてある — ピル（--bl-pill）と
+   真円（50%）には付けない。試したところ、ピルに連続曲線を当てると端が
+   潰れて小判型になり、カプセルの形が崩れるため。
+   corner-shape 未対応のブラウザは、これまでどおり円弧で表示される。 */
 
 /* ── 読み込み中 ─────────────────────────────────────────
    輪が回るだけの表示をやめて、花がゆっくり開いたり閉じたりする。

@@ -15,6 +15,7 @@
 .urgentCard {
   padding: 18px 20px;
   border-radius: var(--bl-radius-lg);
+  corner-shape: squircle;
   border: 1px solid var(--bl-alert-line);
   background: var(--bl-alert-bg);
 }
@@ -31,6 +32,7 @@
   margin-top: 13px;
   padding: 12px 15px;
   border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
   background: #ffffff;
   border: 1px solid var(--bl-alert-line);
 }
@@ -74,6 +76,7 @@
   gap: 12px;
   padding: 12px 14px;
   border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
   border: 1px solid var(--bl-line);
   transition: opacity 0.2s var(--bl-ease), background 0.2s var(--bl-ease);
 }

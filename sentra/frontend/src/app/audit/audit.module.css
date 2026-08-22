@@ -6,6 +6,7 @@
   gap: 14px;
   padding: 20px 22px;
   border-radius: var(--bl-radius-lg);
+  corner-shape: squircle;
   background: var(--bl-mist);
   border: 1px solid var(--bl-line-soft);
 }
@@ -96,6 +97,7 @@
   margin-top: 13px;
   padding: 12px 15px;
   border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
   background: var(--bl-alert-bg);
   border: 1px solid var(--bl-alert-line);
   font-size: 0.8rem;
