@@ -72,9 +72,18 @@
   --bl-alert-line: hsl(6 70% 87%);
   --bl-alert-ink: hsl(6 62% 38%);
 
-  --bl-radius: 16px;
-  --bl-radius-sm: 12px;
-  --bl-radius-lg: 22px;
+  /* 角の同心円化。入れ子になった角は、外側の半径 = 内側の半径 + 余白 の
+     ときだけ弧の中心が揃う。揃っていないと角まわりの隙間が一定にならず、
+     理由は説明できないのに歪んで見える。ピル型のボタンに合わせ、外側を
+     大きくする向きで揃えた。関係式のまま書いてあるので、余白を変えれば
+     半径も追従する。 */
+  --bl-radius-inner: 12px;                 /* 入れ子の中身：入力欄・タイル・通知 */
+  --bl-pad-card: 18px;                     /* .bl-card の余白 */
+  --bl-bd: 1px;                            /* 枠線。角の隙間は 余白 + 枠線 になる */
+
+  --bl-radius: calc(var(--bl-pad-card) + var(--bl-bd) + var(--bl-radius-inner));  /* 31px */
+  --bl-radius-sm: var(--bl-radius-inner);                          /* 12px */
+  --bl-radius-lg: calc(22px + var(--bl-bd) + var(--bl-radius-inner)); /* 35px */
   --bl-pill: 999px;
 
   /* Motion. Three curves only, so every surface moves the same way:
@@ -192,7 +201,7 @@ fieldset {
   background: var(--bl-surface);
   border: 1px solid var(--bl-line);
   border-radius: var(--bl-radius);
-  padding: 18px;
+  padding: var(--bl-pad-card);
 }
 
 .bl-card--tint { background: var(--bl-mist); }
@@ -689,7 +698,7 @@ fieldset {
   padding: 8px;
   background: var(--bl-surface);
   border: 1px solid var(--bl-line);
-  border-radius: var(--bl-radius);
+  border-radius: calc(8px + var(--bl-radius-inner));
   display: flex;
   flex-direction: column;
   gap: 2px;

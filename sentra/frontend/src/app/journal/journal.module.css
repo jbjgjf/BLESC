@@ -23,7 +23,7 @@
   color: var(--bl-ink-2);
   background: var(--bl-surface);
   border: 1.5px solid var(--bl-line);
-  border-radius: var(--bl-radius);
+  border-radius: var(--bl-radius-inner);
   cursor: pointer;
   transition: background 0.16s var(--bl-ease), border-color 0.16s var(--bl-ease),
     color 0.16s var(--bl-ease), transform 0.12s var(--bl-pop);
@@ -182,7 +182,8 @@
   padding: 11px 16px;
   font-size: 0.94rem;
   line-height: 1.6;
-  border-radius: var(--bl-radius);
+  /* .followUp（余白18・半径34）の内側なので 34 - 18 = 16 */
+  border-radius: calc(var(--bl-radius-lg) - 18px);
   background: #ffffff;
   border: 1px solid hsla(var(--bl-hue) 74% 72% / 0.45);
   color: var(--bl-ink);
@@ -265,7 +266,7 @@
   flex-direction: column;
   gap: 3px;
   padding: 15px 30px;
-  border-radius: var(--bl-radius);
+  border-radius: var(--bl-radius-inner);
   background: var(--bl-mist);
 }
 

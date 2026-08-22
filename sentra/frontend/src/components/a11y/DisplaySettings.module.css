@@ -6,7 +6,8 @@
   margin: auto;
   padding: 0;
   border: 1px solid var(--bl-line);
-  border-radius: var(--bl-radius);
+  /* .inner の余白 20 + fieldset の 12 */
+  border-radius: calc(20px + var(--bl-radius-inner));
   background: var(--bl-surface);
   color: var(--bl-ink);
   font-family: var(--bl-font);

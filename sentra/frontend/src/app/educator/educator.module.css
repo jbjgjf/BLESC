@@ -39,7 +39,8 @@
 
 .urgentCard {
   padding: 15px 17px;
-  border-radius: var(--bl-radius);
+  /* .urgent（余白18・枠1・半径35）の内側なので 35 - 19 = 16 */
+  border-radius: calc(var(--bl-radius-lg) - 19px);
   background: #ffffff;
   border: 1px solid var(--bl-alert-line);
 }

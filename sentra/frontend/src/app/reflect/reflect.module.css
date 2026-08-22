@@ -95,7 +95,8 @@
 /* ── 過去の日記 ─────────────────────────────────────── */
 .entry {
   border: 1px solid var(--bl-line);
-  border-radius: var(--bl-radius);
+  /* カードの内側に並ぶので inner。外側 31 - 余白19 = 12 */
+  border-radius: var(--bl-radius-inner);
   overflow: hidden;
   transition: border-color 0.16s var(--bl-ease);
 }
