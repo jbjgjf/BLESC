@@ -612,8 +612,10 @@ fieldset {
   top: 0;
   z-index: 40;
   background: hsla(0, 0%, 100%, 0.78);
-  backdrop-filter: blur(14px);
+  /* 標準プロパティを後に置くこと。逆順だとビルド時に 2 つが 1 つに
+     まとめられ、-webkit- 付きだけが残って blur が効かなくなる。 */
   -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
   border-bottom: 1px solid hsla(var(--bl-hue) 74% 72% / 0.35);
 }
 
@@ -772,8 +774,8 @@ fieldset {
     justify-content: space-around;
     padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
     background: hsla(0, 0%, 100%, 0.9);
-    backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
     border-top: 1px solid hsla(var(--bl-hue) 74% 72% / 0.35);
   }
 
@@ -894,7 +896,11 @@ fieldset {
 .bl-nav__inner { transition: min-height 0.32s var(--bl-ease); }
 
 .bl-nav[data-scrolled="true"] {
-  background: hsla(0, 0%, 100%, 0.93);
+  /* 以前はここをほぼ不透明（0.93）にして可読性を確保していたが、blur が
+     効くようになったので、すりガラスのまま少しだけ締める程度でよい。 */
+  background: hsla(0, 0%, 100%, 0.86);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  backdrop-filter: blur(18px) saturate(1.25);
   border-bottom-color: hsla(var(--bl-hue) 74% 68% / 0.55);
 }
 .bl-nav[data-scrolled="true"] .bl-nav__inner { min-height: 50px; }
