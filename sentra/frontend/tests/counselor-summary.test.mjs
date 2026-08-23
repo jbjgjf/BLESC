@@ -26,15 +26,15 @@ describe("generateCounselorSummary", () => {
 
   it("summarizes one event with evidence", () => {
     const summary = generateCounselorSummary([event(0)]);
-    assert.ok(summary.sections.find((section) => section.key === "recent_themes").items.includes("anxious (1 reflection)"));
+    assert.ok(summary.sections.find((section) => section.key === "recent_themes").items.includes("anxious（1件）"));
     assert.deepEqual(summary.sections.find((section) => section.key === "intensity_trend").evidence_event_ids, ["event-0"]);
   });
 
   it("ranks recurring patterns across five events", () => {
     const summary = generateCounselorSummary([0, 1, 2, 3, 4].map((index) => event(index)));
     assert.equal(summary.reflection_count, 5);
-    assert.equal(summary.sections.find((section) => section.key === "recurring_triggers").items[0], "school workload (5)");
-    assert.match(summary.sections.find((section) => section.key === "intensity_trend").items[0], /increased from 1\/5 to 5\/5/);
+    assert.equal(summary.sections.find((section) => section.key === "recurring_triggers").items[0], "school workload（5件）");
+    assert.match(summary.sections.find((section) => section.key === "intensity_trend").items[0], /1\/5 から 5\/5 へ上がっています/);
   });
 
   it("shows crisis flags", () => {
@@ -47,6 +47,6 @@ describe("generateCounselorSummary", () => {
     const text = counselorSummaryToText(generateCounselorSummary([event(0, { protective_factors: ["music", "friend support"] })])).toLowerCase();
     assert.match(text, /music/);
     assert.doesNotMatch(text, /you have|diagnosed with|clinical diagnosis/);
-    assert.match(text, /not a clinical assessment or diagnosis/);
+    assert.match(text, /診断や臨床的な評価ではありません/);
   });
 });

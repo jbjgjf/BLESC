@@ -21,20 +21,20 @@ function preferredMimeType() {
 }
 
 function voiceErrorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : "Voice input failed.";
+  const message = error instanceof Error ? error.message : "音声入力に失敗しました。";
   if (message.includes("503") || message.includes("not configured") || message.includes("USE_MOCK_LLM")) {
-    return "Voice transcription is not configured on the server.";
+    return "サーバー側で音声の文字起こしが設定されていません。";
   }
   if (message.includes("401") || message.includes("AuthenticationError")) {
-    return "OpenAI authentication failed for voice transcription.";
+    return "音声の文字起こしの認証に失敗しました。";
   }
   if (message.includes("429") || message.includes("RateLimitError")) {
-    return "Voice transcription is rate limited. Try again shortly.";
+    return "音声の文字起こしが混み合っています。少し待ってからお試しください。";
   }
-  if (message.includes("415") || message.includes("Unsupported audio format")) {
-    return "This browser recorded an unsupported audio format.";
+  if (message.includes("415") || message.includes("未対応の形式")) {
+    return "このブラウザで録音した形式には対応していません。";
   }
-  return message.replace(/^Audio transcription failed/, "Voice transcription failed");
+  return message.replace(/^Audio transcription failed/, "文字起こしに失敗");
 }
 
 export function VoiceInputButton({ disabled = false, onTranscript, onStatusChange }: VoiceInputButtonProps) {
@@ -58,7 +58,7 @@ export function VoiceInputButton({ disabled = false, onTranscript, onStatusChang
     if (disabled || state === "recording") return;
     setError(null);
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setError("Microphone recording is not supported in this browser.");
+      setError("このブラウザは音声の録音に対応していません。");
       setVoiceState("error");
       return;
     }
@@ -76,7 +76,7 @@ export function VoiceInputButton({ disabled = false, onTranscript, onStatusChang
         if (event.data.size > 0) chunksRef.current.push(event.data);
       };
       recorder.onerror = () => {
-        setError("Recording failed.");
+        setError("録音に失敗しました。");
         setVoiceState("error");
         cleanupStream();
       };
@@ -85,7 +85,7 @@ export function VoiceInputButton({ disabled = false, onTranscript, onStatusChang
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
         cleanupStream();
         if (!blob.size) {
-          setError("No audio was recorded.");
+          setError("音声が録音されませんでした。");
           setVoiceState("error");
           return;
         }
@@ -104,7 +104,7 @@ export function VoiceInputButton({ disabled = false, onTranscript, onStatusChang
       setVoiceState("recording");
     } catch (err) {
       cleanupStream();
-      setError(err instanceof Error ? err.message : "Microphone permission was denied.");
+      setError(err instanceof Error ? err.message : "マイクの使用が許可されませんでした。");
       setVoiceState("error");
     }
   };
@@ -120,16 +120,16 @@ export function VoiceInputButton({ disabled = false, onTranscript, onStatusChang
   const recording = state === "recording";
   const label =
     state === "recording"
-      ? "Listening"
+      ? "聞いています"
       : state === "transcribing"
-        ? "Transcribing"
+        ? "文字にしています"
         : state === "permission"
-          ? "Allow microphone"
+          ? "マイクを許可してください"
           : state === "ready"
-            ? "Transcript inserted"
+            ? "入力しました"
             : state === "error"
-              ? error ?? "Voice input failed"
-              : "Voice";
+              ? error ?? "音声入力に失敗"
+              : "音声で入力";
 
   return (
     <div className="voice-input">
@@ -139,8 +139,8 @@ export function VoiceInputButton({ disabled = false, onTranscript, onStatusChang
         onClick={recording ? stopRecording : startRecording}
         className="voice-orb"
         data-state={state}
-        title={recording ? "Stop recording" : "Record voice"}
-        aria-label={recording ? "Stop voice recording" : "Start voice recording"}
+        title={recording ? "録音を止める" : "音声で入力"}
+        aria-label={recording ? "音声入力を止める" : "音声入力を始める"}
       >
         <span className="voice-orb__halo" aria-hidden="true" />
         <span className="voice-orb__core">

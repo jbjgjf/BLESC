@@ -28,31 +28,31 @@ const ForceGraph3D = dynamic(
 const ENABLE_GRAPH_DEBUG = process.env.NEXT_PUBLIC_ENABLE_GRAPH_DEBUG === "true";
 
 const CATEGORY_LEGEND = [
-  { label: "State", color: CATEGORY_COLORS.State },
-  { label: "Trigger", color: CATEGORY_COLORS.Trigger },
-  { label: "Behavior", color: CATEGORY_COLORS.Behavior },
-  { label: "Event", color: CATEGORY_COLORS.Event },
-  { label: "Protective", color: CATEGORY_COLORS.Protective },
+  { label: "気持ち", color: CATEGORY_COLORS.State },
+  { label: "きっかけ", color: CATEGORY_COLORS.Trigger },
+  { label: "行動", color: CATEGORY_COLORS.Behavior },
+  { label: "出来事", color: CATEGORY_COLORS.Event },
+  { label: "支え", color: CATEGORY_COLORS.Protective },
 ];
 
 const MODE_COPY: Record<GraphMode, { label: string; title: string; description: string; canvasHint: string }> = {
   current: {
-    label: "Snapshot",
-    title: "Current Entry Graph",
-    description: "A typed directed multigraph for the selected entry: nodes are extracted observations, categories are ontology types, and arrows show relation direction. Multiple relation types can connect the same pair.",
-    canvasHint: "Current entry graph · orbit / zoom / inspect",
+    label: "この日",
+    title: "この日の関係グラフ",
+    description: "選んだ日の日記から抽出したものを図にしています。丸は書かれていた内容、色はその種類、矢印は関係の向きです。同じ組み合わせに複数の関係がつくこともあります。",
+    canvasHint: "この日の関係グラフ ・ ドラッグで回転／ホイールで拡大／クリックで詳細",
   },
   temporal: {
-    label: "Temporal",
-    title: "Time-Layered Graph",
-    description: "Entry graphs are stacked by day so changes can be inspected over time. Z position encodes chronology; XY position is a force layout for readability, not a measured psychological distance.",
-    canvasHint: "Time-layered graph · orbit / zoom / inspect",
+    label: "時系列",
+    title: "日ごとに重ねたグラフ",
+    description: "日ごとのグラフを奥行き方向に重ねて、移り変わりを見られるようにしています。奥行きは日付の順番を表します。左右上下の位置は見やすさのための配置で、心理的な距離を測ったものではありません。",
+    canvasHint: "日ごとに重ねたグラフ ・ ドラッグで回転／ホイールで拡大／クリックで詳細",
   },
   concept: {
-    label: "Concepts",
-    title: "Recurring Concept Graph",
-    description: "Repeated labels with the same ontology class are collapsed across entries. Larger nodes and thicker edges mean recurrence in the participant record, not clinical certainty.",
-    canvasHint: "Recurring concept graph · orbit / zoom / inspect",
+    label: "くり返し",
+    title: "くり返し出てくるものをまとめたグラフ",
+    description: "同じ種類で同じ言葉のものを、日をまたいでひとつにまとめています。丸が大きく線が太いほど、記録の中で何度も出てきたことを表します。確からしさを表すものではありません。",
+    canvasHint: "くり返し出てくるもの ・ ドラッグで回転／ホイールで拡大／クリックで詳細",
   },
 };
 
@@ -139,7 +139,7 @@ export function GraphViewer3D({
   snapshots,
   currentSnapshot,
   explanation,
-  title = "Local graph viewer",
+  title = "関係グラフ",
 }: GraphViewer3DProps) {
   const [mode, setMode] = useState<GraphMode>("current");
   const [selectedNode, setSelectedNode] = useState<GraphViewerNode | null>(null);
@@ -261,13 +261,13 @@ export function GraphViewer3D({
 
   const modelLabel = activeSnapshot?.extraction_model && activeSnapshot.extraction_model !== "unknown"
     ? `${activeSnapshot.extraction_provider ?? "unknown"} / ${activeSnapshot.extraction_model}`
-    : "model unknown";
+    : "モデル不明";
 
   const temporalLabel = mode === "concept"
-    ? `${orderedSnapshots.length} entries merged`
+    ? `${orderedSnapshots.length}日分をまとめて表示`
     : mode === "temporal" && baselineSnapshot && activeSnapshot
       ? `${baselineSnapshot.day} → ${activeSnapshot.day}`
-      : activeSnapshot ? `${activeSnapshot.day}` : "No snapshots available";
+      : activeSnapshot ? `${activeSnapshot.day}` : "記録がありません";
 
   // Node 3D object factory
   const isConceptMode = mode === "concept";
@@ -318,7 +318,7 @@ export function GraphViewer3D({
                 onClick={() => setShowFallback(!showFallback)}
                 className={`rounded px-3 py-2 text-sm font-medium transition ${showFallback ? "bg-rose-500 text-white" : "text-slate-600 hover:bg-white"}`}
               >
-                {showFallback ? "Hide Fallback" : "Debug"}
+                {showFallback ? "デバッグ表示を隠す" : "デバッグ"}
               </button>
             )}
             {(["current", "temporal", "concept"] as GraphMode[]).map((m) => (
@@ -338,17 +338,17 @@ export function GraphViewer3D({
               type="button"
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
               className="flex items-center gap-1.5 rounded px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white transition"
-              title={isSidebarCollapsed ? "Show Sidebar Panel" : "Hide Sidebar Panel"}
+              title={isSidebarCollapsed ? "パネルを開く" : "パネルを閉じる"}
             >
               {isSidebarCollapsed ? (
                 <>
                   <Minimize2 className="h-4 w-4" />
-                  <span className="hidden sm:inline">Show Sidebar</span>
+                  <span className="hidden sm:inline">パネルを開く</span>
                 </>
               ) : (
                 <>
                   <Maximize2 className="h-4 w-4" />
-                  <span className="hidden sm:inline">Maximize Graph</span>
+                  <span className="hidden sm:inline">グラフを広げる</span>
                 </>
               )}
             </button>
@@ -383,7 +383,7 @@ export function GraphViewer3D({
           {focusNodeId && (
             <div className="absolute left-5 top-14 z-10 flex items-center gap-2.5 rounded border border-cyan-500/30 bg-cyan-950/80 px-3.5 py-2 text-xs font-medium text-cyan-200 backdrop-blur">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
-              <span>Focusing neighbors of: <strong>{graphData.nodes.find(n => n.id === focusNodeId)?.label || "selected node"}</strong></span>
+              <span><strong>{graphData.nodes.find(n => n.id === focusNodeId)?.label || "選択中"}</strong>のつながりだけを表示しています</span>
               <button
                 type="button"
                 onClick={() => setFocusNodeId(null)}
@@ -488,7 +488,7 @@ export function GraphViewer3D({
                               : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
                           }`}
                         >
-                          {focusNodeId === selection.node.id ? "Unfocus" : "Focus Neighbors"}
+                          {focusNodeId === selection.node.id ? "全体に戻す" : "つながりだけ見る"}
                         </button>
                       </div>
 
@@ -500,7 +500,7 @@ export function GraphViewer3D({
                       </div>
 
                       <div>
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ontological role</div>
+                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">種類</div>
                         <ul className="mt-2 space-y-1 text-xs text-slate-600">
                           {selection.relationSummary.map((item) => <li key={item}>• {item}</li>)}
                           {selection.anomalySignals.map((item) => <li key={item}>• {item}</li>)}
@@ -533,7 +533,7 @@ export function GraphViewer3D({
                       )}
                     </div>
                   ) : (
-                    <div className="text-sm text-slate-500">Click an entity to inspect its metadata and ontological role.</div>
+                    <div className="text-sm text-slate-500">丸をクリックすると、その内容の詳細を確認できます。</div>
                   )}
                 </div>
               )}
@@ -556,16 +556,16 @@ export function GraphViewer3D({
                 <div className="border-t border-slate-100 p-5 pt-4 space-y-2 text-sm text-slate-700">
                   {mode === "concept" ? (
                     <>
-                      <div>Entries merged: {orderedSnapshots.length}</div>
-                      <div>Unique concepts: {graphData.nodes.length}</div>
-                      <div>Total predicates: {graphData.links.length}</div>
+                      <div>まとめた日数：{orderedSnapshots.length}</div>
+                      <div>種類の数：{graphData.nodes.length}</div>
+                      <div>関係の数：{graphData.links.length}</div>
                       <div>Span: {orderedSnapshots[0]?.day ?? "—"} → {orderedSnapshots.at(-1)?.day ?? "—"}</div>
                     </>
                   ) : (
                     <>
                       <div>Snapshots: {orderedSnapshots.length}</div>
-                      <div>Baseline layer: {baselineSnapshot?.day ?? "n/a"}</div>
-                      <div>Current layer: {activeSnapshot?.day ?? "n/a"}</div>
+                      <div>比較のもと：{baselineSnapshot?.day ?? "—"}</div>
+                      <div>いま表示中：{activeSnapshot?.day ?? "—"}</div>
                       <div>Source: {usingFallback ? "debug fallback" : "live snapshots"}</div>
                     </>
                   )}
@@ -582,7 +582,7 @@ export function GraphViewer3D({
               >
                 <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
                   <Box className="h-4 w-4 text-cyan-600" />
-                  {mode === "concept" ? "Concept Salience" : "Ontological Basis"}
+                  {mode === "concept" ? "よく出てくるもの" : "内訳"}
                 </div>
                 {collapsedSections.ontology ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronUp className="h-4 w-4 text-slate-400" />}
               </button>
@@ -676,7 +676,7 @@ export function GraphViewer3D({
               >
                 <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
                   <RotateCw className="h-4 w-4 text-cyan-600" />
-                  {mode === "concept" ? "Quotient Graph Semantics" : "Reading the Graph"}
+                  {mode === "concept" ? "まとめ方について" : "グラフの見かた"}
                 </div>
                 {collapsedSections.howToRead ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronUp className="h-4 w-4 text-slate-400" />}
               </button>
@@ -684,18 +684,18 @@ export function GraphViewer3D({
                 <div className="border-t border-slate-100 p-5 pt-4 space-y-2 text-sm text-slate-600">
                   {mode === "concept" ? (
                     <>
-                      <p>Identical entity labels collapse into one recurring concept node.</p>
-                      <p><strong>Node size</strong> = appearance frequency.</p>
-                      <p><strong>Edge thickness</strong> = relation pattern recurrence.</p>
+                      <p>同じ言葉のものは、ひとつの丸にまとめています。</p>
+                      <p><strong>丸の大きさ</strong>＝出てきた回数</p>
+                      <p><strong>線の太さ</strong>＝その関係がくり返された回数</p>
                     </>
                   ) : (
                     <>
-                      <p>Nodes are extracted observations (State, Trigger, Behavior, Event, Protective).</p>
-                      <p>Temporal mode uses Z-axis for chronology.</p>
-                      <p>Double-click a node to focus on its direct neighborhood.</p>
+                      <p>丸は日記から抽出した内容です（気持ち・きっかけ・行動・出来事・支え）。</p>
+                      <p>「時系列」では奥行きが日付の順番を表します。</p>
+                      <p>丸をダブルクリックすると、つながっているものだけを表示します。</p>
                     </>
                   )}
-                  {usingFallback && <p className="text-rose-600 font-medium">Debug fallback active.</p>}
+                  {usingFallback && <p className="text-rose-600 font-medium">デバッグ表示を使用中です。</p>}
                 </div>
               )}
             </div>
@@ -708,14 +708,14 @@ export function GraphViewer3D({
                 className="flex w-full items-center justify-between p-5 text-left font-semibold text-amber-800 hover:bg-amber-100/50 transition"
               >
                 <div className="text-sm font-semibold uppercase tracking-[0.16em]">
-                  Precision Boundary
+                  この図の限界
                 </div>
                 {collapsedSections.precision ? <ChevronDown className="h-4 w-4 text-amber-600" /> : <ChevronUp className="h-4 w-4 text-amber-600" />}
               </button>
               {!collapsedSections.precision && (
                 <div className="border-t border-amber-100 p-5 pt-4 space-y-2 text-sm text-amber-900">
-                  <p>The graph is precise as a structured pattern record, not as clinical diagnosis.</p>
-                  <p>Use confidence, recurrence, and relation types together. A single node or edge is not definitive proof.</p>
+                  <p>この図は「書かれた内容のパターンの記録」として正確なものであり、診断ではありません。</p>
+                  <p>確からしさ・くり返しの回数・関係の種類を合わせて見てください。丸や線ひとつだけで判断できるものではありません。</p>
                 </div>
               )}
             </div>

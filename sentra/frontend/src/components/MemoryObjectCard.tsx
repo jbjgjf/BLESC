@@ -10,9 +10,9 @@ function toneColor(dominant: string): string {
 }
 
 function confidenceLabel(score: number): string {
-  if (score >= 0.8) return "High confidence";
-  if (score >= 0.45) return "Moderate confidence";
-  return "Low confidence (no embedding)";
+  if (score >= 0.8) return "確からしさ 高";
+  if (score >= 0.45) return "確からしさ 中";
+  return "確からしさ 低（ベクトル化なし）";
 }
 
 export function MemoryObjectCard({ memoryObject }: { memoryObject: ConversationMemoryObject }) {
@@ -66,7 +66,7 @@ export function MemoryObjectCard({ memoryObject }: { memoryObject: ConversationM
           style={{ border: "1px solid var(--terracotta)", color: "var(--sienna)" }}
         >
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          {isSuperseded ? "Superseded by a more recent, related memory." : "Tension with an earlier related memory on this topic."}
+          {isSuperseded ? "より新しい関連する記録に置き換えられました。" : "同じ話題の以前の記録と食い違いがあります。"}
         </div>
       )}
     </div>

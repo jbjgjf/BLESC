@@ -1,81 +1,62 @@
 "use client";
 
 import { useEffect } from "react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
-
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-
-const sections = [
-  { href: "/educator", label: "Overview" },
-  { href: "/educator/roster", label: "Roster" },
-  { href: "/educator/alerts", label: "Alerts" },
-];
+import { useDemoMode } from "@/lib/demo";
+import { useIsHydrated } from "@/lib/hydration";
+import { Icon } from "@/components/ui/Icon";
 
 /**
- * Role-gated shell for all educator surfaces. UI gating only — the actual
- * enforcement is RLS: a non-educator reaching these routes sees no data.
+ * 教員向け画面の入口。
+ *
+ * ここでの制御は表示上のものにすぎない。実際のアクセス制御は Supabase の
+ * RLS 側にあり、教員でないユーザーがこの URL に到達してもデータは返らない。
+ * デモモードでは固定データしか読まないため、この判定を通す。
  */
 export default function EducatorLayout({ children }: { children: React.ReactNode }) {
-  const { isEducator, isLoading, educatorMemberships } = useAuth();
-  const pathname = usePathname();
+  const { user, isEducator, isLoading, educatorMemberships } = useAuth();
   const router = useRouter();
 
-  useEffect(() => {
-    if (!isLoading && !isEducator) router.replace("/");
-  }, [isEducator, isLoading, router]);
+  // Reads false until hydration completes; `isLoading` only clears after the
+  // async session lookup, so it is settled by the time we redirect.
+  const demo = useDemoMode();
+  const hydrated = useIsHydrated();
+  const authed = Boolean(user) || demo;
+  const allowed = isEducator || demo;
 
-  if (isLoading || !isEducator) {
+  useEffect(() => {
+    if (isLoading) return;
+    // 未ログインのリダイレクト先は AuthShell が /login に決める。ここで
+    // 同時に "/" へ飛ばすと二つが競合して遷移が終わらなくなるため、
+    // ログイン済みで権限だけがない場合に限って引き取る。
+    if (!authed) return;
+    if (!allowed) router.replace("/");
+  }, [allowed, authed, isLoading, router]);
+
+  if (!hydrated || isLoading || !allowed) {
     return (
-      <div className="flex h-96 items-center justify-center">
-        <Loader2 className="h-7 w-7 animate-spin" style={{ color: "var(--sandstone)" }} />
+      <div className="bl-wrap" style={{ display: "grid", placeItems: "center", minHeight: "50vh" }}>
+        <span className="bl-loader" aria-label="読み込み中" />
       </div>
     );
   }
 
+  const orgName = educatorMemberships.map((m) => m.org_name).join(" ・ ") || "広尾学園 中学校・高等学校";
+
   return (
-    <div className="blesc-aqua mx-auto max-w-5xl space-y-6">
-      <div
-        className="flex flex-wrap items-center justify-between gap-3 px-6 py-4"
-        style={{
-          backgroundColor: "#ffffff",
-          border: "1px solid var(--limestone)",
-          borderRadius: "var(--radius)",
-        }}
-      >
-        <div>
-          <div className="inscription">Educator dashboard</div>
-          <div className="mt-1 text-sm font-semibold" style={{ color: "var(--ink)" }}>
-            {educatorMemberships.map((membership) => membership.org_name).join(" · ")}
-          </div>
-        </div>
-        <nav className="flex gap-1.5">
-          {sections.map((section) => {
-            const isActive = section.href === "/educator"
-              ? pathname === "/educator"
-              : pathname.startsWith(section.href);
-            return (
-              <Link
-                key={section.href}
-                href={section.href}
-                className="rounded-full px-4 py-1.5 text-sm font-semibold transition-all"
-                style={{
-                  color: "var(--ink)",
-                  background: isActive ? "var(--blue-base)" : "#ffffff",
-                  border: isActive ? "1px solid transparent" : "1px solid var(--blue-base)",
-                  textDecoration: "none",
-                }}
-              >
-                {section.label}
-              </Link>
-            );
-          })}
-        </nav>
+    <div className="bl-wrap bl-wrap--wide bl-stack">
+      <div className="bl-orgbar">
+        <span className="bl-row" style={{ gap: 9 }}>
+          <Icon name="apartment" size={19} />
+          <span className="bl-meta" style={{ fontWeight: 600 }}>{orgName}</span>
+        </span>
+        <span className="bl-disclaimer">
+          <Icon name="medical_information" size={15} />
+          blescは医療的な診断を行いません。最終的な判断は学校の支援体制が行います。
+        </span>
       </div>
-      <p className="px-1 text-xs" style={{ color: "var(--ink-faint)" }}>
-        Derived signals only — journal and chat text is never shown here. Every view is logged and visible to the student.
-      </p>
+
       {children}
     </div>
   );

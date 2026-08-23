@@ -42,22 +42,22 @@ export function generateCounselorSummary(events: CounselorTimelineEvent[], now =
   const intensityItems = intensities.length === 0
     ? []
     : intensities.length === 1
-      ? [`One structured intensity value is available (${intensities[0].intensity}/5).`]
-      : [`Structured intensity ${Number(intensities.at(-1)?.intensity) > Number(intensities[0].intensity) ? "increased" : Number(intensities.at(-1)?.intensity) < Number(intensities[0].intensity) ? "decreased" : "was unchanged"} from ${intensities[0].intensity}/5 to ${intensities.at(-1)?.intensity}/5.`];
+      ? [`記録された強さは1件です（${intensities[0].intensity}/5）。`]
+      : [`記録された強さは ${intensities[0].intensity}/5 から ${intensities.at(-1)?.intensity}/5 へ${Number(intensities.at(-1)?.intensity) > Number(intensities[0].intensity) ? "上がっています" : Number(intensities.at(-1)?.intensity) < Number(intensities[0].intensity) ? "下がっています" : "変わっていません"}。`];
 
   const discussionItems = [
-    triggers[0] ? `Discuss how “${triggers[0].label}” has been affecting recent days.` : "Discuss what has felt most important recently.",
-    supports[0] ? `Discuss whether “${supports[0].label}” support would be useful.` : "Discuss what kind of support would feel useful now.",
-    protective[0] ? `Discuss how to keep “${protective[0].label}” available.` : "Discuss people, places, or routines that feel supportive.",
+    triggers[0] ? `「${triggers[0].label}」が最近の毎日にどう影響しているか話す。` : "最近いちばん気になっていることを話す。",
+    supports[0] ? `「${supports[0].label}」のような支援が役に立ちそうか話す。` : "いまどんな支援があると助かりそうか話す。",
+    protective[0] ? `「${protective[0].label}」を続けられるようにする方法を話す。` : "支えになっている人・場所・習慣について話す。",
   ];
 
   const sections = [
-    section("recent_themes", "Recent themes", themes.map((item) => `${item.label} (${item.count} reflection${item.count === 1 ? "" : "s"})`), themes.flatMap((item) => item.ids)),
-    section("recurring_triggers", "Recurring triggers", triggers.map((item) => `${item.label} (${item.count})`), triggers.flatMap((item) => item.ids)),
-    section("intensity_trend", "Intensity trend", intensityItems, intensities.map((event) => event.event_id)),
-    section("support_needs", "Support needs", supports.map((item) => item.label), supports.flatMap((item) => item.ids)),
-    section("protective_factors", "Protective factors", protective.map((item) => item.label), protective.flatMap((item) => item.ids)),
-    section("suggested_discussion_points", "Suggested discussion points", discussionItems, [...new Set([...triggers, ...supports, ...protective].flatMap((item) => item.ids))]),
+    section("recent_themes", "最近のテーマ", themes.map((item) => `${item.label}（${item.count}件）`), themes.flatMap((item) => item.ids)),
+    section("recurring_triggers", "繰り返し現れるきっかけ", triggers.map((item) => `${item.label}（${item.count}件）`), triggers.flatMap((item) => item.ids)),
+    section("intensity_trend", "強さの推移", intensityItems, intensities.map((event) => event.event_id)),
+    section("support_needs", "必要としている支援", supports.map((item) => item.label), supports.flatMap((item) => item.ids)),
+    section("protective_factors", "支えになっていること", protective.map((item) => item.label), protective.flatMap((item) => item.ids)),
+    section("suggested_discussion_points", "話し合いたいこと", discussionItems, [...new Set([...triggers, ...supports, ...protective].flatMap((item) => item.ids))]),
   ];
   const safetyFlags = ordered
     .filter((event) => event.safety_level === "crisis" || event.safety_level === "elevated")
@@ -71,7 +71,7 @@ export function generateCounselorSummary(events: CounselorTimelineEvent[], now =
     reflection_count: ordered.length,
     sections,
     safety_flags: safetyFlags,
-    limitations: "This is a supportive summary of structured reflection fields, not a clinical assessment or diagnosis. Review it before choosing whether to share it.",
+    limitations: "これは日記の構造化された項目から作成した支援用のまとめであり、診断や臨床的な評価ではありません。共有するかどうかを決める前に、内容を確認してください。",
     generated_at: now.toISOString(),
   };
 }
@@ -79,10 +79,10 @@ export function generateCounselorSummary(events: CounselorTimelineEvent[], now =
 export function counselorSummaryToText(summary: CounselorSupportSummary) {
   const range = summary.date_range.from && summary.date_range.to
     ? `${new Date(summary.date_range.from).toLocaleDateString()} – ${new Date(summary.date_range.to).toLocaleDateString()}`
-    : "No reflection dates available";
-  const lines = [`Supportive reflection summary`, `${range} · ${summary.reflection_count} reflection${summary.reflection_count === 1 ? "" : "s"}`, ""];
-  for (const item of summary.sections) lines.push(item.title, ...(item.items.length ? item.items.map((value) => `- ${value}`) : ["- No structured data available."]), "");
-  if (summary.safety_flags.length) lines.push("Safety flags", ...summary.safety_flags.map((flag) => `- ${flag.level}: ${flag.reasons.join(", ") || "flag recorded"}`), "");
-  lines.push("Limitation", summary.limitations);
+    : "記録の期間が取得できません";
+  const lines = [`支援用のまとめ`, `${range} ・ ${summary.reflection_count}件の記録`, ""];
+  for (const item of summary.sections) lines.push(item.title, ...(item.items.length ? item.items.map((value) => `- ${value}`) : ["- 該当する記録はありません。"]), "");
+  if (summary.safety_flags.length) lines.push("安全に関する記録", ...summary.safety_flags.map((flag) => `- ${flag.level}: ${flag.reasons.join("、") || "記録あり"}`), "");
+  lines.push("この資料について", summary.limitations);
   return lines.join("\n");
 }

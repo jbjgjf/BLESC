@@ -1,140 +1,203 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { AlertCircle, AlertTriangle, CheckCircle2, Loader2, ShieldAlert } from "lucide-react";
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { CLASS_ROSTER, FOLLOW_UPS, SUBMISSION_ALERTS } from "@/lib/blesc/fixtures";
+import { formatDate, formatDateTime, relativeDays } from "@/lib/blesc/labels";
+import type { SubmissionAlert } from "@/lib/blesc/types";
+import styles from "./alerts.module.css";
 
-import { ApiClient } from "@/api/client";
-import type { CohortAlert } from "@/api/models";
-import { panel } from "@/components/educator/StatusChips";
-
-const TYPE_META: Record<CohortAlert["type"], { label: string; color: string }> = {
-  safety_crisis: { label: "Safety · crisis", color: "var(--terracotta)" },
-  safety_elevated: { label: "Safety · elevated", color: "var(--sienna)" },
-  anomaly_spike: { label: "Signal spike", color: "var(--ochre)" },
-  inactivity: { label: "Inactivity", color: "var(--ink-faint)" },
+const ALERT_META: Record<SubmissionAlert["kind"], { label: string; icon: IconName }> = {
+  missing_3d:    { label: "3日以上未提出",   icon: "event_busy" },
+  unused_1w:     { label: "1週間未利用",     icon: "visibility" },
+  streak_broken: { label: "連続提出が中断",  icon: "local_fire_department" },
+  rate_drop:     { label: "提出頻度が低下",  icon: "trending_down" },
 };
 
-/**
- * Non-clinical escalation guidance (issue #37). Educators are routed to the
- * school's designated support path — never asked to diagnose or treat.
- */
-function CrisisProtocol() {
-  return (
-    <div className="rounded-2xl px-4 py-3 text-xs leading-relaxed" style={{ backgroundColor: "rgba(244,63,94,0.06)", border: "1px solid var(--terracotta)", color: "var(--ink-mid)" }}>
-      <div className="mb-1 flex items-center gap-2 font-semibold" style={{ color: "var(--sienna)" }}>
-        <ShieldAlert className="h-4 w-4" />What to do now
-      </div>
-      <ol className="list-decimal space-y-1 pl-4">
-        <li><strong>If there may be immediate danger:</strong> contact emergency services now, then follow your school&apos;s emergency procedure.</li>
-        <li><strong>Otherwise, today and in person if possible:</strong> connect this student with your school&apos;s designated support staff (counselor, nurse, or safeguarding lead).</li>
-        <li>You don&apos;t need to judge how serious it is, diagnose, or investigate — when safety is uncertain, err on the side of getting a qualified adult involved now.</li>
-      </ol>
-      <p className="mt-2" style={{ color: "var(--ink-faint)" }}>
-        BLESC signals are supportive indicators, not a clinical assessment — they cannot confirm that a student is safe or unsafe.
-        Acknowledging below records that you have seen this flag.
-      </p>
-    </div>
+export default function AlertsPage() {
+  const [acknowledged, setAcknowledged] = useState<Set<string>>(new Set());
+
+  const urgent = CLASS_ROSTER.filter((student) => student.urgent);
+  const overdueFollowUps = FOLLOW_UPS.filter(
+    (item) => item.state === "worsening" || item.nextMeeting === null,
   );
-}
 
-export default function EducatorAlertsPage() {
-  const [alerts, setAlerts] = useState<CohortAlert[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busyKey, setBusyKey] = useState<string | null>(null);
-  const logged = useRef(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    ApiClient.getCohortAlerts()
-      .then((next) => {
-        if (cancelled) return;
-        setAlerts(next);
-        setError(null);
-        if (!logged.current && next.length) {
-          logged.current = true;
-          const students = [...new Map(next.map((alert) => [alert.participant_id, alert])).values()];
-          void ApiClient.recordCohortAccess(students, "alerts");
-        }
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load alerts.");
-      });
-    return () => { cancelled = true; };
-  }, []);
-
-  const acknowledge = async (alert: CohortAlert) => {
-    setBusyKey(alert.alert_key);
-    try {
-      await ApiClient.acknowledgeAlert(alert);
-      setAlerts((current) => current?.map((item) =>
-        item.alert_key === alert.alert_key ? { ...item, acknowledged: true } : item,
-      ) ?? null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Acknowledging the alert failed.");
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
-  if (error && !alerts) {
-    return <div className="flex items-center gap-2 px-6 py-4 text-sm" style={{ ...panel, color: "var(--sienna)" }}><AlertCircle className="h-4 w-4" />{error}</div>;
-  }
-  if (!alerts) {
-    return <div className="flex h-48 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--sandstone)" }} /></div>;
-  }
-  if (alerts.length === 0) {
-    return (
-      <section className="px-8 py-10 text-center text-sm" style={{ ...panel, color: "var(--ink-mid)" }}>
-        No alerts right now. Alerts appear when a consented student has a safety flag, a signal spike, or a quiet week.
-      </section>
-    );
-  }
+  const toggleAck = (id: string) =>
+    setAcknowledged((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   return (
-    <div className="space-y-4">
-      {error ? <p role="alert" className="px-1 text-sm" style={{ color: "var(--sienna)" }}>{error}</p> : null}
-      {alerts.map((alert) => {
-        const meta = TYPE_META[alert.type];
-        const isCrisis = alert.type === "safety_crisis";
-        return (
-          <section key={alert.alert_key} className="space-y-3 px-6 py-5" style={{ ...panel, borderLeft: `3px solid ${meta.color}` }}>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full px-2.5 py-0.5 text-xs font-semibold" style={{ border: `1px solid ${meta.color}`, color: meta.color }}>
-                    {meta.label}
-                  </span>
-                  <Link href={`/educator/student/${alert.participant_id}`} className="font-mono text-sm font-semibold" style={{ color: "var(--ink)" }}>
-                    {alert.code}
-                  </Link>
-                </div>
-                <p className="mt-2 text-sm" style={{ color: "var(--ink-mid)" }}>{alert.detail}</p>
-              </div>
-              {alert.acknowledged ? (
-                <span className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--aegean)" }}>
-                  <CheckCircle2 className="h-4 w-4" />Acknowledged
+    <div className="bl-stack">
+      <header style={{ padding: "2px 2px 0" }}>
+        <h1 className="bl-h1">アラート</h1>
+        <p className="bl-meta" style={{ marginTop: 3 }}>
+          確認のきっかけとして使ってください。アラートだけで状態を判断しないでください。
+        </p>
+      </header>
+
+      {/* ── 7-5 緊急性が高い可能性のある内容 ─────────── */}
+      <section className="bl-stack-s bl-rise">
+        <div className="bl-row" style={{ gap: 9, padding: "0 2px" }}>
+          <Icon name="priority_high" size={20} fill style={{ color: "var(--bl-alert)" }} />
+          <h2 className="bl-h2">優先度の高いアラート</h2>
+          <span className="bl-chip bl-chip--alert">{urgent.length}件</span>
+        </div>
+
+        {urgent.length === 0 ? (
+          <div className="bl-card bl-empty">
+            <Icon name="check_circle" size={38} />
+            <p className="bl-body">優先度の高いアラートはありません。</p>
+          </div>
+        ) : (
+          urgent.map((student) => (
+            <article key={student.id} className={styles.urgentCard}>
+              <div className={styles.urgentTop}>
+                <span className="bl-chip bl-chip--alert">
+                  <Icon name="priority_high" size={15} fill />
+                  要確認
                 </span>
-              ) : (
+                <Link href={`/educator/student/${student.id}`} className={styles.name}>
+                  {student.name}
+                </Link>
+                <span className="bl-micro">
+                  {student.grade}{student.className}
+                </span>
+                <span className="bl-spacer" />
+                <span className="bl-micro">{formatDateTime(student.urgent!.detectedAt)}</span>
+              </div>
+
+              <p className="bl-body" style={{ marginTop: 10 }}>{student.urgent!.detail}</p>
+
+              <div className={styles.reasons}>
+                <span className="bl-micro" style={{ fontWeight: 700 }}>検知の根拠</span>
+                <ul>
+                  {student.urgent!.reasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className={styles.flow}>
+                <span className="bl-micro" style={{ fontWeight: 700 }}>対応の流れ</span>
+                <ol>
+                  <li>担当教員または指定された支援担当者に通知</li>
+                  <li>学校の定める緊急対応フローに沿って状況を確認</li>
+                  <li>必要に応じて保健室・スクールカウンセラー・管理職・保護者と連携</li>
+                </ol>
+              </div>
+
+              <div className={styles.cardActions}>
+                <Link href={`/educator/student/${student.id}`} className="bl-btn bl-btn--primary bl-btn--sm">
+                  詳細を確認
+                  <Icon name="arrow_forward" size={16} />
+                </Link>
                 <button
                   type="button"
-                  disabled={busyKey === alert.alert_key}
-                  onClick={() => acknowledge(alert)}
-                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-60"
-                  style={isCrisis
-                    ? { backgroundColor: "var(--terracotta)", color: "#fff" }
-                    : { border: "1px solid var(--limestone)", color: "var(--ink-mid)" }}
+                  className="bl-btn bl-btn--secondary bl-btn--sm"
+                  onClick={() => toggleAck(student.id)}
                 >
-                  {busyKey === alert.alert_key ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4" />}
-                  {isCrisis ? "Acknowledge crisis flag" : "Mark reviewed"}
+                  <Icon name={acknowledged.has(student.id) ? "check_circle" : "check"} size={16} fill={acknowledged.has(student.id)} />
+                  {acknowledged.has(student.id) ? "確認済み" : "確認しました"}
                 </button>
-              )}
-            </div>
-            {isCrisis && !alert.acknowledged ? <CrisisProtocol /> : null}
-          </section>
-        );
-      })}
+              </div>
+            </article>
+          ))
+        )}
+      </section>
+
+      {/* ── 6-5 未提出アラート ───────────────────────── */}
+      <section className="bl-card bl-rise">
+        <div className="bl-card-head">
+          <Icon name="event_busy" size={21} />
+          <h2 className="bl-h2">日記の未提出</h2>
+          <span className="bl-chip bl-chip--watch">{SUBMISSION_ALERTS.length}件</span>
+        </div>
+
+        <div className="bl-stack-s">
+          {SUBMISSION_ALERTS.map((alert) => {
+            const meta = ALERT_META[alert.kind];
+            const done = acknowledged.has(alert.studentId);
+            return (
+              <div key={alert.studentId} className={styles.alertRow} data-done={done}>
+                <span className={styles.alertIcon}>
+                  <Icon name={meta.icon} size={19} />
+                </span>
+
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span className="bl-row" style={{ gap: 9, flexWrap: "wrap" }}>
+                    <Link href={`/educator/student/${alert.studentId}`} className={styles.name}>
+                      {alert.studentName}
+                    </Link>
+                    <span className="bl-chip bl-chip--tint">{meta.label}</span>
+                  </span>
+                  <span className="bl-micro" style={{ display: "block", marginTop: 3 }}>
+                    {alert.detail} ・ {formatDate(alert.since, false)}から（{relativeDays(alert.since)}）
+                  </span>
+                </span>
+
+                <button
+                  type="button"
+                  className="bl-btn bl-btn--ghost bl-btn--sm"
+                  onClick={() => toggleAck(alert.studentId)}
+                >
+                  <Icon name={done ? "check_circle" : "check"} size={16} fill={done} />
+                  {done ? "確認済み" : "確認"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        <p className="bl-disclaimer" style={{ marginTop: 14 }}>
+          <Icon name="info" size={14} />
+          未提出は体調・行事・端末の不調など様々な理由で起こります。声掛けのきっかけとしてお使いください。
+        </p>
+      </section>
+
+      {/* ── 7-2 フォロー漏れ通知 ─────────────────────── */}
+      <section className="bl-card bl-rise">
+        <div className="bl-card-head">
+          <Icon name="event_repeat" size={21} />
+          <h2 className="bl-h2">フォロー漏れ</h2>
+          {overdueFollowUps.length > 0 && (
+            <span className="bl-chip bl-chip--watch">{overdueFollowUps.length}件</span>
+          )}
+        </div>
+
+        {overdueFollowUps.length === 0 ? (
+          <div className="bl-empty">
+            <Icon name="check_circle" size={38} />
+            <p className="bl-body">フォロー漏れはありません。</p>
+          </div>
+        ) : (
+          <div className="bl-stack-s">
+            {overdueFollowUps.map((item) => (
+              <div key={item.studentId} className={styles.alertRow}>
+                <span className={styles.alertIcon}>
+                  <Icon name="event_repeat" size={19} />
+                </span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <Link href={`/educator/student/${item.studentId}`} className={styles.name}>
+                    {item.studentName}
+                  </Link>
+                  <span className="bl-micro" style={{ display: "block", marginTop: 3 }}>
+                    {item.note} 前回面談から{item.daysSince}日、次回は
+                    {item.nextMeeting ? formatDate(item.nextMeeting, false) : "未設定"}です。
+                  </span>
+                </span>
+                <Link href={`/educator/meetings?student=${item.studentId}`} className="bl-btn bl-btn--secondary bl-btn--sm">
+                  面談を設定
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

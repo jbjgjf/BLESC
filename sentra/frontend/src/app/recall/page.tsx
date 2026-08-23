@@ -18,19 +18,19 @@ type RecallMessage = {
 
 const MAX_USER_TURNS = 30;
 const MIN_SUMMARY_TURNS = 6;
-const recallSteps = ["Saving turn", "Retrieving recent context", "Checking safety policy", "Preparing next question", "Done"];
+const recallSteps = ["記録しています", "これまでの内容を確認しています", "安全性を確認しています", "次の質問を用意しています", "完了"];
 
 const guidedQuestions = [
-  "What is the main thing from the last day or week that you want BLESC to remember?",
-  "What feeling showed up most strongly, even if it changed later?",
-  "What seemed to trigger that feeling or make it stronger?",
-  "What helped, protected you, or made things even a little easier?",
-  "Was there a moment when the situation shifted? What happened before and after it?",
-  "Is there anything unfinished, confusing, or still looping in your mind?",
-  "How were sleep, appetite, energy, or concentration recently?",
-  "Was there a school, family, friend, work, or online situation involved?",
-  "What would be useful for a trusted adult, counselor, or supporter to understand?",
-  "What question should BLESC ask next time to avoid missing the important part?",
+  "この1日か1週間で、blescに覚えておいてほしいことは何ですか。",
+  "そのとき、いちばん強く出てきた気持ちは何でしたか。あとで変わっていても大丈夫です。",
+  "その気持ちのきっかけになったこと、強くしたことは何でしたか。",
+  "助けになったこと、支えになったこと、少しでも楽になったことはありますか。",
+  "状況が変わった瞬間はありましたか。その前後に何がありましたか。",
+  "まだ終わっていないこと、もやもやしていること、頭の中で回り続けていることはありますか。",
+  "最近の睡眠・食欲・体力・集中はどうでしたか。",
+  "学校・家庭・友人・アルバイト・ネット上のことで、関係している出来事はありますか。",
+  "信頼できる大人やカウンセラーに分かってもらえるとしたら、どんなことですか。",
+  "大事なところを見落とさないために、blescが次に聞くとよい質問は何だと思いますか。",
 ];
 
 const crisisTerms = [
@@ -128,7 +128,7 @@ export default function RecallWorkspacePage() {
           id: `assistant-safety-${Date.now()}`,
           role: "assistant",
           content:
-            "This sounds potentially urgent. Please contact emergency services or a trusted adult now if there is immediate danger. BLESC cannot provide crisis counseling. If you can, tell me only this: are you safe right now and is a trusted person nearby?",
+            "いますぐの危険がある場合は、緊急の連絡先や、信頼できる大人にすぐ連絡してください。blescは緊急時の相談を受けることはできません。もし答えられそうなら、これだけ教えてください——いま安全な場所にいますか。近くに頼れる人はいますか。",
         };
         setMessages((current) => [...current, safetyMessage]);
       } else {
@@ -165,7 +165,7 @@ export default function RecallWorkspacePage() {
       setComplete(true);
       if (nextUserTurnCount >= MIN_SUMMARY_TURNS) void refreshSummary(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Recall turn failed.");
+      setError(err instanceof Error ? err.message : "送信に失敗しました。");
     } finally {
       if (timer) window.clearInterval(timer);
       setIsSubmitting(false);
@@ -178,9 +178,9 @@ export default function RecallWorkspacePage() {
         <div>
           <Link href="/" className="mb-4 inline-flex items-center gap-2 text-sm" style={{ color: "var(--ink-faint)", textDecoration: "none" }}>
             <ArrowLeft className="h-4 w-4" />
-            Back to dashboard
+            ホームに戻る
           </Link>
-          <div className="inscription mb-2">Conversation Recall</div>
+          <div className="inscription mb-2">これまでのふりかえり</div>
           <h1 className="text-3xl font-semibold" style={{ ...displayFont, letterSpacing: "0.03em" }}>
             30-Turn Recall Workspace
           </h1>
@@ -198,7 +198,7 @@ export default function RecallWorkspacePage() {
           <div className="border-b px-5 py-4" style={{ borderColor: "var(--limestone)", backgroundColor: "var(--ivory-warm)" }}>
             <div className="flex items-center gap-2">
               <MessageCircle className="h-4 w-4" style={{ color: "var(--gold)" }} />
-              <span className="inscription">Live Interview</span>
+              <span className="inscription">対話で記録する</span>
             </div>
           </div>
 
@@ -225,7 +225,7 @@ export default function RecallWorkspacePage() {
               style={{ ...bodyFont, border: "1px solid var(--limestone)", backgroundColor: "var(--ivory-warm)", color: "var(--ink)" }}
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder={userTurnCount >= MAX_USER_TURNS ? "30-turn window complete." : "Answer the current question. You can edit voice transcripts before sending."}
+              placeholder={userTurnCount >= MAX_USER_TURNS ? "30回分の記録が終わりました。" : "いまの質問に答えてください。音声で入力した内容は、送る前に直せます。"}
               disabled={isSubmitting || userTurnCount >= MAX_USER_TURNS}
             />
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -243,7 +243,7 @@ export default function RecallWorkspacePage() {
                 }}
               >
                 {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                Send Turn
+                送信
               </button>
             </div>
             <ProcessingTimeline steps={recallSteps} active={isSubmitting} currentStep={step} complete={complete && !error} />
@@ -258,7 +258,7 @@ export default function RecallWorkspacePage() {
 
         <aside className="space-y-4">
           <div style={panel} className="p-5">
-            <div className="inscription mb-3">Recall Memories</div>
+            <div className="inscription mb-3">覚えていること</div>
             {summary?.status === "completed" ? (
               <p className="text-sm leading-relaxed" style={{ color: "var(--ink-mid)", fontStyle: "italic" }}>
                 {summary.summary_json.summary}
@@ -283,12 +283,12 @@ export default function RecallWorkspacePage() {
               className="mt-4 rounded-2xl px-4 py-2 text-xs font-semibold"
               style={{ ...displayFont, border: "1px solid var(--limestone)", color: "var(--ink)", letterSpacing: "0.12em", textTransform: "uppercase" }}
             >
-              Refresh Summary
+              まとめを更新
             </button>
           </div>
 
           <div style={panel} className="p-5">
-            <div className="inscription mb-3">Privacy Boundary</div>
+            <div className="inscription mb-3">プライバシーについて</div>
             <p className="text-sm leading-relaxed" style={{ color: "var(--ink-mid)" }}>
               Chat turns remain user data. Raw audio is discarded after transcription. User-specific mental health content is not uploaded into OpenAI Vector Store.
             </p>
