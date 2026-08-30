@@ -501,16 +501,36 @@ def apply_human_labels(
     return out
 
 
+def _labelling_state(human: int, total: int, reviewer: str | None) -> str:
+    """The one sentence that says whether these labels can carry a claim.
+
+    Derived from the cases rather than written down, because a constant saying
+    "not human-labelled" would keep saying it after the labelling was done, and
+    a constant saying the opposite would say it before.
+    """
+    if human == 0:
+        return "drafted, not human-labelled; human labelling not yet performed (#88)"
+    if human < total:
+        return (
+            f"partially human-labelled: {human}/{total} cases. The rest keep their "
+            "drafted keys and stay out of the confirmatory analysis (#88)"
+        )
+    signature = f"signed off by {reviewer}" if reviewer else "no reviewer recorded"
+    return f"human-labelled: {total}/{total} cases, {signature} (#88)"
+
+
 def labelling_status(
     agreement: AgreementResult | None = None,
     cases: Sequence[BenchmarkCase] = BENCHMARK_CASES,
+    reviewer: str | None = None,
 ) -> Dict[str, object]:
     """Reported alongside benchmark results so the gap is visible in the output.
 
     `agreement` is passed in rather than computed, because computing it requires
-    two rater files and there are none. A `None` here means "not measured", and
-    it is reported as that word — never as 0, which would read as "the raters
-    disagreed completely".
+    two rater files that this module cannot read — `benchmark_label_store` does
+    the reading and hands the result back here. A `None` means "not measured",
+    and it is reported as that word — never as 0, which would read as "the
+    raters disagreed completely".
     """
     split = assign_splits(cases)
     human = [case for case in cases if case.labelled_by == "human"]
@@ -536,8 +556,12 @@ def labelling_status(
             "reliable enough to interpret a retrieval result."
         )
 
+    dataset = dict(DATASET_METADATA)
+    dataset["reviewer"] = reviewer
+    dataset["labelling_status"] = _labelling_state(len(human), len(cases), reviewer)
+
     return {
-        "dataset": dict(DATASET_METADATA),
+        "dataset": dataset,
         "case_count": len(cases),
         "target_case_count": "60-100 (#88)",
         "composition": {
