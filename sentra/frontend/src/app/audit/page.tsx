@@ -6,6 +6,7 @@ import type { AiAuditEvent, ReflectionAuditTrail } from "@/api/models";
 import { useAuth } from "@/lib/auth";
 import { Icon } from "@/components/ui/Icon";
 import styles from "./audit.module.css";
+import { t } from "@/lib/i18n";
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   completed:  { label: "完了",     className: "bl-chip--calm" },
@@ -55,7 +56,7 @@ function AuditEventRow({ event }: { event: AiAuditEvent }) {
         )}
         {typeof event.temperature === "number" && (
           <div>
-            <dt>Temperature</dt>
+            <dt>{t.audit.temperature}</dt>
             <dd>{event.temperature}</dd>
           </div>
         )}

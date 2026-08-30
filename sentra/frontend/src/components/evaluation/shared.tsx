@@ -1,3 +1,5 @@
+import { t } from "@/lib/i18n";
+
 export const evalPanel: React.CSSProperties = {
   backgroundColor: "var(--ivory)",
   border: "1px solid var(--limestone)",
@@ -22,14 +24,18 @@ export type EvaluationRunRow = {
   finished_at: string | null;
 };
 
-const VERDICT_META: Record<string, { label: string; color: string }> = {
-  ready: { label: "Ready", color: "var(--aegean)" },
-  needs_attention: { label: "Needs attention", color: "var(--terracotta)" },
-  incomplete: { label: "Incomplete", color: "var(--ochre)" },
+const VERDICT_COLORS: Record<string, string> = {
+  ready: "var(--aegean)",
+  needs_attention: "var(--terracotta)",
+  incomplete: "var(--ochre)",
 };
 
 export function VerdictBadge({ verdict, large }: { verdict: string | null; large?: boolean }) {
-  const meta = VERDICT_META[verdict ?? ""] ?? { label: verdict ?? "running", color: "var(--ink-faint)" };
+  const key = verdict ?? "running";
+  const meta = {
+    label: t.evaluation.verdict[key] ?? key,
+    color: VERDICT_COLORS[key] ?? "var(--ink-faint)",
+  };
   return (
     <span
       data-testid="run-verdict"

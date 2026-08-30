@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, FileText, Loader2, ShieldAlert } from "lucide-react";
 
 import { ApiClient } from "@/api/client";
+import { t } from "@/lib/i18n";
 import type { CounselorSummarySection, EducatorStudentStatus, SharedSupportSummary } from "@/api/models";
 import { AttentionChip, BaselineContextLine, NonDiagnosticNotice, ObservationLine, panel } from "@/components/educator/StatusChips";
 import { useAuth } from "@/lib/auth";
@@ -53,7 +54,7 @@ export default function OversightPage() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load shared summaries.");
+        setError(err instanceof Error ? err.message : t.oversight.loadFailed);
       });
     return () => { cancelled = true; };
   }, [authLoading, isEducator]);
@@ -74,23 +75,22 @@ export default function OversightPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <section className="px-8 py-6" style={{ ...panel, backgroundColor: "var(--ivory-warm)" }}>
-        <div className="inscription mb-2">Counselor handoff · student-controlled</div>
-        <h1 className="text-3xl font-bold" style={{ color: "var(--ink)" }}>Shared support summaries</h1>
+        <div className="inscription mb-2">{t.oversight.eyebrow}</div>
+        <h1 className="text-3xl font-bold" style={{ color: "var(--ink)" }}>{t.oversight.title}</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed" style={{ color: "var(--ink-mid)" }}>
-          Students choose exactly which summary snapshot you can see. Raw journal and chat text is never shown, and
-          access ends the moment a student revokes the share or their consent.
+          {t.oversight.intro}
         </p>
       </section>
 
       {shares.length === 0 ? (
         <section className="px-8 py-10 text-center text-sm" style={{ ...panel, color: "var(--ink-mid)" }} data-testid="oversight-empty">
-          No student has shared a support summary with you yet.
+          {t.oversight.empty}
         </section>
       ) : (
         <div className="grid gap-5 md:grid-cols-[280px_1fr]">
           <section style={panel} data-testid="oversight-student-list">
             <header className="px-5 py-3" style={{ borderBottom: "1px solid var(--limestone)" }}>
-              <div className="inscription">Assigned students</div>
+              <div className="inscription">{t.oversight.listTitle}</div>
             </header>
             {shares.map((share) => (
               <button
@@ -108,7 +108,7 @@ export default function OversightPage() {
               >
                 <span className="font-mono font-semibold">{share.student_code}</span>
                 <span className="mt-0.5 block text-xs" style={{ color: "var(--ink-faint)" }}>
-                  shared {new Date(share.shared_at).toLocaleDateString()} · {share.reflection_count} reflections
+                  {t.oversight.sharedOn(new Date(share.shared_at).toLocaleDateString("ja-JP"), share.reflection_count)}
                 </span>
               </button>
             ))}
@@ -122,7 +122,7 @@ export default function OversightPage() {
                     <FileText className="h-4 w-4" />{selected.student_code}
                   </div>
                   <div className="mt-1 text-xs" style={{ color: "var(--ink-faint)" }}>
-                    Snapshot shared {new Date(selected.shared_at).toLocaleString()} · evidence ids only, no raw content
+                    {t.oversight.snapshotShared(new Date(selected.shared_at).toLocaleString("ja-JP"))}
                   </div>
                 </div>
                 {selectedStudent ? (
@@ -135,11 +135,13 @@ export default function OversightPage() {
               {selected.summary_json.safety_flags?.length ? (
                 <div role="alert" className="px-6 py-4" style={{ borderBottom: "1px solid var(--terracotta)", backgroundColor: "rgba(244,63,94,0.07)" }} data-testid="oversight-safety-flags">
                   <div className="mb-1 flex items-center gap-2 font-semibold" style={{ color: "var(--sienna)" }}>
-                    <ShieldAlert className="h-4 w-4" />Safety flags in this summary
+                    <ShieldAlert className="h-4 w-4" />{t.oversight.safetyFlags}
                   </div>
                   {selected.summary_json.safety_flags.map((flag) => (
                     <p key={`${flag.event_id}-${flag.timestamp}`} className="text-sm" style={{ color: "var(--ink-mid)" }}>
-                      {new Date(flag.timestamp).toLocaleDateString()} · {flag.level} · {flag.reasons.join(", ") || "flag recorded"}
+                      {new Date(flag.timestamp).toLocaleDateString("ja-JP")} · {t.safety.level[flag.level] ?? flag.level}
+                      {" · "}
+                      {flag.reasons.map((reason) => t.safety.reason[reason] ?? reason).join("、") || t.safety.flagRecorded}
                     </p>
                   ))}
                 </div>
@@ -157,7 +159,7 @@ export default function OversightPage() {
                           {section.items.map((item) => <li key={item}>{item}</li>)}
                         </ul>
                       ) : (
-                        <p className="text-sm italic" style={{ color: "var(--ink-faint)" }}>No structured data.</p>
+                        <p className="text-sm italic" style={{ color: "var(--ink-faint)" }}>{t.oversight.noStructuredData}</p>
                       )}
                     </article>
                   );
@@ -172,14 +174,14 @@ export default function OversightPage() {
                   <ObservationLine student={selectedStudent} />
                   <BaselineContextLine student={selectedStudent} />
                   <div style={{ color: "var(--ink-faint)" }}>
-                    last reflection {selectedStudent.last_active_day ? new Date(selectedStudent.last_active_day).toLocaleDateString() : "—"}
+                    {t.oversight.lastEntry(selectedStudent.last_active_day ? new Date(selectedStudent.last_active_day).toLocaleDateString("ja-JP") : "—")}
                   </div>
                   <NonDiagnosticNotice />
                 </div>
               ) : null}
 
               <p className="px-6 py-4 text-xs leading-relaxed" style={{ color: "var(--ink-faint)" }}>
-                {selected.summary_json.limitations} This view is recorded in the access log and is visible to the student.
+                {selected.summary_json.limitations} {t.oversight.accessLogged}
               </p>
             </section>
           ) : null}

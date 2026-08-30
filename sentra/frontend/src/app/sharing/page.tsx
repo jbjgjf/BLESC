@@ -6,6 +6,7 @@ import type { OversightRequest, SharedSupportSummary, StudentAccessRecord } from
 import { useAuth } from "@/lib/auth";
 import { Icon } from "@/components/ui/Icon";
 import styles from "./sharing.module.css";
+import { t } from "@/lib/i18n";
 
 const VIEW_LABELS: Record<string, string> = {
   roster: "一覧であなたの状態を確認しました",
@@ -68,7 +69,7 @@ export default function SharingPage() {
       await ApiClient.revokeSummaryShare(shareId);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Revoking the shared summary failed.");
+      setError(err instanceof Error ? err.message : t.sharing.revokeFailed);
     } finally {
       setBusyShareId(null);
     }

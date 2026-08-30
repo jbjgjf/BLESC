@@ -246,12 +246,17 @@ NON_DIAGNOSTIC_NOTICES = [
 
 
 def test_frontend_uses_non_diagnostic_reflection_signal_language():
-    # The notice lives in a shared component, so the sweep covers components as
-    # well as routes; the label it qualifies is rendered from src/app.
+    # Screen copy lives in the message catalogue (#116) and the shared notice in
+    # a component, so the sweep covers all three rather than routes alone —
+    # a guarantee moved into a catalogue is still a guarantee the UI makes.
     frontend_source = "\n".join(
         path.read_text(encoding="utf-8")
-        for directory in ("frontend/src/app", "frontend/src/components")
-        for path in (ROOT / directory).rglob("*.tsx")
+        for directory, suffix in (
+            ("frontend/src/app", "*.tsx"),
+            ("frontend/src/components", "*.tsx"),
+            ("frontend/src/lib/i18n", "*.ts"),
+        )
+        for path in (ROOT / directory).rglob(suffix)
         if path.is_file()
     )
 

@@ -7,6 +7,7 @@ import { AlertCircle, ArrowLeft, Download, Loader2 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
 import { evalPanel as panel, VerdictBadge, type EvaluationRunRow } from "@/components/evaluation/shared";
+import { t } from "@/lib/i18n";
 
 type CaseRow = {
   id: string;
@@ -56,12 +57,12 @@ export default function EvaluationRunPage() {
         supabase.from("evaluation_artifacts").select("id, case_id, kind, content_type, content_text, storage_path").eq("run_id", params.runId),
       ]);
       if (cancelled) return;
-      if (runResult.error || !runResult.data) { setError(runResult.error?.message ?? "Run not found or not visible."); return; }
+      if (runResult.error || !runResult.data) { setError(runResult.error?.message ?? t.evaluation.runNotFound); return; }
       setRun(runResult.data as unknown as EvaluationRunRow);
       setCases((caseResult.data ?? []) as unknown as CaseRow[]);
       setArtifacts((artifactResult.data ?? []) as unknown as ArtifactRow[]);
     })().catch((err: unknown) => {
-      if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load run.");
+      if (!cancelled) setError(err instanceof Error ? err.message : t.evaluation.runLoadFailed);
     });
     return () => { cancelled = true; };
   }, [params.runId]);
@@ -87,7 +88,7 @@ export default function EvaluationRunPage() {
         .from(ARTIFACT_BUCKET)
         .createSignedUrl(artifact.storage_path, 300, { download: `${run.label}-${artifact.kind}.${artifactExtension(artifact)}` });
       if (signError || !data) {
-        setError(`Could not open ${artifact.kind}: ${signError?.message ?? "no signed URL"}`);
+        setError(t.evaluation.artifactOpenFailed(artifact.kind, signError?.message ?? t.evaluation.noSignedUrl));
         return;
       }
       window.open(data.signedUrl, "_blank", "noopener");
@@ -105,61 +106,70 @@ export default function EvaluationRunPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6" data-testid="evaluation-run-detail">
       <Link href="/evaluation" className="inline-flex items-center gap-1 text-sm" style={{ color: "var(--ink-faint)" }}>
-        <ArrowLeft className="h-4 w-4" />All runs
+        <ArrowLeft className="h-4 w-4" />{t.evaluation.allRuns}
       </Link>
 
       <section className="px-7 py-6" style={panel}>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="inscription mb-2">{run.label} · {run.mode} run</div>
+            <div className="inscription mb-2">{t.evaluation.runLabel(run.label, run.mode)}</div>
             <VerdictBadge verdict={run.verdict} large />
           </div>
           <div className="text-right text-xs" style={{ color: "var(--ink-faint)" }}>
-            <div>{new Date(run.started_at).toLocaleString()}{run.finished_at ? ` → ${new Date(run.finished_at).toLocaleTimeString()}` : ""}</div>
-            <div>est. US${run.estimated_cost_usd?.toFixed(2) ?? "—"} · actual ~US${run.actual_cost_usd?.toFixed(2) ?? "—"}</div>
-            {run.openai_eval_refs?.length ? <div>OpenAI eval: {run.openai_eval_refs.join(" · ")}</div> : null}
+            <div>{new Date(run.started_at).toLocaleString("ja-JP")}{run.finished_at ? ` → ${new Date(run.finished_at).toLocaleTimeString("ja-JP")}` : ""}</div>
+            <div>{t.evaluation.costEstimated(run.estimated_cost_usd?.toFixed(2) ?? "—", run.actual_cost_usd?.toFixed(2) ?? "—")}</div>
+            {run.openai_eval_refs?.length ? <div>{t.evaluation.openAiEval} {run.openai_eval_refs.join(" · ")}</div> : null}
           </div>
         </div>
         <p className="mt-3 text-sm" style={{ color: "var(--ink-mid)" }}>
-          {run.totals_json?.users ?? 0} synthetic students · {run.totals_json?.scenarios ?? 0} scenarios · {run.totals_json?.conversations ?? 0} conversations
-          — {run.totals_json?.passed ?? 0} passed / {run.totals_json?.failed ?? 0} failed / {run.totals_json?.incomplete ?? 0} incomplete
+          {t.evaluation.totals(
+            run.totals_json?.users ?? 0,
+            run.totals_json?.scenarios ?? 0,
+            run.totals_json?.conversations ?? 0,
+          )}
+          {" — "}
+          {t.evaluation.outcomes(
+            run.totals_json?.passed ?? 0,
+            run.totals_json?.failed ?? 0,
+            run.totals_json?.incomplete ?? 0,
+          )}
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {[
-            ["Critical safety violations", run.gates_json?.critical_safety_violations],
-            ["Missed escalations", run.gates_json?.missed_escalations],
-            ["False escalations", run.gates_json?.false_escalations],
-            ["Unsupported inferences", run.gates_json?.unsupported_inferences],
-            ["Privacy/consent violations", run.gates_json?.privacy_consent_violations],
-            ["False-escalation rate", `${(Number(run.gates_json?.ordinary_false_escalation_rate ?? 0) * 100).toFixed(1)}%`],
-          ].map(([label, value]) => (
-            <div key={String(label)} className="rounded-md px-3 py-3 text-center" style={{ border: "1px solid var(--limestone)" }}>
+            ["critical_safety_violations", run.gates_json?.critical_safety_violations],
+            ["missed_escalations", run.gates_json?.missed_escalations],
+            ["false_escalations", run.gates_json?.false_escalations],
+            ["unsupported_inferences", run.gates_json?.unsupported_inferences],
+            ["privacy_consent_violations", run.gates_json?.privacy_consent_violations],
+            ["false_escalation_rate", `${(Number(run.gates_json?.ordinary_false_escalation_rate ?? 0) * 100).toFixed(1)}%`],
+          ].map(([gate, value]) => (
+            <div key={String(gate)} className="rounded-md px-3 py-3 text-center" style={{ border: "1px solid var(--limestone)" }}>
               <div className="text-xl font-bold" style={{ color: Number.parseFloat(String(value ?? 0)) > 0 ? "var(--terracotta)" : "var(--ink)" }}>{String(value ?? 0)}</div>
-              <div className="mt-1 text-[11px] leading-tight" style={{ color: "var(--ink-faint)" }}>{label}</div>
+              <div className="mt-1 text-[11px] leading-tight" style={{ color: "var(--ink-faint)" }}>{t.evaluation.gate[String(gate)] ?? String(gate)}</div>
             </div>
           ))}
         </div>
       </section>
 
       <section style={panel}>
-        <header className="px-6 py-3" style={{ borderBottom: "1px solid var(--limestone)" }}><div className="inscription">Three most important findings</div></header>
+        <header className="px-6 py-3" style={{ borderBottom: "1px solid var(--limestone)" }}><div className="inscription">{t.evaluation.findings}</div></header>
         <ol className="list-decimal space-y-2 px-10 py-4 text-sm" style={{ color: "var(--ink-mid)" }}>
           {(run.findings_json ?? []).slice(0, 3).map((finding) => <li key={finding}>{finding}</li>)}
         </ol>
-        <header className="px-6 py-3" style={{ borderTop: "1px solid var(--limestone)", borderBottom: "1px solid var(--limestone)" }}><div className="inscription">Recommended actions</div></header>
+        <header className="px-6 py-3" style={{ borderTop: "1px solid var(--limestone)", borderBottom: "1px solid var(--limestone)" }}><div className="inscription">{t.evaluation.recommendedActions}</div></header>
         <ul className="list-disc space-y-2 px-10 py-4 text-sm" style={{ color: "var(--ink-mid)" }}>
           {(run.recommended_actions_json ?? []).map((action) => <li key={action}>{action}</li>)}
         </ul>
         {run.limitations ? (
           <p className="px-6 py-4 text-xs leading-relaxed" style={{ borderTop: "1px solid var(--limestone)", color: "var(--ink-faint)" }}>
-            <strong>Limitations of synthetic testing:</strong> {run.limitations}
+            <strong>{t.evaluation.limitations}</strong> {run.limitations}
           </p>
         ) : null}
       </section>
 
       {artifacts.length ? (
         <section style={panel}>
-          <header className="px-6 py-3" style={{ borderBottom: "1px solid var(--limestone)" }}><div className="inscription">Artifacts</div></header>
+          <header className="px-6 py-3" style={{ borderBottom: "1px solid var(--limestone)" }}><div className="inscription">{t.evaluation.artifacts}</div></header>
           <div className="flex flex-wrap gap-2 px-6 py-4">
             {reportArtifacts.map((artifact) => (
               <button
@@ -169,7 +179,7 @@ export default function EvaluationRunPage() {
                 disabled={!artifact.content_text && !artifact.storage_path}
                 className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold disabled:opacity-50"
                 style={{ border: "1px solid var(--limestone)", color: "var(--ink-mid)" }}
-                title={artifact.content_text || artifact.storage_path ? "Download" : "Not captured for this run"}
+                title={artifact.content_text || artifact.storage_path ? t.evaluation.download : t.evaluation.notCaptured}
               >
                 <Download className="h-3.5 w-3.5" />{artifact.kind}
               </button>
@@ -177,7 +187,7 @@ export default function EvaluationRunPage() {
           </div>
           {mediaArtifacts.length ? (
             <div className="px-6 pb-4">
-              <div className="inscription mb-2">Session recordings ({mediaArtifacts.length})</div>
+              <div className="inscription mb-2">{t.evaluation.recordings(mediaArtifacts.length)}</div>
               <div className="flex flex-wrap gap-2">
                 {mediaArtifacts.map((artifact) => (
                   <button
@@ -203,7 +213,7 @@ export default function EvaluationRunPage() {
 
       {failures.length ? (
         <section style={panel} data-testid="failure-cards">
-          <header className="px-6 py-3" style={{ borderBottom: "1px solid var(--terracotta)" }}><div className="inscription" style={{ color: "var(--sienna)" }}>Failures ({failures.length})</div></header>
+          <header className="px-6 py-3" style={{ borderBottom: "1px solid var(--terracotta)" }}><div className="inscription" style={{ color: "var(--sienna)" }}>{t.evaluation.failures(failures.length)}</div></header>
           {failures.map((row) => (
             <article key={row.id} className="px-6 py-4" style={{ borderBottom: "1px solid var(--limestone)" }}>
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -211,7 +221,7 @@ export default function EvaluationRunPage() {
                 <span className="text-xs font-semibold" style={{ color: "var(--terracotta)" }}>{row.failure_kinds.join(", ")}</span>
               </div>
               {row.judge_json?.rationale ? <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--ink-mid)" }}>{row.judge_json.rationale}</p> : null}
-              {row.trace_ref ? <p className="mt-1 font-mono text-[10px]" style={{ color: "var(--ink-faint)" }}>trace {row.trace_ref}</p> : null}
+              {row.trace_ref ? <p className="mt-1 font-mono text-[10px]" style={{ color: "var(--ink-faint)" }}>{t.evaluation.trace} {row.trace_ref}</p> : null}
             </article>
           ))}
         </section>
@@ -219,12 +229,12 @@ export default function EvaluationRunPage() {
 
       <section style={panel}>
         <header className="px-6 py-3" style={{ borderBottom: "1px solid var(--limestone)" }}>
-          <div className="inscription">Human-review queue ({reviewQueue.length})</div>
+          <div className="inscription">{t.evaluation.reviewQueue(reviewQueue.length)}</div>
         </header>
         {reviewQueue.slice(0, 30).map((row) => (
           <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 px-6 py-2.5 text-sm" style={{ borderBottom: "1px solid var(--limestone)", color: "var(--ink-mid)" }}>
             <span className="font-mono text-xs">{row.case_key}</span>
-            <span className="text-xs" style={{ color: "var(--ink-faint)" }}>{row.human_review_reason ?? "queued"} · {row.status}</span>
+            <span className="text-xs" style={{ color: "var(--ink-faint)" }}>{row.human_review_reason ?? t.evaluation.queued} · {row.status}</span>
           </div>
         ))}
       </section>

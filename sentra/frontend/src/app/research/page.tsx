@@ -19,6 +19,7 @@ import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase/client";
 import { ProcessingTimeline } from "@/components/ProcessingTimeline";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
+import { t } from "@/lib/i18n";
 
 /** 抽出カテゴリの表示名。API の値は英語のまま扱い、表示だけ日本語にする。 */
 const CATEGORY_LABEL: Record<string, string> = {
@@ -508,7 +509,7 @@ export default function Home() {
           </div>
 
           <p className="text-xs leading-relaxed" style={{ color: "var(--ink-faint)", fontStyle: "italic" }}>
-            Sentra records writing-process metadata such as timing, pauses, edits, and field order for transparent research analysis.
+            {t.research.processMetadata}
           </p>
 
           <div className="flex items-center justify-between">
@@ -518,11 +519,11 @@ export default function Home() {
                 style={{ color: "var(--aegean)", fontStyle: "italic", ...bodyFont }}
               >
                 <CheckCircle2 className="h-4 w-4" />
-                Recorded.
+                {t.research.recorded}
               </span>
             ) : (
               <span style={{ color: "var(--ink-faint)", fontSize: "0.85rem", fontStyle: "italic" }}>
-                {journalText.length + recallText.length > 0 ? `${journalText.length + recallText.length} chars` : ""}
+                {journalText.length + recallText.length > 0 ? t.research.charCount(journalText.length + recallText.length) : ""}
               </span>
             )}
 
@@ -546,7 +547,7 @@ export default function Home() {
                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 : <Send className="h-3 w-3" />
               }
-              Submit
+              {t.research.submit}
             </button>
           </div>
 
@@ -596,7 +597,7 @@ export default function Home() {
             {safetyMessage}
           </p>
           <p className="mt-3 text-xs" style={{ color: "var(--ink-mid)", ...bodyFont }}>
-            BLESC is not a clinical assessment or an emergency service.
+            {t.common.notClinicalService}
           </p>
         </section>
       )}
@@ -615,18 +616,15 @@ export default function Home() {
             <div className="flex items-end gap-6">
               {/* Score */}
               <div>
-                <div className="inscription mb-1">変化の大きさ</div>
+                <div className="inscription mb-1">{t.research.signalLabel}</div>
                 <div
                   className={`${reflectionUnavailable ? "text-3xl" : "text-5xl"} leading-none`}
                   style={{ ...displayFont, fontWeight: 700, color: "var(--ink)", letterSpacing: "0.02em" }}
                 >
-                  {reflectionUnavailable ? "データ不足" : typeof score === "number" ? score.toFixed(2) : "データ不足"}
+                  {reflectionUnavailable ? t.research.notEnoughData : typeof score === "number" ? score.toFixed(2) : t.research.notEnoughData}
                 </div>
                 <div className="mt-2 max-w-52 text-xs leading-relaxed" style={{ color: "var(--ink-mid)", ...bodyFont }}>
-                  {reflectionUnavailable
-                    ? "BLESC needs more personal history before calculating a non-diagnostic signal."
-                    : "Non-diagnostic pattern difference. Use it as a prompt to reflect, not as a clinical conclusion."
-                  }
+                  {reflectionUnavailable ? t.research.notEnoughDataNote : t.research.signalNote}
                 </div>
               </div>
               {/* Summary */}
@@ -721,7 +719,9 @@ export default function Home() {
                       {card.body}
                     </p>
                     <div className="mt-2 text-xs" style={{ color: "var(--ink-faint)", ...bodyFont }}>
-                      {card.type.replaceAll("_", " ")} · {card.confidence} confidence
+                      {t.research.cardType[card.type] ?? card.type}
+                      {" "}
+                      {t.research.confidence(t.research.confidenceLevel[card.confidence] ?? card.confidence)}
                     </div>
                   </article>
                 ))}
@@ -750,7 +750,7 @@ export default function Home() {
             関係グラフを見る
           </div>
           <p className="mt-0.5 text-sm" style={{ color: "var(--ink-faint)", fontStyle: "italic", ...bodyFont }}>
-            {graphSnapshots.length} snapshot{graphSnapshots.length !== 1 ? "s" : ""} · entity relations &amp; temporal drift
+            {t.research.snapshotSummary(graphSnapshots.length)}
           </p>
         </div>
         <ArrowRight
@@ -795,7 +795,7 @@ export default function Home() {
           )}
           <p className="mt-3 text-xs" style={{ color: "var(--ink-faint)", fontStyle: "italic" }}>
             {conversationRecall
-              ? `${conversationRecall.window_turn_count}/${conversationRecall.required_turn_count} minimum turns available`
+              ? t.research.recallTurns(conversationRecall.window_turn_count, conversationRecall.required_turn_count)
               : "会話のまとめはまだ作成されていません。"
             }
           </p>
@@ -879,7 +879,7 @@ export default function Home() {
                 }}
               >
                 {isChatSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3 w-3" />}
-                Send
+                {t.research.sendMessage}
               </button>
             </div>
           </div>

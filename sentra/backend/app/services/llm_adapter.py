@@ -1,7 +1,7 @@
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 from openai import OpenAI
@@ -261,41 +261,81 @@ class LLMAdapter:
             logger.exception("[llm] real extraction failed; using fallback")
             return get_fallback_extraction()
 
+    #: What the mock looks for, and the node it produces when it finds it.
+    #:
+    #: Labels are Japanese because the mock is what a demo runs on when there is
+    #: no API key (#17), and a demo to a Japanese school cannot draw a graph
+    #: labelled in English. The cues are bilingual for the same reason the
+    #: safety lexicon is: students write Japanese, and an English-only cue list
+    #: matched nothing they wrote, leaving every mock graph with two nodes.
+    MOCK_CUES: List[Dict[str, Any]] = [
+        {
+            "cues": ["sleep", "tired", "fatigue", "眠", "寝", "疲", "だるい"],
+            "nodes": [
+                {"node_id": "sleep_issue", "category": "State", "label": "眠りの乱れ", "intensity": 0.78, "confidence": 0.9},
+                {"node_id": "fatigue", "category": "State", "label": "疲れ", "intensity": 0.65, "confidence": 0.8},
+            ],
+        },
+        {
+            "cues": ["anxious", "anxiety", "worry", "stress", "不安", "心配", "緊張", "ストレス"],
+            "nodes": [{"node_id": "anxiety", "category": "State", "label": "不安", "intensity": 0.72, "confidence": 0.88}],
+        },
+        {
+            "cues": ["sad", "depress", "down", "low", "落ち込", "悲し", "つら", "しんど"],
+            "nodes": [{"node_id": "low_mood", "category": "State", "label": "気分の落ち込み", "intensity": 0.68, "confidence": 0.82}],
+        },
+        {
+            "cues": ["friend", "talk", "call", "social", "友", "話し", "相談", "先生"],
+            "nodes": [{"node_id": "social_support", "category": "Protective", "label": "人とのつながり", "intensity": 0.74, "confidence": 0.85}],
+        },
+        {
+            "cues": ["family", "parent", "partner", "家族", "親", "兄", "姉", "妹", "弟"],
+            "nodes": [{"node_id": "family_connection", "category": "Protective", "label": "家族とのつながり", "intensity": 0.7, "confidence": 0.8}],
+        },
+        {
+            "cues": ["work", "job", "office", "project", "勉強", "授業", "課題", "部活", "受験"],
+            "nodes": [{"node_id": "work_demand", "category": "Trigger", "label": "やることの多さ", "intensity": 0.62, "confidence": 0.85}],
+        },
+        {
+            "cues": ["deadline", "due", "urgent", "締め切り", "提出", "期限", "テスト", "試験"],
+            "nodes": [{"node_id": "deadline_pressure", "category": "Trigger", "label": "期限のプレッシャー", "intensity": 0.78, "confidence": 0.9},],
+        },
+        {
+            "cues": ["meeting", "presentation", "interview", "発表", "面談", "面接", "行事"],
+            "nodes": [{"node_id": "work_event", "category": "Event", "label": "発表・面談", "intensity": 0.55, "confidence": 0.88}],
+        },
+        {
+            "cues": ["exercise", "walk", "run", "gym", "散歩", "運動", "走", "歩"],
+            "nodes": [
+                {"node_id": "exercise", "category": "Protective", "label": "からだを動かすこと", "intensity": 0.65, "confidence": 0.9},
+                {"node_id": "exercise_event", "category": "Event", "label": "運動した時間", "intensity": 0.5, "confidence": 0.85},
+            ],
+        },
+        {
+            "cues": ["eat", "meal", "food", "cook", "食", "ごはん", "料理"],
+            "nodes": [{"node_id": "meal_behavior", "category": "Behavior", "label": "食事のとり方", "intensity": 0.4, "confidence": 0.75}],
+        },
+        {
+            "cues": ["isolat", "alone", "withdraw", "ひとり", "一人", "避け", "こもっ"],
+            "nodes": [{"node_id": "isolation", "category": "Behavior", "label": "人を避けること", "intensity": 0.7, "confidence": 0.82}],
+        },
+    ]
+
     def _mock_extract(self, text: str) -> Dict[str, Any]:
         nodes = []
         relations = []
+        # Lowercased for the ASCII cues; Japanese is unaffected by casefolding.
         low_text = text.lower()
 
         # Richer mock — always produces at least 5 nodes for a meaningful graph
         base_nodes = [
-            {"node_id": "baseline_state", "category": "State", "label": "Baseline mental state", "intensity": 0.45, "confidence": 0.85},
-            {"node_id": "daily_routine", "category": "Protective", "label": "Daily routine", "intensity": 0.5, "confidence": 0.9},
+            {"node_id": "baseline_state", "category": "State", "label": "ふだんの気持ち", "intensity": 0.45, "confidence": 0.85},
+            {"node_id": "daily_routine", "category": "Protective", "label": "毎日の習慣", "intensity": 0.5, "confidence": 0.9},
         ]
 
-        if "sleep" in low_text or "tired" in low_text or "fatigue" in low_text:
-            nodes.append({"node_id": "sleep_issue", "category": "State", "label": "Sleep disruption", "intensity": 0.78, "confidence": 0.9})
-            nodes.append({"node_id": "fatigue", "category": "State", "label": "Fatigue", "intensity": 0.65, "confidence": 0.8})
-        if "anxious" in low_text or "anxiety" in low_text or "worry" in low_text or "stress" in low_text:
-            nodes.append({"node_id": "anxiety", "category": "State", "label": "Anxiety", "intensity": 0.72, "confidence": 0.88})
-        if "sad" in low_text or "depress" in low_text or "down" in low_text or "low" in low_text:
-            nodes.append({"node_id": "low_mood", "category": "State", "label": "Low mood", "intensity": 0.68, "confidence": 0.82})
-        if "friend" in low_text or "talk" in low_text or "call" in low_text or "social" in low_text:
-            nodes.append({"node_id": "social_support", "category": "Protective", "label": "Social support", "intensity": 0.74, "confidence": 0.85})
-        if "family" in low_text or "parent" in low_text or "partner" in low_text:
-            nodes.append({"node_id": "family_connection", "category": "Protective", "label": "Family connection", "intensity": 0.7, "confidence": 0.8})
-        if "work" in low_text or "job" in low_text or "office" in low_text or "project" in low_text:
-            nodes.append({"node_id": "work_demand", "category": "Trigger", "label": "Work demands", "intensity": 0.62, "confidence": 0.85})
-        if "deadline" in low_text or "due" in low_text or "urgent" in low_text:
-            nodes.append({"node_id": "deadline_pressure", "category": "Trigger", "label": "Deadline pressure", "intensity": 0.78, "confidence": 0.9})
-        if "meeting" in low_text or "presentation" in low_text or "interview" in low_text:
-            nodes.append({"node_id": "work_event", "category": "Event", "label": "Work meeting / presentation", "intensity": 0.55, "confidence": 0.88})
-        if "exercise" in low_text or "walk" in low_text or "run" in low_text or "gym" in low_text:
-            nodes.append({"node_id": "exercise", "category": "Protective", "label": "Physical exercise", "intensity": 0.65, "confidence": 0.9})
-            nodes.append({"node_id": "exercise_event", "category": "Event", "label": "Exercise session", "intensity": 0.5, "confidence": 0.85})
-        if "eat" in low_text or "meal" in low_text or "food" in low_text or "cook" in low_text:
-            nodes.append({"node_id": "meal_behavior", "category": "Behavior", "label": "Eating pattern", "intensity": 0.4, "confidence": 0.75})
-        if "isolat" in low_text or "alone" in low_text or "withdraw" in low_text:
-            nodes.append({"node_id": "isolation", "category": "Behavior", "label": "Social withdrawal", "intensity": 0.7, "confidence": 0.82})
+        for rule in self.MOCK_CUES:
+            if any(cue in low_text for cue in rule["cues"]):
+                nodes.extend(dict(node) for node in rule["nodes"])
 
         nodes = base_nodes + nodes
 
@@ -355,6 +395,11 @@ EXTRACTION RULES:
 5. Create nodes for protective factors even if mentioned briefly ("I went for a walk" → Protective: walking; Event: outdoor walk)
 6. Intensity 0.0=absent/minimal to 1.0=maximal/crisis; confidence 0.0=uncertain to 1.0=explicitly stated
 7. Create relations between all clearly related nodes — a rich relation set is as important as rich nodes
+
+LANGUAGE:
+Write every human-readable value — every `label` — in natural Japanese, the way a Japanese school
+would write to a student. Node ids, categories and relation types stay in the schema's own vocabulary.
+The students writing these entries read Japanese, and labels are rendered to them unchanged.
 
 INPUT TEXT:
 "{text}"

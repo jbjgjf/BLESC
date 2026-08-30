@@ -3,6 +3,7 @@
 import type { Session, User } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { t } from "./i18n/index.ts";
 
 const DEFAULT_PARTICIPANT_CODE = "research_user_01";
 
@@ -63,7 +64,7 @@ async function ensureParticipant(user: User): Promise<Participant> {
     .insert({
       owner_user_id: user.id,
       code: DEFAULT_PARTICIPANT_CODE,
-      display_name: "Research participant 01",
+      display_name: t.account.defaultParticipantName,
     })
     .select("id, code, display_name")
     .single();

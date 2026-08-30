@@ -7,6 +7,7 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { ApiClient } from "@/api/client";
 import type { EducatorStudentStatus } from "@/api/models";
 import { NonDiagnosticNotice, hasShowableObservation, panel } from "@/components/educator/StatusChips";
+import { t } from "@/lib/i18n";
 
 const MIN_COHORT_FOR_BREAKDOWN = 3;
 
@@ -36,7 +37,7 @@ export default function EducatorOverviewPage() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load cohort overview.");
+        setError(err instanceof Error ? err.message : t.educator.overview.loadFailed);
       });
     return () => { cancelled = true; };
   }, []);
@@ -58,10 +59,9 @@ export default function EducatorOverviewPage() {
   if (roster.length === 0) {
     return (
       <section className="px-8 py-10 text-center" style={panel}>
-        <h1 className="text-2xl font-bold" style={{ color: "var(--ink)" }}>Cohort overview</h1>
+        <h1 className="text-2xl font-bold" style={{ color: "var(--ink)" }}>{t.educator.overview.emptyTitle}</h1>
         <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed" style={{ color: "var(--ink-mid)" }}>
-          No students are sharing derived signals with you yet. Students appear here after your org admin links
-          them to you <em>and</em> they grant consent from their Sharing page.
+          {t.educator.overview.emptyBody}
         </p>
       </section>
     );
@@ -78,14 +78,25 @@ export default function EducatorOverviewPage() {
   return (
     <div className="space-y-5">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Tile label="Consented students" value={String(roster.length)} />
-        <Tile label="Active last 7 days" value={suppress ? "—" : String(activeLast7d)} hint={suppress ? "hidden for small cohorts" : undefined} />
-        <Tile label="要確認の観測" value={suppress ? "—" : String(flagged)} hint={suppress ? "hidden for small cohorts" : "根拠を提示できるもののみ"} />
+        <Tile label={t.educator.overview.tileConsented} value={String(roster.length)} />
+        <Tile
+          label={t.educator.overview.tileActive7d}
+          value={suppress ? "—" : String(activeLast7d)}
+          hint={suppress ? t.educator.overview.suppressedHint : undefined}
+        />
+        <Tile
+          label={t.educator.overview.tileObservations}
+          value={suppress ? "—" : String(flagged)}
+          hint={suppress ? t.educator.overview.suppressedHint : t.educator.overview.tileObservationsHint}
+        />
       </div>
       {suppress ? (
         <p className="px-1 text-xs" style={{ color: "var(--ink-faint)" }}>
-          Breakdown tiles are suppressed for cohorts smaller than {MIN_COHORT_FOR_BREAKDOWN} students so an
-          aggregate can never describe a single person. Use the <Link href="/educator/roster" style={{ color: "var(--gold-deep)", fontWeight: 600 }}>roster</Link> for individual status.
+          {t.educator.overview.suppressedNoteBefore(MIN_COHORT_FOR_BREAKDOWN)}
+          <Link href="/educator/roster" style={{ color: "var(--gold-deep)", fontWeight: 600 }}>
+            {t.educator.overview.suppressedNoteLink}
+          </Link>
+          {t.educator.overview.suppressedNoteAfter}
         </p>
       ) : null}
       <NonDiagnosticNotice />
