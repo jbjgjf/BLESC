@@ -65,5 +65,11 @@ jobs:
       - name: Run frontend lint
         run: npm run lint
 
+      # Includes the Japanese-UI guard (#116): it fails on English text added to
+      # a screen without a recorded reason. The suite ran only on developer
+      # machines before, so nothing enforced it on a pull request.
+      - name: Run frontend tests
+        run: npm test
+
       - name: Build frontend
         run: npm run build
