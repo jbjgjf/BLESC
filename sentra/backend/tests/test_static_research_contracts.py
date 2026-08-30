@@ -220,17 +220,52 @@ def test_static_knowledge_file_guard_accepts_docs_and_rejects_user_paths(tmp_pat
         unsafe.rmdir()
 
 
+# The contract is about meaning, not about one language. The student- and
+# educator-facing UI is being localised to Japanese (#116), so a label that only
+# accepted the English wording would fail the moment a screen was translated
+# even though the guarantee still held. Each list below therefore holds the
+# accepted wordings in every language the UI ships in.
+FORBIDDEN_DIAGNOSTIC_LABELS = [
+    "Diagnostic Score",
+    "Hybrid Anomaly Score",
+    "診断スコア",
+    "リスクスコア",
+    "リスク判定",
+    "危険度",
+]
+
+NON_DIAGNOSTIC_SIGNAL_LABELS = [
+    "Reflection Signal",
+    "変化の大きさ",
+]
+
+NON_DIAGNOSTIC_NOTICES = [
+    "Non-diagnostic",
+    "診断を行いません",
+]
+
+
 def test_frontend_uses_non_diagnostic_reflection_signal_language():
+    # The notice lives in a shared component, so the sweep covers components as
+    # well as routes; the label it qualifies is rendered from src/app.
     frontend_source = "\n".join(
         path.read_text(encoding="utf-8")
-        for path in (ROOT / "frontend/src/app").rglob("*.tsx")
+        for directory in ("frontend/src/app", "frontend/src/components")
+        for path in (ROOT / directory).rglob("*.tsx")
         if path.is_file()
     )
 
-    assert "Diagnostic Score" not in frontend_source
-    assert "Hybrid Anomaly Score" not in frontend_source
-    assert "Reflection Signal" in frontend_source
-    assert "Non-diagnostic" in frontend_source
+    for label in FORBIDDEN_DIAGNOSTIC_LABELS:
+        assert label not in frontend_source, f"Diagnostic-sounding label in the UI: {label}"
+
+    assert any(label in frontend_source for label in NON_DIAGNOSTIC_SIGNAL_LABELS), (
+        "No non-diagnostic name for the reflection signal found in the UI; "
+        f"expected one of {NON_DIAGNOSTIC_SIGNAL_LABELS}"
+    )
+    assert any(notice in frontend_source for notice in NON_DIAGNOSTIC_NOTICES), (
+        "The UI no longer states that it is non-diagnostic; "
+        f"expected one of {NON_DIAGNOSTIC_NOTICES}"
+    )
 
 
 def test_fine_tuning_export_is_consent_and_review_gated():
