@@ -27,6 +27,8 @@ import { supabase } from "@/lib/supabase/client";
 import { generateCounselorSummary, type CounselorTimelineEvent } from "@/lib/counselor-summary";
 import { buildAuditTrails, type ModelRunRecord } from "@/lib/audit-trail";
 import { t } from "@/lib/i18n";
+import { readDemoFlag } from "@/lib/demo";
+import * as demo from "@/lib/blesc/demoApi";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
@@ -369,6 +371,7 @@ export class ApiClient {
   }
 
   static async getEntries(userId: string): Promise<Entry[]> {
+    if (readDemoFlag()) return demo.demoEntries();
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("entries")
@@ -459,6 +462,7 @@ export class ApiClient {
   }
 
   static async createChat(userId: string, message: string, limit = 5, options: { mode?: "general" | "recall_workspace"; conversationContext?: string[] } = {}): Promise<ChatResponse> {
+    if (readDemoFlag()) return demo.demoChatReply(message);
     const ownerUserId = await this.requireOwnerId();
     const participant = await this.getParticipant(userId);
     const response = await this.fetch<ChatResponse>("/chat", {
@@ -623,6 +627,7 @@ export class ApiClient {
   }
 
   static async getTimeline(userId: string): Promise<AnomalyResult[]> {
+    if (readDemoFlag()) return demo.demoTimeline();
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("insights")
@@ -635,6 +640,7 @@ export class ApiClient {
   }
 
   static async generateCounselorSummary(userId: string, limit = 10): Promise<CounselorSupportSummary> {
+    if (readDemoFlag()) return demo.demoCounselorSummary();
     const ownerUserId = await this.requireOwnerId();
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
@@ -668,6 +674,7 @@ export class ApiClient {
   }
 
   static async listOversightRequests(userId: string): Promise<OversightRequest[]> {
+    if (readDemoFlag()) return demo.demoOversightRequests();
     const participant = await this.getParticipant(userId);
 
     const [rosterResult, consentResult] = await Promise.all([
@@ -715,6 +722,7 @@ export class ApiClient {
   }
 
   static async grantOversightConsent(userId: string, orgId: string): Promise<void> {
+    if (readDemoFlag()) return demo.demoSetConsent(true);
     const ownerUserId = await this.requireOwnerId();
     const participant = await this.getParticipant(userId);
     const existing = await supabase
@@ -743,6 +751,7 @@ export class ApiClient {
   }
 
   static async revokeOversightConsent(userId: string, orgId: string): Promise<void> {
+    if (readDemoFlag()) return demo.demoSetConsent(false);
     const participant = await this.getParticipant(userId);
     const { error } = await supabase
       .from("oversight_consents")
@@ -767,6 +776,7 @@ export class ApiClient {
   }
 
   static async getCohortRoster(): Promise<EducatorStudentStatus[]> {
+    if (readDemoFlag()) return demo.demoCohortRoster();
     const rosterResult = await supabase.rpc("overseen_participants");
     if (rosterResult.error) throwSupabaseError(t.apiError.loadCohortRoster, rosterResult.error);
     type RosterRow = { participant_id: string; org_id: string; owner_user_id: string; code: string; display_name: string | null };
@@ -855,6 +865,9 @@ export class ApiClient {
   static async getCohortAlerts(): Promise<CohortAlert[]> {
     const roster = await this.getCohortRoster();
     if (!roster.length) return [];
+    // Built from the roster either way — in the demo the only thing missing is
+    // the acknowledgement log, so nothing is acknowledged yet.
+    if (readDemoFlag()) return this.alertsFromRoster(roster, new Set<string>());
 
     const ackResult = await supabase
       .from("educator_access_log")
@@ -868,6 +881,15 @@ export class ApiClient {
         .filter(Boolean),
     );
 
+    return this.alertsFromRoster(roster, acked);
+  }
+
+  /**
+   * Alerts from roster rows. One place, because the demo path and the
+   * Supabase path differ only in whether an acknowledgement log exists —
+   * two copies of this loop would drift on the next alert kind.
+   */
+  private static alertsFromRoster(roster: EducatorStudentStatus[], acked: Set<string>): CohortAlert[] {
     const alerts: CohortAlert[] = [];
     const now = Date.now();
     for (const student of roster) {
@@ -928,6 +950,10 @@ export class ApiClient {
     viewType: "roster" | "alerts" | "student_overview" | "alert_ack",
     metadata: Record<string, JsonValue> = {},
   ): Promise<void> {
+    // The demo has no log to write to, and an access record nobody can read is
+    // not worth pretending to keep. What the student's own screen shows about
+    // who looked is `demoEducatorAccess()`.
+    if (readDemoFlag()) return;
     const educator = await this.requireOwnerId();
     const { error } = await supabase.from("educator_access_log").insert({
       educator_user_id: educator,
@@ -949,7 +975,7 @@ export class ApiClient {
     students: Array<Pick<EducatorStudentStatus, "participant_id" | "org_id" | "owner_user_id">>,
     viewType: "roster" | "alerts",
   ): Promise<void> {
-    if (!students.length) return;
+    if (!students.length || readDemoFlag()) return;
     const educator = await this.requireOwnerId();
     const { error } = await supabase.from("educator_access_log").insert(
       students.map((student) => ({
@@ -970,6 +996,7 @@ export class ApiClient {
     themes: Array<{ label: string; count: number }>;
     safetyRuns: Array<{ level: string; occurred_at: string }>;
   } | null> {
+    if (readDemoFlag()) return demo.demoStudentOverview(participantId);
     const roster = await this.getCohortRoster();
     const student = roster.find((row) => row.participant_id === participantId);
     if (!student) return null;
@@ -1024,6 +1051,7 @@ export class ApiClient {
 
   /** Student-facing view of who looked at their data (issue #31). */
   static async listEducatorAccess(userId: string, limit = 20): Promise<StudentAccessRecord[]> {
+    if (readDemoFlag()) return demo.demoEducatorAccess();
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("educator_access_log")
@@ -1044,6 +1072,7 @@ export class ApiClient {
   // ------------------------------------------------------------------
 
   static async listOrgCounselors(orgId: string): Promise<OrgCounselor[]> {
+    if (readDemoFlag()) return demo.demoOrgCounselors();
     const { data, error } = await supabase.rpc("org_counselors", { target_org: orgId });
     if (error) throwSupabaseError(t.apiError.loadCounselors, error);
     return (data ?? []) as OrgCounselor[];
@@ -1055,6 +1084,10 @@ export class ApiClient {
     orgId: string,
     counselorUserId?: string | null,
   ): Promise<void> {
+    if (readDemoFlag()) {
+      demo.demoShareSummary(summary, counselorUserId ?? null);
+      return;
+    }
     const ownerUserId = await this.requireOwnerId();
     const participant = await this.getParticipant(userId);
     const { error } = await supabase.from("shared_support_summaries").insert({
@@ -1073,6 +1106,7 @@ export class ApiClient {
   }
 
   static async listMySummaryShares(userId: string): Promise<SharedSupportSummary[]> {
+    if (readDemoFlag()) return demo.demoMySummaryShares();
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("shared_support_summaries")
@@ -1088,6 +1122,7 @@ export class ApiClient {
   }
 
   static async revokeSummaryShare(shareId: string): Promise<void> {
+    if (readDemoFlag()) return demo.demoRevokeShare(shareId);
     const { error } = await supabase
       .from("shared_support_summaries")
       .update({ status: "revoked" })
@@ -1097,6 +1132,7 @@ export class ApiClient {
 
   /** Counselor view: active shares for students passing all four gates. */
   static async counselorListSharedSummaries(): Promise<SharedSupportSummary[]> {
+    if (readDemoFlag()) return demo.demoSharedSummaries();
     const [sharesResult, roster] = await Promise.all([
       supabase
         .from("shared_support_summaries")
@@ -1113,6 +1149,7 @@ export class ApiClient {
   }
 
   static async getAuditTrails(userId: string, reflectionId?: string, limit = 200): Promise<ReflectionAuditTrail[]> {
+    if (readDemoFlag()) return demo.demoAuditTrails();
     const ownerUserId = await this.requireOwnerId();
     const participant = await this.getParticipant(userId);
     let query = supabase
@@ -1133,6 +1170,7 @@ export class ApiClient {
   }
 
   static async getExplanation(explanationId: RecordId): Promise<ExplanationPayload> {
+    if (readDemoFlag()) return demo.demoExplanation(explanationId);
     const { data, error } = await supabase
       .from("insights")
       .select("id, day, anomaly_score, z_scores_json, triggered_rules_json, baseline_deviation_json, changed_relations_json, protective_decline_json, uncertainty_json, evidence_summaries, graph_summary_json, score_breakdown_json, key_relations, extraction_provider, extraction_model, created_at, participants!insights_participant_id_fkey(code)")
@@ -1148,6 +1186,7 @@ export class ApiClient {
   }
 
   static async getAnomaly(userId: string): Promise<AnomalyResult> {
+    if (readDemoFlag()) return demo.demoAnomaly();
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("insights")
@@ -1163,6 +1202,7 @@ export class ApiClient {
   }
 
   static async getGraphSnapshots(userId: string, limit = 12): Promise<GraphSnapshotResponse[]> {
+    if (readDemoFlag()) return demo.demoGraphSnapshots();
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("graph_snapshots")

@@ -185,7 +185,11 @@ const HTML_ENTITY = /&[a-z]+;|&#\d+;/gi;
 /** True when the text reads as copy rather than as an identifier. */
 function looksLikeCopy(text, kind) {
   if (CODE_FRAGMENT.test(text.replace(HTML_ENTITY, " "))) return false;
-  if (IDENTIFIER_SHAPES.some((shape) => shape.test(text))) return false;
+  // An id built from a template — `demo-entry-${n}` — is the same shape as one
+  // written out, so the shapes are tried against the interpolation-free form as
+  // well. Prose is unaffected: "こんにちは、${name}さん" matches none of them.
+  const withoutInterpolation = text.replace(INTERPOLATION, "0");
+  if (IDENTIFIER_SHAPES.some((shape) => shape.test(text) || shape.test(withoutInterpolation))) return false;
 
   const words = text.replace(INTERPOLATION, " ").match(LATIN_WORD) ?? [];
   // Text sitting in the markup is copy by position, so one word is enough. A

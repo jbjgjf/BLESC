@@ -4,6 +4,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { t } from "./i18n/index.ts";
+import { readDemoFlag } from "./demo";
 
 const DEFAULT_PARTICIPANT_CODE = "research_user_01";
 
@@ -193,7 +194,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     userId: participant?.code ?? DEFAULT_PARTICIPANT_CODE,
     isLoading,
     educatorMemberships,
-    isEducator: educatorMemberships.length > 0,
+    // Demo mode is the whole product without a login, so it has to include the
+    // educator surfaces. `/educator` and `/school` already allow themselves in
+    // on the demo flag; `/oversight` checked membership alone and bounced the
+    // demo back to the student home, which is the one step of the #17 flow the
+    // counsellor view exists for.
+    isEducator: educatorMemberships.length > 0 || readDemoFlag(),
     setUserId,
     signOut,
     refreshParticipant,

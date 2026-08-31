@@ -173,4 +173,22 @@ export function weekdayOf(iso: string): string {
 }
 
 /** デモデータの基準日。実データ接続時は new Date() に置き換わる。 */
-export const TODAY = "2026-08-07";
+/**
+ * 「今日」。デモの日付はすべてここからの相対で組み立てる。
+ *
+ * 固定日ではなく実行日を読む。固定にすると、デモを見せる日が進むほど
+ * 「最終提出：3週間前」「この7日間に記録あり 0」になり、動いていない製品に
+ * 見える。学校に見せる画面で最初に目につくのがそこでは意味がない。
+ *
+ * ハイドレーションの差は出ない。固定データを読む画面はすべてクライアント
+ * コンポーネントで、`AuthShell` がハイドレーション前は読み込み中の表示しか
+ * 返さないため、サーバー側の HTML にこの日付由来の文字列は入らない。
+ */
+function todayIso(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+export const TODAY = todayIso();
