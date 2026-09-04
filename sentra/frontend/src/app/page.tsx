@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import Image from "next/image";
 import { Icon } from "@/components/ui/Icon";
 import { Petal } from "@/components/ui/Petal";
+import { PilotCalendar } from "@/components/blesc/PilotCalendar";
 import { TransitionLink } from "@/components/ui/Transition";
 import { useCountUp } from "@/lib/motion";
 import { CURRENT_STUDENT, MY_ENTRIES, MY_STATS } from "@/lib/blesc/fixtures";
@@ -162,6 +163,11 @@ export default function TodayPage() {
           </div>
           <Icon name="chevron_right" size={20} />
         </TransitionLink>
+      </div>
+
+      {/* ── 試験導入期間 ─────────────────────────────────── */}
+      <div className="bl-reveal">
+        <PilotCalendar />
       </div>
 
       {/* ── 最近の日記 ───────────────────────────────────── */}

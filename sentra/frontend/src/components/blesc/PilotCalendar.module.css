@@ -1,0 +1,99 @@
+.summary {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.remaining {
+  margin-top: 2px;
+  /* 数字が入れ替わっても行が跳ねないよう高さを確保しておく */
+  min-height: 1.05em;
+}
+
+.summary .bl-meta,
+.summary p:last-child {
+  text-align: right;
+  line-height: 1.7;
+}
+
+/* ── カレンダー ─────────────────────────────────────── */
+.calendar {
+  width: 100%;
+  margin-top: 16px;
+  border-collapse: separate;
+  border-spacing: 4px;
+  table-layout: fixed;
+}
+
+.weekday {
+  padding-bottom: 2px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--bl-ink-3);
+}
+
+.blank {
+  padding: 0;
+}
+
+.cell {
+  padding: 0;
+  text-align: center;
+}
+
+.day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  width: 100%;
+  border-radius: var(--bl-radius-inner);
+  corner-shape: squircle;
+  border: 1px solid var(--bl-line-soft);
+  background: var(--bl-surface);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--bl-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 過ぎた日。塗って「消化済み」に見せる。 */
+.day[data-state="past"] {
+  background: var(--bl-mist);
+  border-color: var(--bl-line-soft);
+  color: var(--bl-ink-3);
+}
+
+/* これからの日。枠だけ残す。 */
+.day[data-state="future"] {
+  background: var(--bl-surface);
+  color: var(--bl-ink-2);
+}
+
+/* 今日。色だけに頼らず、枠を太くして形でも分かるようにする。 */
+.day[data-state="today"] {
+  background: var(--bl-blue);
+  border: 2px solid var(--bl-blue-strong);
+  color: var(--bl-ink);
+  font-weight: 700;
+}
+
+/* ハイドレーション前。今日がまだ確定していない状態。 */
+.day[data-state="unknown"] {
+  color: var(--bl-ink-3);
+}
+
+@media (max-width: 460px) {
+  .calendar { border-spacing: 3px; }
+  .day { font-size: 0.75rem; }
+}
+
+@media (forced-colors: active) {
+  .day[data-state="today"] {
+    outline: 2px solid CanvasText;
+    outline-offset: -3px;
+  }
+}

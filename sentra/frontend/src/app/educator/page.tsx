@@ -6,6 +6,7 @@ import { TrendChip } from "@/components/blesc/BandChip";
 import { CLASS_ROSTER, FOLLOW_UPS, SUBMISSION_ALERTS } from "@/lib/blesc/fixtures";
 import { BANDS, STATUSES, THEMES, formatDate, formatDateTime, relativeDays } from "@/lib/blesc/labels";
 import type { RiskBand } from "@/lib/blesc/types";
+import { PilotCalendar } from "@/components/blesc/PilotCalendar";
 import styles from "./educator.module.css";
 
 const BAND_TILES: Array<{ band: RiskBand; hint: string }> = [
@@ -256,6 +257,11 @@ export default function EducatorHome() {
           })}
         </div>
       </section>
+
+      {/* ── 試験導入期間 ─────────────────────────────── */}
+      <div className="bl-rise">
+        <PilotCalendar />
+      </div>
     </div>
   );
 }
