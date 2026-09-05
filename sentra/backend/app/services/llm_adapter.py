@@ -144,7 +144,7 @@ class LLMAdapter:
             self.provider = "openai"
             self.api_key = openai_key
             self.openai_url = os.getenv("LLM_OPENAI_BASE_URL", "https://api.openai.com/v1")
-            self.model_name = os.getenv("OPENAI_EXTRACTION_MODEL") or os.getenv("LLM_MODEL_NAME", "gpt-4.1-mini")
+            self.model_name = os.getenv("OPENAI_EXTRACTION_MODEL") or os.getenv("LLM_MODEL_NAME", "gpt-6-astra")
             self.use_json_format = True
             logger.info("[llm] mode=openai model=%s", self.model_name)
 
@@ -218,9 +218,9 @@ class LLMAdapter:
             try:
                 response = self.client.responses.create(
                     model=active_model,
+                    reasoning={"effort": os.getenv("OPENAI_EXTRACTION_REASONING_EFFORT", "high")},
                     instructions="You are a specialist ontology extractor for transparent psychological and behavioral research journaling. Return only schema-valid data and ground every node/relation in evidence text from the input.",
                     input=self._get_prompt(text),
-                    temperature=0.1,
                     store=False,
                     text={
                         "format": {

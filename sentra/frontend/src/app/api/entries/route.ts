@@ -26,7 +26,8 @@ type EntryRequest = {
   // caller create rows under any participant.
 };
 
-const EXTRACTION_MODEL = process.env.OPENAI_EXTRACTION_MODEL || process.env.LLM_MODEL_NAME || "gpt-4.1-mini";
+const EXTRACTION_MODEL = process.env.OPENAI_EXTRACTION_MODEL || process.env.LLM_MODEL_NAME || "gpt-6-astra";
+const EXTRACTION_REASONING_EFFORT = process.env.OPENAI_EXTRACTION_REASONING_EFFORT || "high";
 const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
 const PIPELINE_VERSION = "next-production-research-pipeline-v1";
 
@@ -123,7 +124,7 @@ async function extractWithOpenAI(entryText: string): Promise<{ extraction: Extra
       body: JSON.stringify({
         model: EXTRACTION_MODEL,
         store: false,
-        temperature: 0.2,
+        reasoning: { effort: EXTRACTION_REASONING_EFFORT },
         input: [
           {
             role: "system",
