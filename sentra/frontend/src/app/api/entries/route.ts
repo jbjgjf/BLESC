@@ -7,6 +7,7 @@ import {
 } from "@/lib/extraction";
 import { buildTemporalDiff, EMPTY_SNAPSHOT } from "@/lib/temporalDiff";
 import { writeEntryResult } from "@/lib/server/supabaseWriter";
+import { recordSubmissionFailure } from "@/lib/server/submissionFailures";
 import { jsonError, requireUser } from "@/lib/server/api";
 
 export const runtime = "nodejs";
@@ -19,7 +20,12 @@ type EntryRequest = {
   journal_text?: string;
   recall_text?: string;
   telemetry?: Record<string, JsonValue>;
+  /** What the client believes it consented to. Recorded for mismatch
+   *  detection only — the stored consent record decides (#134). */
   consent?: Record<string, JsonValue>;
+  /** Stable across retries of one submission, so a retry cannot create a
+   *  second entry (#132). */
+  client_submission_id?: string;
   // No identity fields. The owner and participant are derived from the
   // caller's session below, never read from the body — the write uses the
   // service-role key, which bypasses RLS, so a body-supplied id would let any
@@ -423,8 +429,51 @@ export async function POST(request: NextRequest) {
       recallText,
       telemetry: payload.telemetry,
       consent: payload.consent,
+      clientSubmissionId: payload.client_submission_id ?? null,
     },
   );
 
-  return NextResponse.json({ ...computed, supabase_sync: supabaseSync });
+  const body = { ...computed, supabase_sync: supabaseSync };
+  const durable = supabaseSync.status === "written" && Boolean(supabaseSync.entry_id);
+
+  if (!durable) {
+    // 200 used to be returned here whatever happened, and the client logged the
+    // failure to the console. So a submission that reached no database came
+    // back as a success and the student was shown the completion screen (#132).
+    //
+    // Two things change: the status says the entry is not stored, and the
+    // failure is recorded where an operator can count it — a lost entry leaves
+    // no row of its own, so without `submission_failures` it is
+    // indistinguishable from a day nobody wrote.
+    await recordSubmissionFailure({
+      ownerUserId: auth.user.id,
+      participantId: participant.id,
+      clientSubmissionId: payload.client_submission_id ?? null,
+      outcome: supabaseSync.status === "skipped" ? "skipped" : "failed",
+      reason: supabaseSync.reason ?? null,
+      warnings: supabaseSync.warnings,
+      observationType,
+    });
+    return NextResponse.json(
+      { ...body, detail: "日記を保存できませんでした。" },
+      { status: 502 },
+    );
+  }
+
+  // The core rows landed and a research mirror did not. The entry is safe, so
+  // the student proceeds; the gap is recorded so it is not discovered at the
+  // end of the pilot as unexplained missing research rows.
+  if (supabaseSync.warnings.length > 0) {
+    await recordSubmissionFailure({
+      ownerUserId: auth.user.id,
+      participantId: participant.id,
+      clientSubmissionId: payload.client_submission_id ?? null,
+      outcome: "partial",
+      reason: null,
+      warnings: supabaseSync.warnings,
+      observationType,
+    });
+  }
+
+  return NextResponse.json(body);
 }

@@ -24,6 +24,8 @@ import {
   StudentAccessRecord,
 } from "./models";
 import { supabase } from "@/lib/supabase/client";
+import { NO_CONSENT, consentSnapshot, normalizeConsent, type ConsentState } from "@/lib/consent";
+import { EMPTY_STATS, computeJournalStats, type JournalStats } from "@/lib/journalStats";
 import { generateCounselorSummary, type CounselorTimelineEvent } from "@/lib/counselor-summary";
 import { buildAuditTrails, type ModelRunRecord } from "@/lib/audit-trail";
 
@@ -47,7 +49,11 @@ type ParticipantRow = {
 
 type EntryRow = {
   id: string;
-  raw_text: string | null;
+  // No `raw_text`. The column-level grants added in the 20260906 migration
+  // take SELECT on the raw-text columns away from `authenticated`, so naming
+  // one here would make every entry read fail — which is the point: the read
+  // path a student or educator travels cannot reach retained journal text
+  // (#131).
   is_masked: boolean;
   extraction_json: Record<string, JsonValue>;
   expires_at: string | null;
@@ -162,6 +168,30 @@ async function stableHash(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * The entry computed but did not reach the database (#132).
+ *
+ * A distinct type because the journal screen has to tell these apart from a
+ * network error: both mean "not saved", but this one is already known to the
+ * server, which has recorded it in `submission_failures`, and the retry that
+ * follows carries the same submission id so the two attempts cannot both land.
+ */
+export class EntryNotPersistedError extends Error {
+  readonly syncStatus: string;
+  readonly reason?: string;
+
+  constructor(syncStatus: string, reason?: string) {
+    super(
+      syncStatus === "skipped"
+        ? "日記を保存できませんでした（保存先が設定されていません）。"
+        : "日記を保存できませんでした。",
+    );
+    this.name = "EntryNotPersistedError";
+    this.syncStatus = syncStatus;
+    this.reason = reason;
+  }
+}
+
 async function responseError(prefix: string, res: Response): Promise<Error> {
   let detail = res.statusText || `HTTP ${res.status}`;
   try {
@@ -178,7 +208,9 @@ function toEntry(row: EntryRow, userId: string): Entry {
   return {
     id: row.id,
     user_id: participantCode(row, userId),
-    raw_text: row.raw_text ?? undefined,
+    // Never populated from a read. Retained text is decrypted only by the
+    // research export path, under the `research_reader` role.
+    raw_text: undefined,
     is_masked: row.is_masked,
     created_at: row.created_at,
     expires_at: row.expires_at ?? undefined,
@@ -371,7 +403,7 @@ export class ApiClient {
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("entries")
-      .select("id, raw_text, is_masked, extraction_json, expires_at, created_at, participant_id, observation_type, extraction_provider, extraction_model, participants!entries_participant_id_fkey(code)")
+      .select("id, is_masked, extraction_json, expires_at, created_at, participant_id, observation_type, extraction_provider, extraction_model, participants!entries_participant_id_fkey(code)")
       .eq("participant_id", participant.id)
       .order("created_at", { ascending: false });
 
@@ -408,6 +440,22 @@ export class ApiClient {
    * `supabase_sync` on the response reports what the backend wrote. When it
    * carries row ids, those replace the backend's own ids so the returned object
    * matches what a subsequent read from Supabase will show.
+   *
+   * **Throws `EntryNotPersistedError` when the entry is not durably stored.**
+   *
+   * It used to not throw. `status: "failed"` was logged to the console with a
+   * comment explaining the decision — "the submission itself succeeded and the
+   * student\'s result is in hand" — and `status: "skipped"` produced no output
+   * at all. The journal screen\'s `persistJournal` was a `try/catch` around
+   * this call, so a method that never threw made it a function that always
+   * returned true, and the student saw "今日の日記を記録しました" over a
+   * submission that reached no database (#132).
+   *
+   * Durable means `written` with an `entry_id`. Everything else — a failed
+   * write, a skipped one, a response with no id — throws, because from the
+   * student\'s side those are the same event: what they wrote is gone.
+   * `warnings` do not throw: the core rows landed and only research mirrors
+   * are missing, which is worth recording and not worth losing the entry over.
    */
   static async createEntry(
     userId: string,
@@ -418,6 +466,9 @@ export class ApiClient {
       recall_text?: string;
       telemetry?: EntryTelemetryPayload;
       consent?: ConsentSnapshot;
+      /** Stable across retries of the same submission, so the server can
+       *  collapse them into one row (#132). */
+      client_submission_id?: string;
     },
   ): Promise<EntrySubmissionResponse> {
     const computed = await this.fetch<EntrySubmissionResponse>(`/entries?user_id=${encodeURIComponent(userId)}&observation_type=${encodeURIComponent(observationType)}`, {
@@ -428,20 +479,17 @@ export class ApiClient {
         recall_text: researchPayload?.recall_text ?? "",
         telemetry: researchPayload?.telemetry,
         consent: researchPayload?.consent,
+        client_submission_id: researchPayload?.client_submission_id,
       }),
     });
 
     const sync = computed.supabase_sync;
-    if (sync?.status === "failed") {
-      // Not thrown: the submission itself succeeded and the student's result is
-      // in hand. But the row is not in Supabase, so the next read will not show
-      // it, and that has to be visible rather than inferred from a gap.
-      console.error("[entries] backend Supabase sync failed; this entry will not appear in history", sync.reason);
-    } else if (sync?.warnings?.length) {
+    if (sync?.warnings?.length) {
       console.warn("[entries] backend Supabase sync incomplete", sync.warnings);
     }
-
-    if (!sync?.entry_id) return computed;
+    if (!sync || sync.status !== "written" || !sync.entry_id) {
+      throw new EntryNotPersistedError(sync?.status ?? "missing", sync?.reason);
+    }
     // The insight is the backend's, not the route handler's empty placeholder:
     // only the writer had the history to estimate a baseline from, so its
     // anomaly_result and explanation are the ones that measured anything.
@@ -457,9 +505,126 @@ export class ApiClient {
     };
   }
 
+  /**
+   * The participant's stored consent (#134).
+   *
+   * Read through the browser's own RLS-scoped client: a student may read their
+   * own consent record and nobody else's. Grants go through the API route
+   * instead, so the server records the source and can act on a revocation.
+   */
+  static async getConsent(userId: string): Promise<ConsentState> {
+    try {
+      const ownerUserId = await this.requireOwnerId();
+      const participant = await this.getParticipant(userId);
+      const { data, error } = await supabase
+        .from("consent_records")
+        .select(
+          "app_use, research_analysis, anonymized_export, raw_text_retention, future_fine_tuning, minor_assent, guardian_consent, consent_version, document_version, status, granted_at, revoked_at, created_at",
+        )
+        .eq("owner_user_id", ownerUserId)
+        .eq("participant_id", participant.id)
+        .order("granted_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error || !data) return { ...NO_CONSENT };
+      return normalizeConsent(data);
+    } catch {
+      // No session, no participant, no table — all mean "nothing is consented
+      // to", which is the answer that keeps research data out of the database.
+      return { ...NO_CONSENT };
+    }
+  }
+
+  /** Record a consent decision. Each grant is sent explicitly; an omitted one
+   *  is a refusal, never an inherited yes. */
+  static async grantConsent(
+    userId: string,
+    grants: {
+      app_use: boolean;
+      research_analysis: boolean;
+      anonymized_export: boolean;
+      raw_text_retention: boolean;
+      future_fine_tuning: boolean;
+      minor_assent: boolean;
+      guardian_consent: boolean;
+      document_version?: string;
+    },
+  ): Promise<ConsentState> {
+    const result = await this.fetch<{ consent: ConsentState }>(
+      `/consent?user_id=${encodeURIComponent(userId)}`,
+      { method: "POST", body: JSON.stringify(grants) },
+    );
+    return normalizeConsent(result.consent);
+  }
+
+  /** Withdraw consent. The server records the revocation and deletes any
+   *  retained journal text before returning (#131). */
+  static async revokeConsent(userId: string): Promise<ConsentState> {
+    const result = await this.fetch<{ consent: ConsentState }>(
+      `/consent?user_id=${encodeURIComponent(userId)}`,
+      { method: "DELETE" },
+    );
+    return normalizeConsent(result.consent);
+  }
+
+  /**
+   * Persist one follow-up answer (#133).
+   *
+   * Sent per answer rather than as a batch at the end: the panel can be closed
+   * at any point, and the answers given before that are the ones most worth
+   * keeping — the follow-up fires precisely for the students whose entries
+   * warranted asking.
+   */
+  static async saveFollowupResponse(
+    userId: string,
+    response: {
+      entry_id: string;
+      entry_session_id?: string | null;
+      probe_id: string;
+      probe_index: number;
+      probe_version?: string;
+      question_text: string;
+      answer_kind: "choice" | "free_text" | "none";
+      answer_text?: string | null;
+      outcome: "answered" | "declined" | "stopped" | "abandoned";
+      answered_at?: string;
+    },
+  ): Promise<void> {
+    await this.fetch(`/entries/followups?user_id=${encodeURIComponent(userId)}`, {
+      method: "POST",
+      body: JSON.stringify(response),
+    });
+  }
+
+  /**
+   * Streak and weekly counts from the participant's own submissions (#133).
+   *
+   * The completion screen counted up to a hard-coded 7 and 6. These come from
+   * `entries.created_at`, bucketed into the viewer's local calendar days.
+   */
+  static async getJournalStats(userId: string, timeZone?: string): Promise<JournalStats> {
+    try {
+      const ownerUserId = await this.requireOwnerId();
+      const participant = await this.getParticipant(userId);
+      const { data, error } = await supabase
+        .from("entries")
+        .select("created_at")
+        .eq("owner_user_id", ownerUserId)
+        .eq("participant_id", participant.id)
+        .order("created_at", { ascending: false })
+        .limit(400);
+      if (error || !data) return { ...EMPTY_STATS };
+      const zone = timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      return computeJournalStats((data as Array<{ created_at: string }>).map((row) => row.created_at), zone);
+    } catch {
+      return { ...EMPTY_STATS };
+    }
+  }
+
   static async createChat(userId: string, message: string, limit = 5, options: { mode?: "general" | "recall_workspace"; conversationContext?: string[] } = {}): Promise<ChatResponse> {
     const ownerUserId = await this.requireOwnerId();
     const participant = await this.getParticipant(userId);
+    const chatConsent = await this.getConsent(userId);
     const response = await this.fetch<ChatResponse>("/chat", {
       method: "POST",
       body: JSON.stringify({
@@ -479,7 +644,13 @@ export class ApiClient {
         .insert({
           owner_user_id: ownerUserId,
           participant_id: participant.id,
-          consent_snapshot_json: { app_use: true, research_analysis: true, source: "student_ui" },
+          // The participant's stored consent, not a claim.
+          //
+          // This was `{ app_use: true, research_analysis: true }`, hard-coded,
+          // written on every chat session regardless of what the participant
+          // had agreed to — the same defect as the entry writer's
+          // DEFAULT_CONSENT, in a second place (#134).
+          consent_snapshot_json: { ...consentSnapshot(chatConsent), source: "student_ui" },
         })
         .select("id")
         .single();

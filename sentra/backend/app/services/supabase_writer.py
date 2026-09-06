@@ -40,6 +40,8 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.services.raw_text_crypto import encrypt_raw_text, expiry_from
+
 from ..analytics.graph_features import build_temporal_graph_diff
 from ..schemas.structured import EntrySubmissionResponse
 
@@ -258,12 +260,51 @@ def _temporal_diff_against_supabase(
 # ── the three tables the UI reads ────────────────────────────────────────────
 
 
+def _raw_text_columns(
+    consent: Dict[str, Any],
+    journal_text: str,
+    recall_text: str,
+    warnings: List[str],
+) -> Dict[str, Any]:
+    """The raw-text columns for one entry (#131).
+
+    Populated only for a participant who granted research use AND retention
+    specifically, always encrypted, always with an expiry the purge job
+    enforces. `raw_text` itself stays null on every path — retained text lives
+    in `raw_text_ciphertext`, which `authenticated` cannot select at all.
+    """
+    columns: Dict[str, Any] = {"raw_text": None, "is_masked": True}
+    if not (_research_use_allowed(consent) and consent.get("raw_text_retention") is True):
+        return columns
+    retained = "\n\n".join(
+        part
+        for part in (
+            f"Journal entry:\n{journal_text.strip()}" if journal_text.strip() else "",
+            f"30-first-recall:\n{recall_text.strip()}" if recall_text.strip() else "",
+        )
+        if part
+    )
+    if not retained:
+        return columns
+    sealed = encrypt_raw_text(retained)
+    if sealed is None:
+        warnings.append("raw_text_retention_key_unavailable")
+        return columns
+    ciphertext, key_version = sealed
+    columns["raw_text_ciphertext"] = ciphertext
+    columns["raw_text_key_version"] = key_version
+    columns["raw_text_expires_at"] = expiry_from()
+    return columns
+
+
 def _insert_entry(
     client: Any,
     owner_user_id: str,
     participant_id: str,
     computed: EntrySubmissionResponse,
     observation_type: str,
+    raw_text_columns: Optional[Dict[str, Any]] = None,
+    client_submission_id: Optional[str] = None,
 ) -> str:
     extraction = computed.extraction
     response = (
@@ -272,10 +313,8 @@ def _insert_entry(
             {
                 "owner_user_id": owner_user_id,
                 "participant_id": participant_id,
-                # The backend has already masked raw_text by this point; the
-                # column exists for the TTL window, not for storage.
-                "raw_text": None,
-                "is_masked": True,
+                **(raw_text_columns or {"raw_text": None, "is_masked": True}),
+                "client_submission_id": client_submission_id,
                 "extraction_json": _json_safe(extraction),
                 "extraction_provider": extraction.extraction_provider,
                 "extraction_model": extraction.extraction_model,
@@ -397,34 +436,96 @@ def _insert_insight(
 # student-facing product.
 
 
-_DEFAULT_CONSENT: Dict[str, Any] = {
-    "app_use": True,
-    "research_analysis": True,
+# Consent defaults to nothing (#134).
+#
+# These used to be `app_use: True, research_analysis: True`, and
+# `_consent_snapshot` merged a caller-supplied dict over them — so a request
+# that sent no consent (which was every request, the journal screen never sent
+# one) was written to `consent_records` as having agreed to research use, and
+# `eval_examples` was populated from it.
+#
+# The mirror of this change is in `frontend/src/lib/consent.ts`; both write
+# paths have to agree, or whichever one is deployed decides the policy.
+_NO_CONSENT: Dict[str, Any] = {
+    "app_use": False,
+    "research_analysis": False,
     "anonymized_export": False,
+    "raw_text_retention": False,
     "future_fine_tuning": False,
-    "consent_version": "research-consent-v1",
+    "minor_assent": False,
+    "guardian_consent": False,
+    "consent_version": "research-consent-v2",
+    "document_version": "research-consent-doc-v1",
+    "status": "active",
+    "granted_at": None,
+    "revoked_at": None,
 }
 
+_CONSENT_COLUMNS = (
+    "app_use, research_analysis, anonymized_export, raw_text_retention, future_fine_tuning, "
+    "minor_assent, guardian_consent, consent_version, document_version, status, granted_at, "
+    "revoked_at, created_at"
+)
 
-def _consent_snapshot(consent: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    if not consent:
-        return dict(_DEFAULT_CONSENT)
-    return {**_DEFAULT_CONSENT, **consent}
+
+def _normalize_consent(record: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Read a stored row as a consent state. Absent fields are refusals."""
+    if not record:
+        return dict(_NO_CONSENT)
+    snapshot = dict(_NO_CONSENT)
+    for key in (
+        "app_use",
+        "research_analysis",
+        "anonymized_export",
+        "raw_text_retention",
+        "future_fine_tuning",
+        "minor_assent",
+        "guardian_consent",
+    ):
+        snapshot[key] = record.get(key) is True
+    snapshot["status"] = "revoked" if record.get("status") == "revoked" else "active"
+    for key in ("consent_version", "document_version"):
+        value = record.get(key)
+        if isinstance(value, str) and value.strip():
+            snapshot[key] = value
+    snapshot["granted_at"] = record.get("granted_at") or record.get("created_at")
+    snapshot["revoked_at"] = record.get("revoked_at") if snapshot["status"] == "revoked" else None
+    snapshot["research_use_allowed"] = _research_use_allowed(snapshot)
+    return snapshot
 
 
-def _insert_consent(client: Any, owner_user_id: str, participant_id: str, consent: Dict[str, Any]) -> None:
-    client.table("consent_records").insert(
-        {
-            "owner_user_id": owner_user_id,
-            "participant_id": participant_id,
-            "app_use": bool(consent["app_use"]),
-            "research_analysis": bool(consent["research_analysis"]),
-            "anonymized_export": bool(consent["anonymized_export"]),
-            "future_fine_tuning": bool(consent["future_fine_tuning"]),
-            "consent_version": str(consent["consent_version"]),
-            "source": "fastapi_sync",
-        }
-    ).execute()
+def _research_use_allowed(consent: Dict[str, Any]) -> bool:
+    """Research use needs an active record, the grant, and BOTH parties."""
+    return (
+        consent.get("status") == "active"
+        and consent.get("research_analysis") is True
+        and consent.get("minor_assent") is True
+        and consent.get("guardian_consent") is True
+    )
+
+
+def _load_consent(client: Any, owner_user_id: str, participant_id: str) -> Dict[str, Any]:
+    """The participant's stored consent, or no consent at all.
+
+    A lookup failure returns no-consent: a submission stored without its
+    research mirrors is recoverable, research data collected without consent
+    is not.
+    """
+    try:
+        response = (
+            client.table("consent_records")
+            .select(_CONSENT_COLUMNS)
+            .eq("owner_user_id", owner_user_id)
+            .eq("participant_id", participant_id)
+            .order("granted_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = getattr(response, "data", None) or []
+        return _normalize_consent(rows[0] if rows else None)
+    except Exception as exc:
+        logger.warning("[supabase-sync] consent lookup failed; treating as no consent: %s", exc)
+        return dict(_NO_CONSENT)
 
 
 def _insert_entry_session(
@@ -846,7 +947,7 @@ def _insert_eval_example(
     computed: EntrySubmissionResponse,
     consent: Dict[str, Any],
 ) -> None:
-    if not consent.get("research_analysis", True):
+    if not _research_use_allowed(consent):
         return
     client.table("eval_examples").insert(
         {
@@ -972,6 +1073,7 @@ def write_entry_result(
     recall_text: str = "",
     telemetry: Optional[Dict[str, Any]] = None,
     consent: Optional[Dict[str, Any]] = None,
+    client_submission_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Mirror one computed submission into Supabase. Never raises.
 
@@ -995,8 +1097,11 @@ def write_entry_result(
         return {"status": "skipped", "reason": "supabase client unavailable", "warnings": []}
 
     warnings: List[str] = []
-    consent_snapshot = _consent_snapshot(consent)
-    telemetry_payload = telemetry or {}
+    # `consent` is what the caller claimed; this is what the participant
+    # actually agreed to. Only the stored record gates anything (#134).
+    consent_snapshot = _load_consent(client, owner_user_id, participant_id)
+    research_allowed = _research_use_allowed(consent_snapshot)
+    telemetry_payload = telemetry or {} if research_allowed else {}
     pipeline_version = (computed.research_artifacts or {}).get("pipeline_version") or "research-pipeline-v1"
 
     def mirror(label: str, action) -> Any:
@@ -1011,7 +1116,15 @@ def write_entry_result(
     # The three UI tables are chained by foreign key, so this block is
     # all-or-nothing and its failure is the one the caller should see.
     try:
-        entry_id = _insert_entry(client, owner_user_id, participant_id, computed, observation_type)
+        entry_id = _insert_entry(
+            client,
+            owner_user_id,
+            participant_id,
+            computed,
+            observation_type,
+            _raw_text_columns(consent_snapshot, journal_text, recall_text, warnings),
+            client_submission_id,
+        )
         graph_snapshot_id = _insert_graph_snapshot(client, owner_user_id, participant_id, entry_id, computed)
         insight_id = _insert_insight(
             client, owner_user_id, participant_id, entry_id, graph_snapshot_id, computed
@@ -1028,7 +1141,10 @@ def write_entry_result(
     )
 
     artifacts = computed.research_artifacts or {}
-    mirror("consent_records", lambda: _insert_consent(client, owner_user_id, participant_id, consent_snapshot))
+    # No consent row is written here. Every submission used to insert one built
+    # from the defaults above, which is how the table came to hold attestations
+    # of consent nobody had given. Consent is recorded where it is obtained and
+    # read here.
 
     entry_session_id: Optional[str] = None
     if telemetry_payload:

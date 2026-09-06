@@ -18,6 +18,10 @@ python-multipart
 # Server-side Supabase writes (app/services/supabase_writer.py). Optional at
 # runtime: without it, and without SUPABASE_URL, submissions stay in SQLite.
 supabase>=2.0.0
+# AES-GCM for retained journal text (app/services/raw_text_crypto.py). Optional
+# at runtime: without it, and without RESEARCH_RAW_TEXT_KEY, the raw-text
+# columns stay null — retention is skipped, never done in the clear.
+cryptography>=42.0.0
 pyyaml
 pyarrow
 pytest

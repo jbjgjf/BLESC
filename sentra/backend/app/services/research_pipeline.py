@@ -303,10 +303,17 @@ def _latest_extraction_for_entry(session: Session, entry_id: Optional[int]) -> O
 
 
 def _consent_snapshot(consent: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Read a consent payload. Every grant defaults to False (#134).
+
+    `app_use` and `research_analysis` defaulted to True here, so a call that
+    passed no consent — `_consent_snapshot(None)` on the chat path, among
+    others — recorded a participant as having agreed to research use of their
+    data. A missing grant is a refusal, not an omission to be filled in.
+    """
     consent = consent or {}
     return {
-        "app_use": bool(consent.get("app_use", True)),
-        "research_analysis": bool(consent.get("research_analysis", True)),
+        "app_use": bool(consent.get("app_use", False)),
+        "research_analysis": bool(consent.get("research_analysis", False)),
         "anonymized_export": bool(consent.get("anonymized_export", False)),
         "future_fine_tuning": bool(consent.get("future_fine_tuning", False)),
         "consent_version": str(consent.get("consent_version", DEFAULT_CONSENT_VERSION)),

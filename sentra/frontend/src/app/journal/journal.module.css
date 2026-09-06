@@ -79,6 +79,25 @@
 }
 .error :global(.blesc-icon) { color: var(--bl-alert); }
 
+/* 保存できなかったときの帯（#132）。
+   入力はそのまま残っているので、その場で再試行できることが伝わる形にする。 */
+.saveFailure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--bl-alert-line);
+  border-radius: 12px;
+  background: var(--bl-alert-bg);
+}
+
+.saveFailure .error {
+  margin-top: 0;
+}
+
 /* ── 提出バー ───────────────────────────────────────── */
 .submitBar {
   display: flex;

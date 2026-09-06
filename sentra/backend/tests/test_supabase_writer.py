@@ -15,6 +15,7 @@ The client is faked rather than mocked at the HTTP layer: these tests are about
 which rows get built and what happens when one fails, not about PostgREST.
 """
 
+import base64
 from datetime import date, datetime
 
 import pytest
@@ -22,7 +23,10 @@ import pytest
 from app.schemas.analytics import AnomalyResult
 from app.schemas.entry import Entry
 from app.schemas.structured import EntrySubmissionResponse, ExtractionResponse, GraphSnapshot, HybridExplanation
-from app.services import supabase_writer
+from app.services import raw_text_crypto, supabase_writer
+
+# 32 bytes, base64 — the shape RESEARCH_RAW_TEXT_KEY expects.
+_TEST_RAW_TEXT_KEY = base64.b64encode(bytes(range(32))).decode("ascii")
 
 
 # ── a fake PostgREST client ──────────────────────────────────────────────────
@@ -508,3 +512,197 @@ def test_safety_assessment_audit_row_is_written(monkeypatch):
     artifact_types = [row["artifact_type"] for row in client.writes["model_runs"]]
     assert "safety_assessment" in artifact_types
     assert "extraction" in artifact_types
+
+
+# ── consent gating (#134) and retained text (#131) ───────────────────────────
+#
+# The defaults here used to be `app_use: True, research_analysis: True`, merged
+# over whatever the caller sent. Nothing sent one, so every submission was
+# recorded as consented-to research use and flowed into `eval_examples`. These
+# tests fix the direction: the stored record decides, and an absent record
+# grants nothing.
+
+
+def _consented(**overrides):
+    """A `consent_records` row with every grant set, for varying one field."""
+    row = {
+        "app_use": True,
+        "research_analysis": True,
+        "anonymized_export": True,
+        "raw_text_retention": True,
+        "future_fine_tuning": True,
+        "minor_assent": True,
+        "guardian_consent": True,
+        "consent_version": "research-consent-v2",
+        "document_version": "research-consent-doc-v1",
+        "status": "active",
+        "granted_at": "2026-09-01T00:00:00+00:00",
+        "revoked_at": None,
+    }
+    row.update(overrides)
+    return row
+
+
+def _telemetry():
+    return {
+        "session_id": "sess-1",
+        "started_at": "2026-09-06T00:00:00+00:00",
+        "submitted_at": "2026-09-06T00:05:00+00:00",
+        "field_metrics": {},
+        "events": [],
+        "aggregate_metrics": {},
+    }
+
+
+def test_no_consent_record_writes_nothing_to_the_research_tables(monkeypatch):
+    client = FakeClient()
+    _configured(monkeypatch, client)
+
+    result = supabase_writer.write_entry_result(
+        "owner-1", "participant-1", _computed(), telemetry=_telemetry()
+    )
+
+    assert result["status"] == "written"
+    assert "eval_examples" not in client.writes
+    assert "entry_sessions" not in client.writes
+    # And no consent row is fabricated to say otherwise.
+    assert "consent_records" not in client.writes
+
+
+def test_a_client_claiming_consent_does_not_create_it(monkeypatch):
+    """The browser's claim is not evidence. Only the stored record grants."""
+    client = FakeClient()
+    _configured(monkeypatch, client)
+
+    supabase_writer.write_entry_result(
+        "owner-1",
+        "participant-1",
+        _computed(),
+        telemetry=_telemetry(),
+        consent={"research_analysis": True, "minor_assent": True, "guardian_consent": True},
+    )
+
+    assert "eval_examples" not in client.writes
+    assert "entry_sessions" not in client.writes
+
+
+def test_full_consent_opens_the_research_tables(monkeypatch):
+    client = FakeClient()
+    client.reads["consent_records"] = [_consented()]
+    _configured(monkeypatch, client)
+
+    supabase_writer.write_entry_result(
+        "owner-1", "participant-1", _computed(), telemetry=_telemetry()
+    )
+
+    assert client.writes["eval_examples"]
+    assert client.writes["entry_sessions"]
+
+
+def test_assent_without_guardian_consent_is_not_consent(monkeypatch):
+    client = FakeClient()
+    client.reads["consent_records"] = [_consented(guardian_consent=False)]
+    _configured(monkeypatch, client)
+
+    supabase_writer.write_entry_result(
+        "owner-1", "participant-1", _computed(), telemetry=_telemetry()
+    )
+
+    assert "eval_examples" not in client.writes
+
+
+def test_a_revoked_record_closes_the_research_tables(monkeypatch):
+    client = FakeClient()
+    client.reads["consent_records"] = [
+        _consented(status="revoked", revoked_at="2026-09-05T00:00:00+00:00")
+    ]
+    _configured(monkeypatch, client)
+
+    supabase_writer.write_entry_result(
+        "owner-1", "participant-1", _computed(), telemetry=_telemetry()
+    )
+
+    assert "eval_examples" not in client.writes
+    assert "entry_sessions" not in client.writes
+
+
+def test_raw_text_is_not_retained_without_consent(monkeypatch):
+    monkeypatch.setenv("RESEARCH_RAW_TEXT_KEY", _TEST_RAW_TEXT_KEY)
+    client = FakeClient()
+    _configured(monkeypatch, client)
+
+    supabase_writer.write_entry_result(
+        "owner-1", "participant-1", _computed(), journal_text="今日は部活で失敗した"
+    )
+
+    entry = client.writes["entries"][0]
+    assert entry["raw_text"] is None
+    assert entry.get("raw_text_ciphertext") is None
+
+
+def test_retention_needs_its_own_grant_on_top_of_research_use(monkeypatch):
+    monkeypatch.setenv("RESEARCH_RAW_TEXT_KEY", _TEST_RAW_TEXT_KEY)
+    client = FakeClient()
+    client.reads["consent_records"] = [_consented(raw_text_retention=False)]
+    _configured(monkeypatch, client)
+
+    supabase_writer.write_entry_result(
+        "owner-1", "participant-1", _computed(), journal_text="今日は部活で失敗した"
+    )
+
+    entry = client.writes["entries"][0]
+    assert entry.get("raw_text_ciphertext") is None
+    # Research use itself was granted, so the eval dataset is still open.
+    assert client.writes["eval_examples"]
+
+
+def test_consented_text_is_stored_encrypted_and_expiring(monkeypatch):
+    monkeypatch.setenv("RESEARCH_RAW_TEXT_KEY", _TEST_RAW_TEXT_KEY)
+    client = FakeClient()
+    client.reads["consent_records"] = [_consented()]
+    _configured(monkeypatch, client)
+
+    journal = "今日は部活で失敗した"
+    supabase_writer.write_entry_result(
+        "owner-1", "participant-1", _computed(), journal_text=journal, recall_text="明日の練習"
+    )
+
+    entry = client.writes["entries"][0]
+    # `raw_text` itself stays null on every path — the plaintext column is not
+    # the place retained text lives.
+    assert entry["raw_text"] is None
+    assert entry["raw_text_key_version"] == "raw-text-aesgcm-v1"
+    assert entry["raw_text_expires_at"] is not None
+    assert journal not in entry["raw_text_ciphertext"]
+
+    opened = raw_text_crypto.decrypt_raw_text(entry["raw_text_ciphertext"])
+    assert journal in opened
+    assert "明日の練習" in opened
+
+
+def test_retention_is_skipped_rather_than_stored_plainly_without_a_key(monkeypatch):
+    monkeypatch.delenv("RESEARCH_RAW_TEXT_KEY", raising=False)
+    client = FakeClient()
+    client.reads["consent_records"] = [_consented()]
+    _configured(monkeypatch, client)
+
+    result = supabase_writer.write_entry_result(
+        "owner-1", "participant-1", _computed(), journal_text="今日は部活で失敗した"
+    )
+
+    entry = client.writes["entries"][0]
+    assert entry["raw_text"] is None
+    assert entry.get("raw_text_ciphertext") is None
+    assert "raw_text_retention_key_unavailable" in result["warnings"]
+
+
+def test_a_submission_id_is_carried_to_the_entries_row(monkeypatch):
+    """The unique index needs the value to reach the row (#132)."""
+    client = FakeClient()
+    _configured(monkeypatch, client)
+
+    supabase_writer.write_entry_result(
+        "owner-1", "participant-1", _computed(), client_submission_id="submission-abc"
+    )
+
+    assert client.writes["entries"][0]["client_submission_id"] == "submission-abc"
