@@ -58,8 +58,9 @@ T2が合成の真の潜在状態を学習入力へ混ぜることは禁止する
 
 ## C3：T3 → T4/T5 / ForecastBundle
 
-必須フィールド: `run_id, model_id, encoder_id, dataset_id, split_id, participant_key, cutoff_at, target_times, target_names, target_units, distribution_method, means, scales_or_samples, inference_mode, source_event_ids, capability_flags, status, reasons`。
+必須フィールド: `run_id, forecast_id, model_id, encoder_id, dataset_id, split_id, participant_key, cutoff_at, target_times, target_names, target_units, distribution_method, means, scales_or_samples, inference_mode, source_event_ids, capability_flags, status, reasons`。
 `means` は `[horizon, target]`。`distribution_method` は `deterministic | gaussian_diag | empirical_samples` をv0で扱う。deterministicなら不確実性の数値を作らずnull。gaussian_diagなら同形の非負標準偏差を要求する。samplesなら `[sample, horizon, target]`。
+`forecast_id` はT3が発行する安定した一意ID。participant、cutoff、target集合、model artifactが同じ再実行では同じIDとし、C4へ変更せず渡す。C5の予測台帳も同じ値を `forecast_id` として保存する。`inference_mode=forecast` ではすべての `target_times` に `target_time > cutoff_at` を要求する。同時点推定・過去推定はv0のForecastBundleへ混ぜず、将来版で別のmodeと評価契約を定義する。
 
 予定関数: `fit_dynamics(encoded_train, targets_train, validation, config)`、`forecast(prefix, artifact, target_times)`、`rollout(state, interventions, seed)`。rolloutのinterventionsはモデル内操作で、現実の介入効果を表す型とは分ける。未知の操作名は拒否する。
 
@@ -77,10 +78,11 @@ edgeは `source_ids, target_id, lag_days, interaction_order, coefficient, uncert
 ## C5：T5 → T0/T6 / EvaluationReport
 
 必須フィールド: `report_version, run_id, artifact_hashes, dataset_id, split_id, seed_list, baselines, metrics, metrics_by_scenario, unsupported_metrics, leakage_checks, predictions_ref, limitations, measured_usage, reproducibility_command, status`。
+`artifact_hashes` は少なくとも `dataset_hash, split_hash, config_hash, model_hash` を必須キーとして持つ。IDは人が参照する名前、hashは実際に使用した内容・割当・設定・重みの一致確認に使う。追加artifactのhashは同じmappingへ加えてよい。
 各metricに `name, target, value, unit, n_participants, n_predictions, uncertainty_method, interval, status`。不適切なmetricはnullと理由。構造の正解が無い実データでedge-F1を算出しない。
 利用量は `provider_calls, input_tokens, output_tokens, cached_tokens, elapsed_seconds, compute_environment`。取得不能はnull、APIを使わなかった事実は0。料金を推定するなら価格取得日・単価・通貨を添える。学習計算とAPI費用を合算してトークンだけで表さない。
 
-予測台帳は `prediction_id, run_id, cutoff_at, issued_at, target_times, model_hash, input_hash, payload_hash, evaluation_mode` を追記保存。`evaluation_mode=historical_simulation | prospective`。合成・過去データの再生を事前の実参加者予測と呼ばない。hashは内容の一致確認であり、単独で改ざん不能を保証しない。保存権限と追記処理も検証する。
+予測台帳は `forecast_id, run_id, cutoff_at, issued_at, target_times, model_hash, input_hash, payload_hash, evaluation_mode` を追記保存。`forecast_id` はC3とC4の値を変更せず使う。`evaluation_mode=historical_simulation | prospective`。合成・過去データの再生を事前の実参加者予測と呼ばない。hashは内容の一致確認であり、単独で改ざん不能を保証しない。保存権限と追記処理も検証する。
 
 ## C6：T0 → T6 / 研究結果API
 
