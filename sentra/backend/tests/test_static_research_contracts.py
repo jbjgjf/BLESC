@@ -220,17 +220,79 @@ def test_static_knowledge_file_guard_accepts_docs_and_rejects_user_paths(tmp_pat
         unsafe.rmdir()
 
 
+# A screen may not claim to diagnose. Both lists are matched as substrings of
+# the UI source, in either language the product ships in.
+DIAGNOSTIC_CLAIMS = (
+    "Diagnostic Score",
+    "Hybrid Anomaly Score",
+    "Risk Score",
+    "診断スコア",
+    "診断結果",
+    "リスクスコア",
+    "リスク判定",
+)
+
+# The disclaimer, in the wordings actually used. `school/page.tsx` says
+# 「診断でもありません」 rather than 「診断ではありません」, so the variants are
+# listed rather than matched on a stem — a stem match on 「診断」 would be
+# satisfied by a screen that claims to diagnose.
+NON_DIAGNOSTIC_DISCLAIMERS = (
+    "診断ではありません",
+    "診断でもありません",
+    "診断を行いません",
+    "診断は行いません",
+    "Non-diagnostic",
+)
+
+# The screens that render the signal, its inputs, or a derived view of it.
+# Each has to carry the disclaimer next to the number, not merely somewhere in
+# the product.
+SIGNAL_BEARING_SCREENS = (
+    "insights/page.tsx",
+    "timeline/page.tsx",
+    "graph/page.tsx",
+    "school/page.tsx",
+    "guardian/page.tsx",
+    "educator/class/page.tsx",
+)
+
+
 def test_frontend_uses_non_diagnostic_reflection_signal_language():
+    """The UI must not claim to diagnose, in whatever language it ships in.
+
+    This used to assert the literal English strings "Reflection Signal" and
+    "Non-diagnostic". The product was localised to Japanese for the school
+    pilot (#116), those literals left the screens, and the test went red while
+    the property it exists to protect was still held — more thoroughly than
+    before, since 「診断ではありません」 now appears on every screen that shows a
+    number rather than on one label.
+
+    Asserting an English label would have meant pushing an English string back
+    into a Japanese product to satisfy a test, so the assertions moved to the
+    meaning: no diagnostic claim anywhere, and a disclaimer on each screen that
+    renders the signal.
+    """
+    app_root = ROOT / "frontend/src/app"
     frontend_source = "\n".join(
         path.read_text(encoding="utf-8")
-        for path in (ROOT / "frontend/src/app").rglob("*.tsx")
+        for path in app_root.rglob("*.tsx")
         if path.is_file()
     )
 
-    assert "Diagnostic Score" not in frontend_source
-    assert "Hybrid Anomaly Score" not in frontend_source
-    assert "Reflection Signal" in frontend_source
-    assert "Non-diagnostic" in frontend_source
+    for claim in DIAGNOSTIC_CLAIMS:
+        assert claim not in frontend_source, f"UI presents a diagnostic claim: {claim}"
+
+    assert any(
+        disclaimer in frontend_source for disclaimer in NON_DIAGNOSTIC_DISCLAIMERS
+    ), "UI carries no non-diagnostic disclaimer in any known wording"
+
+    for screen in SIGNAL_BEARING_SCREENS:
+        path = app_root / screen
+        assert path.is_file(), f"expected signal-bearing screen is missing: {screen}"
+        source = path.read_text(encoding="utf-8")
+        assert any(
+            disclaimer in source for disclaimer in NON_DIAGNOSTIC_DISCLAIMERS
+        ), f"{screen} renders a signal without a non-diagnostic disclaimer"
 
 
 def test_fine_tuning_export_is_consent_and_review_gated():
