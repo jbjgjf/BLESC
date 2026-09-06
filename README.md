@@ -104,6 +104,8 @@ Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request. In part
 
 ## Further reading
 
+- [研究エンジン：設計・数学解説・7チームの72時間計画](https://github.com/jbjgjf/BLESC/wiki/Research-Engine) — implementation proposal; the 72-hour target is a synthetic research prototype, separate from participant enrollment.
+
 - [Research pipeline](sentra/docs/research_pipeline.md)
 - [Participant temporal graph](sentra/docs/participant_temporal_graph.md)
 - [Synthetic evaluation](sentra/docs/synthetic_evaluation.md)
