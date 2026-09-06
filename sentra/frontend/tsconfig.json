@@ -6,6 +6,11 @@
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
+    // `npm test` runs the pure modules in src/lib directly through Node, which
+    // resolves neither the `@/*` alias nor an extensionless specifier. Those
+    // modules therefore import the message catalogue by its real path, and this
+    // lets TypeScript read the same specifier. Safe with `noEmit`.
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",

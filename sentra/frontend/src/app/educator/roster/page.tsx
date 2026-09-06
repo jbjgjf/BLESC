@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
 
 import { ApiClient } from "@/api/client";
+import { t } from "@/lib/i18n";
 import type { EducatorStudentStatus } from "@/api/models";
 import { AttentionChip, BaselineContextLine, NonDiagnosticNotice, ObservationLine, hasShowableObservation, panel } from "@/components/educator/StatusChips";
 
@@ -45,7 +46,7 @@ export default function EducatorRosterPage() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load roster.");
+        setError(err instanceof Error ? err.message : t.educator.roster.loadFailed);
       });
     return () => { cancelled = true; };
   }, []);
@@ -83,18 +84,22 @@ export default function EducatorRosterPage() {
               cursor: "pointer",
             }}
           >
-            {option === "all" ? `All (${roster.length})` : option === "flagged" ? "Needs attention" : "Inactive"}
+            {option === "all"
+              ? t.educator.roster.filterAll(roster.length)
+              : option === "flagged"
+                ? t.educator.roster.filterFlagged
+                : t.educator.roster.filterInactive}
           </button>
         ))}
       </div>
 
       {roster.length === 0 ? (
         <section className="px-8 py-10 text-center text-sm" style={{ ...panel, color: "var(--ink-mid)" }}>
-          No students are sharing derived signals with you yet.
+          {t.educator.roster.emptyNoConsent}
         </section>
       ) : visible.length === 0 ? (
         <section className="px-8 py-8 text-center text-sm" style={{ ...panel, color: "var(--ink-faint)" }}>
-          No students match this filter.
+          {t.educator.roster.emptyNoMatch}
         </section>
       ) : (
         <section style={panel}>
@@ -112,8 +117,8 @@ export default function EducatorRosterPage() {
                 </div>
                 <div className="mt-1 text-xs" style={{ color: "var(--ink-faint)" }}>
                   {student.last_active_day
-                    ? `Last reflection ${new Date(student.last_active_day).toLocaleDateString()}`
-                    : "No reflections yet"}
+                    ? t.educator.roster.lastEntry(new Date(student.last_active_day).toLocaleDateString("ja-JP"))
+                    : t.educator.roster.noEntries}
                 </div>
                 <div className="mt-1.5 space-y-0.5">
                   <ObservationLine student={student} />

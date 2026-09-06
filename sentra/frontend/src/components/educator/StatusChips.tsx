@@ -1,4 +1,5 @@
 import type { EducatorStudentStatus } from "@/api/models";
+import { t } from "@/lib/i18n";
 
 export const panel: React.CSSProperties = {
   backgroundColor: "var(--ivory)",
@@ -19,27 +20,6 @@ export const panel: React.CSSProperties = {
  * move that number; they do not fix it. The band was removed rather than
  * tuned. See docs/educator_display_policy.md.
  */
-
-/** How the deterministic safety layer describes what it matched. */
-const REASON_LABELS: Record<string, string> = {
-  self_harm_or_suicide_risk: "自傷・自殺に関する直接的な表現",
-  possible_self_harm_or_suicide_risk: "自傷に関連する表現",
-  possible_suicide_risk: "生きることへの否定的な表現",
-  ambiguous_withdrawal_signal: "「消えたい」など離脱を示唆する曖昧な表現",
-  inability_to_stay_safe: "安全を保てないという表現",
-  abuse_or_violence_disclosure: "暴力・虐待の開示",
-  imminent_violence_risk: "他害の切迫を示す表現",
-  possible_violence_risk: "他害に関連する表現",
-  concealment_request_related_to_harm: "危害に関する秘匿の依頼",
-  distress_without_explicit_danger: "苦痛の表現（危険の明示なし）",
-  risk_disclosed_on_another_surface: "別の画面での開示を引き継ぎ",
-};
-
-const SURFACE_LABELS: Record<string, string> = {
-  journal: "ジャーナル",
-  chat: "チャット",
-  voice: "音声",
-};
 
 function formatTimestamp(iso: string): string {
   const date = new Date(iso);
@@ -65,7 +45,7 @@ export function AttentionChip({ student }: { student: EducatorStudentStatus }) {
   const color = student.safety_level === "crisis" ? "var(--terracotta)" : "var(--sienna)";
   return (
     <span className="rounded-full px-2.5 py-0.5 text-xs font-semibold" style={{ border: `1px solid ${color}`, color }}>
-      要確認
+      {t.safety.attentionChip}
     </span>
   );
 }
@@ -73,19 +53,19 @@ export function AttentionChip({ student }: { student: EducatorStudentStatus }) {
 /** The observation itself: what was matched, when, on which surface. */
 export function ObservationLine({ student }: { student: EducatorStudentStatus }) {
   if (!hasShowableObservation(student)) return null;
-  const surface = student.safety_surface ? SURFACE_LABELS[student.safety_surface] ?? student.safety_surface : null;
+  const surface = student.safety_surface ? t.safety.surface[student.safety_surface] ?? student.safety_surface : null;
   return (
     <div className="text-xs leading-relaxed" style={{ color: "var(--ink-mid)" }}>
       <div>
-        <span style={{ color: "var(--ink-faint)" }}>観測: </span>
-        {student.safety_reasons.map((reason) => REASON_LABELS[reason] ?? reason).join(" / ")}
+        <span style={{ color: "var(--ink-faint)" }}>{t.safety.observationPrefix}</span>
+        {student.safety_reasons.map((reason) => t.safety.reason[reason] ?? reason).join(" / ")}
         <span style={{ color: "var(--ink-faint)" }}>
           （{formatTimestamp(student.safety_at!)}
           {surface ? ` · ${surface}` : ""}）
         </span>
       </div>
       <div style={{ color: "var(--ink-faint)" }}>
-        └ 根拠: safety.py の決定的マッチ / 推論なし
+        {t.safety.observationBasis}
       </div>
     </div>
   );
@@ -101,15 +81,17 @@ export function BaselineContextLine({ student }: { student: EducatorStudentStatu
   if (student.baseline_is_provisional) {
     return (
       <div className="text-xs" style={{ color: "var(--ink-faint)" }}>
-        基準値の学習中
-        {typeof student.baseline_days_remaining === "number" ? `（残り ${student.baseline_days_remaining} 日）` : ""}
-        · この期間は比較を表示しません
+        {t.educator.baseline.learning}
+        {typeof student.baseline_days_remaining === "number"
+          ? t.educator.baseline.learningRemaining(student.baseline_days_remaining)
+          : ""}
+        {` · ${t.educator.baseline.learningNote}`}
       </div>
     );
   }
   return (
     <div className="text-xs" style={{ color: "var(--ink-faint)" }}>
-      └ baseline_type: {student.baseline_type ?? "user"}
+      {t.educator.baseline.source[student.baseline_type ?? "user"] ?? t.educator.baseline.source.user}
     </div>
   );
 }
@@ -118,7 +100,7 @@ export function BaselineContextLine({ student }: { student: EducatorStudentStatu
 export function NonDiagnosticNotice() {
   return (
     <p className="text-xs" style={{ color: "var(--ink-faint)" }}>
-      本ツールは診断を行いません。表示されるのは観測された記述とその時刻のみで、リスクの判定ではありません。
+      {t.common.nonDiagnosticNotice}
     </p>
   );
 }

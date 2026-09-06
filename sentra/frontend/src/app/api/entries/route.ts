@@ -32,7 +32,8 @@ type EntryRequest = {
   // caller create rows under any participant.
 };
 
-const EXTRACTION_MODEL = process.env.OPENAI_EXTRACTION_MODEL || process.env.LLM_MODEL_NAME || "gpt-4.1-mini";
+const EXTRACTION_MODEL = process.env.OPENAI_EXTRACTION_MODEL || process.env.LLM_MODEL_NAME || "gpt-6-astra";
+const EXTRACTION_REASONING_EFFORT = process.env.OPENAI_EXTRACTION_REASONING_EFFORT || "high";
 const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
 const PIPELINE_VERSION = "next-production-research-pipeline-v1";
 
@@ -129,11 +130,21 @@ async function extractWithOpenAI(entryText: string): Promise<{ extraction: Extra
       body: JSON.stringify({
         model: EXTRACTION_MODEL,
         store: false,
-        temperature: 0.2,
+        reasoning: { effort: EXTRACTION_REASONING_EFFORT },
         input: [
           {
             role: "system",
-            content: "You are Sentra's transparent research extraction model. Return schema-valid, evidence-grounded JSON for longitudinal journaling analysis.",
+            content: [
+              "You are Sentra's transparent research extraction model. Return schema-valid, evidence-grounded JSON for longitudinal journaling analysis.",
+              // Labels, summaries and reflection cards are rendered verbatim on
+              // a Japanese student's screen and in the educator view (#116).
+              // Without this the model answers in the language of its
+              // instructions, and English reaches the product through the data,
+              // where reviewing the UI would never catch it.
+              "Write every human-readable field — labels, summaries, evidence and reflection card titles and bodies — in natural Japanese (敬体), the way a Japanese school would write to a student.",
+              "Use plain, school-appropriate wording. Do not diagnose, do not assert certainty, and avoid clinical terms.",
+              "Enum values, ids and schema keys stay exactly as the schema defines them; only the human-readable text is Japanese.",
+            ].join(" "),
           },
           {
             role: "user",

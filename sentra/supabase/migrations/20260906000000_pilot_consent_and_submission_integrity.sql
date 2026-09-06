@@ -1,6 +1,19 @@
 -- Pilot launch gate: explicit research consent, durable submissions, follow-up
 -- persistence and gated raw-text retention (issues #131 #132 #133 #134 #135).
 --
+-- ===========================================================================
+-- APPLY THIS BEFORE DEPLOYING THE CODE. It is step 1 of 3.
+--
+--   1. this migration        — additive only; the running code keeps working
+--   2. deploy the app        — it needs `entries.client_submission_id` and the
+--                              new tables, and every submission fails without
+--                              them
+--   3. 20260906000100        — revokes a privilege the OLD code still uses
+--
+-- Nothing here removes anything, so step 1 is safe to apply while the current
+-- version is serving. Step 3 is not, which is why it is a separate file.
+-- ===========================================================================
+--
 -- Four things this migration establishes, in the order the write path needs
 -- them:
 --
@@ -18,11 +31,11 @@
 --      retry after a failed write) resolves to the row that already exists
 --      instead of a duplicate.
 --
---   3. Raw journal text gets a place to live that is gated, encrypted,
---      expiring, and unreachable from the student and educator read paths.
---      Column-level privileges do that last part: `authenticated` loses table
---      -wide SELECT on `entries` and gets it back column by column, minus the
---      three raw-text columns. Only the `research_reader` role may read those.
+--   3. Raw journal text gets a place to live that is gated, encrypted and
+--      expiring. Making it unreachable from the student and educator read
+--      paths is the *next* migration (20260906000100): that step revokes a
+--      privilege the running code still uses, so it cannot land at the same
+--      time as the columns.
 --
 --   4. Follow-up answers, submission-write failures, and research exports each
 --      get a table, because all three are currently invisible: the answers live
@@ -124,29 +137,11 @@ $$;
 
 grant usage on schema public to research_reader;
 
--- Table-wide SELECT goes away and comes back column by column. Anything added
--- to `entries` after this migration has to be granted explicitly — which is
--- the intended failure mode: a new column is unreadable until someone decides
--- it should be readable, rather than exposed by default.
-revoke select on public.entries from authenticated;
-grant select (
-  id,
-  owner_user_id,
-  participant_id,
-  is_masked,
-  extraction_json,
-  provenance_hash,
-  expires_at,
-  created_at,
-  updated_at,
-  observation_type,
-  extraction_provider,
-  extraction_model,
-  client_submission_id,
-  raw_text_expires_at
-) on public.entries to authenticated;
-
-grant select on public.entries to research_reader;
+-- The column-level lockdown that takes SELECT on the raw-text columns away
+-- from `authenticated` is NOT here. It is the one statement in this change that
+-- breaks the currently-deployed code (which selects `entries.raw_text`), so it
+-- ships as its own migration, 20260906000100, to be applied AFTER the new code
+-- is live. See the header of that file for the order.
 
 -- Retention. `raw_text_expires_at` was a column nothing enforced; this is the
 -- job that enforces it. Scheduled by whatever runs cron for the deployment

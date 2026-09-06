@@ -9,6 +9,7 @@ import { MemoryObjectCard } from "@/components/MemoryObjectCard";
 import { ProcessingTimeline } from "@/components/ProcessingTimeline";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
 import { useAuth } from "@/lib/auth";
+import { t } from "@/lib/i18n";
 
 type RecallMessage = {
   id: string;
@@ -82,7 +83,7 @@ export default function RecallWorkspacePage() {
 
   const userTurnCount = useMemo(() => messages.filter((message) => message.role === "user").length, [messages]);
   const canSend = input.trim().length > 0 && !isSubmitting && userTurnCount < MAX_USER_TURNS;
-  const progressLabel = `${userTurnCount}/${MAX_USER_TURNS} user turns`;
+  const progressLabel = t.recall.progress(userTurnCount, MAX_USER_TURNS);
   const sortedMemoryObjects = useMemo(
     () => [...memoryObjects].sort((a, b) => b.effective_importance - a.effective_importance),
     [memoryObjects],
@@ -145,7 +146,7 @@ export default function RecallWorkspacePage() {
           { mode: "recall_workspace", conversationContext },
         );
         const nextQuestion = nextUserTurnCount >= MAX_USER_TURNS
-          ? "That completes the 30-turn window. Review the summary below and consider sharing concerning patterns with a trusted adult or qualified professional."
+          ? t.recall.completed
           : nextQuestionForTurn(nextUserTurnCount);
         const assistantMessage: RecallMessage = {
           id: `assistant-${Date.now()}`,
@@ -182,10 +183,10 @@ export default function RecallWorkspacePage() {
           </Link>
           <div className="inscription mb-2">これまでのふりかえり</div>
           <h1 className="text-3xl font-semibold" style={{ ...displayFont, letterSpacing: "0.03em" }}>
-            30-Turn Recall Workspace
+            {t.recall.title}
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed" style={{ color: "var(--ink-mid)", fontStyle: "italic" }}>
-            A guided, non-diagnostic interview that records chat turns as user data and summarizes recurring patterns after enough history exists.
+            {t.recall.intro}
           </p>
         </div>
         <div className="rounded-2xl px-4 py-2 text-xs" style={{ border: "1px solid var(--limestone)", color: "var(--ink-faint)" }}>
@@ -265,7 +266,7 @@ export default function RecallWorkspacePage() {
               </p>
             ) : (
               <p className="text-sm leading-relaxed" style={{ color: "var(--ink-mid)", fontStyle: "italic" }}>
-                {`Not enough conversation history. Minimum: ${MIN_SUMMARY_TURNS} turns.`}
+                {t.recall.notEnoughHistory(MIN_SUMMARY_TURNS)}
               </p>
             )}
 
@@ -290,7 +291,7 @@ export default function RecallWorkspacePage() {
           <div style={panel} className="p-5">
             <div className="inscription mb-3">プライバシーについて</div>
             <p className="text-sm leading-relaxed" style={{ color: "var(--ink-mid)" }}>
-              Chat turns remain user data. Raw audio is discarded after transcription. User-specific mental health content is not uploaded into OpenAI Vector Store.
+              {t.recall.privacy}
             </p>
           </div>
         </aside>

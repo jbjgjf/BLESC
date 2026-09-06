@@ -41,6 +41,7 @@ import {
   topFeatures,
   type DayGraph,
 } from "@/lib/baseline";
+import { t } from "@/lib/i18n";
 
 type Json = Record<string, unknown>;
 
@@ -384,11 +385,11 @@ async function buildInsight(params: {
     // student in their first fortnight gets an explicit empty state, not a
     // score computed against statistics nobody measured (#91).
     const reasons = [
-      `Reflection Signal needs at least ${outcome.requiredDays} prior day(s) of this student's own data.`,
-      `Only ${outcome.observedDays} prior day(s) are available.`,
+      t.signal.notEnoughDataReason(outcome.requiredDays),
+      t.signal.observedDays(outcome.observedDays),
     ];
-    if (lookupFailed) reasons.push("The history lookup failed, so the day count above is a floor, not a count.");
-    if (truncated) reasons.push("The history window was truncated by the row limit; the day count above is a floor.");
+    if (lookupFailed) reasons.push(t.signal.lookupFailed);
+    if (truncated) reasons.push(t.signal.windowTruncated);
 
     return {
       ...shared,
@@ -416,9 +417,9 @@ async function buildInsight(params: {
         level: "high",
         status: "not_enough_data",
         reasons,
-        missing_signals: ["personal baseline"],
+        missing_signals: [t.signal.missingPersonalBaseline],
       },
-      evidence_summaries: ["Not enough personal history is available to calculate a Reflection Signal yet."],
+      evidence_summaries: [t.signal.noBaselineYet],
       score_breakdown_json: {
         status: "not_enough_data",
         rule_score: 0,
@@ -465,11 +466,11 @@ async function buildInsight(params: {
       level: today.nodes.length >= 4 ? "low" : "medium",
       status: "ok",
       reasons: [
-        today.nodes.length >= 4 ? "Graph coverage is adequate" : "Sparse graph coverage",
-        previousDayGraph ? "Compared with prior structural snapshot" : "No prior graph to compare",
+        today.nodes.length >= 4 ? t.signal.coverageAdequate : t.signal.coverageSparse,
+        previousDayGraph ? t.signal.comparedWithPrevious : t.signal.noPreviousGraph,
       ],
       missing_signals: outcome.degenerate.length
-        ? [`features with no variance across the window: ${outcome.degenerate.join(", ")}`]
+        ? [t.signal.degenerateFeatures(outcome.degenerate.join("、"))]
         : [],
     },
     evidence_summaries: ruleHits.map((hit) => hit.evidence),

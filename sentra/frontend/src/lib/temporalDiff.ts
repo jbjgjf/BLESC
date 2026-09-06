@@ -24,6 +24,7 @@
  */
 
 import type { ExtractedNode, ExtractedRelation } from "./extraction";
+import { t } from "./i18n/index.ts";
 
 export type SnapshotShape = {
   nodes: ExtractedNode[];
@@ -160,13 +161,12 @@ export function buildTemporalDiff(current: SnapshotShape, previous: SnapshotShap
  * and no row could contradict it.
  */
 export function relationShiftSummary(diff: TemporalDiff, hadPrevious: boolean): string {
-  if (!hadPrevious) return "first snapshot for this participant; no previous day to compare";
-  const parts = [
-    `${diff.added_nodes.length} node(s) added`,
-    `${diff.removed_nodes.length} removed`,
-    `${diff.added_relations.length} relation(s) added`,
-    `${diff.removed_relations.length} removed`,
-    `${diff.changed_relations.length} changed`,
-  ];
-  return parts.join(", ");
+  if (!hadPrevious) return t.extraction.firstSnapshot;
+  return t.extraction.shift(
+    diff.added_nodes.length,
+    diff.removed_nodes.length,
+    diff.added_relations.length,
+    diff.removed_relations.length,
+    diff.changed_relations.length,
+  );
 }
