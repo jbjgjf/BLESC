@@ -40,6 +40,7 @@
 
 import type { ExtractedNode, ExtractedRelation } from "./extraction";
 import type { TemporalDiff } from "./temporalDiff";
+import { t } from "./i18n/index.ts";
 
 /**
  * Days of the student's own history required before a baseline is usable.
@@ -302,8 +303,7 @@ export function checkRules(
   if (safeFloat(zScores?.isolation_signal, 0) > 1.8 || safeFloat(featureVector?.isolation_signal, 0) > 0.8) {
     hits.push({
       rule: "isolation_spike",
-      evidence:
-        "Isolation signal rose relative to the baseline and the structural graph is centered on fewer supportive links.",
+      evidence: t.signal.ruleEvidence.isolation_spike,
       weight: 0.45,
       signal: { feature: "isolation_signal", z: safeFloat(zScores?.isolation_signal, 0) },
     });
@@ -314,8 +314,7 @@ export function checkRules(
   if (protectiveRatio < 0.2 || protectiveDrop > 0) {
     hits.push({
       rule: "protective_decline",
-      evidence:
-        "Protective structure weakened: the daily graph has fewer protective nodes or lower protective ratio than the baseline.",
+      evidence: t.signal.ruleEvidence.protective_decline,
       weight: 0.4,
       signal: { protective_ratio: protectiveRatio, protective_drop: protectiveDrop },
     });
@@ -324,7 +323,7 @@ export function checkRules(
   if (safeFloat(zScores?.state_count, 0) > 1.25 || safeFloat(zScores?.trigger_count, 0) > 1.25) {
     hits.push({
       rule: "state_trigger_inflation",
-      evidence: "Distressing states or triggers expanded beyond the baseline pattern.",
+      evidence: t.signal.ruleEvidence.state_trigger_inflation,
       weight: 0.25,
       signal: {
         state_count_z: safeFloat(zScores?.state_count, 0),
@@ -336,7 +335,7 @@ export function checkRules(
   if ((graphSummary?.event_count ?? 0) > 0 && safeFloat(zScores?.event_transition_signal, 0) > 1.2) {
     hits.push({
       rule: "event_sequence_shift",
-      evidence: "Event nodes are present, but their temporal sequencing differs from the baseline graph.",
+      evidence: t.signal.ruleEvidence.event_sequence_shift,
       weight: 0.3,
       signal: {
         event_count: graphSummary?.event_count ?? 0,
@@ -349,7 +348,7 @@ export function checkRules(
   if (changedCount > 0) {
     hits.push({
       rule: "relation_reweighting",
-      evidence: "Several key relations changed confidence or direction relative to the prior local graph.",
+      evidence: t.signal.ruleEvidence.relation_reweighting,
       weight: Math.min(0.35, 0.08 * changedCount),
       signal: { changed_relations: changedCount },
     });
@@ -504,11 +503,7 @@ export function readBaselineProvenance(deviation: unknown): BaselineProvenance |
 export function rampUpMessage(provenance: BaselineProvenance | null): string {
   const remaining = provenance?.days_remaining ?? RAMP_UP_DAYS;
   const observed = provenance?.observed_days ?? 0;
-  return (
-    `Still learning your baseline — ${remaining} more day(s) of entries needed. ` +
-    `A signal compares today against your own previous ${RAMP_UP_DAYS} days, and ${observed} are recorded so far. ` +
-    `Your entries are being analysed in the meantime; there is simply nothing yet to compare them against.`
-  );
+  return t.signal.rampUp(remaining, RAMP_UP_DAYS, observed);
 }
 
 /** The four features whose |z| is largest, as `top_features` in the backend. */

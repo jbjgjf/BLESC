@@ -1,5 +1,6 @@
 import type { ExplanationPayload, GraphSnapshot, RecordId } from "@/api/models";
 import type { GraphMode, GraphViewerData, GraphViewerLink, GraphViewerNode, GraphNodeSelection } from "./graphTypes";
+import { t } from "@/lib/i18n";
 
 export const CATEGORY_COLORS: Record<string, string> = {
   State: "#c92a2a",
@@ -306,31 +307,31 @@ function summarizeNodeRelations(
   const summaries: string[] = [];
 
   if (node.frequency && node.frequency > 1) {
-    summaries.push(`Recurring concept — appears in ${node.frequency} entries across ${node.allDays?.length ?? node.frequency} days`);
+    summaries.push(t.graph.role.recurring(node.frequency, node.allDays?.length ?? node.frequency));
   }
 
   const graphSummary = snapshot?.graph_summary_json;
   const keyRelations = explanation?.key_relations ?? graphSummary?.key_relations ?? [];
 
   if (graphSummary?.key_nodes?.some((item) => item.id === node.originalId)) {
-    summaries.push("High-salience node in the graph summary");
+    summaries.push(t.graph.role.highSalience);
   }
   if (keyRelations.some((relation) => relation.source_id === node.originalId || relation.target_id === node.originalId)) {
-    summaries.push("Participates in a key relation linked to the explanation");
+    summaries.push(t.graph.role.keyRelation);
   }
 
   const diff = snapshot?.temporal_diff_json;
   if (diff?.added_nodes?.some((item) => item.id === node.originalId)) {
-    summaries.push("Added relative to the baseline graph");
+    summaries.push(t.graph.role.added);
   }
   if (diff?.removed_nodes?.some((item) => item.id === node.originalId)) {
-    summaries.push("Removed relative to the baseline graph");
+    summaries.push(t.graph.role.removed);
   }
   if (diff?.changed_relations?.some((relation) => relation.source_id === node.originalId || relation.target_id === node.originalId)) {
-    summaries.push("Touches a relation that shifted against the baseline");
+    summaries.push(t.graph.role.relationShifted);
   }
-  if (node.category === "Event") summaries.push("Event node contributing temporal structure");
-  if (!summaries.length) summaries.push("Structural node used by the graph-native inference layer");
+  if (node.category === "Event") summaries.push(t.graph.role.event);
+  if (!summaries.length) summaries.push(t.graph.role.structural);
 
   return summaries;
 }
@@ -345,28 +346,29 @@ export function buildNodeSelection(
 
   const diff = snapshot?.temporal_diff_json;
   if (diff?.protective_decline?.drop_in_protective_nodes) {
-    anomalySignals.push(`Protective decline: ${diff.protective_decline.drop_in_protective_nodes}`);
+    anomalySignals.push(t.graph.role.protectiveDecline(diff.protective_decline.drop_in_protective_nodes));
   }
   if (explanation?.triggered_rules_json?.length) {
     anomalySignals.push(...explanation.triggered_rules_json.map((rule) => rule.rule));
   }
-  if (!anomalySignals.length) anomalySignals.push("No direct rule trigger attached to this node");
+  if (!anomalySignals.length) anomalySignals.push(t.graph.role.noRuleTrigger);
 
+  const category = t.graph.category[node.category] ?? node.category;
   const roleSummary = node.frequency
-    ? `${node.category} concept · seen ${node.frequency}× · last ${node.snapshotDay}`
-    : `${node.category} node · snapshot ${node.snapshotDay} · layer ${node.layerIndex + 1}`;
+    ? t.graph.role.conceptSummary(category, node.frequency, node.snapshotDay)
+    : t.graph.role.nodeSummary(category, node.snapshotDay);
 
   return { node, roleSummary, relationSummary, anomalySignals };
 }
 
 export function getDebugFallbackData(): GraphViewerData {
   const node1: GraphViewerNode = {
-    id: "fallback-1", originalId: "fallback-1", label: "Mental State (Stable)", category: "State",
+    id: "fallback-1", originalId: "fallback-1", label: t.graph.fallback.stableState, category: "State",
     intensity: 0.8, confidence: 1.0, snapshotId: 999, snapshotDay: "2026-04-03", layerIndex: 0,
     x: -36, y: 0, z: 0, fx: -36, fy: 0, fz: 0, color: CATEGORY_COLORS.State, radius: 8.8, sourceKind: "current",
   };
   const node2: GraphViewerNode = {
-    id: "fallback-2", originalId: "fallback-2", label: "Evening Walk", category: "Event",
+    id: "fallback-2", originalId: "fallback-2", label: t.graph.fallback.eveningWalk, category: "Event",
     intensity: 0.6, confidence: 1.0, snapshotId: 999, snapshotDay: "2026-04-03", layerIndex: 0,
     x: 36, y: 0, z: 0, fx: 36, fy: 0, fz: 0, color: CATEGORY_COLORS.Event, radius: 7.6, sourceKind: "current",
   };

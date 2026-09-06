@@ -7,6 +7,8 @@
  * fixes land in a separate commit so the bug and the fix are separable.
  */
 
+import { t } from "./i18n/index.ts";
+
 export type ExtractedNode = {
   id: string;
   category: "State" | "Trigger" | "Protective" | "Behavior" | "Event";
@@ -157,18 +159,18 @@ export function normalizeExtraction(candidate: Partial<ExtractionPayload>, sourc
 export function fallbackExtraction(sourceText: string): ExtractionPayload {
   const lowered = sourceText.toLowerCase();
   const nodes: ExtractedNode[] = [
-    { id: "current_reflection", category: "State", label: "Current reflection", intensity: 0.5, confidence: 0.55 },
-    { id: "written_journal", category: "Behavior", label: "Written journal entry", intensity: 0.55, confidence: 0.8 },
-    { id: "first_recall", category: "Event", label: "First recall moment", intensity: 0.45, confidence: 0.75 },
+    { id: "current_reflection", category: "State", label: t.extraction.fallbackNode.currentReflection, intensity: 0.5, confidence: 0.55 },
+    { id: "written_journal", category: "Behavior", label: t.extraction.fallbackNode.writtenJournal, intensity: 0.55, confidence: 0.8 },
+    { id: "first_recall", category: "Event", label: t.extraction.fallbackNode.firstRecall, intensity: 0.45, confidence: 0.75 },
   ];
   if (/(friend|talk|help|support|walk|music|sleep|rest|plan|study)/i.test(sourceText)) {
-    nodes.push({ id: "protective_signal", category: "Protective", label: "Protective signal", intensity: 0.58, confidence: 0.58 });
+    nodes.push({ id: "protective_signal", category: "Protective", label: t.extraction.fallbackNode.protectiveSignal, intensity: 0.58, confidence: 0.58 });
   }
   if (/(anxious|stress|tired|deadline|worry|sad|angry|fear)/i.test(sourceText)) {
-    nodes.push({ id: "stress_signal", category: "Trigger", label: "Stress signal", intensity: lowered.includes("very") ? 0.75 : 0.58, confidence: 0.58 });
+    nodes.push({ id: "stress_signal", category: "Trigger", label: t.extraction.fallbackNode.stressSignal, intensity: lowered.includes("very") ? 0.75 : 0.58, confidence: 0.58 });
   }
   while (nodes.length < 5) {
-    nodes.push({ id: `context_signal_${nodes.length}`, category: "Event", label: `Context signal ${nodes.length}`, intensity: 0.4, confidence: 0.45 });
+    nodes.push({ id: `context_signal_${nodes.length}`, category: "Event", label: t.extraction.fallbackNode.contextSignal(nodes.length), intensity: 0.4, confidence: 0.45 });
   }
   const relations: ExtractedRelation[] = [
     { source_id: "first_recall", target_id: "current_reflection", type: "precedes" as const, confidence: 0.65 },
@@ -181,8 +183,8 @@ export function fallbackExtraction(sourceText: string): ExtractionPayload {
   return {
     nodes,
     relations,
-    temporal_summary: "single-session self-report with first-recall context",
-    summary: `${nodes.length} nodes extracted from a student journal and 30-first-recall submission.`,
-    evidence_summaries: ["Student submitted a journal entry and a first-recall note."],
+    temporal_summary: t.extraction.temporalSummary,
+    summary: t.extraction.summary(nodes.length),
+    evidence_summaries: [t.extraction.evidence],
   };
 }

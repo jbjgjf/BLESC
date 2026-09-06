@@ -27,3 +27,41 @@ AI が心理状態を診断・断定するように読める文言は絶対に�
 | 診断する、判定する | 医療行為と誤認されるため | 振り返る、分析する、傾向を見る |
 | 異常、リスクがある | 不安を煽るため | 気になる点、サポートが必要な可能性 |
 | 確実です、〜に違いありません | AIの推論は不確実なため | 〜の傾向が見られます、〜かもしれません |
+
+## 文言をどこに書くか
+
+画面に出る文言は、画面のファイルに直接書かず、`sentra/frontend/src/lib/i18n/ja.ts`
+（メッセージカタログ）に置きます。呼び出しは `t.<画面>.<キー>` の形です。
+
+```tsx
+import { t } from "@/lib/i18n";
+
+<p>{t.educator.roster.emptyNoConsent}</p>
+```
+
+- キーは「どの画面の、誰に向けた文言か」で名づけます。英語の原文をキーにしません
+  （`educator.roster.emptyNoConsent` は可、`noStudentsAreSharing` は不可）。
+- 値を差し込む文言は関数にします（`lastEntry: (date: string) => …`）。文中に
+  リンクが入る場合は前後で分け、語順が崩れないようにします。
+- 安全・プライバシーに関わる約束（非診断の注記、共有の説明など）は `common` に置き、
+  画面ごとに書き分けないでください。画面ごとに書くと、片方だけが更新されます。
+- `src/lib` のうち `npm test` が Node から直接読み込むモジュール
+  （`baseline.ts`、`extraction.ts`、`temporalDiff.ts` など）は、エイリアスではなく
+  `./i18n/index.ts` で読み込みます。Node がパスエイリアスを解決しないためです。
+
+英語を追加してよいのは、人が読まない文字列だけです。ログ、DB のカラム名、
+Supabase のエラー照合、モデルへの指示などがこれにあたります。
+`npm test` の「Japanese UI」テストがこれを検査し、例外は
+`sentra/frontend/scripts/ui-strings-allowlist.mjs` に理由つきで登録します。
+
+## AI の出力
+
+AI が生成した文章もそのまま画面に出ます。したがってプロンプト側で日本語を指定します。
+
+- チャット `sentra/frontend/src/app/api/chat/route.ts`
+- 音声 `sentra/frontend/src/app/api/voice/realtime-session/route.ts`
+- 抽出（本番の書き込み経路）`sentra/frontend/src/app/api/entries/route.ts`
+- 抽出（研究用バックエンド、モックを含む）`sentra/backend/app/services/llm_adapter.py`
+
+新しくモデルを呼ぶ場所を足すときは、出力言語の指定を必ず入れてください。
+指定がないと、モデルは指示文の言語で答えます。

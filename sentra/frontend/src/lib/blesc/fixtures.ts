@@ -1,4 +1,4 @@
-import { TODAY, addDays } from "./labels";
+import { TODAY, addDays } from "./labels.ts";
 import type {
   ClassBreakdown,
   DiaryEntry,
@@ -89,14 +89,143 @@ export const MY_ENTRIES: DiaryEntry[] = [
     body: "進路希望調査の紙が配られた。まだ何も決まっていないなと思った。文理選択をどうするか迷っている。",
     submittedAt: `${addDays(TODAY, -6)}T21:50:00`,
   },
+
+  // ── ここから3週目より前 ────────────────────────────────────
+  //
+  // 21日分あるのは、変化の大きさが本人の記録14日分を待つため。6日分では
+  // どの画面も「まだ比較できません」しか出せず、その状態しかデモできない。
+  // 前半14日は落ち着いた記録が続き、後半で睡眠と友人関係が繰り返し出る —
+  // 「ある日の出来事」ではなく「繰り返し」を見せるための並びにしている。
+  {
+    id: "e-0731",
+    date: addDays(TODAY, -7),
+    mood: "good",
+    categories: ["club"],
+    body: "部活で新しいフォーメーションを試した。うまくいかなかったけど、練習してみようと思う。",
+    submittedAt: `${addDays(TODAY, -7)}T20:05:00`,
+  },
+  {
+    id: "e-0730",
+    date: addDays(TODAY, -8),
+    mood: "low",
+    categories: ["friends", "health"],
+    body: "教室で自分だけ話に入れない感じがまたあった。前も同じことを書いた気がする。夜、なかなか眠れなかった。",
+    submittedAt: `${addDays(TODAY, -8)}T23:58:00`,
+  },
+  {
+    id: "e-0729",
+    date: addDays(TODAY, -9),
+    mood: "neutral",
+    categories: ["study"],
+    body: "実力テストの範囲が発表された。量が多い。とりあえず数学から始めることにした。",
+    submittedAt: `${addDays(TODAY, -9)}T22:20:00`,
+  },
+  {
+    id: "e-0728",
+    date: addDays(TODAY, -10),
+    mood: "low",
+    categories: ["health", "study"],
+    body: "寝るのが遅くなって、朝がしんどかった。授業中もぼんやりしていた。",
+    submittedAt: `${addDays(TODAY, -10)}T23:36:00`,
+  },
+  {
+    id: "e-0727",
+    date: addDays(TODAY, -11),
+    mood: "good",
+    categories: ["family"],
+    body: "夕飯のとき、姉と進路の話をした。まだ決めなくていいと言われて少し楽になった。",
+    submittedAt: `${addDays(TODAY, -11)}T20:48:00`,
+  },
+  {
+    id: "e-0726",
+    date: addDays(TODAY, -12),
+    mood: "neutral",
+    categories: ["club", "study"],
+    body: "部活のあとに課題をやった。集中はできなかったけれど、少しは進んだ。",
+    submittedAt: `${addDays(TODAY, -12)}T21:30:00`,
+  },
+  {
+    id: "e-0725",
+    date: addDays(TODAY, -13),
+    mood: "good",
+    categories: ["friends"],
+    body: "帰り道が同じ子と話しながら帰った。特別な話はしていないけど、こういうのは気が楽だ。",
+    submittedAt: `${addDays(TODAY, -13)}T19:55:00`,
+  },
+  {
+    id: "e-0724",
+    date: addDays(TODAY, -14),
+    mood: "neutral",
+    categories: ["study"],
+    body: "小テストがあった。できたかどうかはよくわからない。",
+    submittedAt: `${addDays(TODAY, -14)}T21:10:00`,
+  },
+  {
+    id: "e-0723",
+    date: addDays(TODAY, -15),
+    mood: "very_good",
+    categories: ["club"],
+    body: "練習試合に勝った。自分の出番は短かったけど、チームで勝てたのが嬉しかった。",
+    submittedAt: `${addDays(TODAY, -15)}T20:12:00`,
+  },
+  {
+    id: "e-0722",
+    date: addDays(TODAY, -16),
+    mood: "good",
+    categories: ["family", "other"],
+    body: "家の手伝いをしたら、母が助かったと言っていた。それだけの日。",
+    submittedAt: `${addDays(TODAY, -16)}T20:40:00`,
+  },
+  {
+    id: "e-0721",
+    date: addDays(TODAY, -17),
+    mood: "neutral",
+    categories: ["study", "club"],
+    body: "授業も部活もいつもどおり。書くことがあまりない日だった。",
+    submittedAt: `${addDays(TODAY, -17)}T21:25:00`,
+  },
+  {
+    id: "e-0720",
+    date: addDays(TODAY, -18),
+    mood: "good",
+    categories: ["friends", "club"],
+    body: "部活の休憩中にみんなで話していて、普通に笑えた。",
+    submittedAt: `${addDays(TODAY, -18)}T20:18:00`,
+  },
+  {
+    id: "e-0719",
+    date: addDays(TODAY, -19),
+    mood: "neutral",
+    categories: ["study"],
+    body: "予習をやった。特に何もなかった一日。",
+    submittedAt: `${addDays(TODAY, -19)}T21:44:00`,
+  },
+  {
+    id: "e-0718",
+    date: addDays(TODAY, -20),
+    mood: "good",
+    categories: ["club"],
+    body: "朝練に間に合った。走ったあとは頭がすっきりする。",
+    submittedAt: `${addDays(TODAY, -20)}T20:02:00`,
+  },
+  {
+    id: "e-0717",
+    date: addDays(TODAY, -21),
+    mood: "neutral",
+    categories: ["study", "family"],
+    body: "記録をはじめた日。何を書けばいいか少し迷った。とりあえず今日あったことを書いた。",
+    submittedAt: `${addDays(TODAY, -21)}T22:08:00`,
+  },
 ];
 
 export const MY_STATS: SubmissionStats = {
-  streak: 6,
-  weekCount: 5,
-  monthRate: 0.86,
-  lastSubmitted: addDays(TODAY, -1),
-  submittedDays: [1, 2, 3, 4, 5, 6].map((d) => addDays(TODAY, -d)),
+  // Derived rather than written down: the diary above is the one source, and a
+  // hand-kept count is the thing that drifts the first time an entry is added.
+  streak: MY_ENTRIES.length,
+  weekCount: MY_ENTRIES.filter((entry) => entry.date >= addDays(TODAY, -7)).length,
+  monthRate: Math.round((MY_ENTRIES.length / 30) * 100) / 100,
+  lastSubmitted: MY_ENTRIES[0].date,
+  submittedDays: MY_ENTRIES.map((entry) => entry.date),
 };
 
 /* ── 教員側：2年A組 ─────────────────────────────────────────── */

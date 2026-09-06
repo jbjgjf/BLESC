@@ -6,6 +6,7 @@ import { Mic, MicOff, X, Zap } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { routesToRealPerson } from "@/lib/safety-assessment";
 import styles from "./VoiceMode.module.css";
+import { t } from "@/lib/i18n";
 
 type VoicePhase = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "interrupted" | "error";
 
@@ -21,13 +22,7 @@ type RealtimeSessionResponse = {
 };
 
 function phaseLabel(phase: VoicePhase) {
-  if (phase === "connecting") return "Connecting…";
-  if (phase === "listening") return "Listening";
-  if (phase === "thinking") return "Thinking";
-  if (phase === "speaking") return "Speaking";
-  if (phase === "interrupted") return "Interrupted";
-  if (phase === "error") return "Needs attention";
-  return "Tap to start";
+  return t.voice.phase[phase];
 }
 
 function eventText(event: Record<string, unknown>) {
@@ -148,7 +143,7 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
 
     const type = String(event.type ?? "");
     if (type === "error") {
-      setError(String((event.error as { message?: unknown } | undefined)?.message ?? "Voice session error."));
+      setError(String((event.error as { message?: unknown } | undefined)?.message ?? t.voice.error.sessionFailed));
       setPhase("error");
       return;
     }
@@ -204,12 +199,12 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
   const start = async () => {
     if (phase !== "idle" && phase !== "error") return;
     if (!session?.access_token) {
-      setError("Please sign in to use voice.");
+      setError(t.voice.error.signInRequired);
       setPhase("error");
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === "undefined") {
-      setError("Voice is not supported in this browser.");
+      setError(t.voice.error.unsupportedBrowser);
       setPhase("error");
       return;
     }
@@ -226,7 +221,7 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
       });
       if (!tokenResponse.ok) {
         const payload = (await tokenResponse.json().catch(() => ({}))) as { detail?: string };
-        throw new Error(payload.detail ?? `Voice session failed (${tokenResponse.status}).`);
+        throw new Error(payload.detail ?? t.voice.error.sessionFailedWithStatus(tokenResponse.status));
       }
       const token = (await tokenResponse.json()) as RealtimeSessionResponse;
 
@@ -234,7 +229,7 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
       pcRef.current = pc;
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
-          setError("The voice connection dropped.");
+          setError(t.voice.error.connectionDropped);
           setPhase("error");
         }
       };
@@ -267,12 +262,12 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
         headers: { Authorization: `Bearer ${token.client_secret}`, "Content-Type": "application/sdp" },
         body: offer.sdp ?? "",
       });
-      if (!sdpResponse.ok) throw new Error(`Voice connection failed (${sdpResponse.status}).`);
+      if (!sdpResponse.ok) throw new Error(t.voice.error.connectionFailedWithStatus(sdpResponse.status));
 
       await pc.setRemoteDescription({ type: "answer", sdp: await sdpResponse.text() });
     } catch (err) {
       cleanup();
-      setError(err instanceof Error ? err.message : "Voice session failed.");
+      setError(err instanceof Error ? err.message : t.voice.error.sessionFailed);
       setPhase("error");
     }
   };
@@ -306,10 +301,10 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
   }, []);
 
   return (
-    <div className={styles.overlay} role="dialog" aria-modal="true" aria-label="Voice conversation">
+    <div className={styles.overlay} role="dialog" aria-modal="true" aria-label={t.voice.dialogLabel}>
       <audio ref={audioRef} autoPlay playsInline />
 
-      <button type="button" className={styles.close} onClick={close} aria-label="Close voice mode">
+      <button type="button" className={styles.close} onClick={close} aria-label={t.voice.close}>
         <X size={20} />
       </button>
 
@@ -321,13 +316,13 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
           {phaseLabel(phase)}
         </div>
         {error && <div className={styles.error}>{error}</div>}
-        {!active && !error && <p className={styles.hint}>Speak naturally — blesc listens and replies out loud.</p>}
+        {!active && !error && <p className={styles.hint}>{t.voice.hint}</p>}
       </div>
 
       <div ref={scrollRef} className={styles.transcript} aria-live="polite">
         {transcripts.map((item) => (
           <div key={item.id} className={`${styles.line} ${item.role === "user" ? styles.lineUser : ""}`}>
-            <span className={styles.who}>{item.role === "user" ? "You" : "blesc"}</span>
+            <span className={styles.who}>{item.role === "user" ? t.voice.speakerYou : t.voice.speakerAssistant}</span>
             <p>{item.text}</p>
           </div>
         ))}
@@ -335,7 +330,7 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
       </div>
 
       <div className={styles.controls}>
-        <button type="button" className={styles.control} onClick={toggleMute} disabled={!active} aria-label={muted ? "Unmute" : "Mute"}>
+        <button type="button" className={styles.control} onClick={toggleMute} disabled={!active} aria-label={muted ? t.voice.unmute : t.voice.mute}>
           {muted ? <MicOff size={20} /> : <Mic size={20} />}
         </button>
 
@@ -343,7 +338,7 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
           type="button"
           className={`${styles.primary} ${active ? styles.primaryActive : ""}`}
           onClick={active ? close : start}
-          aria-label={active ? "End voice conversation" : "Start voice conversation"}
+          aria-label={active ? t.voice.end : t.voice.start}
         >
           {active ? <X size={26} /> : <Mic size={26} />}
         </button>
@@ -357,13 +352,13 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
             setPhase("interrupted");
           }}
           disabled={phase !== "speaking"}
-          aria-label="Interrupt"
+          aria-label={t.voice.interrupt}
         >
           <Zap size={20} />
         </button>
       </div>
 
-      <p className={styles.disclaimer}>blesc is not a clinical assessment or an emergency service.</p>
+      <p className={styles.disclaimer}>{t.common.notClinicalService}</p>
     </div>
   );
 }

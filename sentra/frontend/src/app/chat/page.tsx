@@ -8,6 +8,7 @@ import { AudioLines, Send } from "lucide-react";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
 import { VoiceMode, type VoiceTurn } from "@/components/VoiceMode";
 import styles from "./chat.module.css";
+import { t } from "@/lib/i18n";
 
 type Message = {
   id: string;
@@ -242,8 +243,8 @@ export default function ChatPage() {
             className={styles.voiceMode}
             onClick={() => setVoiceOpen(true)}
             disabled={isThinking}
-            aria-label="Start a voice conversation"
-            title="Voice mode"
+            aria-label={t.voice.start}
+            title={t.voice.dialogLabel}
           >
             <AudioLines size={19} />
           </button>

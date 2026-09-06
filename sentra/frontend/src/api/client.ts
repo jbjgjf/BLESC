@@ -26,6 +26,9 @@ import {
 import { supabase } from "@/lib/supabase/client";
 import { generateCounselorSummary, type CounselorTimelineEvent } from "@/lib/counselor-summary";
 import { buildAuditTrails, type ModelRunRecord } from "@/lib/audit-trail";
+import { t } from "@/lib/i18n";
+import { readDemoFlag } from "@/lib/demo";
+import * as demo from "@/lib/blesc/demoApi";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
@@ -315,14 +318,14 @@ export class ApiClient {
       });
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        throw new Error(`API request timed out after ${DEFAULT_REQUEST_TIMEOUT_MS / 1000}s: ${path}`);
+        throw new Error(`${t.apiError.requestTimedOut(DEFAULT_REQUEST_TIMEOUT_MS / 1000)}: ${path}`);
       }
       throw err;
     } finally {
       window.clearTimeout(timeout);
     }
     if (!res.ok) {
-      throw await responseError("API Error", res);
+      throw await responseError(t.apiError.requestFailed, res);
     }
     return res.json();
   }
@@ -341,7 +344,7 @@ export class ApiClient {
       body,
     });
     if (!res.ok) {
-      throw await responseError("Audio transcription failed", res);
+      throw await responseError(t.apiError.transcriptionFailed, res);
     }
     return res.json();
   }
@@ -349,7 +352,7 @@ export class ApiClient {
   private static async requireOwnerId(): Promise<string> {
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) {
-      throw new Error("Not authenticated");
+      throw new Error(t.apiError.notAuthenticated);
     }
     return data.user.id;
   }
@@ -363,11 +366,12 @@ export class ApiClient {
       .eq("code", userId)
       .single();
 
-    if (error) throwSupabaseError("Load participant failed", error);
+    if (error) throwSupabaseError(t.apiError.loadParticipant, error);
     return data;
   }
 
   static async getEntries(userId: string): Promise<Entry[]> {
+    if (readDemoFlag()) return demo.demoEntries();
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("entries")
@@ -375,7 +379,7 @@ export class ApiClient {
       .eq("participant_id", participant.id)
       .order("created_at", { ascending: false });
 
-    if (error) throwSupabaseError("Load entries failed", error);
+    if (error) throwSupabaseError(t.apiError.loadEntries, error);
     return (data ?? []).map((row) => toEntry(row as unknown as EntryRow, userId));
   }
 
@@ -458,6 +462,7 @@ export class ApiClient {
   }
 
   static async createChat(userId: string, message: string, limit = 5, options: { mode?: "general" | "recall_workspace"; conversationContext?: string[] } = {}): Promise<ChatResponse> {
+    if (readDemoFlag()) return demo.demoChatReply(message);
     const ownerUserId = await this.requireOwnerId();
     const participant = await this.getParticipant(userId);
     const response = await this.fetch<ChatResponse>("/chat", {
@@ -596,7 +601,7 @@ export class ApiClient {
       .limit(1)
       .maybeSingle();
 
-    if (error) throwSupabaseError("Load conversation recall failed", error);
+    if (error) throwSupabaseError(t.apiError.loadConversationRecall, error);
     return data ? toConversationRecall(data as unknown as ConversationRecallSummaryRow) : null;
   }
 
@@ -622,6 +627,7 @@ export class ApiClient {
   }
 
   static async getTimeline(userId: string): Promise<AnomalyResult[]> {
+    if (readDemoFlag()) return demo.demoTimeline();
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("insights")
@@ -629,11 +635,12 @@ export class ApiClient {
       .eq("participant_id", participant.id)
       .order("day", { ascending: true });
 
-    if (error) throwSupabaseError("Load timeline failed", error);
+    if (error) throwSupabaseError(t.apiError.loadTimeline, error);
     return (data ?? []).map((row) => toAnomaly(row as unknown as InsightRow, userId));
   }
 
   static async generateCounselorSummary(userId: string, limit = 10): Promise<CounselorSupportSummary> {
+    if (readDemoFlag()) return demo.demoCounselorSummary();
     const ownerUserId = await this.requireOwnerId();
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
@@ -643,7 +650,7 @@ export class ApiClient {
       .eq("participant_id", participant.id)
       .order("created_at", { ascending: false })
       .limit(Math.max(1, Math.min(limit, 30)));
-    if (error) throwSupabaseError("Generate support summary failed", error);
+    if (error) throwSupabaseError(t.apiError.generateSupportSummary, error);
 
     const summary = generateCounselorSummary((data ?? []).map((row) => summaryEvent(row as SummaryEntryRow)));
     const { error: auditError } = await supabase.from("model_runs").insert({
@@ -667,6 +674,7 @@ export class ApiClient {
   }
 
   static async listOversightRequests(userId: string): Promise<OversightRequest[]> {
+    if (readDemoFlag()) return demo.demoOversightRequests();
     const participant = await this.getParticipant(userId);
 
     const [rosterResult, consentResult] = await Promise.all([
@@ -681,8 +689,8 @@ export class ApiClient {
         .eq("participant_id", participant.id)
         .is("educator_user_id", null),
     ]);
-    if (rosterResult.error) throwSupabaseError("Load oversight requests failed", rosterResult.error);
-    if (consentResult.error) throwSupabaseError("Load oversight consents failed", consentResult.error);
+    if (rosterResult.error) throwSupabaseError(t.apiError.loadOversightRequests, rosterResult.error);
+    if (consentResult.error) throwSupabaseError(t.apiError.loadOversightConsents, consentResult.error);
 
     type RosterRow = { id: string; org_id: string; status: string; organizations?: { name: string } | { name: string }[] | null };
     type ConsentRow = { org_id: string; status: string; granted_at: string | null; revoked_at: string | null };
@@ -700,7 +708,7 @@ export class ApiClient {
       const candidate: OversightRequest = {
         roster_id: row.id,
         org_id: row.org_id,
-        org_name: org?.name ?? "Unknown organization",
+        org_name: org?.name ?? t.apiError.unknownOrganization,
         roster_status: row.status,
         consent_status: (consent?.status as OversightRequest["consent_status"]) ?? null,
         granted_at: consent?.granted_at ?? null,
@@ -714,6 +722,7 @@ export class ApiClient {
   }
 
   static async grantOversightConsent(userId: string, orgId: string): Promise<void> {
+    if (readDemoFlag()) return demo.demoSetConsent(true);
     const ownerUserId = await this.requireOwnerId();
     const participant = await this.getParticipant(userId);
     const existing = await supabase
@@ -723,14 +732,14 @@ export class ApiClient {
       .eq("org_id", orgId)
       .is("educator_user_id", null)
       .maybeSingle();
-    if (existing.error) throwSupabaseError("Load consent failed", existing.error);
+    if (existing.error) throwSupabaseError(t.apiError.loadConsent, existing.error);
 
     if (existing.data) {
       const { error } = await supabase
         .from("oversight_consents")
         .update({ status: "active" })
         .eq("id", existing.data.id);
-      if (error) throwSupabaseError("Grant consent failed", error);
+      if (error) throwSupabaseError(t.apiError.grantConsent, error);
       return;
     }
     const { error } = await supabase.from("oversight_consents").insert({
@@ -738,10 +747,11 @@ export class ApiClient {
       owner_user_id: ownerUserId,
       org_id: orgId,
     });
-    if (error) throwSupabaseError("Grant consent failed", error);
+    if (error) throwSupabaseError(t.apiError.grantConsent, error);
   }
 
   static async revokeOversightConsent(userId: string, orgId: string): Promise<void> {
+    if (readDemoFlag()) return demo.demoSetConsent(false);
     const participant = await this.getParticipant(userId);
     const { error } = await supabase
       .from("oversight_consents")
@@ -749,7 +759,7 @@ export class ApiClient {
       .eq("participant_id", participant.id)
       .eq("org_id", orgId)
       .is("educator_user_id", null);
-    if (error) throwSupabaseError("Revoke consent failed", error);
+    if (error) throwSupabaseError(t.apiError.revokeConsent, error);
   }
 
   // ------------------------------------------------------------------
@@ -766,8 +776,9 @@ export class ApiClient {
   }
 
   static async getCohortRoster(): Promise<EducatorStudentStatus[]> {
+    if (readDemoFlag()) return demo.demoCohortRoster();
     const rosterResult = await supabase.rpc("overseen_participants");
-    if (rosterResult.error) throwSupabaseError("Load cohort roster failed", rosterResult.error);
+    if (rosterResult.error) throwSupabaseError(t.apiError.loadCohortRoster, rosterResult.error);
     type RosterRow = { participant_id: string; org_id: string; owner_user_id: string; code: string; display_name: string | null };
     const roster = (rosterResult.data ?? []) as RosterRow[];
     if (!roster.length) return [];
@@ -788,8 +799,8 @@ export class ApiClient {
         .order("created_at", { ascending: false })
         .limit(400),
     ]);
-    if (insightsResult.error) throwSupabaseError("Load cohort insights failed", insightsResult.error);
-    if (safetyResult.error) throwSupabaseError("Load cohort safety failed", safetyResult.error);
+    if (insightsResult.error) throwSupabaseError(t.apiError.loadCohortInsights, insightsResult.error);
+    if (safetyResult.error) throwSupabaseError(t.apiError.loadCohortSafety, safetyResult.error);
 
     type InsightRowLite = {
       participant_id: string;
@@ -854,19 +865,31 @@ export class ApiClient {
   static async getCohortAlerts(): Promise<CohortAlert[]> {
     const roster = await this.getCohortRoster();
     if (!roster.length) return [];
+    // Built from the roster either way — in the demo the only thing missing is
+    // the acknowledgement log, so nothing is acknowledged yet.
+    if (readDemoFlag()) return this.alertsFromRoster(roster, new Set<string>());
 
     const ackResult = await supabase
       .from("educator_access_log")
       .select("metadata")
       .eq("view_type", "alert_ack")
       .limit(500);
-    if (ackResult.error) throwSupabaseError("Load alert acknowledgements failed", ackResult.error);
+    if (ackResult.error) throwSupabaseError(t.apiError.loadAlertAcknowledgements, ackResult.error);
     const acked = new Set(
       ((ackResult.data ?? []) as Array<{ metadata: Record<string, JsonValue> | null }>)
         .map((row) => String(row.metadata?.alert_key ?? ""))
         .filter(Boolean),
     );
 
+    return this.alertsFromRoster(roster, acked);
+  }
+
+  /**
+   * Alerts from roster rows. One place, because the demo path and the
+   * Supabase path differ only in whether an acknowledgement log exists —
+   * two copies of this loop would drift on the next alert kind.
+   */
+  private static alertsFromRoster(roster: EducatorStudentStatus[], acked: Set<string>): CohortAlert[] {
     const alerts: CohortAlert[] = [];
     const now = Date.now();
     for (const student of roster) {
@@ -885,9 +908,7 @@ export class ApiClient {
           type,
           severity: student.safety_level === "crisis" ? 3 : 2,
           occurred_at: student.safety_at ?? new Date().toISOString(),
-          detail: student.safety_level === "crisis"
-            ? "Crisis-level safety flag on the latest reflection."
-            : "Elevated safety signal on the latest reflection.",
+          detail: student.safety_level === "crisis" ? t.alert.safetyCrisis : t.alert.safetyElevated,
           policy_refs: [],
           acknowledged: acked.has(key),
         });
@@ -900,7 +921,7 @@ export class ApiClient {
           type: "anomaly_spike",
           severity: 2,
           occurred_at: student.last_active_day,
-          detail: `Reflection signal ${student.latest_score?.toFixed(2) ?? "—"} is above the review threshold (2.0).`,
+          detail: t.alert.anomalySpike(student.latest_score?.toFixed(2) ?? "—", "2.0"),
           policy_refs: [],
           acknowledged: acked.has(key),
         });
@@ -914,7 +935,7 @@ export class ApiClient {
           type: "inactivity",
           severity: 1,
           occurred_at: student.last_active_day ?? new Date(0).toISOString(),
-          detail: lastActive === null ? "No reflections recorded yet." : "No reflections in the last 7 days.",
+          detail: lastActive === null ? t.alert.noEntriesYet : t.alert.noEntriesLast7Days,
           policy_refs: [],
           acknowledged: acked.has(key),
         });
@@ -929,6 +950,10 @@ export class ApiClient {
     viewType: "roster" | "alerts" | "student_overview" | "alert_ack",
     metadata: Record<string, JsonValue> = {},
   ): Promise<void> {
+    // The demo has no log to write to, and an access record nobody can read is
+    // not worth pretending to keep. What the student's own screen shows about
+    // who looked is `demoEducatorAccess()`.
+    if (readDemoFlag()) return;
     const educator = await this.requireOwnerId();
     const { error } = await supabase.from("educator_access_log").insert({
       educator_user_id: educator,
@@ -950,7 +975,7 @@ export class ApiClient {
     students: Array<Pick<EducatorStudentStatus, "participant_id" | "org_id" | "owner_user_id">>,
     viewType: "roster" | "alerts",
   ): Promise<void> {
-    if (!students.length) return;
+    if (!students.length || readDemoFlag()) return;
     const educator = await this.requireOwnerId();
     const { error } = await supabase.from("educator_access_log").insert(
       students.map((student) => ({
@@ -971,6 +996,7 @@ export class ApiClient {
     themes: Array<{ label: string; count: number }>;
     safetyRuns: Array<{ level: string; occurred_at: string }>;
   } | null> {
+    if (readDemoFlag()) return demo.demoStudentOverview(participantId);
     const roster = await this.getCohortRoster();
     const student = roster.find((row) => row.participant_id === participantId);
     if (!student) return null;
@@ -990,8 +1016,8 @@ export class ApiClient {
         .order("created_at", { ascending: false })
         .limit(10),
     ]);
-    if (insightsResult.error) throwSupabaseError("Load student signals failed", insightsResult.error);
-    if (safetyResult.error) throwSupabaseError("Load student safety failed", safetyResult.error);
+    if (insightsResult.error) throwSupabaseError(t.apiError.loadStudentSignals, insightsResult.error);
+    if (safetyResult.error) throwSupabaseError(t.apiError.loadStudentSafety, safetyResult.error);
 
     type InsightRowLite = { day: string; anomaly_score: number | null; graph_summary_json: Record<string, JsonValue> | null };
     const rows = (insightsResult.data ?? []) as InsightRowLite[];
@@ -1025,6 +1051,7 @@ export class ApiClient {
 
   /** Student-facing view of who looked at their data (issue #31). */
   static async listEducatorAccess(userId: string, limit = 20): Promise<StudentAccessRecord[]> {
+    if (readDemoFlag()) return demo.demoEducatorAccess();
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("educator_access_log")
@@ -1032,7 +1059,7 @@ export class ApiClient {
       .eq("participant_id", participant.id)
       .order("occurred_at", { ascending: false })
       .limit(limit);
-    if (error) throwSupabaseError("Load educator access log failed", error);
+    if (error) throwSupabaseError(t.apiError.loadEducatorAccessLog, error);
     type Row = { id: string; view_type: string; occurred_at: string; organizations?: { name: string } | { name: string }[] | null };
     return ((data ?? []) as Row[]).map((row) => {
       const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations;
@@ -1045,8 +1072,9 @@ export class ApiClient {
   // ------------------------------------------------------------------
 
   static async listOrgCounselors(orgId: string): Promise<OrgCounselor[]> {
+    if (readDemoFlag()) return demo.demoOrgCounselors();
     const { data, error } = await supabase.rpc("org_counselors", { target_org: orgId });
-    if (error) throwSupabaseError("Load counselors failed", error);
+    if (error) throwSupabaseError(t.apiError.loadCounselors, error);
     return (data ?? []) as OrgCounselor[];
   }
 
@@ -1056,6 +1084,10 @@ export class ApiClient {
     orgId: string,
     counselorUserId?: string | null,
   ): Promise<void> {
+    if (readDemoFlag()) {
+      demo.demoShareSummary(summary, counselorUserId ?? null);
+      return;
+    }
     const ownerUserId = await this.requireOwnerId();
     const participant = await this.getParticipant(userId);
     const { error } = await supabase.from("shared_support_summaries").insert({
@@ -1070,17 +1102,18 @@ export class ApiClient {
       date_range_to: summary.date_range.to,
       reflection_count: summary.reflection_count,
     });
-    if (error) throwSupabaseError("Share summary failed", error);
+    if (error) throwSupabaseError(t.apiError.shareSummary, error);
   }
 
   static async listMySummaryShares(userId: string): Promise<SharedSupportSummary[]> {
+    if (readDemoFlag()) return demo.demoMySummaryShares();
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("shared_support_summaries")
       .select("id, participant_id, org_id, counselor_user_id, summary_id, summary_json, evidence_event_ids, reflection_count, status, shared_at, revoked_at, organizations(name)")
       .eq("participant_id", participant.id)
       .order("shared_at", { ascending: false });
-    if (error) throwSupabaseError("Load summary shares failed", error);
+    if (error) throwSupabaseError(t.apiError.loadSummaryShares, error);
     type Row = SharedSupportSummary & { organizations?: { name: string } | { name: string }[] | null };
     return ((data ?? []) as Row[]).map((row) => {
       const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations;
@@ -1089,15 +1122,17 @@ export class ApiClient {
   }
 
   static async revokeSummaryShare(shareId: string): Promise<void> {
+    if (readDemoFlag()) return demo.demoRevokeShare(shareId);
     const { error } = await supabase
       .from("shared_support_summaries")
       .update({ status: "revoked" })
       .eq("id", shareId);
-    if (error) throwSupabaseError("Revoke summary share failed", error);
+    if (error) throwSupabaseError(t.apiError.revokeSummaryShare, error);
   }
 
   /** Counselor view: active shares for students passing all four gates. */
   static async counselorListSharedSummaries(): Promise<SharedSupportSummary[]> {
+    if (readDemoFlag()) return demo.demoSharedSummaries();
     const [sharesResult, roster] = await Promise.all([
       supabase
         .from("shared_support_summaries")
@@ -1105,7 +1140,7 @@ export class ApiClient {
         .order("shared_at", { ascending: false }),
       this.getCohortRoster(),
     ]);
-    if (sharesResult.error) throwSupabaseError("Load shared summaries failed", sharesResult.error);
+    if (sharesResult.error) throwSupabaseError(t.apiError.loadSharedSummaries, sharesResult.error);
     const codeByParticipant = new Map(roster.map((student) => [student.participant_id, student.code]));
     return ((sharesResult.data ?? []) as SharedSupportSummary[]).map((share) => ({
       ...share,
@@ -1114,6 +1149,7 @@ export class ApiClient {
   }
 
   static async getAuditTrails(userId: string, reflectionId?: string, limit = 200): Promise<ReflectionAuditTrail[]> {
+    if (readDemoFlag()) return demo.demoAuditTrails();
     const ownerUserId = await this.requireOwnerId();
     const participant = await this.getParticipant(userId);
     let query = supabase
@@ -1129,18 +1165,19 @@ export class ApiClient {
       query = query.eq("artifact_id", reflectionId);
     }
     const { data, error } = await query;
-    if (error) throwSupabaseError("Load audit trails failed", error);
+    if (error) throwSupabaseError(t.apiError.loadAuditTrails, error);
     return buildAuditTrails((data ?? []) as unknown as ModelRunRecord[]);
   }
 
   static async getExplanation(explanationId: RecordId): Promise<ExplanationPayload> {
+    if (readDemoFlag()) return demo.demoExplanation(explanationId);
     const { data, error } = await supabase
       .from("insights")
       .select("id, day, anomaly_score, z_scores_json, triggered_rules_json, baseline_deviation_json, changed_relations_json, protective_decline_json, uncertainty_json, evidence_summaries, graph_summary_json, score_breakdown_json, key_relations, extraction_provider, extraction_model, created_at, participants!insights_participant_id_fkey(code)")
       .eq("id", String(explanationId))
       .single();
 
-    if (error) throwSupabaseError("Load explanation failed", error);
+    if (error) throwSupabaseError(t.apiError.loadExplanation, error);
     return toExplanation(data as unknown as InsightRow, participantCode(data, ""));
   }
 
@@ -1149,6 +1186,7 @@ export class ApiClient {
   }
 
   static async getAnomaly(userId: string): Promise<AnomalyResult> {
+    if (readDemoFlag()) return demo.demoAnomaly();
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("insights")
@@ -1159,11 +1197,12 @@ export class ApiClient {
       .limit(1)
       .single();
 
-    if (error) throwSupabaseError("Load anomaly failed", error);
+    if (error) throwSupabaseError(t.apiError.loadAnomaly, error);
     return toAnomaly(data as unknown as InsightRow, userId);
   }
 
   static async getGraphSnapshots(userId: string, limit = 12): Promise<GraphSnapshotResponse[]> {
+    if (readDemoFlag()) return demo.demoGraphSnapshots();
     const participant = await this.getParticipant(userId);
     const { data, error } = await supabase
       .from("graph_snapshots")
@@ -1173,7 +1212,7 @@ export class ApiClient {
       .order("created_at", { ascending: true })
       .limit(limit);
 
-    if (error) throwSupabaseError("Load graph snapshots failed", error);
+    if (error) throwSupabaseError(t.apiError.loadGraphSnapshots, error);
     return (data ?? []).map((row) => toGraphSnapshot(row as unknown as GraphSnapshotRow, userId));
   }
 }

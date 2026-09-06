@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { AlertCircle, ArrowLeft, Loader2, ShieldAlert } from "lucide-react";
 
 import { ApiClient } from "@/api/client";
+import { t } from "@/lib/i18n";
 import { AttentionChip, BaselineContextLine, NonDiagnosticNotice, ObservationLine, panel } from "@/components/educator/StatusChips";
 
 type Overview = Awaited<ReturnType<typeof ApiClient.getStudentOverviewForEducator>>;
@@ -23,7 +24,7 @@ export default function EducatorStudentPage() {
       .then((next) => { if (!cancelled) setOverview(next); })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load student overview.");
+        setError(err instanceof Error ? err.message : t.educator.student.loadFailed);
       });
     return () => { cancelled = true; };
   }, [participantId]);
@@ -37,8 +38,8 @@ export default function EducatorStudentPage() {
   if (overview === null) {
     return (
       <section className="px-8 py-10 text-center text-sm" style={{ ...panel, color: "var(--ink-mid)" }}>
-        This student is not sharing derived signals with you (no active roster link and consent).
-        <div className="mt-3"><Link href="/educator/roster" style={{ color: "var(--gold-deep)", fontWeight: 600 }}>Back to roster</Link></div>
+        {t.educator.student.notShared}
+        <div className="mt-3"><Link href="/educator/roster" style={{ color: "var(--gold-deep)", fontWeight: 600 }}>{t.educator.student.backToRoster}</Link></div>
       </section>
     );
   }
@@ -48,12 +49,12 @@ export default function EducatorStudentPage() {
   return (
     <div className="space-y-5">
       <Link href="/educator/roster" className="inline-flex items-center gap-1 text-sm" style={{ color: "var(--ink-faint)" }}>
-        <ArrowLeft className="h-4 w-4" />Roster
+        <ArrowLeft className="h-4 w-4" />{t.educator.student.rosterCrumb}
       </Link>
 
       <section className="flex flex-wrap items-center justify-between gap-3 px-7 py-5" style={panel}>
         <div>
-          <div className="inscription mb-1">Student overview · derived data only</div>
+          <div className="inscription mb-1">{t.educator.student.subtitle}</div>
           <div className="text-xl font-bold" style={{ color: "var(--ink)" }}>
             {student.display_name ?? student.code}
             <span className="ml-2 font-mono text-xs font-normal" style={{ color: "var(--ink-faint)" }}>{student.code}</span>
@@ -72,15 +73,17 @@ export default function EducatorStudentPage() {
       {safetyRuns.length ? (
         <section className="px-7 py-5" style={{ ...panel, borderLeft: "3px solid var(--terracotta)" }}>
           <div className="mb-2 flex items-center gap-2 font-semibold" style={{ color: "var(--sienna)" }}>
-            <ShieldAlert className="h-4 w-4" />Safety flags
+            <ShieldAlert className="h-4 w-4" />{t.educator.student.safetyFlags}
           </div>
           <ul className="space-y-1 text-sm" style={{ color: "var(--ink-mid)" }}>
             {safetyRuns.map((run) => (
-              <li key={run.occurred_at}>{new Date(run.occurred_at).toLocaleDateString()} · {run.level}</li>
+              <li key={run.occurred_at}>
+                {new Date(run.occurred_at).toLocaleDateString("ja-JP")} · {t.safety.level[run.level] ?? run.level}
+              </li>
             ))}
           </ul>
           <p className="mt-2 text-xs" style={{ color: "var(--ink-faint)" }}>
-            Route crisis flags through your school&apos;s designated support staff — see the Alerts tab for the protocol.
+            {t.educator.student.safetyRouting}
           </p>
         </section>
       ) : null}
@@ -88,25 +91,25 @@ export default function EducatorStudentPage() {
       <div className="grid gap-5 md:grid-cols-2">
         <section style={panel}>
           <header className="px-6 py-4" style={{ borderBottom: "1px solid var(--limestone)" }}>
-            <div className="inscription">Recent signals</div>
+            <div className="inscription">{t.educator.student.recentSignals}</div>
           </header>
           {signals.length ? (
             <ul>
               {signals.slice(0, 10).map((signal) => (
                 <li key={signal.day} className="flex items-center justify-between px-6 py-2.5 text-sm" style={{ borderBottom: "1px solid var(--limestone)", color: "var(--ink-mid)" }}>
-                  <span>{new Date(signal.day).toLocaleDateString()}</span>
+                  <span>{new Date(signal.day).toLocaleDateString("ja-JP")}</span>
                   <span className="font-mono">{Number.isFinite(signal.score) ? signal.score!.toFixed(2) : "—"}</span>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="px-6 py-6 text-sm italic" style={{ color: "var(--ink-faint)" }}>No reflections yet.</p>
+            <p className="px-6 py-6 text-sm italic" style={{ color: "var(--ink-faint)" }}>{t.educator.student.noEntries}</p>
           )}
         </section>
 
         <section style={panel}>
           <header className="px-6 py-4" style={{ borderBottom: "1px solid var(--limestone)" }}>
-            <div className="inscription">Recurring themes</div>
+            <div className="inscription">{t.educator.student.recurringThemes}</div>
           </header>
           {themes.length ? (
             <ul>
@@ -118,18 +121,16 @@ export default function EducatorStudentPage() {
               ))}
             </ul>
           ) : (
-            <p className="px-6 py-6 text-sm italic" style={{ color: "var(--ink-faint)" }}>No recurring themes yet.</p>
+            <p className="px-6 py-6 text-sm italic" style={{ color: "var(--ink-faint)" }}>{t.educator.student.noThemes}</p>
           )}
           <p className="px-6 py-4 text-xs leading-relaxed" style={{ color: "var(--ink-faint)", borderTop: "1px solid var(--limestone)" }}>
-            Theme labels are derived, non-verbatim extractions. For a fuller picture, the student can choose to
-            share a counselor-ready summary from their own Summary page — you cannot generate it for them.
+            {t.educator.student.themesNote}
           </p>
         </section>
       </div>
 
       <p className="px-1 text-xs" style={{ color: "var(--ink-faint)" }}>
-        This view was recorded in the access log and is visible to the student. Consent can be revoked by the
-        student at any time.
+        {t.educator.student.accessLogged}
       </p>
       <NonDiagnosticNotice />
     </div>

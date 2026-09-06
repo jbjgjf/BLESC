@@ -43,7 +43,8 @@ type ConversationRecallRow = {
   created_at: string;
 };
 
-const CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || process.env.LLM_MODEL_NAME || "gpt-4.1-mini";
+const CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || process.env.LLM_MODEL_NAME || "gpt-6-astra";
+const CHAT_REASONING_EFFORT = process.env.OPENAI_CHAT_REASONING_EFFORT || "medium";
 const PIPELINE_VERSION = "conversation-recall-30-v1";
 const REQUIRED_USER_TURNS = 6;
 const MAX_RECALL_MESSAGES = 30;
@@ -197,6 +198,7 @@ async function callOpenAI(message: string, payload: ChatPayload, recentMessages:
       body: JSON.stringify({
         model: CHAT_MODEL,
         store: false,
+        reasoning: { effort: CHAT_REASONING_EFFORT },
         instructions,
         input: [
           ...recentMessages.slice(-12).map((item) => ({

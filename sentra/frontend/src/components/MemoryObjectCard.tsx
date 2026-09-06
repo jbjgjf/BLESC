@@ -1,5 +1,6 @@
 import { AlertTriangle, Repeat } from "lucide-react";
 import { ConversationMemoryObject } from "@/api/models";
+import { t } from "@/lib/i18n";
 
 const displayFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
 
@@ -39,7 +40,7 @@ export function MemoryObjectCard({ memoryObject }: { memoryObject: ConversationM
         {memoryObject.recurrence_count > 0 && (
           <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--ink-faint)" }}>
             <Repeat className="h-3 w-3" />
-            seen {memoryObject.recurrence_count + 1}x
+            {t.memoryObject.seen(memoryObject.recurrence_count + 1)}
           </span>
         )}
       </div>
@@ -56,7 +57,7 @@ export function MemoryObjectCard({ memoryObject }: { memoryObject: ConversationM
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]" style={{ color: "var(--ink-faint)" }}>
-        <span>Importance {importancePercent}%</span>
+        <span>{t.memoryObject.importance(importancePercent)}</span>
         <span>{confidenceLabel(memoryObject.confidence_score)}</span>
       </div>
 

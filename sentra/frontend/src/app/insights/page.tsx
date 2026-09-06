@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { readBaselineProvenance, rampUpMessage } from "@/lib/baseline";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import styles from "./insights.module.css";
+import { t } from "@/lib/i18n";
 
 function formatRecord(value: unknown): string {
   return JSON.stringify(value ?? {}, null, 2);
@@ -132,7 +133,7 @@ export default function Insights() {
                   {explanation.triggered_rules_json.map((rule) => (
                     <div key={rule.rule} className={styles.rule}>
                       <div className="bl-row-between" style={{ flexWrap: "wrap", gap: 8 }}>
-                        <span className="bl-h3">{rule.rule.replaceAll("_", " ")}</span>
+                        <span className="bl-h3">{t.signal.ruleName[rule.rule] ?? rule.rule}</span>
                         <span className="bl-chip bl-chip--tint">重み {rule.weight.toFixed(2)}</span>
                       </div>
                       <p className="bl-body" style={{ fontSize: "0.87rem", marginTop: 5 }}>
