@@ -15,6 +15,7 @@ import {
   getDebugFallbackData,
   CATEGORY_COLORS,
 } from "./graphAdapter";
+import { t } from "@/lib/i18n";
 
 type ForceGraphBoundaryProps = Record<string, unknown> & {
   ref?: MutableRefObject<ForceGraphMethods | null>;
@@ -27,12 +28,15 @@ const ForceGraph3D = dynamic(
 
 const ENABLE_GRAPH_DEBUG = process.env.NEXT_PUBLIC_ENABLE_GRAPH_DEBUG === "true";
 
+// Keyed by the stored category so the counts below can match on it. The label
+// is a translation of that key, not a second identifier — comparing against the
+// label is what left every legend count at zero.
 const CATEGORY_LEGEND = [
-  { label: "気持ち", color: CATEGORY_COLORS.State },
-  { label: "きっかけ", color: CATEGORY_COLORS.Trigger },
-  { label: "行動", color: CATEGORY_COLORS.Behavior },
-  { label: "出来事", color: CATEGORY_COLORS.Event },
-  { label: "支え", color: CATEGORY_COLORS.Protective },
+  { category: "State", label: t.graph.category.State, color: CATEGORY_COLORS.State },
+  { category: "Trigger", label: t.graph.category.Trigger, color: CATEGORY_COLORS.Trigger },
+  { category: "Behavior", label: t.graph.category.Behavior, color: CATEGORY_COLORS.Behavior },
+  { category: "Event", label: t.graph.category.Event, color: CATEGORY_COLORS.Event },
+  { category: "Protective", label: t.graph.category.Protective, color: CATEGORY_COLORS.Protective },
 ];
 
 const MODE_COPY: Record<GraphMode, { label: string; title: string; description: string; canvasHint: string }> = {
@@ -246,7 +250,7 @@ export function GraphViewer3D({
   const categoryCounts = useMemo(
     () => CATEGORY_LEGEND.map((cat) => ({
       ...cat,
-      count: graphData.nodes.filter((n) => n.category === cat.label).length,
+      count: graphData.nodes.filter((n) => n.category === cat.category).length,
     })),
     [graphData.nodes],
   );
@@ -356,10 +360,10 @@ export function GraphViewer3D({
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600">
-          <span className="rounded border border-slate-200 bg-white px-3 py-1">View: {modeCopy.title}</span>
+          <span className="rounded border border-slate-200 bg-white px-3 py-1">{t.graph.view(modeCopy.title)}</span>
           <span className="rounded border border-slate-200 bg-white px-3 py-1">{temporalLabel}</span>
           <span className="rounded border border-slate-200 bg-white px-3 py-1">
-            {graphData.nodes.length} entities · {graphData.links.length} predicates
+            {t.graph.counts(graphData.nodes.length, graphData.links.length)}
           </span>
           <span className="rounded border border-slate-200 bg-white px-3 py-1">{modelLabel}</span>
           <span className="rounded border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800">
@@ -389,7 +393,7 @@ export function GraphViewer3D({
                 onClick={() => setFocusNodeId(null)}
                 className="ml-2 rounded bg-cyan-800/60 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-cyan-50 hover:bg-cyan-700 transition"
               >
-                Clear
+                {t.graph.clearFocus}
               </button>
             </div>
           )}
@@ -434,7 +438,7 @@ export function GraphViewer3D({
               />
             ) : (
               <div className="flex h-full items-center justify-center p-8 text-center text-sm text-white/20">
-                No ontology graph nodes match. Clear filters or submit an observation to render.
+                {t.graph.emptyCanvas}
               </div>
             )}
           </div>
@@ -465,7 +469,7 @@ export function GraphViewer3D({
               >
                 <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
                   <Info className="h-4 w-4 text-cyan-600" />
-                  Entity Inspector
+                  {t.graph.inspectorTitle}
                 </div>
                 {collapsedSections.inspector ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronUp className="h-4 w-4 text-slate-400" />}
               </button>
@@ -493,10 +497,10 @@ export function GraphViewer3D({
                       </div>
 
                       <div className="rounded-2xl bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
-                        <div>Category: {selection.node.category}</div>
-                        <div>Intensity: {selection.node.intensity.toFixed(2)}</div>
-                        <div>Confidence: {selection.node.confidence.toFixed(2)}</div>
-                        {selection.node.frequency && <div>Frequency: {selection.node.frequency}× across {selection.node.allDays?.length} days</div>}
+                        <div>{t.graph.inspectorCategory(t.graph.category[selection.node.category] ?? selection.node.category)}</div>
+                        <div>{t.graph.inspectorIntensity(selection.node.intensity.toFixed(2))}</div>
+                        <div>{t.graph.inspectorConfidence(selection.node.confidence.toFixed(2))}</div>
+                        {selection.node.frequency && <div>{t.graph.inspectorFrequency(selection.node.frequency, selection.node.allDays?.length ?? 0)}</div>}
                       </div>
 
                       <div>
@@ -514,7 +518,7 @@ export function GraphViewer3D({
                             onClick={() => toggleSection("inspector_history")}
                             className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 hover:text-slate-700 transition"
                           >
-                            <span>Appearance History ({selection.node.allDays.length})</span>
+                            <span>{t.graph.appearanceHistory(selection.node.allDays.length)}</span>
                             {collapsedSections.inspector_history ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" /> : <ChevronUp className="h-3.5 w-3.5 text-slate-400" />}
                           </button>
                           {!collapsedSections.inspector_history && (
@@ -523,7 +527,7 @@ export function GraphViewer3D({
                                 <div key={dayString} className="rounded bg-slate-50 p-2 border border-slate-100">
                                   <div className="font-semibold text-slate-600">{dayString}</div>
                                   <div className="mt-0.5 text-slate-400">
-                                    Intensity: {selection.node.intensity.toFixed(2)}
+                                    {t.graph.inspectorIntensity(selection.node.intensity.toFixed(2))}
                                   </div>
                                 </div>
                               ))}
@@ -559,14 +563,14 @@ export function GraphViewer3D({
                       <div>まとめた日数：{orderedSnapshots.length}</div>
                       <div>種類の数：{graphData.nodes.length}</div>
                       <div>関係の数：{graphData.links.length}</div>
-                      <div>Span: {orderedSnapshots[0]?.day ?? "—"} → {orderedSnapshots.at(-1)?.day ?? "—"}</div>
+                      <div>{t.graph.span(orderedSnapshots[0]?.day ?? "—", orderedSnapshots.at(-1)?.day ?? "—")}</div>
                     </>
                   ) : (
                     <>
-                      <div>Snapshots: {orderedSnapshots.length}</div>
+                      <div>{t.graph.snapshots(orderedSnapshots.length)}</div>
                       <div>比較のもと：{baselineSnapshot?.day ?? "—"}</div>
                       <div>いま表示中：{activeSnapshot?.day ?? "—"}</div>
-                      <div>Source: {usingFallback ? "debug fallback" : "live snapshots"}</div>
+                      <div>{t.graph.source(usingFallback ? t.graph.sourceFallback : t.graph.sourceLive)}</div>
                     </>
                   )}
                 </div>
@@ -631,15 +635,15 @@ export function GraphViewer3D({
               >
                 <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
                   <Route className="h-4 w-4 text-cyan-600" />
-                  Edge Semantics
+                  {t.graph.edgeSemanticsTitle}
                 </div>
                 {collapsedSections.edges ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronUp className="h-4 w-4 text-slate-400" />}
               </button>
               {!collapsedSections.edges && (
                 <div className="border-t border-slate-100 p-5 pt-4 space-y-2 text-sm text-slate-600">
-                  <p><strong>Arrow</strong> = relation direction from source to target.</p>
-                  <p><strong>Color</strong> = relation type (causes, escalates, buffers, avoids, co-occurs, precedes).</p>
-                  <p><strong>Width</strong> = confidence in snapshot mode; recurrence in concept mode.</p>
+                  <p><strong>{t.graph.edgeArrow}</strong>{t.graph.edgeArrowBody}</p>
+                  <p><strong>{t.graph.edgeColor}</strong>{t.graph.edgeColorBody}</p>
+                  <p><strong>{t.graph.edgeWidth}</strong>{t.graph.edgeWidthBody}</p>
                 </div>
               )}
             </div>
@@ -653,16 +657,16 @@ export function GraphViewer3D({
               >
                 <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
                   <Cpu className="h-4 w-4 text-cyan-600" />
-                  Construction Pipeline
+                  {t.graph.pipelineTitle}
                 </div>
                 {collapsedSections.pipeline ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronUp className="h-4 w-4 text-slate-400" />}
               </button>
               {!collapsedSections.pipeline && (
                 <div className="border-t border-slate-100 p-5 pt-4 space-y-2 text-sm text-slate-600">
-                  <p><strong>1. Extract</strong> observations and candidate relations from text.</p>
-                  <p><strong>2. Validate</strong> against BLESC ontology rules.</p>
-                  <p><strong>3. Store</strong> snapshot with day and model metadata.</p>
-                  <p><strong>4. Render</strong> layout structure.</p>
+                  <p><strong>{t.graph.pipelineStep1}</strong> {t.graph.pipelineStep1Body}</p>
+                  <p><strong>{t.graph.pipelineStep2}</strong> {t.graph.pipelineStep2Body}</p>
+                  <p><strong>{t.graph.pipelineStep3}</strong> {t.graph.pipelineStep3Body}</p>
+                  <p><strong>{t.graph.pipelineStep4}</strong> {t.graph.pipelineStep4Body}</p>
                 </div>
               )}
             </div>

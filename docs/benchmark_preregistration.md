@@ -240,6 +240,12 @@ Any deviation is recorded here with a reason and a date. Never a silent edit.
 | 2026-08-13 | Shared tokeniser stopped counting 動詞-非自立可能 verbs following a 接続助詞; `PIPELINE_VERSION` → `cognitive-probe-v4`. | 「戻ってきた」 and 「よくなってきた」 both yielded lemma 来る, so a lexical baseline matched two sentences sharing only the 〜てくる aspect construction and scored 0.77 on a case built to be lexically unsolvable, while its English pair scored 0.0. Grammar was being counted as vocabulary. Affects `cognitive_probe` densities (token_count is their denominator), hence the version bump; v3 and v4 values are not comparable. |
 | 2026-08-13 | English closed-class words filtered for **retrieval only**, not in `app.analytics.tokenize`. | UniDic drops Japanese particles by part of speech and nothing dropped the English equivalents, so `keyword` was matching on `it` / `and` / `this` in every English case — the two languages were filtered asymmetrically and any ja/en comparison would have measured that. It is not applied in the shared tokeniser because `cognitive_probe`'s primary signal **is** first-person pronoun density (Rude et al. 2004); stripping `i` / `me` / `my` there would delete the measurement. |
 
+## How the labelling is actually run
+
+[`benchmark_labelling_runbook.md`](benchmark_labelling_runbook.md) — the
+commands, what a rater is and is not shown, and how a signed-off label reaches a
+result. It follows this document; where the two disagree, this one wins.
+
 ## References
 
 - Epic #73; issues #86, #87, #88, #89, #90; roadmap #102.

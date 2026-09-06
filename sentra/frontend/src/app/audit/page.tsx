@@ -6,6 +6,7 @@ import type { AiAuditEvent, ReflectionAuditTrail } from "@/api/models";
 import { useAuth } from "@/lib/auth";
 import { Icon } from "@/components/ui/Icon";
 import styles from "./audit.module.css";
+import { t } from "@/lib/i18n";
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   completed:  { label: "完了",     className: "bl-chip--calm" },
@@ -55,7 +56,7 @@ function AuditEventRow({ event }: { event: AiAuditEvent }) {
         )}
         {typeof event.temperature === "number" && (
           <div>
-            <dt>Temperature</dt>
+            <dt>{t.audit.temperature}</dt>
             <dd>{event.temperature}</dd>
           </div>
         )}
@@ -72,12 +73,14 @@ function AuditEventRow({ event }: { event: AiAuditEvent }) {
           <div className="bl-row" style={{ gap: 7 }}>
             <Icon name="shield" size={17} fill />
             <span style={{ fontWeight: 700 }}>
-              安全性の判定 ・ {event.safety_decision.risk_level}
+              安全性の判定 ・ {t.safety.level[event.safety_decision.risk_level] ?? event.safety_decision.risk_level}
               {event.safety_decision.escalation_required ? " ・ エスカレーションが必要" : ""}
             </span>
           </div>
           {event.safety_decision.reasons.length > 0 && (
-            <p style={{ marginTop: 5 }}>根拠：{event.safety_decision.reasons.join("、")}</p>
+            <p style={{ marginTop: 5 }}>
+              根拠：{event.safety_decision.reasons.map((reason) => t.safety.reason[reason] ?? reason).join("、")}
+            </p>
           )}
           {event.safety_decision.policy_refs.length > 0 && (
             <p style={{ marginTop: 3, opacity: 0.8 }}>

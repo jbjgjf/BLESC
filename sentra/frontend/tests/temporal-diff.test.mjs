@@ -10,6 +10,7 @@ import {
   relationShiftSummary,
   usesLegacyPositionalIds,
 } from "../src/lib/temporalDiff.ts";
+import { t } from "../src/lib/i18n/index.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CONTRACT = JSON.parse(
@@ -58,7 +59,9 @@ describe("temporal diff — properties the production writer violated", () => {
     const first = relationShiftSummary(buildTemporalDiff(day1, { nodes: [], relations: [] }), false);
     const unchanged = relationShiftSummary(buildTemporalDiff(day1, day1), true);
     assert.notEqual(first, unchanged);
-    assert.match(first, /no previous day/);
+    // Asserted through the catalogue rather than against a literal: the point
+    // is that a first entry says so, not that it says so in one language.
+    assert.equal(first, t.extraction.firstSnapshot);
   });
 
   it("is symmetric: what one day adds, reversing the pair removes", () => {
