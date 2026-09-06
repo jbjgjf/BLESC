@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { openAIKey, requireUser } from "@/lib/server/api";
+import { serviceRoleClient } from "@/lib/server/supabaseWriter";
+import { COLLECTION_ONLY_MESSAGE, collectionOnlyForUser } from "@/lib/server/collectionMode";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -32,6 +34,14 @@ export async function POST(request: NextRequest) {
   // OpenAI quota that chat and voice depend on.
   const auth = await requireUser(request);
   if ("error" in auth) return auth.error;
+
+  // A pilot participant's voice recording is not sent for transcription while
+  // their collection window is open (#165). Checked before the body is even
+  // read, so the audio is never held in this process for a request that will
+  // not proceed.
+  if (await collectionOnlyForUser(serviceRoleClient(), auth.user.id)) {
+    return NextResponse.json({ detail: COLLECTION_ONLY_MESSAGE }, { status: 403 });
+  }
 
   let formData: FormData;
   try {

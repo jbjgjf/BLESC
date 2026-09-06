@@ -4,6 +4,13 @@ import type { SafetyAssessment } from "@/api/models";
 import { routesToRealPerson } from "@/lib/safety-assessment";
 import { assessConversation, recordSafetyAudit, RISK_DIRECTIVES, SAFETY_GUARDRAILS } from "@/lib/server/safety";
 import { fetchWithTimeout, isMissingTable, jsonError, JsonValue, openAIKey, providerError, requireUser, sha256 } from "@/lib/server/api";
+import { serviceRoleClient } from "@/lib/server/supabaseWriter";
+import {
+  COLLECTION_ONLY_MESSAGE,
+  COLLECTION_ONLY_PROVIDER,
+  COLLECTION_ONLY_STATUS,
+  collectionOnlyForParticipant,
+} from "@/lib/server/collectionMode";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -164,7 +171,31 @@ async function buildRecall(supabase: SupabaseClient, participantId: string, owne
   return toRecall(inserted.data as ConversationRecallRow);
 }
 
-async function callOpenAI(message: string, payload: ChatPayload, recentMessages: ChatMessageRow[], safety: SafetyAssessment) {
+async function callOpenAI(
+  message: string,
+  payload: ChatPayload,
+  recentMessages: ChatMessageRow[],
+  safety: SafetyAssessment,
+  collectionOnly: boolean,
+) {
+  // Withheld before the key is read, so no configuration reaches the network
+  // for a participant inside a collection window (#165).
+  //
+  // The caller still applies `withSafetyFloor` to what comes back, and the
+  // safety assessment that feeds it is entirely local (lexicon plus this
+  // participant's own recent rows). So a student who discloses risk during the
+  // study still gets crisis routing — what they do not get is a generated
+  // reply. Refusing the whole request instead would have dropped the one part
+  // of this surface that must never be unavailable.
+  if (collectionOnly) {
+    return {
+      answer: COLLECTION_ONLY_MESSAGE,
+      provider: COLLECTION_ONLY_PROVIDER,
+      status: COLLECTION_ONLY_STATUS,
+      error_message: null,
+    };
+  }
+
   const key = openAIKey();
   if (!key || process.env.USE_MOCK_LLM?.toLowerCase() === "true") {
     return {
@@ -286,7 +317,8 @@ export async function POST(request: NextRequest) {
   // Assess the window, not just this turn: risk disclosed a few turns ago must
   // keep shaping the reply even when the latest message reads as small talk.
   const safety = await assessConversation(auth.client, participant.id, "chat", recentMessages, message);
-  const llm = await callOpenAI(message, payload, recentMessages, safety);
+  const collectionOnly = await collectionOnlyForParticipant(serviceRoleClient(), participant.id);
+  const llm = await callOpenAI(message, payload, recentMessages, safety, collectionOnly);
   const answer = withSafetyFloor(llm.answer, safety);
 
   const chatSession = await auth.client

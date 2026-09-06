@@ -6,7 +6,13 @@ import {
   type ExtractionPayload,
 } from "@/lib/extraction";
 import { buildTemporalDiff, EMPTY_SNAPSHOT } from "@/lib/temporalDiff";
-import { writeEntryResult } from "@/lib/server/supabaseWriter";
+import { serviceRoleClient, writeEntryResult } from "@/lib/server/supabaseWriter";
+import {
+  COLLECTION_ONLY_PROVIDER,
+  COLLECTION_ONLY_STATUS,
+  collectionOnlyExtraction,
+  collectionOnlyForParticipant,
+} from "@/lib/server/collectionMode";
 import { recordSubmissionFailure } from "@/lib/server/submissionFailures";
 import { jsonError, requireUser } from "@/lib/server/api";
 
@@ -114,7 +120,22 @@ function outputText(response: Record<string, unknown>): string | null {
   return null;
 }
 
-async function extractWithOpenAI(entryText: string): Promise<{ extraction: ExtractionPayload; provider: string; model: string; status: string }> {
+async function extractWithOpenAI(
+  entryText: string,
+  collectionOnly: boolean,
+): Promise<{ extraction: ExtractionPayload; provider: string; model: string; status: string }> {
+  // The gate is here, before the key is even read, so that a participant inside
+  // a collection window cannot reach the network through this function under
+  // any configuration (#165).
+  if (collectionOnly) {
+    return {
+      extraction: collectionOnlyExtraction(),
+      provider: COLLECTION_ONLY_PROVIDER,
+      model: COLLECTION_ONLY_STATUS,
+      status: COLLECTION_ONLY_STATUS,
+    };
+  }
+
   const key = secretKey();
   if (!key) {
     return { extraction: fallbackExtraction(entryText), provider: "deterministic", model: "fallback", status: "missing_key" };
@@ -179,8 +200,26 @@ async function extractWithOpenAI(entryText: string): Promise<{ extraction: Extra
   }
 }
 
-async function embeddingArtifact(contentKind: string, content: string, metadata: Record<string, JsonValue>) {
+async function embeddingArtifact(
+  contentKind: string,
+  content: string,
+  metadata: Record<string, JsonValue>,
+  collectionOnly: boolean,
+) {
   const contentHash = await sha256(content);
+  if (collectionOnly) {
+    // The hash is still computed and stored: it is derived locally, it does not
+    // leave, and it is what lets a later batch run prove it embedded the same
+    // text that was collected.
+    return {
+      content_kind: contentKind,
+      embedding_model: COLLECTION_ONLY_STATUS,
+      vector_json: [],
+      content_hash: contentHash,
+      metadata_json: metadata,
+    };
+  }
+
   const key = secretKey();
   if (!key || !content.trim()) {
     return {
@@ -261,10 +300,16 @@ export async function POST(request: NextRequest) {
   const participant = participantResult.data as { id: string } | null;
   if (!participant) return jsonError("Participant was not found.", 404);
 
+  // Is this participant inside an open collection window? Everything that would
+  // send their text to a third party consults this one answer (#165). Resolved
+  // here, before any of it, so there is a single place to read and a single
+  // place to get wrong.
+  const collectionOnly = await collectionOnlyForParticipant(serviceRoleClient(), participant.id);
+
   const createdAt = isoNow();
   const idSeed = await sha256(`${userId}:${createdAt}:${entryText}`);
   const entryId = `prod_${idSeed.slice(0, 16)}`;
-  const { extraction, provider, model, status } = await extractWithOpenAI(entryText);
+  const { extraction, provider, model, status } = await extractWithOpenAI(entryText, collectionOnly);
   const safetyAssessment = assessSafety(entryText);
   const day = createdAt.slice(0, 10);
   const graphSummary = {
@@ -279,9 +324,9 @@ export async function POST(request: NextRequest) {
   const telemetryHash = await sha256(JSON.stringify(payload.telemetry ?? {}));
   const consentHash = await sha256(JSON.stringify(payload.consent ?? {}));
   const artifacts = await Promise.all([
-    embeddingArtifact("journal_entry", journalText, { pipeline_version: PIPELINE_VERSION, field_name: "journal_entry" }),
-    embeddingArtifact("first_recall_30", recallText, { pipeline_version: PIPELINE_VERSION, field_name: "first_recall_30" }),
-    embeddingArtifact("combined_submission", entryText, { pipeline_version: PIPELINE_VERSION, field_name: "combined_submission" }),
+    embeddingArtifact("journal_entry", journalText, { pipeline_version: PIPELINE_VERSION, field_name: "journal_entry" }, collectionOnly),
+    embeddingArtifact("first_recall_30", recallText, { pipeline_version: PIPELINE_VERSION, field_name: "first_recall_30" }, collectionOnly),
+    embeddingArtifact("combined_submission", entryText, { pipeline_version: PIPELINE_VERSION, field_name: "combined_submission" }, collectionOnly),
   ]);
 
   const computed = {
@@ -444,7 +489,11 @@ export async function POST(request: NextRequest) {
     },
   );
 
-  const body = { ...computed, supabase_sync: supabaseSync };
+  // `collection_only` tells the client why there is no graph to show. Without
+  // it the journal screen cannot distinguish "the study withheld extraction"
+  // from "extraction failed", and would show the failure copy for a submission
+  // that worked exactly as designed.
+  const body = { ...computed, supabase_sync: supabaseSync, collection_only: collectionOnly };
   const durable = supabaseSync.status === "written" && Boolean(supabaseSync.entry_id);
 
   if (!durable) {

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchWithTimeout, jsonError, openAIKey, providerError, requireUser, sha256 } from "@/lib/server/api";
+import { serviceRoleClient } from "@/lib/server/supabaseWriter";
+import { COLLECTION_ONLY_MESSAGE, collectionOnlyForUser } from "@/lib/server/collectionMode";
 import { SAFETY_GUARDRAILS } from "@/lib/server/safety";
 
 export const runtime = "nodejs";
@@ -16,6 +18,14 @@ const ALLOWED_VOICES = new Set(["alloy", "ash", "ballad", "coral", "echo", "sage
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
   if ("error" in auth) return auth.error;
+
+  // No realtime session is minted for a participant inside a collection window
+  // (#165). This route hands the browser a client secret that talks to OpenAI
+  // directly, so refusing here is the only place the connection can be stopped
+  // — once the secret is issued, nothing server-side sees the audio again.
+  if (await collectionOnlyForUser(serviceRoleClient(), auth.user.id)) {
+    return jsonError(COLLECTION_ONLY_MESSAGE, 403);
+  }
 
   const key = openAIKey();
   if (!key || process.env.USE_MOCK_LLM?.toLowerCase() === "true") {
