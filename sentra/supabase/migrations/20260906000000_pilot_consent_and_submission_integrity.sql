@@ -152,11 +152,21 @@ grant select on public.entries to research_reader;
 -- job that enforces it. Scheduled by whatever runs cron for the deployment
 -- (pg_cron, a Supabase scheduled function, or an external worker) — the
 -- function is the contract, not the scheduler.
+-- SECURITY INVOKER, not DEFINER.
+--
+-- The callers that need it — the service-role route handler and whatever runs
+-- cron — already bypass RLS, so definer rights buy nothing; what they would buy
+-- is a function that ignores RLS for *whoever* can reach it. As an invoker
+-- function, a caller who should not have been able to reach it at all is still
+-- confined by `entries_update_own` to their own rows.
+--
+-- `pg_temp` is named explicitly and last. Left out of a search_path it is
+-- searched FIRST, which lets a caller shadow `public.entries` with a temp table.
 create or replace function public.purge_expired_raw_text()
 returns integer
 language plpgsql
-security definer
-set search_path = public
+security invoker
+set search_path = public, pg_temp
 as $$
 declare
   purged integer;
@@ -174,15 +184,34 @@ begin
 end;
 $$;
 
-revoke all on function public.purge_expired_raw_text() from public;
+-- Revoking from PUBLIC is NOT enough on Supabase.
+--
+-- `alter default privileges in schema public grant all on functions to
+-- postgres, anon, authenticated, service_role` is part of a stock project, so
+-- every new function in `public` is created with EXPLICIT grants to `anon` and
+-- `authenticated`. `revoke ... from public` does not touch an explicit grant,
+-- and the function stays callable over PostgREST RPC by anyone holding the
+-- anon key. Each role has to be named — which is why every other privileged
+-- function in this schema revokes from `anon` separately (see
+-- 20260715090000_educator_oversight_foundations.sql:139).
+revoke execute on function public.purge_expired_raw_text() from public, anon, authenticated;
+grant execute on function public.purge_expired_raw_text() to service_role;
 
 -- Revocation. Deleting the stored text is the point of revoking, so it is one
 -- call and not an application-level loop that can be interrupted half way.
+-- Same reasoning as above, and it matters more here: this one takes the
+-- participant to erase straight from its caller. As a definer function reachable
+-- by `authenticated`, it would let any signed-in user destroy any participant's
+-- retained journal text by id — and participant ids are visible to educator
+-- accounts through `overseen_participants()`. As an invoker function it is
+-- confined by `entries_update_own` to the caller's own rows even if the grants
+-- below are ever loosened, and the route that legitimately calls it holds the
+-- service-role key, which bypasses RLS on its own.
 create or replace function public.purge_raw_text_for_participant(target_participant uuid)
 returns integer
 language plpgsql
-security definer
-set search_path = public
+security invoker
+set search_path = public, pg_temp
 as $$
 declare
   purged integer;
@@ -199,7 +228,8 @@ begin
 end;
 $$;
 
-revoke all on function public.purge_raw_text_for_participant(uuid) from public;
+revoke execute on function public.purge_raw_text_for_participant(uuid) from public, anon, authenticated;
+grant execute on function public.purge_raw_text_for_participant(uuid) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- 4a. Follow-up answers (#133)
@@ -255,6 +285,7 @@ create index if not exists followup_responses_participant_idx
 
 alter table public.followup_responses enable row level security;
 
+drop policy if exists "followup_responses_own_all" on public.followup_responses;
 create policy "followup_responses_own_all" on public.followup_responses
 for all to authenticated
 using ((select auth.uid()) = owner_user_id)
@@ -297,6 +328,7 @@ alter table public.submission_failures enable row level security;
 
 -- Students may see that their own submission failed; nobody writes through
 -- RLS (the service-role writer inserts these), so there is no insert policy.
+drop policy if exists "submission_failures_select_own" on public.submission_failures;
 create policy "submission_failures_select_own" on public.submission_failures
 for select to authenticated
 using ((select auth.uid()) = owner_user_id);

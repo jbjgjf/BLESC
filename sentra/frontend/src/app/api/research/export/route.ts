@@ -20,7 +20,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { decryptRawText } from "@/lib/server/rawTextCrypto";
-import { normalizeConsent, rawTextRetentionAllowed } from "@/lib/consent";
+import { normalizeConsent, rawTextRetentionAllowed, researchUseAllowed } from "@/lib/consent";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -94,10 +94,12 @@ export async function GET(request: NextRequest) {
 
   const rows = (result.data ?? []) as EntryRow[];
 
-  // Consent per participant, read now. One lookup per distinct participant
-  // rather than per row.
+  // Consent per participant, read now — not inherited from whatever was true
+  // when the row was written. One lookup per distinct participant rather than
+  // per row.
   const participantIds = Array.from(new Set(rows.map((row) => row.participant_id)));
-  const consentByParticipant = new Map<string, boolean>();
+  const researchAllowed = new Map<string, boolean>();
+  const retentionAllowed = new Map<string, boolean>();
   if (participantIds.length > 0) {
     const consentRows = await service
       .from("consent_records")
@@ -114,16 +116,35 @@ export async function GET(request: NextRequest) {
       const key = String(record.participant_id);
       // Ordered newest first, so the first row seen for a participant is the
       // current one and later ones are superseded history.
-      if (!consentByParticipant.has(key)) {
-        consentByParticipant.set(key, rawTextRetentionAllowed(normalizeConsent(record)));
+      if (!researchAllowed.has(key)) {
+        const state = normalizeConsent(record);
+        researchAllowed.set(key, researchUseAllowed(state));
+        retentionAllowed.set(key, rawTextRetentionAllowed(state));
       }
     }
   }
 
+  // The consent gate applies to the whole row, not just the text.
+  //
+  // `extraction_json` is the structured reading of a journal entry — its
+  // events, its emotions, the relations between them. Handing that to a
+  // researcher is research use of the participant's data, and the rest of this
+  // change refuses to write it to `eval_examples` without consent. Filtering
+  // only the plaintext here would have let the same data out through a
+  // different door for participants who were never asked, who declined, or who
+  // revoked (#134).
+  //
+  // A participant with no consent record at all is not in the map, and
+  // `?? false` keeps them out.
+  const consented = rows.filter((row) => researchAllowed.get(row.participant_id) ?? false);
+  const withheld = rows.length - consented.length;
+
   const exported = await Promise.all(
-    rows.map(async (row) => {
+    consented.map(async (row) => {
       const mayIncludeText =
-        includeRawText && row.raw_text_ciphertext !== null && consentByParticipant.get(row.participant_id) === true;
+        includeRawText &&
+        row.raw_text_ciphertext !== null &&
+        (retentionAllowed.get(row.participant_id) ?? false);
       return {
         entry_id: row.id,
         participant_id: row.participant_id,
@@ -136,6 +157,9 @@ export async function GET(request: NextRequest) {
     }),
   );
 
-  await audit("completed", exported.length);
-  return NextResponse.json({ rows: exported, count: exported.length });
+  // The audit row records what left, and the count that did not — so a pull
+  // that returned little because consent is thin is distinguishable from one
+  // that returned little because the cohort is small.
+  await audit("completed", exported.length, withheld > 0 ? `withheld_without_consent:${withheld}` : undefined);
+  return NextResponse.json({ rows: exported, count: exported.length, withheld_without_consent: withheld });
 }

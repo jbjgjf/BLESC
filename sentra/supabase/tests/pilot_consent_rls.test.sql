@@ -205,6 +205,103 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
+-- The purge functions are not reachable by a student or by the anon key.
+-- ---------------------------------------------------------------------------
+--
+-- `revoke ... from public` alone does NOT achieve this on Supabase: a stock
+-- project sets `alter default privileges in schema public grant all on
+-- functions to postgres, anon, authenticated, service_role`, so every new
+-- function is created with an EXPLICIT grant to `anon` and `authenticated`
+-- that a revoke from PUBLIC leaves in place. Without these two cases, a
+-- migration that only revoked from PUBLIC would look correct here and ship a
+-- function letting anyone erase any participant's retained journal text.
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub": "00000000-0000-0000-0000-0000000000c2", "role": "authenticated"}';
+
+do $$
+begin
+  begin
+    perform public.purge_raw_text_for_participant('00000000-0000-0000-0000-0000000000d1');
+    raise exception 'a student could purge another participant''s retained journal text';
+  exception when insufficient_privilege then
+    null;
+  end;
+end;
+$$;
+
+do $$
+begin
+  begin
+    perform public.purge_expired_raw_text();
+    raise exception 'a student could run the retention purge';
+  exception when insufficient_privilege then
+    null;
+  end;
+end;
+$$;
+
+reset role;
+set local role anon;
+
+do $$
+begin
+  begin
+    perform public.purge_raw_text_for_participant('00000000-0000-0000-0000-0000000000d1');
+    raise exception 'the anon key could purge a participant''s retained journal text';
+  exception when insufficient_privilege then
+    null;
+  end;
+end;
+$$;
+
+reset role;
+
+-- The two behavioural cases above pass for either of two independent reasons —
+-- the EXECUTE revoke, or the column privilege that stops the function body from
+-- reading `raw_text_ciphertext` as a non-research role. That makes them a poor
+-- regression test for the revoke specifically: restoring the grant leaves them
+-- green. These assert the grant state itself, so a migration that hands EXECUTE
+-- back fails here even while the other layer still holds.
+do $$
+begin
+  if has_function_privilege('authenticated', 'public.purge_raw_text_for_participant(uuid)', 'EXECUTE') then
+    raise exception 'authenticated holds EXECUTE on purge_raw_text_for_participant';
+  end if;
+  if has_function_privilege('anon', 'public.purge_raw_text_for_participant(uuid)', 'EXECUTE') then
+    raise exception 'anon holds EXECUTE on purge_raw_text_for_participant';
+  end if;
+  if has_function_privilege('authenticated', 'public.purge_expired_raw_text()', 'EXECUTE') then
+    raise exception 'authenticated holds EXECUTE on purge_expired_raw_text';
+  end if;
+  if has_function_privilege('anon', 'public.purge_expired_raw_text()', 'EXECUTE') then
+    raise exception 'anon holds EXECUTE on purge_expired_raw_text';
+  end if;
+  -- And the caller that legitimately needs them still has them.
+  if not has_function_privilege('service_role', 'public.purge_raw_text_for_participant(uuid)', 'EXECUTE') then
+    raise exception 'service_role lost EXECUTE on purge_raw_text_for_participant';
+  end if;
+end;
+$$;
+
+-- Neither function may be SECURITY DEFINER: definer rights turn any accidental
+-- future grant back into a full RLS bypass over every participant's entries.
+do $$
+declare
+  definer_functions text;
+begin
+  select string_agg(proname, ', ') into definer_functions
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname in ('purge_expired_raw_text', 'purge_raw_text_for_participant')
+     and p.prosecdef;
+  if definer_functions is not null then
+    raise exception 'purge functions must be SECURITY INVOKER, found definer: %', definer_functions;
+  end if;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Retention: the purge job clears expired text and leaves live text alone.
 -- ---------------------------------------------------------------------------
 
