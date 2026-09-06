@@ -70,6 +70,7 @@ from .benchmark_cases import (
 )
 from ..ontology.provenance import COVERAGE_NOTE, MATCH_RULES, annotate, provenance_coverage
 from ..traversal.relations import RELATION_RULES_VERSION
+from .benchmark_label_store import resolve_dataset
 from .benchmark_labelling import DATASET_VERSION, assign_splits, labelling_status
 from .benchmark_retrieval import (
     METHOD_FAMILIES,
@@ -86,7 +87,10 @@ from .benchmark_retrieval import (
     tokens,
 )
 
-#: Kept as an alias so the dataset exporter and the API keep their names.
+#: The cases as authored, before any rater file is applied. Kept as an alias so
+#: the dataset exporter and the API keep their names. A *run* does not use this
+#: directly — it resolves its case set through `benchmark_label_store`, so that
+#: human labels reach the metrics rather than sitting in a directory (#126).
 SYNTHETIC_BENCHMARK_CASES = BENCHMARK_CASES
 
 #: How deep traversal may go. Reported per depth so the hop count at which any
@@ -245,7 +249,7 @@ def _pool(coverages: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def _language_split_validity() -> Dict[str, Any]:
+def _language_split_validity(cases: Sequence[BenchmarkCase] = SYNTHETIC_BENCHMARK_CASES) -> Dict[str, Any]:
     """Whether the per-language coverage split can detect a language effect.
 
     On this case set it cannot, and the reason is structural rather than a
@@ -266,7 +270,7 @@ def _language_split_validity() -> Dict[str, Any]:
     printed on the day the matched sets stop being shared.
     """
     matched: Dict[str, Set[str]] = {}
-    for case in SYNTHETIC_BENCHMARK_CASES:
+    for case in cases:
         graph = case_graph(case)
         nodes = [dict(node) for node in graph["nodes"]]
         annotate(nodes, [dict(rel) for rel in graph["relations"]])
@@ -294,7 +298,7 @@ def _language_split_validity() -> Dict[str, Any]:
     }
 
 
-def _provenance_coverage_report() -> Dict[str, Any]:
+def _provenance_coverage_report(cases: Sequence[BenchmarkCase] = SYNTHETIC_BENCHMARK_CASES) -> Dict[str, Any]:
     """What share of each benchmark case's graph is tied to a published source.
 
     Case-level and reported once, for the same reason `case_level_safety` is:
@@ -312,11 +316,11 @@ def _provenance_coverage_report() -> Dict[str, Any]:
             "family": case.family,
             **provenance_coverage(case_graph(case)),
         }
-        for case in SYNTHETIC_BENCHMARK_CASES
+        for case in cases
     }
 
     by_language: Dict[str, Dict[str, Any]] = {}
-    for lang in sorted({case.lang for case in SYNTHETIC_BENCHMARK_CASES}):
+    for lang in sorted({case.lang for case in cases}):
         by_language[lang] = _pool(
             [item for item in per_case.values() if item["lang"] == lang]
         )
@@ -343,13 +347,26 @@ def _provenance_coverage_report() -> Dict[str, Any]:
     }
 
 
-def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = TOP_K) -> Dict[str, Any]:
+def run_hf_research_benchmark(
+    methods: Sequence[str] | None = None,
+    k: int = TOP_K,
+    dataset: LabelledDataset | None = None,
+) -> Dict[str, Any]:
+    # The case set is resolved rather than imported: `expected_evidence_ids` is
+    # what every retrieval number is scored against, so a human label that
+    # existed only in a rater file would leave the metrics measuring the drafted
+    # key while the report claimed otherwise (#126). With no rater file this
+    # returns the authored cases and says `source="drafted"`, which is the state
+    # the benchmark has always run in.
+    dataset = dataset or resolve_dataset()
+    cases = dataset.cases
+
     selected_methods = list(methods or METHODS)
     method_results: Dict[str, List[Dict[str, Any]]] = {method: [] for method in selected_methods}
     # Case-level, computed once, kept out of the per-condition results so it
     # cannot be aggregated into a column that is unable to vary.
     case_safety: Dict[str, Dict[str, Any]] = {
-        case.case_id: _safety_metrics(case) for case in SYNTHETIC_BENCHMARK_CASES
+        case.case_id: _safety_metrics(case) for case in cases
     }
 
     # Chance is per case because candidate counts differ; averaged for the
@@ -361,10 +378,10 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = TOP
             set(case.expected_evidence_ids),
             k,
         )
-        for case in SYNTHETIC_BENCHMARK_CASES
+        for case in cases
     }
 
-    for case in SYNTHETIC_BENCHMARK_CASES:
+    for case in cases:
         for method in selected_methods:
             ranked = _rank_evidence(case, method)
             metrics = _retrieval_metrics(case, ranked, k=k)
@@ -385,21 +402,23 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = TOP
             )
 
     summary: Dict[str, Any] = {}
-    for method, cases in method_results.items():
-        total = len(cases)
+    # `rows`, not `cases`: the per-method rows are dicts, and the name `cases`
+    # now belongs to the resolved BenchmarkCase list for the whole run.
+    for method, rows in method_results.items():
+        total = len(rows)
         summary[method] = {
             # #96: fixed-rule traversal is reported separately from anything
             # learned. Carried on every row rather than left to a legend, so a
             # summary read out of context still says which kind of method it is.
             "method_family": METHOD_FAMILIES[method],
-            "mean_recall_at_k": round(sum(case["retrieval_metrics"]["recall_at_k"] for case in cases) / total, 4),
-            "mean_ndcg_at_k": round(sum(case["retrieval_metrics"]["ndcg_at_k"] for case in cases) / total, 4),
-            "target_hit_rate": round(sum(1 for case in cases if case["retrieval_metrics"]["target_hit"]) / total, 4),
+            "mean_recall_at_k": round(sum(row["retrieval_metrics"]["recall_at_k"] for row in rows) / total, 4),
+            "mean_ndcg_at_k": round(sum(row["retrieval_metrics"]["ndcg_at_k"] for row in rows) / total, 4),
+            "target_hit_rate": round(sum(1 for row in rows if row["retrieval_metrics"]["target_hit"]) / total, 4),
             # Same units as mean_ndcg_at_k, so the two are directly comparable.
-            "chance_ndcg_at_k": round(sum(case["chance"]["ndcg_at_k"] for case in cases) / total, 4),
+            "chance_ndcg_at_k": round(sum(row["chance"]["ndcg_at_k"] for row in rows) / total, 4),
             "lift_over_chance": round(
-                (sum(case["retrieval_metrics"]["ndcg_at_k"] for case in cases) / total)
-                - (sum(case["chance"]["ndcg_at_k"] for case in cases) / total),
+                (sum(row["retrieval_metrics"]["ndcg_at_k"] for row in rows) / total)
+                - (sum(row["chance"]["ndcg_at_k"] for row in rows) / total),
                 4,
             ),
         }
@@ -419,15 +438,15 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = TOP
         # by_language is the row a reader will treat as "how well does it work
         # in Japanese", and right now it cannot answer that. Emitted beside it
         # so the caveat travels with the number.
-        "comparison_validity": _comparison_validity(),
+        "comparison_validity": _comparison_validity(cases),
         "condition_independence": _condition_independence(method_results),
-        "by_traversal_depth": _depth_sweep(selected_methods, k),
+        "by_traversal_depth": _depth_sweep(selected_methods, k, cases),
         "case_composition": CASE_COMPOSITION,
         "retired_cases": RETIRED_CASES,
         # #79. Beside case_level_safety and for the same structural reason: a
         # property of the case, so it is reported once rather than per
         # condition. Measured, never gated on.
-        "provenance_coverage": _provenance_coverage_report(),
+        "provenance_coverage": _provenance_coverage_report(cases),
         # Reported separately and once. Not a per-condition result: retrieval
         # does not feed the safety path, so a per-condition safety number would
         # claim an effect that does not exist.
@@ -450,10 +469,23 @@ def run_hf_research_benchmark(methods: Sequence[str] | None = None, k: int = TOP
         },
         "cases": method_results,
         # Reported inside the result, not only in the issue tracker. Every
-        # number above rests on 5 author-drafted cases in 2 independent leakage
-        # groups, and anyone reading a summary without that beside it will read
-        # it as stronger than it is (#88).
-        "labelling_status": labelling_status(),
+        # number above rests on a case set whose keys are mostly drafted, over
+        # far fewer independent groups than cases, and anyone reading a summary
+        # without that beside it will read it as stronger than it is (#88).
+        "labelling_status": labelling_status(
+            agreement=dataset.agreement,
+            cases=cases,
+            reviewer=dataset.reviewer,
+        ),
+        # Where the answer key came from, so a result carries its provenance
+        # rather than requiring the reader to remember which files existed on
+        # the day it was produced (#126).
+        "label_provenance": {
+            "source": dataset.source,
+            "raters": dataset.raters,
+            "reviewer": dataset.reviewer,
+            "unresolved_disputes": dataset.disputed,
+        },
         "privacy_boundary": {
             "contains_real_user_content": False,
             "safe_for_hf_dataset_draft": True,
@@ -500,7 +532,7 @@ def _condition_independence(method_results: Dict[str, List[Dict[str, Any]]]) -> 
     }
 
 
-def _comparison_validity() -> Dict[str, Any]:
+def _comparison_validity(cases: Sequence[BenchmarkCase] = SYNTHETIC_BENCHMARK_CASES) -> Dict[str, Any]:
     """Whether the per-language split is comparing languages or comparing cases.
 
     The matched-pair design exists so that language is not confounded with
@@ -513,7 +545,7 @@ def _comparison_validity() -> Dict[str, Any]:
     adding one case.
     """
     matrix: Dict[str, Dict[str, int]] = {}
-    for case in BENCHMARK_CASES:
+    for case in cases:
         matrix.setdefault(case.family, {}).setdefault(case.lang, 0)
         matrix[case.family][case.lang] += 1
 
@@ -574,7 +606,7 @@ def _grouped(method_results: Dict[str, List[Dict[str, Any]]], key: str) -> Dict[
     }
 
 
-def _depth_sweep(selected_methods: Sequence[str], k: int) -> Dict[str, Dict[str, float]]:
+def _depth_sweep(selected_methods: Sequence[str], k: int, cases: Sequence[BenchmarkCase] = SYNTHETIC_BENCHMARK_CASES) -> Dict[str, Dict[str, float]]:
     """nDCG by traversal depth, so the hop count where an advantage appears is
     visible — or its absence is."""
     sweep: Dict[str, Dict[str, float]] = {}
@@ -582,7 +614,7 @@ def _depth_sweep(selected_methods: Sequence[str], k: int) -> Dict[str, Dict[str,
         row: Dict[str, float] = {}
         for method in selected_methods:
             scores = []
-            for case in SYNTHETIC_BENCHMARK_CASES:
+            for case in cases:
                 ranked = _rank_evidence(case, method, max_depth=depth)
                 scores.append(
                     ndcg_at_k(
@@ -596,10 +628,16 @@ def _depth_sweep(selected_methods: Sequence[str], k: int) -> Dict[str, Dict[str,
     return sweep
 
 
-def hf_dataset_rows() -> List[Dict[str, Any]]:
-    splits = assign_splits()
+def hf_dataset_rows(cases: Sequence[BenchmarkCase] | None = None) -> List[Dict[str, Any]]:
+    """The dataset as exported. Carries whichever keys the store resolved to.
+
+    Exporting the drafted keys while a run scored the human ones would publish a
+    dataset that disagrees with the paper written from it.
+    """
+    cases = list(cases if cases is not None else resolve_dataset().cases)
+    splits = assign_splits(cases)
     rows: List[Dict[str, Any]] = []
-    for case in SYNTHETIC_BENCHMARK_CASES:
+    for case in cases:
         rows.append(
             {
                 "case_id": case.case_id,
