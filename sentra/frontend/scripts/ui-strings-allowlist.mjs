@@ -92,6 +92,28 @@ const DEVELOPER_ERRORS = ["useAuth must be used inside AuthProvider"];
  */
 const COLUMN_PROJECTIONS = [
   "app_use, research_analysis, anonymized_export, raw_text_retention, future_fine_tuning,",
+  "id, study_id, research_code, cohort, state, is_minor, information_read_at, assented_at,",
+];
+
+/**
+ * Diagnostics for the study operator, not the participant (#163).
+ *
+ * These two reach a person — but only through `/api/pilot/admin/invitations`,
+ * which answers 404 to everybody outside `PILOT_OPERATOR_USER_IDS`. They name
+ * an environment variable and a generator fault, neither of which has a
+ * Japanese form that would help the one or two people who can see them, and
+ * both of which are read next to a deployment console.
+ *
+ * Everything a *participant* can trigger on the pilot routes is written in
+ * Japanese at the point it is returned — the redemption rejection, the
+ * unconfigured-deployment message and the transition conflicts — the same way
+ * `api/consent` and `api/research/export` write theirs. The scanner skips
+ * `src/app/api` wholesale, so those are not enforced here and are worth
+ * re-reading by hand in review.
+ */
+const OPERATOR_DIAGNOSTICS = [
+  "PILOT_INVITE_HMAC_KEY is not configured.",
+  "Generated an invalid code.",
 ];
 
 /**
@@ -114,5 +136,6 @@ export const ALLOWLIST = [
   ...WRITE_FAILURES,
   ...DEVELOPER_ERRORS,
   ...COLUMN_PROJECTIONS,
+  ...OPERATOR_DIAGNOSTICS,
   ...PAYLOAD_FIELD_MARKERS,
 ];
