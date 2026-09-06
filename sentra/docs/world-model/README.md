@@ -22,10 +22,10 @@
 | T3：連続時間・記憶・切り替わりを実装する | [詳解：連続時間・記憶・状態の切り替わり](math-dynamics.md) |
 | T4・T5：説明の忠実さと評価を実装する | [詳解：説明・構造・識別・評価](math-identification.md) |
 | 先行研究と主張の限界を確認する | [研究根拠と訂正](research-evidence.md) |
-| 実装者：入出力を揃える | [受け渡し仕様（Wiki）](https://github.com/jbjgjf/BLESC/wiki/Research-Contracts) |
-| 評価者：何をもって成功とするか | [評価仕様（Wiki）](https://github.com/jbjgjf/BLESC/wiki/Research-Evaluation) |
-| 統括：誰が何をいつ作るか | [72時間の実行計画（Wiki）](https://github.com/jbjgjf/BLESC/wiki/Research-Delivery) |
-| Claudeへ担当作業を渡す | [共通指示とチーム別指示（Wiki）](https://github.com/jbjgjf/BLESC/wiki/Research-Team-Briefs) |
+| 実装者：入出力を揃える | [受け渡し仕様](contracts.md) |
+| 評価者：何をもって成功とするか | [評価仕様](evaluation.md) |
+| 統括：誰が何をいつ作るか | [72時間の実行計画](delivery.md) |
+| Claudeへ担当作業を渡す | [共通指示とチーム別指示](team-briefs.md) |
 
 ### 数学の詳解ページについて
 
