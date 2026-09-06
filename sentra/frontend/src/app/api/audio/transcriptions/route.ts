@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { openAIKey, requireUser } from "@/lib/server/api";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -17,10 +18,6 @@ const AUDIO_CONTENT_TYPES = new Set([
   "video/webm",
 ]);
 
-function openAIKey(): string | undefined {
-  return process.env["OPENAI_" + "API_KEY"];
-}
-
 function audioExtension(filename: string): string {
   return filename.includes(".") ? filename.split(".").pop()?.toLowerCase() ?? "" : "";
 }
@@ -30,6 +27,12 @@ function audioContentType(contentType: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  // Every call here spends provider budget, so it belongs behind the same
+  // session gate as the rest of the API. Left open, strangers can drain the
+  // OpenAI quota that chat and voice depend on.
+  const auth = await requireUser(request);
+  if ("error" in auth) return auth.error;
+
   let formData: FormData;
   try {
     formData = await request.formData();

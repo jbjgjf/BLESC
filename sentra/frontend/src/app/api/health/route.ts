@@ -1,11 +1,20 @@
 import { NextResponse } from "next/server";
 import { openAIKey } from "@/lib/server/api";
 
+// Route Handlers are uncached by default in this Next version, so this reads
+// the running deployment's env on every request rather than a build snapshot.
 export const runtime = "nodejs";
 
 /**
- * A secret-free deployment check for operators. This reports configuration
- * presence and the selected models without exposing credential values.
+ * Deployment self-report for operators.
+ *
+ * Booleans only for credentials — it says whether a value is configured, never
+ * what it is. The model names are reported in full because they are a choice,
+ * not a secret, and a deployment answering with an unexpected model is the
+ * other half of this diagnosis.
+ *
+ * A missing key here is the usual reason chat answers with its fallback
+ * sentence instead of a model reply.
  */
 export async function GET() {
   return NextResponse.json({
