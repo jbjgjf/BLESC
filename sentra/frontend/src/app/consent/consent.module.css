@@ -1,0 +1,37 @@
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.check input {
+  margin-top: 4px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.check span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.check input:disabled + span {
+  opacity: 0.55;
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--bl-alert-ink);
+}
+
+.error :global(.blesc-icon) { color: var(--bl-alert); }

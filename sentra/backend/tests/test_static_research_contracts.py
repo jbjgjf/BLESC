@@ -225,10 +225,18 @@ def test_static_knowledge_file_guard_accepts_docs_and_rejects_user_paths(tmp_pat
 # accepted the English wording would fail the moment a screen was translated
 # even though the guarantee still held. Each list below therefore holds the
 # accepted wordings in every language the UI ships in.
+#
+# Resolved from two branches that rewrote this test at the same time, both
+# reaching the meaning-over-literal conclusion independently. The sweep and the
+# label lists come from main (#116 moved screen copy into the catalogue, so
+# routes alone are no longer the whole UI); the per-screen clause at the end
+# comes from the pilot-gate branch. Each list is the union of the two.
 FORBIDDEN_DIAGNOSTIC_LABELS = [
     "Diagnostic Score",
     "Hybrid Anomaly Score",
+    "Risk Score",
     "診断スコア",
+    "診断結果",
     "リスクスコア",
     "リスク判定",
     "危険度",
@@ -239,16 +247,36 @@ NON_DIAGNOSTIC_SIGNAL_LABELS = [
     "変化の大きさ",
 ]
 
+# `school/page.tsx` says 「診断でもありません」 rather than 「診断ではありません」,
+# so the variants are listed rather than matched on a stem — a stem match on
+# 「診断」 would be satisfied by a screen that claims to diagnose.
 NON_DIAGNOSTIC_NOTICES = [
     "Non-diagnostic",
+    "診断ではありません",
+    "診断でもありません",
     "診断を行いません",
+    "診断は行いません",
 ]
+
+# The screens that render the signal, its inputs, or a derived view of it.
+# Each has to carry the notice itself, not merely have one somewhere else in
+# the product: a single notice on one screen satisfied the earlier version of
+# this test while the other five showed a number with nothing next to it.
+SIGNAL_BEARING_SCREENS = (
+    "insights/page.tsx",
+    "timeline/page.tsx",
+    "graph/page.tsx",
+    "school/page.tsx",
+    "guardian/page.tsx",
+    "educator/class/page.tsx",
+)
 
 
 def test_frontend_uses_non_diagnostic_reflection_signal_language():
     # Screen copy lives in the message catalogue (#116) and the shared notice in
     # a component, so the sweep covers all three rather than routes alone —
     # a guarantee moved into a catalogue is still a guarantee the UI makes.
+    app_root = ROOT / "frontend/src/app"
     frontend_source = "\n".join(
         path.read_text(encoding="utf-8")
         for directory, suffix in (
@@ -271,6 +299,14 @@ def test_frontend_uses_non_diagnostic_reflection_signal_language():
         "The UI no longer states that it is non-diagnostic; "
         f"expected one of {NON_DIAGNOSTIC_NOTICES}"
     )
+
+    for screen in SIGNAL_BEARING_SCREENS:
+        path = app_root / screen
+        assert path.is_file(), f"expected signal-bearing screen is missing: {screen}"
+        source = path.read_text(encoding="utf-8")
+        assert any(notice in source for notice in NON_DIAGNOSTIC_NOTICES), (
+            f"{screen} renders a signal without a non-diagnostic notice"
+        )
 
 
 def test_fine_tuning_export_is_consent_and_review_gated():

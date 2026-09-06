@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { ApiClient } from "@/api/client";
+import { ApiClient, EntryNotPersistedError } from "@/api/client";
 import { Icon } from "@/components/ui/Icon";
 import { FlowerBloom } from "@/components/ui/FlowerBloom";
 import { TransitionLink } from "@/components/ui/Transition";
@@ -11,6 +11,8 @@ import { useCountUp } from "@/lib/motion";
 import { useAuth } from "@/lib/auth";
 import { useDemoMode } from "@/lib/demo";
 import { CATEGORIES, MOODS, TODAY, formatDate } from "@/lib/blesc/labels";
+import { EntryTelemetryCollector, clientTimeZone, newSessionId } from "@/lib/telemetry";
+import { EMPTY_STATS, type JournalStats } from "@/lib/journalStats";
 import type { EventCategory, Mood } from "@/lib/blesc/types";
 import styles from "./journal.module.css";
 
@@ -52,6 +54,12 @@ const STEPS: Step[] = [
     choices: ["今日だけ", "数日前から続いている", "以前から続いている", "分からない", "答えたくない"],
   },
 ];
+
+/**
+ * 追加質問の台本の version。回答は probe_id と一緒にこの値を保存するので、
+ * あとで文面を変えても、保存済みの回答がどの問いに対するものか分かる（#133）。
+ */
+const PROBE_VERSION = "followup-script-v1";
 
 /** これ以上聞かずに終える回答 */
 const STOP_ANSWERS = new Set(["話したくない", "まだ整理できない", "答えたくない"]);
@@ -95,6 +103,30 @@ export default function JournalPage() {
   const advanceTimer = useRef<number | null>(null);
   const isFirstRender = useRef(true);
 
+  /**
+   * 保存された日記の id（#132 / #133）。
+   *
+   * null のあいだは「まだどこにも残っていない」。完了画面へ進む条件も、
+   * 追加質問の回答を保存する宛先も、これが取れていることに依存する。
+   */
+  const [entryId, setEntryId] = useState<string | null>(null);
+  const [entrySessionId, setEntrySessionId] = useState<string | null>(null);
+
+  /**
+   * 提出ごとに1つ振る id。再試行しても同じ値を送るので、サーバー側で
+   * 同じ提出だと分かり、二重に保存されない（#132）。
+   */
+  const submissionIdRef = useRef<string>("");
+  if (!submissionIdRef.current) submissionIdRef.current = newSessionId();
+
+  /**
+   * 入力の計測（#135）。内容そのものは持たない — 時刻と文字数だけ。
+   * ref に置くのは、計測のたびに再描画させないため。
+   */
+  const telemetryRef = useRef<EntryTelemetryCollector | null>(null);
+  if (!telemetryRef.current) telemetryRef.current = new EntryTelemetryCollector();
+  const telemetry = telemetryRef.current;
+
   const followUpRef = useRef<HTMLDivElement>(null);
   const moodError = showErrors && mood === null;
   const categoryError = showErrors && categories.length === 0;
@@ -108,6 +140,15 @@ export default function JournalPage() {
     }
     stepRef.current?.focus();
   }, [step]);
+
+  // どの設問にどれだけ留まったかは、記入の負荷を見るための最小限の指標。
+  const previousStep = useRef<FormStep>("recall");
+  useEffect(() => {
+    if (previousStep.current !== step) {
+      telemetry.step(previousStep.current, step);
+      previousStep.current = step;
+    }
+  }, [step, telemetry]);
 
   useEffect(() => () => {
     if (advanceTimer.current) window.clearTimeout(advanceTimer.current);
@@ -127,6 +168,7 @@ export default function JournalPage() {
   /** 気分は 1 つだけ選ぶので、選んだ手ごたえが見えたら自動で次へ進む。 */
   const chooseMood = (value: Mood) => {
     setMood(value);
+    telemetry.select("mood", 1);
     setShowErrors(false);
     clearAdvance();
     advanceTimer.current = window.setTimeout(() => setStep("events"), 300);
@@ -166,9 +208,14 @@ export default function JournalPage() {
   };
 
   const toggleCategory = (value: EventCategory) => {
-    setCategories((current) =>
-      current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
-    );
+    setCategories((current) => {
+      const next = current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value];
+      // 何個選ばれているかだけを記録する。どれを選んだかは送らない。
+      telemetry.select("event_categories", next.length);
+      return next;
+    });
   };
 
   /** 日記の内容から、AIによる補足が必要かを判定する（4-7）。 */
@@ -193,7 +240,20 @@ export default function JournalPage() {
     }, 1100);
   }, []);
 
+  /**
+   * 日記を保存する（#132 / #135）。
+   *
+   * 以前はここが `try { await createEntry(...) } catch { return false }` で、
+   * `createEntry` が失敗を投げずに console に出すだけだったので、DBに何も
+   * 書けていなくても必ず true が返っていた。生徒には「記録しました」と出て、
+   * 書いたものは消えていた。
+   *
+   * いまは保存できた entry の id が返ったときだけ成功とする。失敗したら
+   * 入力はそのまま画面に残り、同じ submission id で再試行できる — 同じ id
+   * なので、再試行が二重保存になることはない。
+   */
   const persistJournal = async (): Promise<boolean> => {
+    // デモは Supabase に触れないので、保存の成否という概念がない。
     if (demo) return true;
 
     const moodLabel = MOODS.find((option) => option.value === mood)?.label ?? "未選択";
@@ -210,13 +270,34 @@ export default function JournalPage() {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      await ApiClient.createEntry(userId, journalText, "daily", {
+      const result = await ApiClient.createEntry(userId, journalText, "daily", {
         journal_text: journalText,
         recall_text: recallText.trim(),
+        client_submission_id: submissionIdRef.current,
+        telemetry: telemetry.finalize({
+          timeZone: clientTimeZone(),
+          userAgent: typeof navigator === "undefined" ? undefined : navigator.userAgent,
+        }),
       });
+      const savedId = result.supabase_sync?.entry_id ?? null;
+      if (!savedId) {
+        // createEntry は id なしでは返らない契約だが、契約を二重に確かめる。
+        // ここを通り抜けると、また「保存できていないのに完了画面」になる。
+        setSubmitError("日記を保存できませんでした。もう一度お試しください。");
+        return false;
+      }
+      setEntryId(savedId);
+      setEntrySessionId(result.supabase_sync?.entry_session_id ?? null);
       return true;
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "日記の保存に失敗しました。");
+      const message =
+        error instanceof EntryNotPersistedError
+          ? "日記を保存できませんでした。書いた内容は画面に残っています。もう一度お試しください。"
+          : error instanceof Error
+            ? `日記を保存できませんでした（${error.message}）`
+            : "日記を保存できませんでした。";
+      telemetry.submitFailed(error instanceof Error ? error.name : "unknown");
+      setSubmitError(message);
       return false;
     } finally {
       setIsSubmitting(false);
@@ -245,10 +326,53 @@ export default function JournalPage() {
     }
   };
 
+  /**
+   * 追加質問の回答を1問ずつ保存する（#133）。
+   *
+   * まとめて最後に送らないのは、この対話が途中で閉じられる前提のものだから。
+   * 途中で終わったセッションこそ、それまでの回答が残っている必要がある。
+   *
+   * 保存に失敗しても対話は止めない。生徒から見れば追加質問は「答えなくても
+   * いい」ものなので、保存エラーで会話を中断させるほうが害が大きい。
+   */
+  const saveFollowup = useCallback(
+    async (
+      probe: Step,
+      probeIndex: number,
+      outcome: "answered" | "declined" | "stopped" | "abandoned",
+      answerText: string | null,
+    ) => {
+      if (demo || !entryId) return;
+      try {
+        await ApiClient.saveFollowupResponse(userId, {
+          entry_id: entryId,
+          entry_session_id: entrySessionId,
+          probe_id: probe.id,
+          probe_index: probeIndex,
+          probe_version: PROBE_VERSION,
+          question_text: probe.question,
+          answer_kind: outcome === "abandoned" ? "none" : probe.choices ? "choice" : "free_text",
+          answer_text: answerText,
+          outcome,
+          answered_at: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.warn("[journal] follow-up answer was not saved", error);
+      }
+    },
+    [demo, entryId, entrySessionId, userId],
+  );
+
   const answer = (text: string) => {
+    const probe = STEPS[stepIndex];
     setTurns((current) => [...current, { role: "student", text }]);
     setDetailDraft("");
-    if (STOP_ANSWERS.has(text)) {
+    const stopping = STOP_ANSWERS.has(text);
+    if (probe) {
+      // 「答えたくない」は無回答ではなく、ひとつの回答。区別して残す。
+      void saveFollowup(probe, stepIndex, stopping ? "declined" : "answered", text);
+    }
+    if (stopping) {
       window.setTimeout(() => {
         setTurns((current) => [
           ...current,
@@ -271,8 +395,17 @@ export default function JournalPage() {
   const awaitingAnswer =
     phase === "followup" && !thinking && turns.length > 0 && turns[turns.length - 1].role === "ai";
 
+  /**
+   * 閉じるボタンで対話を終える。表示中だった問いは「中断」として記録する
+   * ので、答えなかったのか、そこで閉じたのかが後から区別できる（#133）。
+   */
+  const endFollowUp = () => {
+    if (currentStep && awaitingAnswer) void saveFollowup(currentStep, stepIndex, "abandoned", null);
+    setPhase("done");
+  };
+
   /* ── 提出完了 ─────────────────────────────────────── */
-  if (phase === "done") return <DoneScreen />;
+  if (phase === "done") return <DoneScreen userId={userId} demo={demo} />;
 
   /* ── 入力フォーム（1問ずつ） ───────────────────────── */
   const formStepIndex = FORM_STEPS.indexOf(step);
@@ -375,7 +508,17 @@ export default function JournalPage() {
                   rows={3}
                   placeholder="いま頭に浮かんでいること"
                   value={recallText}
-                  onChange={(event) => setRecallText(event.target.value)}
+                  onFocus={() => telemetry.focus("first_recall_30")}
+                  onBlur={() => telemetry.blur("first_recall_30")}
+                  onPaste={(event) => telemetry.paste("first_recall_30", event.clipboardData.getData("text").length)}
+                  onChange={(event) => {
+                    setRecallText(event.target.value);
+                    // 渡すのは長さと選択位置だけ。本文そのものは計測に入れない。
+                    telemetry.input("first_recall_30", event.target.value.length, {
+                      start: event.target.selectionStart ?? undefined,
+                      end: event.target.selectionEnd ?? undefined,
+                    });
+                  }}
                 />
                 <p className="bl-micro" style={{ marginTop: 9 }}>
                   正解はありません。書かずに次へ進んでも大丈夫です。
@@ -437,7 +580,16 @@ export default function JournalPage() {
                   className={`bl-textarea ${styles.bodyInput}`}
                   placeholder="どんな一日でしたか"
                   value={body}
-                  onChange={(event) => setBody(event.target.value)}
+                  onFocus={() => telemetry.focus("journal_entry")}
+                  onBlur={() => telemetry.blur("journal_entry")}
+                  onPaste={(event) => telemetry.paste("journal_entry", event.clipboardData.getData("text").length)}
+                  onChange={(event) => {
+                    setBody(event.target.value);
+                    telemetry.input("journal_entry", event.target.value.length, {
+                      start: event.target.selectionStart ?? undefined,
+                      end: event.target.selectionEnd ?? undefined,
+                    });
+                  }}
                 />
                 <p className="bl-micro" style={{ marginTop: 9 }}>
                   書きたくないことは、書かなくて大丈夫です。
@@ -447,11 +599,26 @@ export default function JournalPage() {
           </fieldset>
 
           <div className={styles.stepBar}>
+            {/* 保存に失敗したことを、生徒に見える形で出す（#132）。
+                入力は消していないので、そのまま再試行できる。 */}
             {submitError && (
-              <p className={styles.error} role="alert">
-                <Icon name="error" size={16} fill />
-                {submitError}
-              </p>
+              <div role="alert" className={styles.saveFailure}>
+                <p className={styles.error}>
+                  <Icon name="error" size={16} fill />
+                  {submitError}
+                </p>
+                <button
+                  type="button"
+                  className="bl-btn bl-btn--secondary bl-btn--sm"
+                  disabled={isSubmitting}
+                  onClick={() => void submit()}
+                >
+                  {/* アイコンは自前のサブセットフォントなので、すでに使われて
+                      いる字形から選ぶ。追加すると欠字になる。 */}
+                  <Icon name="send" size={16} />
+                  もう一度保存する
+                </button>
+              </div>
             )}
             <p className="bl-disclaimer">
               <Icon name="lock" size={15} />
@@ -502,7 +669,7 @@ export default function JournalPage() {
               type="button"
               className="bl-icon-btn"
               aria-label="ここで終える"
-              onClick={() => setPhase("done")}
+              onClick={endFollowUp}
             >
               <Icon name="close" size={20} />
             </button>
@@ -577,13 +744,33 @@ export default function JournalPage() {
   );
 }
 
+/** デモ画面で見せる固定値。実データの経路とは完全に分けてある（#133）。 */
+const DEMO_STATS: JournalStats = { streak: 7, weekly: 6, totalDays: 24 };
+
 /**
  * 提出できたことを受け止める画面。書けた日にだけ出るので、ここだけは
  * はっきり喜んでよい — 花が一枚ずつ開き、続いた日数が積み上がる。
+ *
+ * 数字は本人の提出履歴から出す。以前は `useCountUp(7)` / `useCountUp(6)` と
+ * 直接書かれていて、初めて提出した生徒にも「連続提出日数 7」と表示していた
+ * （#133）。デモは上の固定値、実データは DB — 混ざらないように経路を分ける。
  */
-function DoneScreen() {
-  const streak = useCountUp(7, 1100);
-  const weekly = useCountUp(6, 1100);
+function DoneScreen({ userId, demo }: { userId: string; demo: boolean }) {
+  const [stats, setStats] = useState<JournalStats>(demo ? DEMO_STATS : EMPTY_STATS);
+
+  useEffect(() => {
+    if (demo) return;
+    let cancelled = false;
+    void ApiClient.getJournalStats(userId).then((loaded) => {
+      if (!cancelled) setStats(loaded);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [demo, userId]);
+
+  const streak = useCountUp(stats.streak, 1100);
+  const weekly = useCountUp(stats.weekly, 1100);
 
   return (
     <div className="bl-wrap">

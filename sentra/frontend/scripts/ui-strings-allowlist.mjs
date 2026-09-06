@@ -60,7 +60,13 @@ const WRITE_FAILURES = [
   "entries insert",
   "graph_snapshots insert",
   "insights insert",
-  "consent_records insert",
+  // `consent_records insert` used to be here, naming the writer's own insert.
+  // That insert is gone: it wrote a consent row per submission built from
+  // defaults, which is how the table came to hold consent nobody had given
+  // (#134). Consent is now recorded where it is obtained, and these two name
+  // the failures of that write instead.
+  "consent_records insert: ${result.error.message}",
+  "consent_records revoke: ${result.error.message}",
   "entry_sessions insert",
   "entry_fields insert: ${fieldsInsert.error.message}",
   "interaction_events insert: ${eventsInsert.error.message}",
@@ -78,6 +84,28 @@ const WRITE_FAILURES = [
 /** A programming mistake, raised where only a developer can see it. */
 const DEVELOPER_ERRORS = ["useAuth must be used inside AuthProvider"];
 
+/**
+ * Column lists in a PostgREST `select`. These are the database's own column
+ * names; translating one would ask for a column that does not exist. Route
+ * handlers are skipped wholesale by the scanner, so only the ones in
+ * `src/lib/server` reach here.
+ */
+const COLUMN_PROJECTIONS = [
+  "app_use, research_analysis, anonymized_export, raw_text_retention, future_fine_tuning,",
+];
+
+/**
+ * Field markers inside one payload, not text shown to anyone. They label which
+ * field a passage came from in the text handed to the extraction model and, for
+ * a participant who consented to retention, encrypted for later human review
+ * (#131) — the same two names the research tables use as keys. The route
+ * handler builds the identical string; it is exempt only because the scanner
+ * skips `src/app/api` entirely.
+ */
+const PAYLOAD_FIELD_MARKERS = [
+  "Journal entry:\\n${journalText.trim()}",
+];
+
 export const ALLOWLIST = [
   ...BRAND,
   ...CODE,
@@ -85,4 +113,6 @@ export const ALLOWLIST = [
   ...MODEL_INSTRUCTIONS,
   ...WRITE_FAILURES,
   ...DEVELOPER_ERRORS,
+  ...COLUMN_PROJECTIONS,
+  ...PAYLOAD_FIELD_MARKERS,
 ];

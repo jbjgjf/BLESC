@@ -23,6 +23,14 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { buildTemporalDiff, EMPTY_SNAPSHOT, relationShiftSummary, usesLegacyPositionalIds, type SnapshotShape, type TemporalDiff } from "@/lib/temporalDiff";
 import {
+  consentSnapshot,
+  evalDatasetAllowed,
+  rawTextRetentionAllowed,
+  telemetryAllowed,
+} from "@/lib/consent";
+import { consentMismatch, loadConsentState } from "@/lib/server/consentStore";
+import { encryptRawText, rawTextExpiryFrom } from "@/lib/server/rawTextCrypto";
+import {
   MIN_BASELINE_DAYS,
   PERSIST_ANOMALY_SCORE,
   checkRules,
@@ -48,6 +56,17 @@ export type SupabaseSyncResult = {
   anomaly_result?: Record<string, unknown>;
   explanation?: Record<string, unknown>;
   reason?: string;
+  /**
+   * True when this submission id had already been written and the ids above
+   * are the existing row's. A retry that reaches here is a success, not a
+   * second entry (#132).
+   */
+  duplicate?: boolean;
+  /**
+   * Research mirrors that were deliberately not written because consent does
+   * not cover them (#134). Distinct from `warnings`, which are failures.
+   */
+  consent_gated?: string[];
   warnings: string[];
 };
 
@@ -127,23 +146,31 @@ export type SubmissionContext = {
   journalText: string;
   recallText: string;
   telemetry?: Json | null;
+  /**
+   * What the client believes it has consented to. Never used to grant
+   * anything — the stored `consent_records` row decides (#134). Kept only so a
+   * disagreement between the two surfaces as a warning.
+   */
   consent?: Json | null;
+  /**
+   * Client-generated id for this submission, stable across retries. Two
+   * requests carrying the same id resolve to one row (#132).
+   */
+  clientSubmissionId?: string | null;
 };
 
 const MAX_INTERACTION_EVENTS = 1200;
 const MAX_GRAPH_CHANGE_ROWS = 24;
 
-const DEFAULT_CONSENT = {
-  app_use: true,
-  research_analysis: true,
-  anonymized_export: false,
-  future_fine_tuning: false,
-  consent_version: "research-consent-v1",
-};
-
 let cachedClient: SupabaseClient | null = null;
 
-function serviceRoleClient(): SupabaseClient | null {
+/**
+ * The service-role client, shared with the routes that also have to write past
+ * RLS (consent records, follow-up answers, failure records). Exported rather
+ * than duplicated so there is one place where the key is read and one cached
+ * connection.
+ */
+export function serviceRoleClient(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url) return null;
@@ -475,8 +502,47 @@ export async function writeEntryResult(
   }
 
   const warnings: string[] = [];
-  const consent = { ...DEFAULT_CONSENT, ...(context.consent ?? {}) };
+  const consentGated: string[] = [];
+
+  // Consent is read, not received. `context.consent` is what the browser
+  // claimed; this is what the participant actually agreed to, and it is the
+  // only input to every research gate below (#134).
+  const consentState = await loadConsentState(client, ownerUserId, participantId);
+  const consent = consentSnapshot(consentState);
+  const overclaimed = consentMismatch(context.consent, consentState);
+  if (overclaimed.length > 0) {
+    warnings.push(`consent_claim_not_recorded:${overclaimed.join(",")}`);
+  }
+
   const telemetry = (context.telemetry ?? {}) as Json;
+
+  // An idempotent retry resolves to the row that already exists. Without this,
+  // the retry button added for #132 would turn one lost submission into two
+  // stored ones.
+  if (context.clientSubmissionId) {
+    const existing = await client
+      .from("entries")
+      .select("id")
+      .eq("owner_user_id", ownerUserId)
+      .eq("client_submission_id", context.clientSubmissionId)
+      .maybeSingle();
+    if (existing.error) {
+      warnings.push("submission_idempotency_lookup");
+    } else if (existing.data) {
+      const existingId = (existing.data as { id: string }).id;
+      console.info("[supabase-sync] duplicate submission resolved to existing entry", existingId);
+      return {
+        status: "written",
+        entry_id: existingId,
+        graph_snapshot_id: null,
+        insight_id: null,
+        entry_session_id: null,
+        duplicate: true,
+        consent_gated: consentGated,
+        warnings,
+      };
+    }
+  }
   const pipelineVersion = computed.research_artifacts?.pipeline_version ?? "research-pipeline-v1";
   const { journalText, recallText } = context;
 
@@ -501,6 +567,35 @@ export async function writeEntryResult(
   // backend handed over — and the previous day it was compared against.
   let writtenSnapshot: ComputedSubmission["graph_snapshot"] = null;
   let writtenPreviousDayGraph: DayGraph | null = null;
+  // Retained journal text (#131). Written only for a participant who granted
+  // research use AND retention specifically, always encrypted, always with an
+  // expiry the purge job enforces. When the key is not configured,
+  // `encryptRawText` returns null and nothing is stored — a deployment missing
+  // its key retains no text rather than retaining it in the clear.
+  let rawTextColumns: Json = { raw_text: null, is_masked: true };
+  if (rawTextRetentionAllowed(consentState)) {
+    const retained = [
+      journalText.trim() ? `Journal entry:\n${journalText.trim()}` : "",
+      recallText.trim() ? `30-first-recall:\n${recallText.trim()}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    const sealed = retained ? await encryptRawText(retained) : null;
+    if (sealed) {
+      rawTextColumns = {
+        raw_text: null,
+        is_masked: true,
+        raw_text_ciphertext: sealed.ciphertext,
+        raw_text_key_version: sealed.key_version,
+        raw_text_expires_at: rawTextExpiryFrom(),
+      };
+    } else if (retained) {
+      warnings.push("raw_text_retention_key_unavailable");
+    }
+  } else {
+    consentGated.push("raw_text_retention");
+  }
+
   try {
     const entryRow = unwrap(
       "entries insert",
@@ -509,10 +604,12 @@ export async function writeEntryResult(
         .insert({
           owner_user_id: ownerUserId,
           participant_id: participantId,
-          // Raw text is never persisted server-side; the column exists for the
-          // TTL window that the FastAPI path uses.
-          raw_text: null,
-          is_masked: true,
+          // `raw_text` itself stays null on every path. Retained text goes to
+          // `raw_text_ciphertext`, which `authenticated` cannot select at all
+          // — the student and educator read paths lost column privileges on it
+          // in the 20260906 migration.
+          ...rawTextColumns,
+          client_submission_id: context.clientSubmissionId ?? null,
           extraction_json: computed.extraction as unknown as Json,
           extraction_provider: computed.extraction.extraction_provider,
           extraction_model: computed.extraction.extraction_model,
@@ -596,49 +693,67 @@ export async function writeEntryResult(
       insightId = insightRow.id as string;
     }
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Two requests with the same submission id can both pass the lookup above
+    // and race to insert. The unique index catches the loser, and losing that
+    // race means the entry is stored — by the other request.
+    if (context.clientSubmissionId && /duplicate key|entries_owner_client_submission_idx/i.test(message)) {
+      const existing = await client
+        .from("entries")
+        .select("id")
+        .eq("owner_user_id", ownerUserId)
+        .eq("client_submission_id", context.clientSubmissionId)
+        .maybeSingle();
+      if (existing.data) {
+        return {
+          status: "written",
+          entry_id: (existing.data as { id: string }).id,
+          duplicate: true,
+          consent_gated: consentGated,
+          warnings,
+        };
+      }
+    }
     console.error("[supabase-sync] core write failed", err);
-    return { status: "failed", reason: err instanceof Error ? err.message : String(err), warnings };
+    return { status: "failed", reason: message, consent_gated: consentGated, warnings };
   }
 
-  await mirror("consent_records", async () => {
-    unwrap(
-      "consent_records insert",
-      await client
-        .from("consent_records")
-        .insert({
-          owner_user_id: ownerUserId,
-          participant_id: participantId,
-          app_use: Boolean(consent.app_use),
-          research_analysis: Boolean(consent.research_analysis),
-          anonymized_export: Boolean(consent.anonymized_export),
-          future_fine_tuning: Boolean(consent.future_fine_tuning),
-          consent_version: String(consent.consent_version),
-          source: "next_route_sync",
-        })
-        .select("id")
-        .single(),
-    );
-  });
+  // No consent row is written here any more.
+  //
+  // Every submission used to insert a `consent_records` row built from the
+  // writer's own defaults, which is how the table came to hold rows attesting
+  // to research consent that nobody had given. Consent is recorded where it is
+  // obtained — `POST /api/consent`, from the participant's own action — and
+  // read here (`loadConsentState`) rather than asserted.
 
   let entrySessionId: string | null = null;
-  if (telemetry.session_id) {
+  const telemetryPermitted = telemetryAllowed(consentState);
+  if (telemetry.session_id && !telemetryPermitted) consentGated.push("entry_sessions");
+  if (telemetry.session_id && telemetryPermitted) {
     await mirror("entry_sessions", async () => {
+      // Upsert, not insert: a retried submission carries the same
+      // `client_session_id` — that is what makes the session identify the
+      // submission rather than the attempt — and `unique (owner_user_id,
+      // client_session_id)` would reject the second write (#135).
       const sessionRow = unwrap(
         "entry_sessions insert",
         await client
           .from("entry_sessions")
-          .insert({
-            owner_user_id: ownerUserId,
-            participant_id: participantId,
-            client_session_id: telemetry.session_id,
-            status: "submitted",
-            started_at: telemetry.started_at,
-            submitted_at: telemetry.submitted_at,
-            client_timezone: telemetry.client_timezone ?? null,
-            user_agent: telemetry.user_agent ?? null,
-            consent_snapshot_json: consent,
-            aggregate_metrics_json: telemetry.aggregate_metrics ?? {},
-          })
+          .upsert(
+            {
+              owner_user_id: ownerUserId,
+              participant_id: participantId,
+              client_session_id: telemetry.session_id,
+              status: "submitted",
+              started_at: telemetry.started_at,
+              submitted_at: telemetry.submitted_at,
+              client_timezone: telemetry.client_timezone ?? null,
+              user_agent: telemetry.user_agent ?? null,
+              consent_snapshot_json: consent,
+              aggregate_metrics_json: telemetry.aggregate_metrics ?? {},
+            },
+            { onConflict: "owner_user_id,client_session_id" },
+          )
           .select("id")
           .single(),
       );
@@ -905,7 +1020,9 @@ export async function writeEntryResult(
     if (insert.error) throw new Error(`longitudinal_features insert: ${insert.error.message}`);
   });
 
-  if (consent.research_analysis) {
+  if (!evalDatasetAllowed(consentState)) {
+    consentGated.push("eval_examples");
+  } else {
     await mirror("eval_examples", async () => {
       const insert = await client.from("eval_examples").insert({
         owner_user_id: ownerUserId,
@@ -931,13 +1048,15 @@ export async function writeEntryResult(
     });
   }
 
-  console.info("[supabase-sync] core rows written", { entryId, graphSnapshotId, insightId, warnings });
+  console.info("[supabase-sync] core rows written", { entryId, graphSnapshotId, insightId, warnings, consentGated });
   return {
     status: "written",
     entry_id: entryId,
     graph_snapshot_id: graphSnapshotId,
     insight_id: insightId,
     entry_session_id: entrySessionId,
+    duplicate: false,
+    consent_gated: consentGated,
     // The insight travels back so the caller renders what was stored rather
     // than the placeholder it posted. `anomaly_score` follows the same rule the
     // read path applies (`hasSettledBaseline`): a number only when a baseline
