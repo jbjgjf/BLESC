@@ -1,0 +1,45 @@
+{
+  "schema_version": "encoded-sequence-v0",
+  "dataset_id": "synthetic-dev-v0",
+  "split_id": "participant-holdout-v0",
+  "participant_key": "synthetic-001",
+  "encoder_id": "gru-lite-v0",
+  "feature_schema_id": "synthetic-features-v0",
+  "normalizer_id": "train-zscore-v0",
+  "cutoff_at": "2026-09-03T00:00:00Z",
+  "event_ids": [
+    "synthetic-001-event-01",
+    "synthetic-001-event-02"
+  ],
+  "available_times": [
+    "2026-09-01T12:00:01Z",
+    "2026-09-04T12:00:01Z"
+  ],
+  "delta_days": [
+    0.0,
+    1.0
+  ],
+  "latent_dim": 4,
+  "h_values": [
+    [
+      0.11,
+      -0.02,
+      0.31,
+      0.0
+    ],
+    [
+      0.19,
+      -0.05,
+      0.28,
+      0.04
+    ]
+  ],
+  "sequence_mask": [
+    true,
+    true
+  ],
+  "quality_flags": [
+    "short_history"
+  ],
+  "encoding_mode": "filtering"
+}

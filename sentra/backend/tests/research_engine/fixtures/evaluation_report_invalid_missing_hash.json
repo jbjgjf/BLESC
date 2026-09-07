@@ -1,0 +1,124 @@
+{
+  "report_version": "evaluation-report-v0",
+  "run_id": "run-smoke-0001",
+  "dataset_id": "synthetic-dev-v0",
+  "split_id": "participant-holdout-v0",
+  "artifact_hashes": {
+    "dataset_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "split_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "config_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "seed_list": [
+    11,
+    12,
+    13
+  ],
+  "baselines": [
+    "persistence",
+    "train_mean",
+    "linear_ar"
+  ],
+  "metrics": [
+    {
+      "name": "mae",
+      "target": "x1",
+      "value": 0.184,
+      "unit": "simulation_unit",
+      "n_participants": 12,
+      "n_predictions": 96,
+      "uncertainty_method": "participant_bootstrap",
+      "interval": [
+        0.151,
+        0.219
+      ],
+      "status": "ok",
+      "model_id": "memory-gru-v0",
+      "reason_ja": null
+    },
+    {
+      "name": "mae",
+      "target": "x1",
+      "value": 0.231,
+      "unit": "simulation_unit",
+      "n_participants": 12,
+      "n_predictions": 96,
+      "uncertainty_method": "participant_bootstrap",
+      "interval": [
+        0.198,
+        0.268
+      ],
+      "status": "ok",
+      "model_id": "persistence",
+      "reason_ja": null
+    }
+  ],
+  "metrics_by_scenario": {
+    "S1": [
+      {
+        "name": "mae",
+        "target": "x1",
+        "value": 0.102,
+        "unit": "simulation_unit",
+        "n_participants": 6,
+        "n_predictions": 48,
+        "uncertainty_method": null,
+        "interval": null,
+        "status": "ok",
+        "model_id": "linear_ar",
+        "reason_ja": null
+      }
+    ]
+  },
+  "unsupported_metrics": [
+    {
+      "name": "edge_f1",
+      "target": "structure",
+      "value": null,
+      "unit": "ratio",
+      "n_participants": null,
+      "n_predictions": null,
+      "uncertainty_method": null,
+      "interval": null,
+      "status": "unsupported",
+      "model_id": "sparse-projection-v0",
+      "reason_ja": "真の構造が定義されないシナリオでは構造回復を算出しない。"
+    }
+  ],
+  "leakage_checks": [
+    {
+      "name": "available_at_le_cutoff",
+      "passed": true,
+      "detail_ja": "全入力がcutoff_at以前だった。",
+      "checked_items": 1440
+    },
+    {
+      "name": "future_row_must_fail",
+      "passed": true,
+      "detail_ja": "未来の1行を混ぜたテストが期待どおり拒否された。",
+      "checked_items": 1
+    },
+    {
+      "name": "split_group_disjoint",
+      "passed": true,
+      "detail_ja": "train/validation/heldoutのsplit_groupが重ならない。",
+      "checked_items": 18
+    }
+  ],
+  "predictions_ref": "predictions/run-smoke-0001.jsonl",
+  "limitations": [
+    "合成データのみ。実在の人物についての証拠ではない。",
+    "hashは内容の一致確認であり、単独で改ざん不能を保証しない。",
+    "3seedは再現性の初期点検であり、統計的検出力の保証ではない。"
+  ],
+  "measured_usage": {
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "cached_tokens": 0,
+    "elapsed_seconds": 41.2,
+    "compute_environment": "cpu-only, numpy"
+  },
+  "reproducibility_command": "python -m research_engine.cli smoke --config research_engine/configs/smoke.json --out /tmp/blesc-research-smoke",
+  "status": "ok",
+  "generated_at": "2026-09-03T01:00:00Z"
+}
