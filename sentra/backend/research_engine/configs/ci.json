@@ -1,0 +1,13 @@
+{
+  "config_id": "research-ci-v0",
+  "scenarios": ["S1", "S3"],
+  "seeds": [11],
+  "n_participants": 12,
+  "n_days": 25,
+  "latent_dim": 6,
+  "epochs": 40,
+  "horizons": [1, 2],
+  "cutoff_fraction": 0.7,
+  "bootstrap_rounds": 10,
+  "fidelity_steps": 2
+}

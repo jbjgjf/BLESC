@@ -88,6 +88,14 @@ load_dotenv(_ENV_DIR / ".env")
 
 app = FastAPI(title="Sentra API")
 
+# The world-model research API (#140, contract C6). Registered as a router
+# rather than inline: it is owned by the research engine, it fails closed
+# without RESEARCH_API_TOKEN, and keeping it in its own module means the
+# product endpoints above cannot accidentally acquire its permissions.
+from .api.research_world_model import router as research_world_model_router  # noqa: E402
+
+app.include_router(research_world_model_router)
+
 AUDIO_MAX_BYTES = int(os.getenv("OPENAI_TRANSCRIPTION_MAX_BYTES", str(24 * 1024 * 1024)))
 AUDIO_EXTENSIONS = {".webm", ".wav", ".mp3", ".m4a", ".mp4", ".mpeg", ".mpga"}
 AUDIO_CONTENT_TYPES = {
