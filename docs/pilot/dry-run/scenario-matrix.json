@@ -1,0 +1,141 @@
+{
+  "contract": "pilot_dry_run_scenarios",
+  "version": "dry-run-v1",
+  "purpose": "The 10 test accounts for the pilot dry run (#168), fixed as data so the seed, the smoke suite and the evidence template cannot disagree about which account is supposed to do what. Trained adult staff and synthetic text only - no real high-school student is put through a path that has not been proven here first.",
+  "notes": [
+    "Every account uses synthetic journal text. None of it describes a real person.",
+    "`expected_terminal_state` is the pilot_enrollments.state the account should end in. An account that reaches a different state is a finding, not a variation.",
+    "`must_be_zero` lists counts that have to be exactly 0 for that account. A non-zero is a No-Go item unless the research lead records an accepted P1 with a reason and a date.",
+    "Account 10 exercises the crisis runbook with synthetic text. The staff member running it knows it is an exercise; the point is to time the human path, not to test a detector."
+  ],
+  "accounts": [
+    {
+      "id": 1,
+      "label_ja": "adult正常",
+      "is_minor": false,
+      "path": "invite -> account_bound -> information_read -> participant_assented -> enrolled -> collecting",
+      "expected_terminal_state": "collecting",
+      "days": [0, 1, 2, 3],
+      "must_verify": ["3日連続の提出が保存される", "固定自己評定が提出と同じsubmissionに結び付く"],
+      "must_be_zero": ["external_ai_calls", "unauthorized_reads"]
+    },
+    {
+      "id": 2,
+      "label_ja": "minor + guardian 正常",
+      "is_minor": true,
+      "path": "invite -> account_bound -> information_read -> participant_assented -> guardian_verified -> enrolled -> collecting",
+      "expected_terminal_state": "collecting",
+      "days": [0, 1, 2, 3],
+      "must_verify": [
+        "本人assentと保護者確認が別actor・別時刻・別tokenで記録される",
+        "保護者確認の前にjournalへ到達できない"
+      ],
+      "must_be_zero": ["writes_before_guardian_verified", "external_ai_calls"]
+    },
+    {
+      "id": 3,
+      "label_ja": "invite期限切れ",
+      "is_minor": false,
+      "path": "invite(expired) -> rejected",
+      "expected_terminal_state": null,
+      "days": [0],
+      "must_verify": ["期限切れコードでenrollmentが作られない", "拒否理由が参加者に分かる形で出る"],
+      "must_be_zero": ["enrollments_created", "research_writes"]
+    },
+    {
+      "id": 4,
+      "label_ja": "invite二重利用",
+      "is_minor": false,
+      "path": "invite(max_redemptions=1) redeemed twice",
+      "expected_terminal_state": "account_bound",
+      "days": [0],
+      "must_verify": ["2回目がatomicに拒否される", "redeemed_countがmax_redemptionsを超えない"],
+      "must_be_zero": ["second_enrollment"]
+    },
+    {
+      "id": 5,
+      "label_ja": "同意拒否",
+      "is_minor": false,
+      "path": "invite -> account_bound -> information_read -> (declines)",
+      "expected_terminal_state": "information_read",
+      "days": [0, 1],
+      "must_verify": ["同意しないままjournalを書いても研究datasetに入らない"],
+      "must_be_zero": ["research_writes", "export_rows"]
+    },
+    {
+      "id": 6,
+      "label_ja": "guardian未確認",
+      "is_minor": true,
+      "path": "invite -> account_bound -> information_read -> participant_assented -> (guardian never verifies)",
+      "expected_terminal_state": "participant_assented",
+      "days": [0, 1, 2],
+      "must_verify": ["未成年がguardian未確認のままcollectingへ進めない"],
+      "must_be_zero": ["research_writes", "export_rows"]
+    },
+    {
+      "id": 7,
+      "label_ja": "2日目に撤回",
+      "is_minor": false,
+      "path": "... -> collecting -> withdrawn (day 2)",
+      "expected_terminal_state": "withdrawn",
+      "days": [0, 1, 2, 3],
+      "must_verify": ["撤回時刻より後の提出が研究datasetに入らない", "撤回後もアプリの通常利用は妨げられない"],
+      "must_be_zero": ["research_writes_after_withdrawal", "export_rows_after_withdrawal"]
+    },
+    {
+      "id": 8,
+      "label_ja": "offline -> retry",
+      "is_minor": false,
+      "path": "... -> collecting, submission fails then retries",
+      "expected_terminal_state": "collecting",
+      "days": [0, 1, 2, 3],
+      "must_verify": [
+        "送信失敗時に本文が失われない",
+        "失敗が参加者にも運営者にも見える",
+        "復旧後の保存は1件"
+      ],
+      "must_be_zero": ["duplicate_entries", "silent_failures"]
+    },
+    {
+      "id": 9,
+      "label_ja": "二重送信",
+      "is_minor": false,
+      "path": "... -> collecting, same client_submission_id sent twice",
+      "expected_terminal_state": "collecting",
+      "days": [0, 1, 2, 3],
+      "must_verify": ["同じclient_submission_idで1件だけ保存される"],
+      "must_be_zero": ["duplicate_entries"]
+    },
+    {
+      "id": 10,
+      "label_ja": "危機的記述の運用演習",
+      "is_minor": true,
+      "path": "... -> collecting, synthetic crisis text on day 2",
+      "expected_terminal_state": "collecting",
+      "days": [0, 1, 2, 3],
+      "must_verify": [
+        "incident-runbook §3 の手順を実地に通す",
+        "覚知から学校側窓口への連絡までの時間を記録する",
+        "参加者の画面に診断名・リスクスコアが表示されない"
+      ],
+      "must_be_zero": ["diagnostic_display", "external_ai_calls"]
+    }
+  ],
+  "day_plan": {
+    "0": "deployment SHAを固定。code発行、登録、説明、assent/consent、権限分離を検査",
+    "1": "正常提出と固定自己評定、AI endpoint 0-call、DB件数の照合",
+    "2": "offline / retry / duplicate / 別userアクセス / 撤回 / 欠測",
+    "3": "export、PII review、retention/purge、backup/restore、incident tabletop、復旧"
+  },
+  "go_conditions": [
+    "理由不明の欠測が0",
+    "unauthorized cross-user read/write が0",
+    "pilot本文の外部AI送信が0",
+    "同意前・保護者未確認・撤回後の研究書込が0",
+    "保存失敗が参加者と運営者の両方に見え、再送後の重複が0",
+    "期待提出数とDB・export・monitorが一致",
+    "delete / withdraw / export / retention / crisis runbookを実地演習した",
+    "未解決P0が0。P1は研究責任者が理由と期限を記録して受容したものだけ",
+    "Discussion #137にdeployment SHA、結果、逸脱、Go/No-Go、署名者を記録した"
+  ]
+}
