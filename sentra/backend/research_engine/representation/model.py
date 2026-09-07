@@ -147,6 +147,25 @@ class GRUEncoder:
         predictions = states @ self.params["W_out"] + self.params["b_out"]
         return states, predictions, cache
 
+    def step(
+        self, previous: np.ndarray, values: np.ndarray, mask: np.ndarray, delta_days: float
+    ) -> np.ndarray:
+        """Advance the state by one step from an explicit previous state.
+
+        Exposed for T3's model-internal rollout: feeding the model's own
+        prediction back in is how a multi-step forecast is produced, and doing
+        it through the same cell keeps the rollout and the encoding one model
+        rather than two that happen to agree.
+        """
+
+        x = np.concatenate([values, mask.astype(float), [np.log1p(max(delta_days, 0.0))]])
+        r = _sigmoid(x @ self.params["W_r"] + previous @ self.params["U_r"] + self.params["b_r"])
+        z = _sigmoid(x @ self.params["W_z"] + previous @ self.params["U_z"] + self.params["b_z"])
+        n = np.tanh(
+            x @ self.params["W_n"] + r * (previous @ self.params["U_n"]) + self.params["b_n"]
+        )
+        return (1.0 - z) * n + z * previous
+
     def encode(self, values: np.ndarray, mask: np.ndarray, delta_days: np.ndarray) -> np.ndarray:
         states, _, _ = self.forward(values, mask, delta_days)
         return states
