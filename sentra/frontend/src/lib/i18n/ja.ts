@@ -323,6 +323,145 @@ export const ja = {
     } as Record<string, string>,
   },
 
+  /**
+   * The world-model research screen (#151, #152). Read by researchers, not by
+   * students, but written in the same language as the rest of the product —
+   * and the honesty words here are load-bearing: "候補" rather than "原因",
+   * "選択割合" rather than "確率", "算出せず" rather than a zero.
+   */
+  worldModel: {
+    title: "研究エンジン v0（世界モデル）",
+    subtitle: "合成データでの予測・説明・独立評価の実行結果",
+    syntheticOnlyBanner:
+      "この画面が表示するのはすべて合成データの結果です。実在の人物についての推定ではなく、臨床的な判断に使えるものでもありません。",
+    runIdLabel: "run id（実行の識別子）",
+    runIdPlaceholder: "run-から始まるid",
+    load: "読み込む",
+    start: "新しいrunを開始する",
+    reload: "状態を更新する",
+    state: {
+      idle: "runを指定していません",
+      queued: "順番待ち",
+      running: "実行中",
+      succeeded: "完了",
+      failed: "失敗",
+      unknown: "不明な状態",
+    } as Record<string, string>,
+    stateNote: {
+      idle: "run idを入力するか、新しいrunを開始してください。",
+      queued: "学習はHTTP要求の中では実行しません。順番が来るまでこの状態です。",
+      running: "学習と評価を実行しています。完了するとreportが読めます。",
+      succeeded: "評価reportと説明バンドルが揃っています。",
+      failed: "このrunは完了しませんでした。理由を確認してください。",
+      unknown: "サーバーが未知の状態を返しました。reportは表示しません。",
+    } as Record<string, string>,
+    notConfigured:
+      "研究APIが設定されていません。既定では誰にも開かないため、この画面からは実行できません。",
+    unauthorized: "研究権限がありません。",
+    notFound: "そのrunは見つかりません。",
+    stillRunning: "runがまだ完了していないため、reportはまだありません。",
+    loadFailed: "読み込みに失敗しました。",
+    sections: {
+      overall: "全体の成績",
+      byScenario: "シナリオ別",
+      unsupported: "算出しなかったmetric",
+      leakage: "漏洩・健全性の検査",
+      capabilities: "この実行でできたこと",
+      explanation: "説明グラフ（候補）",
+      timeseries: "1名分の時系列（heldout）",
+      usage: "実測した利用量",
+      limitations: "この結果の制約",
+      artifacts: "artifactのhash",
+    },
+    table: {
+      metric: "指標",
+      model: "モデル",
+      value: "値",
+      interval: "区間",
+      status: "状態",
+      participants: "参加者数",
+      predictions: "予測数",
+      scenario: "シナリオ",
+      reason: "理由",
+      check: "検査",
+      detail: "内容",
+    },
+    notComputed: "算出せず",
+    noInterval: "区間なし",
+    intervalNote:
+      "区間は参加者単位のbootstrapで、統計的検出力の保証ではありません。被覆率は区間幅と併せて読んでください。",
+    checkPassed: "通過",
+    checkFailed: "不通過",
+    capability: {
+      trained_encoder: "学習済みencoder",
+      trained_dynamics: "学習済み動的モデル",
+      calibrated_uncertainty: "較正済みの不確実性",
+      model_interventions: "モデル内の操作",
+      real_world_causal_effects: "現実の因果効果",
+      active_questioning: "適応的な質問選択",
+    } as Record<string, string>,
+    capabilityOn: "あり",
+    capabilityOff: "なし",
+    capabilityOffNote: "「なし」の機能はこの画面でも操作できません。",
+    semanticStatus: {
+      synthetic_axis: "合成データの軸",
+      anchored_measure: "測定に対応づけた軸",
+      unvalidated_latent: "未検証の潜在軸",
+    } as Record<string, string>,
+    semanticStatusNote:
+      "軸の名前は合成データの観測特徴に対応する座標であり、臨床尺度や病名ではありません。",
+    evidenceScope: {
+      model_candidate: "モデルが出した候補",
+      observed_report: "本人の記述",
+      curated_literature: "文献の根拠",
+    } as Record<string, string>,
+    uncertaintyMethod: {
+      bootstrap_frequency: "bootstrap再標本での選択割合",
+      participant_bootstrap: "参加者単位のbootstrap",
+    } as Record<string, string>,
+    edgeColumns: {
+      source: "元",
+      target: "先",
+      order: "次数",
+      lag: "遅れ（日）",
+      coefficient: "係数",
+      frequency: "選択割合",
+      scope: "根拠の種類",
+    },
+    edgeOrder: (order: number) => (order === 1 ? "単独" : `${order}項の積`),
+    edgeLag: (days: number) => `${days}日`,
+    noEdges: "候補となる関係は見つかりませんでした。",
+    residual: "説明しきれていない分",
+    residualNote:
+      "説明モデルは詳細モデルの振る舞いを完全には再現しません。残差を0として扱わないでください。",
+    fidelity: "説明の忠実さ",
+    fidelityNote:
+      "同じモデル内操作を詳細側と説明側の両方に加えたときの、2つの軌道の平均差です。現実の人への介入効果の正しさではありません。",
+    explanationUnavailable: "このrunは説明グラフを生成していません。",
+    timeseriesNote:
+      "実線はcutoffまでの観測、点はcutoff後の実測、破線が予測です。1名分の抜粋であり、成績はreportの数値で読んでください。",
+    timeseriesLegend: {
+      observed: "観測",
+      actual: "cutoff後の実測",
+      forecast: "予測（記憶モデル）",
+      baseline: "予測（持続値）",
+    },
+    featureLabel: (name: string) => `特徴 ${name}`,
+    noPreview: "時系列の抜粋がありません。",
+    usageLabels: {
+      provider_calls: "外部API呼び出し",
+      input_tokens: "入力トークン",
+      output_tokens: "出力トークン",
+      elapsed_seconds: "所要秒数",
+      compute_environment: "実行環境",
+    } as Record<string, string>,
+    usageZeroNote: "0は「呼び出さなかった」という実測であり、未計測（—）とは違います。",
+    unmeasured: "—",
+    reproduce: "再現コマンド",
+    seeds: "seed（乱数の種）",
+    seedNote: "seedは再現性の初期点検であり、統計的検出力の保証ではありません。",
+  },
+
   /** The 3D relation graph and the panels beside it. */
   graph: {
     /** The five ontology categories, keyed by the stored enum value. */

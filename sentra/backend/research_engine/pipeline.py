@@ -142,6 +142,7 @@ class RunResult:
     report: EvaluationReport
     explanations: List[Dict[str, Any]]
     run_dir: Path
+    forecast_previews: List[Dict[str, Any]] = field(default_factory=list)
     predictions: List[Prediction] = field(default_factory=list)
 
     def as_dict(self) -> Dict[str, Any]:
@@ -299,6 +300,60 @@ def _scenario_seed_pass(
                 steps=config.fidelity_steps,
             )
 
+    # One participant's history and forecast, saved so the research screen can
+    # draw a time series without the browser ever receiving a checkpoint or a
+    # whole dataset. Preview only: it is one heldout participant, chosen as the
+    # first in sorted order rather than the one that looks best.
+    preview = None
+    if per_model_bundles["memory_gru"]:
+        preview_forecast, preview_sequence, preview_index = per_model_bundles["memory_gru"][0]
+        baseline = next(
+            (
+                entry[0]
+                for entry in per_model_bundles["persistence"]
+                if entry[1].participant_key == preview_sequence.participant_key
+            ),
+            None,
+        )
+        preview = {
+            "scenario": scenario,
+            "seed": seed,
+            "participant_key": preview_sequence.participant_key,
+            "feature_names": list(preview_sequence.feature_names),
+            "cutoff_at": format_time(preview_forecast.cutoff_at),
+            # Up to and including the cutoff only. Carrying the whole sequence
+            # here would let the screen draw observations to the right of the
+            # cutoff line, and the cutoff is the one thing that makes the rest
+            # of that chart interpretable.
+            "history": [
+                {
+                    "available_at": format_time(preview_sequence.available_times[position]),
+                    "values": [
+                        None if not observed else float(value)
+                        for value, observed in zip(
+                            preview_sequence.raw_values[position],
+                            preview_sequence.mask[position],
+                        )
+                    ],
+                }
+                for position in range(preview_index + 1)
+            ],
+            "actual_after_cutoff": [
+                {
+                    "available_at": format_time(preview_sequence.available_times[position]),
+                    "values": [
+                        None if not observed else float(value)
+                        for value, observed in zip(
+                            preview_sequence.raw_values[position], preview_sequence.mask[position]
+                        )
+                    ],
+                }
+                for position in range(preview_index + 1, preview_sequence.length)
+            ],
+            "forecast": preview_forecast.as_dict(),
+            "baseline_forecast": baseline.as_dict() if baseline is not None else None,
+        }
+
     representative = per_model_bundles["memory_gru"][0][0] if per_model_bundles["memory_gru"] else None
     state_values = None
     if projection is not None and heldout:
@@ -358,6 +413,7 @@ def _scenario_seed_pass(
         "structure_defined": dataset.truth.structure_defined,
         "structure_undefined_reason_ja": dataset.truth.structure_undefined_reason_ja,
         "leakage_checks": checks,
+        "forecast_preview": preview,
         "encoder_training_status": artifact.training_status,
         "n_comparable_participants": len(comparable),
     }
@@ -459,11 +515,15 @@ def run_pipeline(config: RunConfig, out_dir: Path, run_id: Optional[str] = None)
     report.validate()
 
     explanations = [entry["explanation_bundle"].as_dict() for entry in passes]
+    previews = [entry["forecast_preview"] for entry in passes if entry["forecast_preview"]]
     (run_dir / "report.json").write_text(
         json.dumps(report.as_dict(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     (run_dir / "explanations.json").write_text(
         json.dumps(explanations, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    (run_dir / "forecast_previews.json").write_text(
+        json.dumps(previews, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     (run_dir / "run_config.json").write_text(
         json.dumps(config.as_dict(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
@@ -474,5 +534,6 @@ def run_pipeline(config: RunConfig, out_dir: Path, run_id: Optional[str] = None)
         report=report,
         explanations=explanations,
         run_dir=run_dir,
+        forecast_previews=previews,
         predictions=all_predictions,
     )

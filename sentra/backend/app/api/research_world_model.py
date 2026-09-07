@@ -77,6 +77,7 @@ class RunRecord:
     run_dir: Optional[str] = None
     report: Optional[Dict[str, Any]] = None
     explanations: Optional[List[Dict[str, Any]]] = None
+    forecast_previews: Optional[List[Dict[str, Any]]] = None
     error: Optional[str] = None
     artifact_versions: Dict[str, str] = field(default_factory=dict)
 
@@ -168,6 +169,7 @@ def _execute(run_id: str, config_path: str) -> None:
             record.state = "succeeded" if result.report.status == "ok" else "failed"
             record.report = result.report.as_dict()
             record.explanations = result.explanations
+            record.forecast_previews = result.forecast_previews
             record.run_dir = str(result.run_dir)
             record.artifact_versions = {
                 "report_version": result.report.report_version,
@@ -303,8 +305,16 @@ def get_explanations(
             "status": "unsupported",
             "reason_ja": record.error or "このrunは説明バンドルを生成していません。",
             "explanations": [],
+            "forecast_previews": [],
         }
-    return {"run_id": record.run_id, "status": "ok", "explanations": record.explanations}
+    return {
+        "run_id": record.run_id,
+        "status": "ok",
+        "explanations": record.explanations,
+        # A time series for one heldout participant, so the research screen can
+        # draw something without the browser receiving a checkpoint or a dataset.
+        "forecast_previews": record.forecast_previews or [],
+    }
 
 
 def reset_state_for_tests() -> None:
