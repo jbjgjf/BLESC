@@ -352,4 +352,77 @@ begin
 end;
 $$;
 
+
+-- ---------------------------------------------------------------------------
+-- 9. A participant cannot write the raw-text columns (#166)
+-- ---------------------------------------------------------------------------
+--
+-- The read side was closed in 20260906000100. These four assertions cover the
+-- write side, which was left open: with the anon key and their own row, a
+-- participant could have overwritten the ciphertext the research reader trusts,
+-- invalidated its key version, or pushed the retention expiry out of reach of
+-- the purge job. Each is asserted separately so a partial regression names the
+-- column it re-opened.
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-0000000000c1","role":"authenticated"}';
+
+do $$
+begin
+  begin
+    update public.entries
+       set raw_text_ciphertext = 'forged-ciphertext'
+     where owner_user_id = '00000000-0000-0000-0000-0000000000c1';
+    raise exception 'FAIL: participant updated raw_text_ciphertext';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    update public.entries
+       set raw_text_key_version = 'v-does-not-exist'
+     where owner_user_id = '00000000-0000-0000-0000-0000000000c1';
+    raise exception 'FAIL: participant updated raw_text_key_version';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    update public.entries
+       set raw_text_expires_at = now() + interval '100 years'
+     where owner_user_id = '00000000-0000-0000-0000-0000000000c1';
+    raise exception 'FAIL: participant extended raw_text_expires_at past the purge';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    update public.entries
+       set raw_text = 'plaintext the design says is never stored'
+     where owner_user_id = '00000000-0000-0000-0000-0000000000c1';
+    raise exception 'FAIL: participant wrote raw_text in the clear';
+  exception
+    when insufficient_privilege then null;
+  end;
+end $$;
+
+-- An insert that names a raw-text column is refused as well; one that does not
+-- still works, because the app's own writes must keep functioning.
+do $$
+begin
+  begin
+    insert into public.entries (owner_user_id, participant_id, raw_text_ciphertext)
+    values (
+      '00000000-0000-0000-0000-0000000000c1',
+      '00000000-0000-0000-0000-0000000000d1',
+      'forged-on-insert'
+    );
+    raise exception 'FAIL: participant inserted a row carrying raw_text_ciphertext';
+  exception
+    when insufficient_privilege then null;
+  end;
+end $$;
+
+reset role;
+
 rollback;

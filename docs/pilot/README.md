@@ -12,6 +12,7 @@
 | [field-mapping.md](field-mapping.md) | protocolの項目と、コード上の保存先の対応表 |
 | [consent-pack.md](consent-pack.md) | 本人説明・保護者説明・assent/consent・撤回・削除依頼の文面 |
 | [incident-runbook.md](incident-runbook.md) | 事故・危機記述・障害への対応手順 |
+| [infrastructure-runbook.md](infrastructure-runbook.md) | 専用Vercel/Supabaseの構築、環境変数の目録、反映の順序、検証（[#166](https://github.com/jbjgjf/BLESC/issues/166)） |
 | [approvals.md](approvals.md) | 承認欄。人間が署名するまで `approved` にしない |
 
 ## この一式の使い方
