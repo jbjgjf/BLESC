@@ -18,13 +18,17 @@ The working application is [blesc.online](https://blesc.online). The source of t
 
 The intended pilot is **50 students × 21 days**: 14 baseline days followed by 7 days of post-baseline observation, for at most 1,050 diary entries.
 
-Enrollment must not begin until the following [pilot blockers](https://github.com/jbjgjf/BLESC/issues?q=is%3Aopen%20label%3Apilot-blocker) are resolved and verified in a dry run:
+Enrollment must not begin until every [pilot blocker](https://github.com/jbjgjf/BLESC/issues?q=is%3Aopen%20label%3Apilot-blocker) is resolved and verified in a dry run. The five defects that blocked it first — consent, durable storage, telemetry, follow-up answers and research text retention — were fixed in [#138](https://github.com/jbjgjf/BLESC/pull/138) and are closed.
 
-1. [#134](https://github.com/jbjgjf/BLESC/issues/134) — explicit participant and guardian consent, withdrawal, and server-side consent checks.
-2. [#132](https://github.com/jbjgjf/BLESC/issues/132) — never show a completed submission unless durable storage succeeded.
-3. [#135](https://github.com/jbjgjf/BLESC/issues/135) — wire consent-gated, minimal research telemetry from the journal UI.
-4. [#133](https://github.com/jbjgjf/BLESC/issues/133) — persist follow-up answers and show real submission counts.
-5. [#131](https://github.com/jbjgjf/BLESC/issues/131) — retain research text only under valid consent, so human evaluation is possible.
+What remains is tracked as [Epic #161](https://github.com/jbjgjf/BLESC/issues/161), which ends at a 10-participant × 3-day dry run on production-equivalent infrastructure:
+
+1. [#164](https://github.com/jbjgjf/BLESC/issues/164) — force information, participant assent and guardian verification from `/pilot/join`.
+2. [#165](https://github.com/jbjgjf/BLESC/issues/165) — collection-only mode and fixed self-ratings, with no third-party transmission.
+3. [#166](https://github.com/jbjgjf/BLESC/issues/166) — dedicated Vercel and Supabase, and the staged rollout of #138.
+4. [#167](https://github.com/jbjgjf/BLESC/issues/167) — pseudonymised export, PII review and operational monitoring.
+5. [#168](https://github.com/jbjgjf/BLESC/issues/168) — the dry run itself, and a recorded Go/No-Go.
+
+[#162](https://github.com/jbjgjf/BLESC/issues/162) — the protocol, the collection inventory and the consent document — is a human decision and is not something this repository can mark done.
 
 The operating decision, task order, and dry-run criteria are in [Discussion #137](https://github.com/jbjgjf/BLESC/discussions/137).
 
