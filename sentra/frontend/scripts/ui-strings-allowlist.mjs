@@ -93,6 +93,9 @@ const DEVELOPER_ERRORS = ["useAuth must be used inside AuthProvider"];
 const COLUMN_PROJECTIONS = [
   "app_use, research_analysis, anonymized_export, raw_text_retention, future_fine_tuning,",
   "id, study_id, research_code, cohort, state, is_minor, information_read_at, assented_at,",
+  // Guardian verifications (#164). Note what this list leaves out: `token_hash`
+  // is never selected, so a row that reaches a browser cannot carry one.
+  "id, enrollment_id, owner_user_id, token_prefix, requested_grants, channel, expires_at,",
 ];
 
 /**

@@ -25,6 +25,8 @@ import {
 } from "./models";
 import { supabase } from "@/lib/supabase/client";
 import { NO_CONSENT, consentSnapshot, normalizeConsent, type ConsentState } from "@/lib/consent";
+import type { PilotState } from "@/lib/pilotEnrollment";
+import type { GuardianVerificationStatus } from "@/lib/guardianVerification";
 import { EMPTY_STATS, computeJournalStats, type JournalStats } from "@/lib/journalStats";
 import { generateCounselorSummary, type CounselorTimelineEvent } from "@/lib/counselor-summary";
 import { buildAuditTrails, type ModelRunRecord } from "@/lib/audit-trail";
@@ -48,6 +50,32 @@ function shouldAttachAuthorizationHeader() {
 type ParticipantRow = {
   id: string;
   code: string;
+};
+
+/** One row of `/api/pilot/enrollment`. Carries no user id and no invitation. */
+export type PilotEnrollmentSummary = {
+  id: string;
+  state: PilotState;
+  is_minor: boolean;
+  research_code: string;
+  cohort: string;
+  progress: { step: number; total: number };
+  pending: string | null;
+};
+
+/**
+ * `/api/pilot/guardian` — the answer to "has a guardian replied", and nothing
+ * else. `token_prefix` names a link; it cannot present one.
+ */
+export type GuardianStatusResponse = {
+  enrollment_id: string;
+  guardian_required: boolean;
+  can_request: boolean;
+  status: GuardianVerificationStatus;
+  message: string;
+  token_prefix: string | null;
+  expires_at: string | null;
+  decided_at: string | null;
 };
 
 type EntryRow = {
@@ -539,8 +567,15 @@ export class ApiClient {
     }
   }
 
-  /** Record a consent decision. Each grant is sent explicitly; an omitted one
-   *  is a refusal, never an inherited yes. */
+  /**
+   * Record a consent decision. Each grant is sent explicitly; an omitted one
+   * is a refusal, never an inherited yes.
+   *
+   * `guardian_consent` is deliberately not in this signature (#164). It is not
+   * a decision the signed-in participant gets to send — the server drops it,
+   * and it can only be written by the guardian's own confirmation request. A
+   * caller who needs it should not be reaching for this method.
+   */
   static async grantConsent(
     userId: string,
     grants: {
@@ -550,15 +585,88 @@ export class ApiClient {
       raw_text_retention: boolean;
       future_fine_tuning: boolean;
       minor_assent: boolean;
-      guardian_consent: boolean;
       document_version?: string;
     },
   ): Promise<ConsentState> {
-    const result = await this.fetch<{ consent: ConsentState }>(
+    const result = await this.fetch<{ consent: ConsentState; pending?: string | null }>(
       `/consent?user_id=${encodeURIComponent(userId)}`,
       { method: "POST", body: JSON.stringify(grants) },
     );
     return normalizeConsent(result.consent);
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Pilot enrollment (#163, #164)                                           */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * The caller's own enrollments, newest first.
+   *
+   * Through the API route rather than the browser's Supabase client: the join
+   * screen needs `progress` and `pending`, which are derived from the shared
+   * state machine on the server, and deriving them twice is how the screen and
+   * the server come to disagree about what step someone is on.
+   */
+  static async pilotEnrollments(): Promise<PilotEnrollmentSummary[]> {
+    const result = await this.fetch<{ enrollments: PilotEnrollmentSummary[] }>("/pilot/enrollment");
+    return result.enrollments ?? [];
+  }
+
+  /** Redeem an invitation code. Every rejection returns the same outcome — the
+   *  route will not say which of the reasons applied. */
+  static async redeemPilotInvite(
+    userId: string,
+    code: string,
+    isMinor: boolean,
+  ): Promise<{ outcome: string; state?: PilotState }> {
+    return this.fetch<{ outcome: string; state?: PilotState }>(
+      `/pilot/redeem?user_id=${encodeURIComponent(userId)}`,
+      { method: "POST", body: JSON.stringify({ code, is_minor: isMinor }) },
+    );
+  }
+
+  /**
+   * Ask the server to advance one step.
+   *
+   * The target is named so a stale tab cannot advance twice, and the server
+   * decides whether the step is legal. `guardian_verified` and `collecting` are
+   * refused here whatever this sends — the first belongs to the guardian's own
+   * request, the second to the study's schedule.
+   */
+  static async advancePilotEnrollment(
+    enrollmentId: string,
+    to: PilotState,
+  ): Promise<{ status: string; state?: PilotState }> {
+    return this.fetch<{ status: string; state?: PilotState }>("/pilot/enrollment", {
+      method: "POST",
+      body: JSON.stringify({ enrollment_id: enrollmentId, to }),
+    });
+  }
+
+  /** Whether a guardian has answered yet. Never returns a token. */
+  static async guardianStatus(enrollmentId: string): Promise<GuardianStatusResponse> {
+    return this.fetch<GuardianStatusResponse>(
+      `/pilot/guardian?enrollment_id=${encodeURIComponent(enrollmentId)}`,
+    );
+  }
+
+  /**
+   * Issue a verification link for a guardian.
+   *
+   * The URL comes back exactly once and is not stored anywhere the participant
+   * can read it again — losing it means issuing a new one, which supersedes the
+   * old. Note what this method cannot do: there is no client method that
+   * confirms a guardian, because there is no route that would accept one from
+   * this session.
+   */
+  static async requestGuardianLink(
+    enrollmentId: string,
+    requestedGrants: Record<string, boolean>,
+  ): Promise<{ url: string; token_prefix: string; expires_at: string }> {
+    return this.fetch<{ url: string; token_prefix: string; expires_at: string }>("/pilot/guardian", {
+      method: "POST",
+      body: JSON.stringify({ enrollment_id: enrollmentId, requested_grants: requestedGrants }),
+    });
   }
 
   /** Withdraw consent. The server records the revocation and deletes any

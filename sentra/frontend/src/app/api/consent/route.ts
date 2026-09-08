@@ -12,13 +12,23 @@
  *   - Revocation deletes. Recording that consent was withdrawn while the
  *     retained journal text stays in the table would satisfy the record and not
  *     the promise, so `DELETE` purges the text before it answers (#131).
+ *
+ *   - **A guardian's consent never arrives through this route (#164).** It used
+ *     to: the body carried `guardian_consent`, and whoever was signed in could
+ *     set it. For a fifteen-year-old that is the participant ticking a box on
+ *     their own behalf and a `consent_records` row that reads, to a reviewer,
+ *     as a parent's agreement. The flag is now dropped from every request here
+ *     and can only be written by `/api/pilot/guardian/confirm`, which is
+ *     reached with a token on a different device and no session at all.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/server/api";
 import { loadConsentState, recordConsent, revokeConsent } from "@/lib/server/consentStore";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
+import { loadEnrollmentByParticipant } from "@/lib/server/pilotStore";
 import { consentSnapshot } from "@/lib/consent";
+import { guardianRequired, participantConsentGrant } from "@/lib/guardianVerification";
 
 export const runtime = "nodejs";
 
@@ -29,8 +39,13 @@ type ConsentRequest = {
   raw_text_retention?: boolean;
   future_fine_tuning?: boolean;
   minor_assent?: boolean;
-  guardian_consent?: boolean;
   document_version?: string;
+  /**
+   * Not a field. Named here so that a request still sending it — an old tab, a
+   * script written against the previous contract — is visibly ignored rather
+   * than silently accepted by a spread. `participantConsentGrant` drops it.
+   */
+  guardian_consent?: never;
 };
 
 async function resolve(request: NextRequest) {
@@ -68,26 +83,54 @@ export async function POST(request: NextRequest) {
   if ("error" in resolved) return resolved.error;
   const body = (await request.json().catch(() => ({}))) as ConsentRequest;
 
-  // A minor's own agreement does not stand in for a guardian's, and the reverse
-  // is worse. Recording research consent with only one of them would produce a
-  // record that reads as complete, so the route refuses rather than storing a
-  // half-consent the gates would then have to interpret.
-  if (body.research_analysis === true && !(body.minor_assent === true && body.guardian_consent === true)) {
+  // The participant's own agreement is theirs to give and is required for
+  // research use. It is the one half this route can record.
+  if (body.research_analysis === true && body.minor_assent !== true) {
     return jsonError(
-      "研究利用への同意には、本人の同意と保護者の同意の両方が必要です。",
+      "研究利用への同意には、本人の同意が必要です。",
       422,
-      { code: "research_consent_requires_both_parties" },
+      { code: "research_consent_requires_assent" },
     );
   }
+
+  // Whether a guardian is needed comes from the enrollment, which a coordinator
+  // set at redemption — not from the body, and not from a date of birth this
+  // study has no reason to hold. No enrollment means no study to consent to, so
+  // the safe reading of "unknown" is the one that asks for a guardian.
+  const enrollment = await loadEnrollmentByParticipant(
+    resolved.service,
+    resolved.ownerUserId,
+    resolved.participantId,
+  );
+  const needsGuardian = enrollment ? guardianRequired(enrollment) : true;
+
+  // Read, never trusted from the request: the guardian half is whatever the
+  // stored record already says, which only the confirm route can have written.
+  const stored = await loadConsentState(resolved.service, resolved.ownerUserId, resolved.participantId);
+  const guardianConfirmed = stored.guardian_consent === true;
+
+  const grant = participantConsentGrant(body as Record<string, unknown>, {
+    guardianRequired: needsGuardian,
+    guardianConfirmed,
+  });
+
+  // Asking for research use before a guardian has answered is the ordinary
+  // path, not an error: the participant assents first and the guardian is asked
+  // second. So the assent is recorded as given, the research grants are held
+  // back, and the response names what the enrollment is waiting for so the
+  // screen can move to the guardian step instead of showing a failure.
+  const pending = body.research_analysis === true && needsGuardian && !guardianConfirmed
+    ? "guardian_verification"
+    : null;
 
   try {
     const consent = await recordConsent(
       resolved.service,
       resolved.ownerUserId,
       resolved.participantId,
-      body,
+      { ...grant, document_version: body.document_version },
     );
-    return NextResponse.json({ consent, snapshot: consentSnapshot(consent) });
+    return NextResponse.json({ consent, snapshot: consentSnapshot(consent), pending });
   } catch (err) {
     return jsonError(err instanceof Error ? err.message : "同意を記録できませんでした。", 502);
   }

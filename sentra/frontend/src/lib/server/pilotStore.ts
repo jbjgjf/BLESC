@@ -85,6 +85,21 @@ export async function loadStudyBySlug(client: SupabaseClient, slug: string): Pro
   return (result.data as PilotStudy) ?? null;
 }
 
+/** A study by id. The join screen has an enrollment and needs its study. */
+export async function loadStudyById(client: SupabaseClient, studyId: string): Promise<PilotStudy | null> {
+  const result = await client
+    .from("pilot_studies")
+    .select("id, slug, title, status, protocol_version, consent_document_version, baseline_days, observation_days, is_dry_run")
+    .eq("id", studyId)
+    .maybeSingle();
+
+  if (result.error) {
+    console.warn("[pilot] study lookup by id failed", result.error.message);
+    return null;
+  }
+  return (result.data as PilotStudy) ?? null;
+}
+
 /** The caller's enrollment in a study, or null. */
 export async function loadEnrollment(
   client: SupabaseClient,
@@ -100,6 +115,64 @@ export async function loadEnrollment(
 
   if (result.error) {
     console.warn("[pilot] enrollment lookup failed", result.error.message);
+    return null;
+  }
+  return (result.data as unknown as PilotEnrollmentRow) ?? null;
+}
+
+/**
+ * One enrollment by id, including the two identifiers `ENROLLMENT_COLUMNS`
+ * leaves out.
+ *
+ * `owner_user_id` and `participant_id` are not in the shared column list
+ * because everything that returns an enrollment to a browser uses that list,
+ * and neither identifier belongs in one. The guardian confirmation path needs
+ * both — it writes a consent record for the participant and has only a token to
+ * start from — so it asks for them explicitly, on the server, and does not
+ * return them.
+ */
+export async function loadEnrollmentById(
+  client: SupabaseClient,
+  enrollmentId: string,
+): Promise<(PilotEnrollmentRow & { owner_user_id: string; participant_id: string }) | null> {
+  const result = await client
+    .from("pilot_enrollments")
+    .select(`${ENROLLMENT_COLUMNS}, owner_user_id, participant_id`)
+    .eq("id", enrollmentId)
+    .maybeSingle();
+
+  if (result.error) {
+    console.warn("[pilot] enrollment lookup by id failed", result.error.message);
+    return null;
+  }
+  return (result.data as unknown as (PilotEnrollmentRow & { owner_user_id: string; participant_id: string })) ?? null;
+}
+
+/**
+ * The live enrollment for a participant record, if there is one.
+ *
+ * "Live" excludes `withdrawn` and `completed`: the consent route asks this to
+ * decide whether a guardian is required, and a study someone has left should
+ * not be what decides that for the study they are in now. Newest first, so a
+ * second enrollment supersedes an older one.
+ */
+export async function loadEnrollmentByParticipant(
+  client: SupabaseClient,
+  ownerUserId: string,
+  participantId: string,
+): Promise<PilotEnrollmentRow | null> {
+  const result = await client
+    .from("pilot_enrollments")
+    .select(ENROLLMENT_COLUMNS)
+    .eq("owner_user_id", ownerUserId)
+    .eq("participant_id", participantId)
+    .not("state", "in", "(withdrawn,completed)")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (result.error) {
+    console.warn("[pilot] enrollment lookup by participant failed", result.error.message);
     return null;
   }
   return (result.data as unknown as PilotEnrollmentRow) ?? null;
@@ -209,7 +282,10 @@ export async function advanceEnrollment(
     enrollmentId: string;
     ownerUserId: string;
     to: PilotState;
-    actor: "participant" | "operator" | "system";
+    // 'guardian' is not decoration: the constraint on
+    // `pilot_enrollment_events.actor` was widened in 20260908000000 so that a
+    // guardian's confirmation is not recorded as an operator's (#164).
+    actor: "participant" | "operator" | "system" | "guardian";
     reason?: string;
   },
 ): Promise<{ outcome: TransitionOutcome; state?: PilotState }> {
