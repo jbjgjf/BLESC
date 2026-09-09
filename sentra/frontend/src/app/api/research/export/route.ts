@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
   // `research_code` is resolved here and never has to name a participant id.
   let enrollmentQuery = service
     .from("pilot_enrollments")
-    .select("participant_id, research_code, cohort, state, collection_started_at, withdrawn_at");
+    .select("participant_id, research_code, cohort, state, collection_started_at, collection_ends_at, withdrawn_at");
   if (researchCode) enrollmentQuery = enrollmentQuery.eq("research_code", researchCode);
 
   const enrollmentResult = await enrollmentQuery;

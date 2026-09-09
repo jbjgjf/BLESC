@@ -20,7 +20,34 @@
 // Relative, with the extension, matching the other cross-module value imports
 // in `src/lib` — the unit tests load these files directly under node, which
 // does not resolve the `@/` alias for anything that is not a type-only import.
-import { relativeDay, studyLocalDate } from "./pilotExport.ts";
+import { dayIndex } from "./researchExport.ts";
+import { localDayKey } from "./journalStats.ts";
+
+/**
+ * The study's timezone, and the reason it is a constant.
+ *
+ * The pilot runs in Japanese schools, and a school day is a JST day. Reading it
+ * from the browser would make a participant's device clock evidence, and
+ * reading it from the serverless region would make it whatever region answered.
+ *
+ * The same value the export uses, so a day the dashboard calls missing is the
+ * same day the export does not contain.
+ */
+export const STUDY_TIME_ZONE = "Asia/Tokyo";
+
+/**
+ * Days since collection opened, counting the opening day as 0.
+ *
+ * `dayIndex` from the export is 1-based, because a dataset row reading "day 1"
+ * is what an analyst expects. Reconciliation counts elapsed days, where the
+ * opening day is zero days elapsed, so this shifts by one rather than keeping
+ * two different conventions in the reader's head.
+ */
+function elapsedDays(startedAt: string | null, instant: string): number | null {
+  if (!startedAt) return null;
+  const index = dayIndex(instant, startedAt, STUDY_TIME_ZONE);
+  return index === null ? null : index - 1;
+}
 
 /**
  * How many study days this participant has been asked for so far.
@@ -51,7 +78,7 @@ export function expectedDays(input: {
   // The last day this participant was in the study, whichever came first.
   const endpoints = [nowIso, input.withdrawnAt, input.completedAt].filter(Boolean) as string[];
   const lastDay = endpoints
-    .map((instant) => relativeDay(input.collectionStartedAt, instant))
+    .map((instant) => elapsedDays(input.collectionStartedAt, instant))
     .filter((day): day is number => day !== null)
     .reduce((min, day) => (day < min ? day : min), Number.POSITIVE_INFINITY);
   if (!Number.isFinite(lastDay)) return 0;
@@ -61,6 +88,11 @@ export function expectedDays(input: {
   // A `withdrawnAt` before collection opened gives a negative day: nothing was
   // ever expected of that participant.
   return bounded < 0 ? 0 : bounded + 1;
+}
+
+/** Elapsed study days, exported so the dashboard uses one definition. */
+export function studyDaysElapsed(startedAt: string | null, instant: string): number | null {
+  return elapsedDays(startedAt, instant);
 }
 
 export type ParticipantReconciliation = {
@@ -185,7 +217,7 @@ export function retentionStatus(
   expiries: Array<string | null>,
   now: string | Date = new Date(),
 ): { retained: number; expiring_within_7_days: number; overdue: number } {
-  const today = studyLocalDate(now instanceof Date ? now.toISOString() : now);
+  const today = localDayKey(now instanceof Date ? now.toISOString() : now, STUDY_TIME_ZONE);
   const todayMs = today ? Date.parse(`${today}T00:00:00.000Z`) : Number.NaN;
   let retained = 0;
   let expiring = 0;
@@ -193,7 +225,7 @@ export function retentionStatus(
   for (const expiry of expiries) {
     retained += 1;
     if (!expiry || Number.isNaN(todayMs)) continue;
-    const expiryDate = studyLocalDate(expiry);
+    const expiryDate = localDayKey(expiry, STUDY_TIME_ZONE);
     if (!expiryDate) continue;
     const days = (Date.parse(`${expiryDate}T00:00:00.000Z`) - todayMs) / 86_400_000;
     if (days < 0) overdue += 1;

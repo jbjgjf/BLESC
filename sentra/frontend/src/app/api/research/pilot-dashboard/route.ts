@@ -23,11 +23,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { normalizeConsent, researchUseAllowed } from "@/lib/consent";
-import { relativeDay } from "@/lib/pilotExport";
 import {
   expectedDays,
   reconcileParticipant,
   retentionStatus,
+  studyDaysElapsed,
   tally,
   totalsFor,
   type ParticipantReconciliation,
@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
       .in("participant_id", participantIds),
     service.from("pilot_self_reports").select("entry_id, participant_id, schema_version").in("participant_id", participantIds),
     service.from("submission_failures").select("participant_id, outcome").in("participant_id", participantIds),
-    service.from("pilot_pii_reviews").select("participant_id, status, max_severity, scanner_version").in("participant_id", participantIds),
+    service.from("pilot_pii_reviews").select("participant_id, status, max_confidence, scanner_version").in("participant_id", participantIds),
     service
       .from("consent_records")
       .select(
@@ -168,7 +168,7 @@ export async function GET(request: NextRequest) {
         observationDays: study.observation_days,
         now,
       }),
-      submittedDayNumbers: own.map((entry) => relativeDay(enrollment.collection_started_at, entry.created_at)),
+      submittedDayNumbers: own.map((entry) => studyDaysElapsed(enrollment.collection_started_at, entry.created_at)),
       failed_submissions: failuresByParticipant.get(enrollment.participant_id) ?? 0,
       entries_without_self_report: own.filter((entry) => !selfReportEntryIds.has(entry.id)).length,
     });
@@ -229,8 +229,8 @@ export async function GET(request: NextRequest) {
 
     pii_review: {
       by_status: tally(((reviewResult.data ?? []) as Array<{ status: string }>).map((row) => row.status)),
-      by_severity: tally(
-        ((reviewResult.data ?? []) as Array<{ max_severity: string | null }>).map((row) => row.max_severity),
+      by_confidence: tally(
+        ((reviewResult.data ?? []) as Array<{ max_confidence: string | null }>).map((row) => row.max_confidence),
       ),
       by_scanner_version: tally(
         ((reviewResult.data ?? []) as Array<{ scanner_version: string }>).map((row) => row.scanner_version),
@@ -266,7 +266,7 @@ function emptyDashboard(
     consent: { records: 0, without_record: 0, research_use_allowed: 0, by_document_version: {}, revoked: 0 },
     self_reports: { stored: 0, entries_without_self_report: 0, by_schema_version: {} },
     integrity: { failures_by_outcome: {}, entries_without_submission_id: 0 },
-    pii_review: { by_status: {}, by_severity: {}, by_scanner_version: {} },
+    pii_review: { by_status: {}, by_confidence: {}, by_scanner_version: {} },
     retention: { retained: 0, expiring_within_7_days: 0, overdue: 0 },
     participants: [],
   };

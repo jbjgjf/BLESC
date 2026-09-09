@@ -30,7 +30,7 @@ import {
   telemetryAllowed,
 } from "@/lib/consent";
 import { hasSelfReportContent, type NormalizedSelfReport } from "@/lib/pilotSelfReport";
-import { PII_SCANNER_VERSION, scanForPii, summarizeFindings } from "@/lib/piiScan";
+import { PII_SCANNER_VERSION, forStorage, scanForPii, summarizePii } from "@/lib/piiScanner";
 import { consentMismatch, loadConsentState } from "@/lib/server/consentStore";
 import { encryptRawText, rawTextExpiryFrom } from "@/lib/server/rawTextCrypto";
 import {
@@ -607,8 +607,11 @@ export async function writeEntryResult(
   let rawTextColumns: Json = { raw_text: null, is_masked: true };
   // Kinds and character offsets of anything the scanner took for an identifier,
   // computed here because this is the only place in the write that holds the
-  // plaintext. Never the matched text itself (#167).
-  let piiSummary: ReturnType<typeof summarizeFindings> | null = null;
+  // plaintext. Never the matched text itself (#167) — `forStorage` drops it.
+  let piiSummary: {
+    counts: ReturnType<typeof summarizePii>;
+    findings: ReturnType<typeof forStorage>;
+  } | null = null;
   if (rawTextRetentionAllowed(consentState)) {
     const retained = [
       journalText.trim() ? `Journal entry:\n${journalText.trim()}` : "",
@@ -616,7 +619,10 @@ export async function writeEntryResult(
     ]
       .filter(Boolean)
       .join("\n\n");
-    if (retained) piiSummary = summarizeFindings(scanForPii(retained));
+    if (retained) {
+      const findings = scanForPii(retained);
+      piiSummary = { counts: summarizePii(findings), findings: forStorage(findings) };
+    }
     const sealed = retained ? await encryptRawText(retained) : null;
     if (sealed) {
       rawTextColumns = {
@@ -920,7 +926,9 @@ export async function writeEntryResult(
   // Only retained text is queued. Text that was never stored cannot reach an
   // export, so there is nothing for a reviewer to decide about it.
   if (piiSummary) {
-    const summary = piiSummary;
+    const { counts, findings } = piiSummary;
+    // The highest confidence present, which is what a reviewer triages by.
+    const topConfidence = counts.high > 0 ? "high" : counts.medium > 0 ? "medium" : counts.low > 0 ? "low" : null;
     await mirror("pilot_pii_reviews", async () => {
       const insert = await client.from("pilot_pii_reviews").upsert(
         {
@@ -928,11 +936,11 @@ export async function writeEntryResult(
           participant_id: participantId,
           entry_id: entryId,
           scanner_version: PII_SCANNER_VERSION,
-          finding_count: summary.finding_count,
-          max_severity: summary.max_severity,
-          kinds: summary.kinds,
-          findings_json: summary.findings,
-          status: summary.finding_count > 0 ? "pending" : "clear",
+          finding_count: counts.total,
+          max_confidence: topConfidence,
+          kinds: Object.keys(counts.kinds).sort(),
+          findings_json: findings,
+          status: counts.total > 0 ? "pending" : "clear",
         },
         { onConflict: "entry_id" },
       );

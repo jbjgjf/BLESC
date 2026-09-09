@@ -30,6 +30,17 @@
  * address as the same claim.
  */
 
+/**
+ * Bump when a detector is added, removed, or its confidence changes.
+ *
+ * The review queue (`pilot_pii_reviews`, #167) stores this on every row, so a
+ * reviewer can tell which scanner cleared an entry — and so the rows to re-scan
+ * after a detector is added are exactly the ones whose version is behind. A
+ * clean scan under an older version is not the same assurance as a clean scan
+ * under this one.
+ */
+export const PII_SCANNER_VERSION = "pii-scanner-ja-v1";
+
 export type PiiKind =
   | "email"
   | "phone"
@@ -198,6 +209,28 @@ export function scanForPii(text: string): PiiFinding[] {
 }
 
 /** Counts by kind, for a queue that shows what is in a row before opening it. */
+/**
+ * A finding with the matched text removed, for storage.
+ *
+ * `PiiFinding.text` is the participant's own words — that is what makes the
+ * finding useful on an operator's screen and what makes it unstorable. A review
+ * queue that keeps it is a second copy of the journal in a table with different
+ * access rules, which is the leak the queue exists to prevent. A reviewer who
+ * needs to read the passage goes through the export route, under the export
+ * allowlist, where the read is audited.
+ */
+export type StoredPiiFinding = {
+  kind: PiiKind;
+  confidence: PiiConfidence;
+  start: number;
+  end: number;
+};
+
+/** Strip the matched text from every finding, leaving kind and position. */
+export function forStorage(findings: PiiFinding[]): StoredPiiFinding[] {
+  return findings.map(({ kind, confidence, start, end }) => ({ kind, confidence, start, end }));
+}
+
 export function summarizePii(findings: PiiFinding[]): {
   total: number;
   high: number;

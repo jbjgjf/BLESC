@@ -20,10 +20,11 @@
 --      out-of-range value is refused by a CHECK, so the only way one enters the
 --      research record is a migration that deliberately widens the scale.
 --
---   3. The PII queue never holds text. The `findings_json` shape constraint
---      refuses a findings array carrying any key beyond the five the scanner
---      emits, so a future writer cannot start attaching the matched string "to
---      make the reviewer's job easier".
+--   3. The PII queue never holds text. The scanner's own `PiiFinding` carries
+--      `text` — the matched substring, verbatim — and `forStorage()` drops it.
+--      The `findings_json` shape constraint refuses a findings array that kept
+--      it, so a writer that forgets the call is rejected by the database rather
+--      than quietly persisting participant text.
 
 begin;
 
@@ -176,21 +177,23 @@ $$;
 -- ---------------------------------------------------------------------------
 
 insert into public.pilot_pii_reviews
-  (owner_user_id, participant_id, entry_id, scanner_version, finding_count, max_severity, kinds, findings_json, status)
+  (owner_user_id, participant_id, entry_id, scanner_version, finding_count, max_confidence, kinds, findings_json, status)
 values
   ('00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-0000000000d1',
-   '00000000-0000-0000-0000-000000000e11', 'pii-scan-ja-v1', 1, 'high', array['email'],
-   '[{"kind":"email","severity":"high","start":4,"end":20,"length":16}]'::jsonb, 'pending');
+   '00000000-0000-0000-0000-000000000e11', 'pii-scanner-ja-v1', 1, 'high', array['email'],
+   '[{"kind":"email","confidence":"high","start":4,"end":20}]'::jsonb, 'pending');
 
--- A findings array carrying the matched string is refused.
+-- A findings array carrying the matched string is refused. This is the exact
+-- shape `scanForPii` returns before `forStorage()` strips it, so the test is
+-- the real mistake rather than an invented one.
 do $$
 begin
   begin
     insert into public.pilot_pii_reviews
       (owner_user_id, participant_id, entry_id, scanner_version, finding_count, findings_json)
     values ('00000000-0000-0000-0000-0000000000f2', '00000000-0000-0000-0000-0000000000d2',
-            '00000000-0000-0000-0000-000000000e22', 'pii-scan-ja-v1', 1,
-            '[{"kind":"email","severity":"high","start":4,"end":20,"length":16,"excerpt":"taro@example.com"}]'::jsonb);
+            '00000000-0000-0000-0000-000000000e22', 'pii-scanner-ja-v1', 1,
+            '[{"kind":"email","confidence":"high","start":4,"end":20,"text":"taro@example.com"}]'::jsonb);
     raise exception 'a finding carrying the matched text was accepted';
   exception when check_violation then
     null;

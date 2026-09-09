@@ -53,6 +53,8 @@ export type ExportEnrollmentRow = {
   cohort: string;
   state: string;
   collection_started_at: string | null;
+  /** The close of this participant's window, when the study has set one. */
+  collection_ends_at: string | null;
   withdrawn_at: string | null;
 };
 
@@ -67,7 +69,8 @@ export type ExclusionReason =
   | "withdrawn"
   | "not_enrolled"
   | "no_research_consent"
-  | "collection_not_started";
+  | "collection_not_started"
+  | "outside_window";
 
 export type ResearchRow = {
   research_code: string;
@@ -92,7 +95,17 @@ export type ResearchRow = {
    */
   raw_text_ref: string;
   raw_text_available: boolean;
-  raw_text_expires_at: string | null;
+  /**
+   * The study day on which retention expires — never the timestamp.
+   *
+   * `entries.raw_text_expires_at` is the submission instant plus a fixed
+   * retention interval, so shipping it absolute hands the submission's calendar
+   * date straight back by subtraction. That is the same re-identification this
+   * module replaced `created_at` to prevent, arriving through a second door. As
+   * a day index it still answers the operational question — how long until this
+   * is purged — in the units the rest of the row already uses.
+   */
+  raw_text_expires_day: number | null;
   /** Present only when text was actually included in this export. */
   raw_text?: string | null;
   /** Present only when text was scanned, which requires having had the text. */
@@ -111,6 +124,7 @@ const NO_EXCLUSIONS: Record<ExclusionReason, number> = {
   not_enrolled: 0,
   no_research_consent: 0,
   collection_not_started: 0,
+  outside_window: 0,
 };
 
 /**
@@ -225,6 +239,27 @@ export function buildResearchDataset(input: {
       continue;
     }
 
+    // Membership is not the same as the window.
+    //
+    // `entries` carries no study id — it is the product's journal table, and a
+    // participant may have been writing in it for months before the study, and
+    // `pilot_enrollments` permits one person to enroll in more than one study.
+    // Selecting by participant alone therefore stamps a pre-study journal with
+    // this study's `research_code` and protocol, and hands it to an analyst as
+    // day 0 or day -41 of a window it predates.
+    //
+    // `day_index` is 1 on the opening day, so anything below 1 is before the
+    // window, and `collection_ends_at` closes the other end when the study sets
+    // one.
+    if (index < 1) {
+      excluded.outside_window += 1;
+      continue;
+    }
+    if (enrollment.collection_ends_at && entry.created_at > enrollment.collection_ends_at) {
+      excluded.outside_window += 1;
+      continue;
+    }
+
     const extraction = (entry.extraction_json ?? {}) as Record<string, unknown>;
     const nodes = Array.isArray(extraction.nodes) ? (extraction.nodes as unknown[]) : [];
     const relations = Array.isArray(extraction.relations)
@@ -261,7 +296,9 @@ export function buildResearchDataset(input: {
       },
       raw_text_ref: entry.id,
       raw_text_available: entry.raw_text_ciphertext !== null,
-      raw_text_expires_at: entry.raw_text_expires_at,
+      raw_text_expires_day: entry.raw_text_expires_at
+        ? dayIndex(entry.raw_text_expires_at, enrollment.collection_started_at, timeZone)
+        : null,
     };
 
     if (textIncluded) {

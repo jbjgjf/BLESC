@@ -49,17 +49,25 @@ create table if not exists public.pilot_pii_reviews (
   scanner_version text not null,
 
   finding_count integer not null default 0,
-  -- 'high' | 'medium' | 'low' | null. Null when nothing matched.
-  max_severity text,
+  -- The highest confidence present: 'high' | 'medium' | 'low', or null when
+  -- nothing matched. Same vocabulary as `PiiConfidence` in the scanner.
+  max_confidence text,
   -- Distinct finding kinds, for a dashboard that groups without opening the
   -- findings array.
   kinds text[] not null default '{}',
 
-  -- [{kind, severity, start, end, length}]. Offsets and lengths only.
+  -- [{kind, confidence, start, end}]. Kinds and positions only.
   --
-  -- The CHECK below is what keeps that true: a row whose findings carry any key
-  -- other than those five is refused, so a future writer cannot start
-  -- "helpfully" attaching the matched text to make a reviewer's job easier.
+  -- The scanner's own `PiiFinding` carries a fifth field, `text`: the matched
+  -- substring, verbatim. That is what makes a finding useful on an operator's
+  -- screen and exactly what must not be stored here — a queue that keeps it is
+  -- a second copy of the journal under different access rules, which is the
+  -- leak the queue exists to prevent.
+  --
+  -- So the CHECK below refuses it. `forStorage()` in the scanner strips it, and
+  -- a future writer that forgets to call that and inserts findings straight
+  -- from `scanForPii` is rejected by the database rather than quietly
+  -- persisting participant text.
   findings_json jsonb not null default '[]'::jsonb,
 
   -- 'clear'     nothing matched; no human decision needed
@@ -80,8 +88,8 @@ create table if not exists public.pilot_pii_reviews (
 
   constraint pilot_pii_reviews_status_check
     check (status in ('clear', 'pending', 'cleared', 'redacted', 'blocked')),
-  constraint pilot_pii_reviews_severity_check
-    check (max_severity is null or max_severity in ('high', 'medium', 'low')),
+  constraint pilot_pii_reviews_confidence_check
+    check (max_confidence is null or max_confidence in ('high', 'medium', 'low')),
   constraint pilot_pii_reviews_count_check
     check (finding_count >= 0),
   -- A decided row names its decider. 'clear' and 'pending' are machine states
@@ -103,9 +111,9 @@ create table if not exists public.pilot_pii_reviews (
 
 -- No text in the findings. Enforced, not documented.
 --
--- Every element must be an object whose keys are a subset of the five the
--- scanner emits, so a findings array carrying an `excerpt`, a `match` or a
--- `text` key is refused.
+-- Every element must be an object whose keys are a subset of the four that
+-- survive `forStorage`, so a findings array carrying the scanner's own `text`
+-- field — or an `excerpt`, or a `match` — is refused.
 --
 -- The predicate lives in a function because a CHECK constraint cannot contain a
 -- subquery, and answering "do any of this array's elements have a key outside
@@ -127,7 +135,7 @@ as $$
           or exists (
             select 1
             from jsonb_object_keys(element) as element_key
-            where element_key not in ('kind', 'severity', 'start', 'end', 'length')
+            where element_key not in ('kind', 'confidence', 'start', 'end')
           )
      );
 $$;
@@ -139,7 +147,7 @@ alter table public.pilot_pii_reviews
   check (public.pii_findings_carry_no_text(findings_json));
 
 create index if not exists pilot_pii_reviews_status_idx
-  on public.pilot_pii_reviews(status, max_severity);
+  on public.pilot_pii_reviews(status, max_confidence);
 
 create index if not exists pilot_pii_reviews_participant_idx
   on public.pilot_pii_reviews(participant_id);

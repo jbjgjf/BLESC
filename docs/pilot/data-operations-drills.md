@@ -26,7 +26,7 @@ dry run（#168）の day 3 と、本調査開始前に1回、この3つを**実�
 手順と記録:
 
 1. `research_code` から対象を特定する。
-   `GET /api/research/pilot-identity-map?study=<slug>&research_code=<code>`
+   `GET /api/research/identity-map?research_code=<code>`
    - allowlist は `RESEARCH_IDENTITY_MAP_USER_IDS`。export権限とは別。
    - 所要: ___ 分 / 実行者: ___
 2. enrollment を `withdrawn` へ遷移させる（`advance_pilot_enrollment`）。
@@ -34,8 +34,8 @@ dry run（#168）の day 3 と、本調査開始前に1回、この3つを**実�
 3. 保持されている本文を消す。`purge_raw_text_for_participant(<participant_id>)`
    - 削除件数: ___ 件
 4. 削除後の確認:
-   - `GET /api/research/pilot-export?study=<slug>` に当該 `research_code` が
-     **含まれない**こと: □
+   - `GET /api/research/export` に当該 `research_code` が
+     **含まれない**こと: □（除外理由が `withdrawn` に計上されること）
    - dashboard の `enrollment.by_state.withdrawn` が1増えたこと: □
    - `research_exports` に今回のidentity map参照が記録されていること: □
 5. 請求者への回答日時 / 文面の版: ___
@@ -110,7 +110,7 @@ dry run（#168）の day 3 と、本調査開始前に1回、この3つを**実�
 2. purgeを実行し、`overdue` が0になることを確認: □
 3. purge後、`entries` の行自体は残り `raw_text_ciphertext` だけがnullになっていること: □
    - 行ごと消すと「その日は書かなかった」と区別できなくなる。
-4. purge済みのentryがexportで `raw_text_ref.retained = false` になること: □
+4. purge済みのentryがexportで `raw_text_available = false` になること: □
 
 判定: □ 期待どおり / □ 逸脱あり（___）
 
