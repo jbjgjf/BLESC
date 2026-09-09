@@ -73,6 +73,74 @@ describe("every external send point consults the gate", () => {
   });
 });
 
+describe("adaptive surfaces are refused server-side, not merely hidden", () => {
+  /**
+   * #165 asks for more than "no external send": the AI reply, the generated
+   * advice, the adaptive follow-up, the personal graph and the educator
+   * inference all have to be off during a collection window, at the API and not
+   * only on the screen. The four routes above cover everything that leaves the
+   * server. This covers the one that does not — the follow-up script, which is
+   * adaptive without calling anybody.
+   *
+   * A follow-up that fires for a hard day is an intervention: the participant
+   * who was asked "何がいちばん大変でしたか" writes tomorrow's entry having
+   * been prompted, and a study measuring how people write cannot also be
+   * prompting them.
+   */
+  it("the follow-up route consults the gate", async () => {
+    const file = fileURLToPath(new URL("../src/app/api/entries/followups/route.ts", import.meta.url));
+    const source = await readFile(file, "utf8");
+    assert.ok(
+      source.includes("@/lib/server/collectionMode"),
+      "api/entries/followups must refuse adaptive probes during a collection window",
+    );
+    assert.ok(source.includes("collectionOnlyForParticipant"));
+  });
+
+  it("every route that stores a follow-up answer consults the gate", async () => {
+    // The same shape as the OpenAI scan above, for the same reason: the
+    // regression comes from a route somebody adds later, not from this one.
+    const files = await routeFiles(API_ROOT);
+    const offenders = [];
+    for (const file of files) {
+      const source = await readFile(file, "utf8");
+      if (!source.includes("followup_responses")) continue;
+      if (!source.includes("@/lib/server/collectionMode")) offenders.push(path.relative(API_ROOT, file));
+    }
+    assert.deepEqual(offenders, []);
+  });
+
+  it("the journal screen does not offer a follow-up while a window is open", async () => {
+    // The display gate is the control that matters. By the time the API sees a
+    // request the question has been asked, and refusing the write keeps the
+    // answer out of the research record but cannot undo the nudge.
+    const file = fileURLToPath(new URL("../src/app/journal/page.tsx", import.meta.url));
+    const source = await readFile(file, "utf8");
+    assert.ok(
+      source.includes("needsFollowUp() && !collecting"),
+      "the journal page must not enter the follow-up phase during a collection window",
+    );
+  });
+
+  it("the writer withholds the derived record while a window is open", async () => {
+    // The graph snapshot, the insight, the graph version history, the
+    // longitudinal series and the evaluation example are all readings *of* a
+    // participant. The educator alerts are built from the insight row, so
+    // storing one means somebody can act on an interpretation the study said it
+    // would not form — whether or not the participant is shown it.
+    const file = fileURLToPath(new URL("../src/lib/server/supabaseWriter.ts", import.meta.url));
+    const source = await readFile(file, "utf8");
+    for (const guard of [
+      "computed.graph_snapshot && !context.collectionOnly",
+      "(computed.anomaly_result || computed.explanation) && !context.collectionOnly",
+      "collection_only:longitudinal_features",
+      "collection_only:eval_examples",
+    ]) {
+      assert.ok(source.includes(guard), `the writer no longer withholds: ${guard}`);
+    }
+  });
+});
+
 /** A stand-in Supabase client: `rpc` and `from(...).select(...)` only. */
 function fakeClient({ rpcData, rpcError, rows, rowsError }) {
   return {

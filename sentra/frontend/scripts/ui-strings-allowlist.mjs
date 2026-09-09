@@ -79,6 +79,7 @@ const WRITE_FAILURES = [
   "graph_change_events insert: ${changeInsert.error.message}",
   "longitudinal_features insert: ${insert.error.message}",
   "eval_examples insert: ${insert.error.message}",
+  "pilot_self_reports upsert",
 ];
 
 /** A programming mistake, raised where only a developer can see it. */

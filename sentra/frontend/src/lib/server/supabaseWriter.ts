@@ -26,8 +26,10 @@ import {
   consentSnapshot,
   evalDatasetAllowed,
   rawTextRetentionAllowed,
+  researchUseAllowed,
   telemetryAllowed,
 } from "@/lib/consent";
+import { hasSelfReportContent, type NormalizedSelfReport } from "@/lib/pilotSelfReport";
 import { consentMismatch, loadConsentState } from "@/lib/server/consentStore";
 import { encryptRawText, rawTextExpiryFrom } from "@/lib/server/rawTextCrypto";
 import {
@@ -51,6 +53,10 @@ export type SupabaseSyncResult = {
   graph_snapshot_id?: string | null;
   insight_id?: string | null;
   entry_session_id?: string | null;
+  /** The stored self-report row, when one was written (#165). Null when the
+   *  submission carried no self-report, or when research consent does not
+   *  cover storing one — `consent_gated` says which. */
+  self_report_id?: string | null;
   /** The stored insight, so the caller renders what landed rather than the
    *  empty placeholder it posted. Absent when no insight row was written. */
   anomaly_result?: Record<string, unknown>;
@@ -157,6 +163,31 @@ export type SubmissionContext = {
    * requests carrying the same id resolve to one row (#132).
    */
   clientSubmissionId?: string | null;
+  /**
+   * The fixed self-report block, already validated (#165). Normalised by the
+   * route so that this module stores a decided value set rather than deciding
+   * what an out-of-range slider means.
+   */
+  selfReport?: NormalizedSelfReport | null;
+  /**
+   * True while this participant's collection window is open (#165).
+   *
+   * Resolved by the route from `collectionOnlyForParticipant` and passed in
+   * rather than re-read here, so that one request asks the question once and
+   * every write it performs agrees on the answer.
+   *
+   * What it withholds is the *derived* record: the graph snapshot, the graph
+   * version history, the insight row and the evaluation example. The
+   * participant's own submission — text, telemetry, self-report, content
+   * hashes — is stored exactly as it would be otherwise.
+   *
+   * Withholding at the write, and not only at the screen, is the difference
+   * between a study that does not show a participant an interpretation and a
+   * study that does not form one. The interpretation is what the educator
+   * alerts read, so a stored insight is a reading of a participant that
+   * somebody can act on, whether or not the participant sees it.
+   */
+  collectionOnly?: boolean;
 };
 
 const MAX_INTERACTION_EVENTS = 1200;
@@ -621,7 +652,7 @@ export async function writeEntryResult(
     );
     entryId = entryRow.id as string;
 
-    if (computed.graph_snapshot) {
+    if (computed.graph_snapshot && !context.collectionOnly) {
       const snapshot = computed.graph_snapshot;
       const day = asDay(snapshot.day) ?? new Date().toISOString().slice(0, 10);
       const { diff: temporalDiff, previousDayGraph } = await temporalDiffAgainstSupabase(
@@ -658,7 +689,7 @@ export async function writeEntryResult(
       graphSnapshotId = graphRow.id as string;
     }
 
-    if (computed.anomaly_result || computed.explanation) {
+    if ((computed.anomaly_result || computed.explanation) && !context.collectionOnly) {
       insightDay =
         asDay(computed.anomaly_result?.day) ??
         asDay(computed.explanation?.day) ??
@@ -815,6 +846,51 @@ export async function writeEntryResult(
     });
   }
 
+  // The fixed self-report block (#165).
+  //
+  // Written after `entry_sessions` so the row can carry the session id: the
+  // acceptance criterion is that the scale version and the body sit on the same
+  // entry *or* session, and carrying both costs one column.
+  //
+  // Gated on research consent, not on app use. The journal text is the
+  // participant's own record and is stored either way; these five numbers exist
+  // only to be analysed, so a participant who never granted research use — or
+  // who revoked it yesterday — writes no reading today. `loadConsentState` is
+  // read at write time for exactly that reason.
+  let selfReportId: string | null = null;
+  const selfReport = context.selfReport ?? null;
+  if (selfReport && hasSelfReportContent(selfReport)) {
+    if (!researchUseAllowed(consentState)) {
+      consentGated.push("pilot_self_reports");
+    } else {
+      await mirror("pilot_self_reports", async () => {
+        // Upsert on (owner, entry): a retried submission resolves to the entry
+        // that already exists, and its reading updates rather than doubling.
+        const row = unwrap(
+          "pilot_self_reports upsert",
+          await client
+            .from("pilot_self_reports")
+            .upsert(
+              {
+                owner_user_id: ownerUserId,
+                participant_id: participantId,
+                entry_id: entryId,
+                entry_session_id: entrySessionId,
+                client_submission_id: context.clientSubmissionId ?? null,
+                schema_version: selfReport.schema_version,
+                ...selfReport.values,
+                rejected_json: selfReport.rejected,
+              },
+              { onConflict: "owner_user_id,entry_id" },
+            )
+            .select("id")
+            .single(),
+        );
+        selfReportId = row.id as string;
+      });
+    }
+  }
+
   const embeddingArtifacts = computed.research_artifacts?.embedding_artifacts ?? [];
   if (embeddingArtifacts.length > 0) {
     await mirror("entry_embeddings", async () => {
@@ -914,7 +990,7 @@ export async function writeEntryResult(
     if (extractionInsert.error) throw new Error(`extractions insert: ${extractionInsert.error.message}`);
   });
 
-  if (computed.graph_snapshot) {
+  if (computed.graph_snapshot && !context.collectionOnly) {
     await mirror("graph_versions", async () => {
       const snapshot = computed.graph_snapshot!;
       const existing = await client
@@ -973,7 +1049,14 @@ export async function writeEntryResult(
     });
   }
 
-  await mirror("longitudinal_features", async () => {
+  // Derived series, withheld for the same reason the insight row is (#165).
+  //
+  // A collection-only submission has an empty extraction, so these rows would
+  // be a run of zeroes — and a flat time series reads as a measurement of a
+  // participant who changed in no way, not as an absence of measurement.
+  // Nothing is legible as nothing; a series of zeroes is not.
+  if (context.collectionOnly) consentGated.push("collection_only:longitudinal_features");
+  else await mirror("longitudinal_features", async () => {
     const snapshot = computed.graph_snapshot;
     const day =
       asDay(snapshot?.day) ?? asDay(computed.anomaly_result?.day) ?? new Date().toISOString().slice(0, 10);
@@ -1020,7 +1103,12 @@ export async function writeEntryResult(
     if (insert.error) throw new Error(`longitudinal_features insert: ${insert.error.message}`);
   });
 
-  if (!evalDatasetAllowed(consentState)) {
+  if (context.collectionOnly) {
+    // The extraction that would be the example is the empty one this mode
+    // stores. An evaluation dataset of empty extractions teaches nothing and
+    // costs review time to discover.
+    consentGated.push("collection_only:eval_examples");
+  } else if (!evalDatasetAllowed(consentState)) {
     consentGated.push("eval_examples");
   } else {
     await mirror("eval_examples", async () => {
@@ -1048,13 +1136,14 @@ export async function writeEntryResult(
     });
   }
 
-  console.info("[supabase-sync] core rows written", { entryId, graphSnapshotId, insightId, warnings, consentGated });
+  console.info("[supabase-sync] core rows written", { entryId, graphSnapshotId, insightId, selfReportId, warnings, consentGated });
   return {
     status: "written",
     entry_id: entryId,
     graph_snapshot_id: graphSnapshotId,
     insight_id: insightId,
     entry_session_id: entrySessionId,
+    self_report_id: selfReportId,
     duplicate: false,
     consent_gated: consentGated,
     // The insight travels back so the caller renders what was stored rather

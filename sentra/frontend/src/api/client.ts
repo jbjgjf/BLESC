@@ -381,6 +381,38 @@ export class ApiClient {
     return res.json();
   }
 
+  /**
+   * Whether this account has an open collection window (#165).
+   *
+   * Read straight from `pilot_enrollments` rather than through a route: the
+   * table carries an RLS policy that shows a signed-in user their own
+   * enrollment and nothing else, which is exactly this question, and going via
+   * a route would send it to `NEXT_PUBLIC_API_URL` when that points at FastAPI,
+   * where the table does not live.
+   *
+   * Presentation only. It decides whether the self-report block is rendered;
+   * it decides nothing about what is stored. Every write consults the server's
+   * own gate (`lib/server/collectionMode.ts`), so a false answer here — a
+   * deployment whose migrations lag, an offline read — hides a block or shows
+   * one, and cannot cause a reading to be stored for somebody who is not in the
+   * study.
+   */
+  static async isCollecting(): Promise<boolean> {
+    try {
+      const ownerUserId = await this.requireOwnerId();
+      const { data, error } = await supabase
+        .from("pilot_enrollments")
+        .select("id")
+        .eq("owner_user_id", ownerUserId)
+        .eq("state", "collecting")
+        .limit(1);
+      if (error) return false;
+      return (data ?? []).length > 0;
+    } catch {
+      return false;
+    }
+  }
+
   private static async requireOwnerId(): Promise<string> {
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) {
@@ -473,6 +505,13 @@ export class ApiClient {
       /** Stable across retries of the same submission, so the server can
        *  collapse them into one row (#132). */
       client_submission_id?: string;
+      /**
+       * The fixed self-report block (#165). Sent as given; the server validates
+       * it against the pinned scale and stores an out-of-range value as a
+       * rejection rather than as a reading. Absent for every non-pilot
+       * submission, which writes no self-report row at all.
+       */
+      self_report?: Record<string, number | null | undefined>;
     },
   ): Promise<EntrySubmissionResponse> {
     const computed = await this.fetch<EntrySubmissionResponse>(`/entries?user_id=${encodeURIComponent(userId)}&observation_type=${encodeURIComponent(observationType)}`, {
@@ -484,6 +523,7 @@ export class ApiClient {
         telemetry: researchPayload?.telemetry,
         consent: researchPayload?.consent,
         client_submission_id: researchPayload?.client_submission_id,
+        self_report: researchPayload?.self_report,
       }),
     });
 
