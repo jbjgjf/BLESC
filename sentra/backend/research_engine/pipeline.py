@@ -23,6 +23,7 @@ cannot win by answering an easier subset.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import platform
 import time
@@ -40,7 +41,7 @@ from .abstraction import (
     score_fidelity,
 )
 from .contracts.capabilities import CapabilityFlags
-from .contracts.common import content_hash, format_time
+from .contracts.common import content_hash, elapsed_days, format_time
 from .contracts.evaluation import EvaluationReport, LeakageCheck, MeasuredUsage, Metric
 from .contracts.forecast import ForecastBundle
 from .data import (
@@ -246,9 +247,18 @@ def _scenario_seed_pass(
         for forecast, sequence, index in entries:
             if sequence.participant_key not in comparable:
                 continue
-            for h_index, horizon in enumerate(config.horizons):
-                target_index = index + horizon
-                if target_index >= sequence.length:
+            # Score each target against the observation that actually falls on
+            # its `target_time`, not against "the Nth later row". Those are the
+            # same thing only when the data is daily. In S4 they are not: with
+            # a three-day gap, the Nth later row sits three days out while the
+            # forecast promised one, and 42% of S4's scored rows were compared
+            # against the wrong date before this lookup existed. A target with
+            # no observation on its date is skipped — there is nothing to score
+            # it against, and the nearest row is a different question.
+            by_time = {time: position for position, time in enumerate(sequence.available_times)}
+            for h_index, target_time in enumerate(forecast.target_times):
+                target_index = by_time.get(target_time)
+                if target_index is None:
                     continue
                 actual_row = sequence.raw_values[target_index]
                 observed = sequence.mask[target_index]
@@ -261,7 +271,7 @@ def _scenario_seed_pass(
                             participant_key=sequence.participant_key,
                             model_id=model_id,
                             scenario=scenario,
-                            horizon_days=float(horizon),
+                            horizon_days=elapsed_days(target_time, forecast.cutoff_at),
                             target_name=feature_name,
                             predicted=float(forecast.means[h_index][feature_index]),
                             actual=float(actual_row[feature_index]),
@@ -419,13 +429,61 @@ def _scenario_seed_pass(
     }
 
 
+
+def _structure_across_seeds(scenario_passes: Sequence[Dict[str, Any]]) -> List[Metric]:
+    """Structure recovery over every seed of one scenario, not just the first.
+
+    Taking the first pass would have reported seed 11's precision under a report
+    that advertises seeds 11, 12 and 13, letting the later seeds disagree without
+    the number moving. Each seed is scored separately; the value is the mean
+    across seeds and the interval is the range they actually spanned, so
+    disagreement between seeds shows up as a wide interval rather than
+    disappearing.
+    """
+
+    if not scenario_passes:
+        return []
+
+    per_seed: List[List[Metric]] = [
+        structure_metrics(
+            entry["recovered_edges"],
+            entry["true_edges"],
+            "sparse-projection-v0",
+            structure_defined=entry["structure_defined"],
+            undefined_reason_ja=entry["structure_undefined_reason_ja"],
+        )
+        for entry in scenario_passes
+    ]
+
+    combined: List[Metric] = []
+    for position in range(len(per_seed[0])):
+        candidates = [seed_metrics[position] for seed_metrics in per_seed]
+        usable = [metric for metric in candidates if metric.status == "ok" and metric.value is not None]
+        if not usable:
+            # Every seed declined for the same reason; report it once.
+            combined.append(candidates[0])
+            continue
+
+        values = [float(metric.value) for metric in usable]
+        combined.append(
+            dataclasses.replace(
+                usable[0],
+                value=float(np.mean(values)),
+                n_predictions=sum(metric.n_predictions or 0 for metric in usable),
+                uncertainty_method="across_seeds_range" if len(values) > 1 else None,
+                interval=(min(values), max(values)) if len(values) > 1 else None,
+            )
+        )
+    return combined
+
+
 def run_pipeline(config: RunConfig, out_dir: Path, run_id: Optional[str] = None) -> RunResult:
     started = time.monotonic()
     run_dir = Path(out_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     run_id = run_id or f"run-{config.config_id}-{config.config_hash().split(':')[1][:8]}"
 
-    ledger = PredictionLedger(run_dir / "predictions.jsonl")
+    ledger = PredictionLedger(run_dir / "predictions.jsonl", run_id=run_id)
     passes: List[Dict[str, Any]] = []
     for scenario in config.scenarios:
         for seed in config.seeds:
@@ -451,13 +509,8 @@ def run_pipeline(config: RunConfig, out_dir: Path, run_id: Optional[str] = None)
                 p for p in all_predictions if p.model_id == model_id and p.scenario == scenario
             ]
             scenario_metrics.append(mae(subset, model_id, target=scenario))
-        entry = next(item for item in passes if item["scenario"] == scenario)
-        structure = structure_metrics(
-            entry["recovered_edges"],
-            entry["true_edges"],
-            "sparse-projection-v0",
-            structure_defined=entry["structure_defined"],
-            undefined_reason_ja=entry["structure_undefined_reason_ja"],
+        structure = _structure_across_seeds(
+            [item for item in passes if item["scenario"] == scenario]
         )
         for metric in structure:
             if metric.status == "ok":

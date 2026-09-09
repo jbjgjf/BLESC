@@ -591,12 +591,12 @@
           "input_tokens": 0,
           "output_tokens": 0,
           "cached_tokens": 0,
-          "elapsed_seconds": 1.1933620909999263,
+          "elapsed_seconds": 1.9068270070000608,
           "compute_environment": "cpu-only, numpy 2.4.6, python 3.11.15"
         },
         "reproducibility_command": "cd sentra/backend && python -m research_engine.cli smoke --config research_engine/configs/smoke.json --out /tmp/blesc-research-smoke",
         "status": "ok",
-        "generated_at": "2026-09-07T05:39:47.119117Z"
+        "generated_at": "2026-09-09T05:56:53.846627Z"
       },
       "explanations": {
         "run_id": "run-research-ci-v0-56b93537",
@@ -2124,12 +2124,12 @@
           "input_tokens": 0,
           "output_tokens": 0,
           "cached_tokens": 0,
-          "elapsed_seconds": 1.1933620909999263,
+          "elapsed_seconds": 1.9068270070000608,
           "compute_environment": "cpu-only, numpy 2.4.6, python 3.11.15"
         },
         "reproducibility_command": "cd sentra/backend && python -m research_engine.cli smoke --config research_engine/configs/smoke.json --out /tmp/blesc-research-smoke",
         "status": "failed",
-        "generated_at": "2026-09-07T05:39:47.119117Z"
+        "generated_at": "2026-09-09T05:56:53.846627Z"
       }
     },
     "no_explanation": {

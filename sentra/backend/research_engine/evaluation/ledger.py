@@ -28,20 +28,54 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from ..contracts.common import content_hash
+from ..contracts.errors import Code, ContractViolation
 from ..contracts.evaluation import LedgerEntry
 from ..contracts.forecast import ForecastBundle
 
 
 @dataclass
 class PredictionLedger:
-    """Append-only JSON Lines. One file per run."""
+    """Append-only JSON Lines. One file per run.
+
+    Append-only describes ordering *within* a run: an entry is written when the
+    forecast is issued and never rewritten. It does not mean a file accumulates
+    across runs. The documented smoke command has a fixed `--out`, so without
+    the reset below a second invocation would leave two runs' predictions in one
+    file, the sealing check would still pass on the length comparison, and the
+    artifact the report points at would no longer be the evidence for that
+    report.
+
+    A ledger already holding another run's entries is refused rather than
+    overwritten: that file is someone's evidence, and the caller wants a
+    different `--out`, not a silent replacement.
+    """
 
     path: Path
     evaluation_mode: str = "historical_simulation"
+    run_id: Optional[str] = None
 
     def __post_init__(self) -> None:
         self.path = Path(self.path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._reset_for_run()
+
+    def _reset_for_run(self) -> None:
+        if self.run_id is None or not self.path.exists():
+            return
+
+        existing = {entry.run_id for entry in self.entries()}
+        foreign = existing - {self.run_id}
+        if foreign:
+            raise ContractViolation(
+                Code.STATUS_PAYLOAD_MISMATCH,
+                f"別のrunの予測台帳が既にあります: {sorted(foreign)}。"
+                "別の出力先を指定してください。上書きすると、そのrunの証跡が消えます。",
+                str(self.path),
+                {"existing_run_ids": sorted(foreign), "requested_run_id": self.run_id},
+            )
+        # Same run, run again: the pipeline is deterministic, so regenerate
+        # rather than double every entry.
+        self.path.unlink()
 
     def append(
         self,

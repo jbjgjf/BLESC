@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from .contracts.errors import ContractViolation
 from .contracts.evaluation import EvaluationReport
 from .pipeline import RunConfig, run_pipeline
 
@@ -84,7 +85,15 @@ def _print_report(report: EvaluationReport, verbose: bool = True) -> None:
 
 def command_smoke(args: argparse.Namespace) -> int:
     config = _load_config(args.config)
-    result = run_pipeline(config, Path(args.out))
+    try:
+        result = run_pipeline(config, Path(args.out))
+    except ContractViolation as violation:
+        # A refusal is an answer, not a crash. Printing the traceback would bury
+        # the one sentence that says what to do instead.
+        print(f"実行を中止しました: {violation.message_ja}", file=sys.stderr)
+        if violation.path:
+            print(f"  場所: {violation.path}", file=sys.stderr)
+        return 2
     _print_report(result.report)
     print("")
     print(f"成果物: {result.run_dir}")

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -255,3 +256,108 @@ def test_the_same_configuration_reproduces_the_same_numbers(tmp_path):
     assert numbers(first) == numbers(second)
     assert first.report.artifact_hashes["model_hash"] == second.report.artifact_hashes["model_hash"]
     assert first.run_id == second.run_id
+
+
+# ---- findings from review, each with the check that would have caught it ----
+
+
+def test_scoring_uses_the_forecast_target_date_not_the_next_row():
+    """S4's gaps mean "the Nth later row" is not "N days after the cutoff".
+
+    Before this, 42% of S4's scored rows were compared against the wrong date:
+    a horizon-1 prediction was scored against a value three days out whenever
+    the next observation happened to be three days later. Every S4 number in the
+    report was affected.
+    """
+
+    from datetime import timedelta
+
+    from research_engine.data import fit_normalizer, make_sequences
+    from research_engine.dynamics import PersistenceForecaster, build_context
+
+    dataset = generate(GeneratorConfig(scenario="S4", seed=11, n_participants=12, n_days=30))
+    bundle = load_observations(dataset.bundle)
+    split = participant_split(bundle, dataset.truth.split_groups, seed=11)
+    normalizer = fit_normalizer(
+        bundle.observations,
+        feature_schema_id=bundle.manifest.feature_schema_id,
+        feature_names=bundle.manifest.feature_names,
+    )
+    sequences = make_sequences(bundle, normalizer, split.assignment)
+
+    misaligned = 0
+    for sequence in sequences:
+        index = max(1, int(sequence.length * 0.7))
+        if index >= sequence.length - 1:
+            continue
+        cutoff = sequence.available_times[index]
+        for horizon in (1, 2, 3):
+            nth_row = index + horizon
+            if nth_row >= sequence.length:
+                continue
+            if sequence.available_times[nth_row] != cutoff + timedelta(days=horizon):
+                misaligned += 1
+    assert misaligned > 0, "S4 must contain gaps for this test to mean anything"
+
+    # The pipeline now looks the target time up rather than counting rows, so
+    # every scored horizon is the elapsed days the forecast actually promised.
+    result = run_pipeline(
+        dataclasses.replace(CI_CONFIG, scenarios=("S4",), config_id="research-test-s4"),
+        Path(tempfile.mkdtemp()),
+    )
+    assert result.predictions, "S4 must still yield scored predictions"
+    assert {prediction.horizon_days for prediction in result.predictions} <= {1.0, 2.0}
+
+
+def test_structure_metrics_cover_every_seed(tmp_path):
+    """Reporting seed 11's precision under a three-seed report let later seeds disagree silently."""
+
+    config = dataclasses.replace(
+        CI_CONFIG, scenarios=("S1",), seeds=(11, 12, 13), config_id="research-test-seeds"
+    )
+    result = run_pipeline(config, tmp_path / "seeds")
+
+    precision = [
+        metric
+        for metric in result.report.metrics_by_scenario["S1"]
+        if metric.name == "edge_precision"
+    ]
+    assert precision, "S1 has a defined structure and must report precision"
+    metric = precision[0]
+    assert metric.status == "ok"
+    # Three seeds were scored, so the spread across them is reported rather than
+    # collapsed into whichever ran first.
+    assert metric.uncertainty_method == "across_seeds_range"
+    assert metric.interval is not None
+    assert metric.interval[0] <= metric.value <= metric.interval[1]
+
+
+def test_a_rerun_does_not_leave_two_runs_in_one_ledger(tmp_path):
+    """The documented smoke command has a fixed --out; running it twice must not double the file."""
+
+    out = tmp_path / "reused"
+    first = run_pipeline(CI_CONFIG, out)
+    entries_after_first = len(PredictionLedger(out / "predictions.jsonl").entries())
+
+    second = run_pipeline(CI_CONFIG, out)
+    entries_after_second = len(PredictionLedger(out / "predictions.jsonl").entries())
+
+    assert first.run_id == second.run_id
+    assert entries_after_second == entries_after_first
+    assert {entry.run_id for entry in PredictionLedger(out / "predictions.jsonl").entries()} == {
+        second.run_id
+    }
+
+
+def test_a_different_run_is_refused_rather_than_overwritten(tmp_path):
+    """That file is another run's evidence. The caller wants a different --out."""
+
+    from research_engine.contracts import ContractViolation
+
+    out = tmp_path / "shared"
+    run_pipeline(CI_CONFIG, out)
+
+    other = dataclasses.replace(CI_CONFIG, config_id="research-test-other", seeds=(12,))
+    with pytest.raises(ContractViolation) as caught:
+        run_pipeline(other, out)
+    assert "別のrun" in caught.value.message_ja

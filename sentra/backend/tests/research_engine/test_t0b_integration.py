@@ -270,3 +270,18 @@ def test_no_endpoint_returns_model_weights(client):
         ).text
         assert "W_out" not in body
         assert "weights" not in body.lower() or "weights_hash" in body
+
+
+def test_the_cli_reports_a_refusal_instead_of_a_traceback(tmp_path):
+    """A refusal is an answer. A traceback buries the sentence that says what to do."""
+
+    out = tmp_path / "shared"
+    first = _run_cli(["smoke", "--config", "research_engine/configs/ci.json", "--out", str(out)])
+    assert first.returncode == 0, first.stderr
+
+    # A different configuration into the same directory would mix two runs'
+    # predictions into the artifact the report points at.
+    second = _run_cli(["smoke", "--config", "research_engine/configs/smoke.json", "--out", str(out)])
+    assert second.returncode == 2
+    assert "別のrun" in second.stderr
+    assert "Traceback" not in second.stderr

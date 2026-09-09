@@ -203,9 +203,13 @@ def graphs_to_bundle(
     """Convert several participants' graphs into one bundle.
 
     `participant_keys` maps the app's participant id to the opaque key used
-    inside the dataset. Passing the app id straight through would put a
-    re-identifying key in every artifact the engine writes, and the contract
-    forbids exactly that.
+    inside the dataset, and it is **required to be complete**. It used to fall
+    back to `graph.participant_id`, which put the re-identifying application id
+    into `participant_key` and into every generated `event_id` — the exact thing
+    this function's own docstring forbids. The refusal in the v0 loader would
+    not have caught it either: anything that serialises the adapter's output
+    before that refusal, or the planned real-data path once it opens, writes
+    those ids into research artifacts. A missing entry is now an error.
     """
 
     require(
@@ -215,9 +219,20 @@ def graphs_to_bundle(
         "vocabulary.node_ids",
     )
 
+    mapping = dict(participant_keys or {})
+    unmapped = sorted({graph.participant_id for graph in graphs} - set(mapping))
+    require(
+        not unmapped,
+        Code.MISSING_FIELD,
+        f"participant_keysに対応のないparticipantがいます: {unmapped}。"
+        "アプリのidをそのまま研究artifactへ書かないため、対応表は完全である必要があります。",
+        "graphs_to_bundle.participant_keys",
+        unmapped=unmapped,
+    )
+
     observations: List[Observation] = []
     for graph in graphs:
-        key = (participant_keys or {}).get(graph.participant_id, graph.participant_id)
+        key = mapping[graph.participant_id]
         observations.extend(
             graph_to_observations(
                 graph,

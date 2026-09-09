@@ -263,6 +263,7 @@ def test_adapter_output_is_refused_by_the_v0_loader():
         dataset_id="temporal-adapter-test",
         permitted_uses=("synthetic_training",),
         extractor_version="temporal-v1",
+        participant_keys={graph.participant_id: f"key-{index}" for index, graph in enumerate(graphs)},
     )
     with pytest.raises(ContractViolation) as caught:
         load_observations(bundle)
@@ -278,6 +279,7 @@ def test_adapter_names_its_unit_and_its_extractor():
         dataset_id="temporal-adapter-test",
         permitted_uses=("synthetic_training",),
         extractor_version="temporal-v1",
+        participant_keys={graph.participant_id: f"key-{index}" for index, graph in enumerate(graphs)},
     )
     assert set(bundle.manifest.units) == {VALUE_UNIT}
     assert all(row.extractor_version == "temporal-v1" for row in bundle.observations)
@@ -289,3 +291,57 @@ def test_vocabulary_selection_is_deterministic():
     first = select_vocabulary(graphs, min_participants=1, min_observations=1)
     again = select_vocabulary(list(reversed(graphs)), min_participants=1, min_observations=1)
     assert first.node_ids == again.node_ids
+
+
+def test_adapter_refuses_to_fall_back_to_the_application_participant_id():
+    """The app's id must not reach a research artifact, even by omission.
+
+    It used to default to `graph.participant_id` when the mapping had no entry,
+    which put the re-identifying id into `participant_key` and into every
+    generated `event_id`. The v0 loader's refusal would not have caught it:
+    anything serialising the adapter's output before that point, or the planned
+    real-data path once it opens, writes those ids out.
+    """
+
+    graphs = _graphs()
+    vocabulary = select_vocabulary(graphs, min_participants=1, min_observations=1)
+
+    with pytest.raises(ContractViolation) as caught:
+        graphs_to_bundle(
+            graphs,
+            vocabulary,
+            dataset_id="temporal-adapter-test",
+            permitted_uses=("synthetic_training",),
+            extractor_version="temporal-v1",
+        )
+    assert caught.value.code == Code.MISSING_FIELD
+
+    partial = {graphs[0].participant_id: "key-0"}
+    with pytest.raises(ContractViolation):
+        graphs_to_bundle(
+            graphs,
+            vocabulary,
+            dataset_id="temporal-adapter-test",
+            permitted_uses=("synthetic_training",),
+            extractor_version="temporal-v1",
+            participant_keys=partial,
+        )
+
+
+def test_adapter_output_carries_no_application_participant_id():
+    graphs = _graphs()
+    vocabulary = select_vocabulary(graphs, min_participants=1, min_observations=1)
+    bundle = graphs_to_bundle(
+        graphs,
+        vocabulary,
+        dataset_id="temporal-adapter-test",
+        permitted_uses=("synthetic_training",),
+        extractor_version="temporal-v1",
+        participant_keys={graph.participant_id: f"key-{index}" for index, graph in enumerate(graphs)},
+    )
+
+    app_ids = {graph.participant_id for graph in graphs}
+    for row in bundle.observations:
+        assert row.participant_key not in app_ids
+        for app_id in app_ids:
+            assert app_id not in row.event_id
