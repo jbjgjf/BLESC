@@ -507,6 +507,10 @@ export class ApiClient {
       /** Stable across retries of the same submission, so the server can
        *  collapse them into one row (#132). */
       client_submission_id?: string;
+      /** The daily fixed self-report (#165). Sent as bare values; the server
+       *  normalises them against the pinned schema and stores an invalid or
+       *  absent answer as "not answered" rather than refusing the submission. */
+      self_report?: Record<string, number>;
     },
   ): Promise<EntrySubmissionResponse> {
     const computed = await this.fetch<EntrySubmissionResponse>(`/entries?user_id=${encodeURIComponent(userId)}&observation_type=${encodeURIComponent(observationType)}`, {
@@ -518,6 +522,7 @@ export class ApiClient {
         telemetry: researchPayload?.telemetry,
         consent: researchPayload?.consent,
         client_submission_id: researchPayload?.client_submission_id,
+        self_report: researchPayload?.self_report,
       }),
     });
 

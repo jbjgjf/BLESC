@@ -164,3 +164,48 @@ describe("withheld markers", () => {
     assert.notEqual(COLLECTION_ONLY_STATUS, "fallback");
   });
 });
+
+describe("fixtures cannot reach a pilot screen or an export", () => {
+  it("is not imported by any server module or route", async () => {
+    // The demo reads `src/lib/blesc/fixtures.ts` and never touches Supabase.
+    // The risk this guards is the reverse direction: a server module importing
+    // a fixture would put invented rows into a research export, where nothing
+    // downstream could tell them from a participant's.
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+
+    const roots = [
+      fileURLToPath(new URL("../src/lib/server", import.meta.url)),
+      fileURLToPath(new URL("../src/app/api", import.meta.url)),
+    ];
+    const offenders = [];
+    const walk = (dir) => {
+      for (const entry of readdirSync(dir)) {
+        const path = `${dir}/${entry}`;
+        if (statSync(path).isDirectory()) {
+          walk(path);
+          continue;
+        }
+        if (!/\.tsx?$/.test(entry)) continue;
+        if (/blesc\/(demoApi|fixtures)/.test(readFileSync(path, "utf8"))) offenders.push(path);
+      }
+    };
+    for (const root of roots) walk(root);
+    assert.deepEqual(offenders, []);
+  });
+
+  it("cannot be turned on where the gate is enforced", async () => {
+    // Demo mode disables the enrollment gate, so a pilot deployment that also
+    // enabled the demo would be collecting from a screen showing fixed data.
+    // The two are mutually exclusive by construction; this is where that is
+    // said. Asserted from source because `pilotGate.ts` imports through the
+    // `@/` alias, which this runner does not resolve.
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const source = readFileSync(
+      fileURLToPath(new URL("../src/lib/server/pilotGate.ts", import.meta.url)),
+      "utf8",
+    );
+    assert.match(source, /NEXT_PUBLIC_DEMO_MODE === "1"\) return false/);
+  });
+});

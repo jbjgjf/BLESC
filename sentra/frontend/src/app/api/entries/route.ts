@@ -16,6 +16,7 @@ import {
 import { recordSubmissionFailure } from "@/lib/server/submissionFailures";
 import { gateForUser, pilotGateEnforced } from "@/lib/server/pilotGate";
 import { loadEnrollmentsForUser } from "@/lib/server/pilotStore";
+import { normalizeSelfReport } from "@/lib/selfReport";
 import { jsonError, requireUser } from "@/lib/server/api";
 
 export const runtime = "nodejs";
@@ -34,6 +35,13 @@ type EntryRequest = {
   /** Stable across retries of one submission, so a retry cannot create a
    *  second entry (#132). */
   client_submission_id?: string;
+  /**
+   * The daily fixed self-report (#165). Validated here against the pinned
+   * schema — never stored as sent, because a client that could store its own
+   * shape could store an out-of-range value or an item the protocol does not
+   * define.
+   */
+  self_report?: Record<string, unknown>;
   // No identity fields. The owner and participant are derived from the
   // caller's session below, never read from the body — the write uses the
   // service-role key, which bypasses RLS, so a body-supplied id would let any
@@ -328,6 +336,18 @@ export async function POST(request: NextRequest) {
   // place to get wrong.
   const collectionOnly = await collectionOnlyForParticipant(serviceRoleClient(), participant.id);
 
+  // The daily fixed self-report (#165), normalised against the pinned schema.
+  //
+  // Normalised and not validated-then-rejected: an out-of-range rating must
+  // never cost a participant their journal text (#132). What an invalid answer
+  // produces is a stored "not answered", which is the truth — no valid answer
+  // arrived — rather than a refused submission or a fabricated default.
+  //
+  // Stored only for a submission inside a collection window. Outside one the
+  // items are not asked, and a self-report arriving anyway is a client that has
+  // drifted from the protocol, not data the study can use.
+  const selfReport = collectionOnly && payload.self_report ? normalizeSelfReport(payload.self_report) : null;
+
   const createdAt = isoNow();
   const idSeed = await sha256(`${userId}:${createdAt}:${entryText}`);
   const entryId = `prod_${idSeed.slice(0, 16)}`;
@@ -507,6 +527,7 @@ export async function POST(request: NextRequest) {
       recallText,
       telemetry: payload.telemetry,
       consent: payload.consent,
+      selfReport: selfReport as unknown as Record<string, unknown>,
       clientSubmissionId: payload.client_submission_id ?? null,
     },
   );

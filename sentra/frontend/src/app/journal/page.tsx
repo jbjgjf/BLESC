@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { ApiClient, EntryNotPersistedError } from "@/api/client";
 import { Icon } from "@/components/ui/Icon";
+import { usePilotMode } from "@/components/PilotModeProvider";
+import { SELF_REPORT_ITEMS } from "@/lib/selfReport";
 import { FlowerBloom } from "@/components/ui/FlowerBloom";
 import { TransitionLink } from "@/components/ui/Transition";
 import { WaveBed } from "@/components/ui/WaveBed";
@@ -82,6 +84,9 @@ const STEP_TITLE: Record<FormStep, string> = {
 };
 
 export default function JournalPage() {
+  // 収集期間中かどうかはサーバーが決め、レイアウトから降りてくる（#165）。
+  // 通常の利用者にとっては常に false で、画面も従来どおり。
+  const { collectionOnly } = usePilotMode();
   const { userId } = useAuth();
   const demo = useDemoMode();
   const [recallText, setRecallText] = useState("");
@@ -109,6 +114,8 @@ export default function JournalPage() {
    * null のあいだは「まだどこにも残っていない」。完了画面へ進む条件も、
    * 追加質問の回答を保存する宛先も、これが取れていることに依存する。
    */
+  // 固定自己評定の回答。未回答は「未回答」のまま送る — 0 でも中央値でもない。
+  const [ratings, setRatings] = useState<Record<string, number>>({});
   const [entryId, setEntryId] = useState<string | null>(null);
   const [entrySessionId, setEntrySessionId] = useState<string | null>(null);
 
@@ -273,6 +280,7 @@ export default function JournalPage() {
       const result = await ApiClient.createEntry(userId, journalText, "daily", {
         journal_text: journalText,
         recall_text: recallText.trim(),
+        self_report: collectionOnly ? ratings : undefined,
         client_submission_id: submissionIdRef.current,
         telemetry: telemetry.finalize({
           timeZone: clientTimeZone(),
@@ -318,7 +326,10 @@ export default function JournalPage() {
     }
     if (!(await persistJournal())) return;
 
-    if (needsFollowUp()) {
+    // 収集期間中は追加質問を出さない（#165）。AIが問いを返すこと自体が、
+    // 測ろうとしている「書きぶり」への介入になる。サーバー側も同じ期間の
+    // 保存を拒否するので、ここを書き換えても回答は残らない。
+    if (!collectionOnly && needsFollowUp()) {
       setPhase("followup");
       askStep(0);
     } else {
@@ -597,6 +608,74 @@ export default function JournalPage() {
               </>
             )}
           </fieldset>
+
+          {/* ── 固定自己評定（#165） ─────────────────────
+              収集期間中だけ、毎日同じ順番・同じ文言で出す。並べ替えも
+              言い換えもしないのは、週1と週3を比べられなくなるため。
+              すべて任意で、未回答は未回答のまま記録する。 */}
+          {collectionOnly && isNoteStep && (
+            <fieldset className={`bl-card ${styles.step}`} aria-label="今日の記録（任意）">
+              <div className="bl-label">
+                <Icon name="insights" size={20} />
+                今日の記録
+                <span className="bl-optional">任意</span>
+              </div>
+              <p className="bl-meta" style={{ marginTop: -4, marginBottom: 11 }}>
+                答えたくない項目は、そのままで構いません。
+              </p>
+
+              <div className="bl-stack" style={{ gap: 18 }}>
+                {SELF_REPORT_ITEMS.map((item) => {
+                  const answered = ratings[item.id] !== undefined;
+                  const clear = () =>
+                    setRatings((current) => {
+                      const next = { ...current };
+                      delete next[item.id];
+                      return next;
+                    });
+                  return (
+                    <div key={item.id} className="bl-stack" style={{ gap: 6 }}>
+                      <label className="bl-label" htmlFor={`sr-${item.id}`} style={{ fontWeight: 600 }}>
+                        {item.label_ja}
+                      </label>
+                      <input
+                        id={`sr-${item.id}`}
+                        type="range"
+                        min={item.kind === "likert_0_10" ? 0 : item.min}
+                        max={item.kind === "likert_0_10" ? 10 : item.max}
+                        step={item.kind === "likert_0_10" ? 1 : item.step}
+                        value={ratings[item.id] ?? (item.kind === "likert_0_10" ? 5 : 7)}
+                        aria-valuetext={answered ? String(ratings[item.id]) : "未回答"}
+                        onChange={(event) =>
+                          setRatings((current) => ({ ...current, [item.id]: Number(event.target.value) }))
+                        }
+                      />
+                      <div className="bl-row-between">
+                        <span className="bl-micro">
+                          {item.kind === "likert_0_10" ? item.anchors_ja.low : `${item.min} 時間`}
+                        </span>
+                        <span className="bl-micro" aria-live="polite">
+                          {answered
+                            ? item.kind === "likert_0_10"
+                              ? ratings[item.id]
+                              : `${ratings[item.id]} 時間`
+                            : "未回答"}
+                        </span>
+                        <span className="bl-micro">
+                          {item.kind === "likert_0_10" ? item.anchors_ja.high : `${item.max} 時間`}
+                        </span>
+                      </div>
+                      {answered && (
+                        <button type="button" className="bl-btn bl-btn--ghost bl-btn--sm" onClick={clear}>
+                          未回答に戻す
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </fieldset>
+          )}
 
           <div className={styles.stepBar}>
             {/* 保存に失敗したことを、生徒に見える形で出す（#132）。

@@ -28,13 +28,24 @@
  */
 
 import { redirect } from "next/navigation";
+import { PilotModeProvider } from "@/components/PilotModeProvider";
+import { SELF_REPORT_SCHEMA_ID } from "@/lib/selfReport";
 import { loadEnrollmentsForUser } from "@/lib/server/pilotStore";
 import { gateForUser, pilotGateEnforced, redirectFor } from "@/lib/server/pilotGate";
 import { serverUser } from "@/lib/server/session";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 
 export default async function JournalLayout({ children }: { children: React.ReactNode }) {
-  if (!pilotGateEnforced()) return children;
+  // Not a pilot deployment: render exactly as before, and do not read cookies —
+  // reading them here would make `/journal` dynamic on every deployment to
+  // answer a question whose answer is already known.
+  if (!pilotGateEnforced()) {
+    return (
+      <PilotModeProvider value={{ collectionOnly: false, selfReportSchemaId: null }}>
+        {children}
+      </PilotModeProvider>
+    );
+  }
 
   const session = await serverUser();
   const service = serviceRoleClient();
@@ -61,5 +72,12 @@ export default async function JournalLayout({ children }: { children: React.Reac
   const destination = redirectFor(outcome);
   if (destination) redirect(destination);
 
-  return children;
+  // Reaching here means the gate allowed collection, so the screen below is
+  // inside an open window: no external AI, fixed items instead of the adaptive
+  // follow-up (#165).
+  return (
+    <PilotModeProvider value={{ collectionOnly: true, selfReportSchemaId: SELF_REPORT_SCHEMA_ID }}>
+      {children}
+    </PilotModeProvider>
+  );
 }

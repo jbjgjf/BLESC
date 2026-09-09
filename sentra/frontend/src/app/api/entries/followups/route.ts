@@ -12,6 +12,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { collectionOnlyForParticipant } from "@/lib/server/collectionMode";
 import { jsonError, requireUser } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 
@@ -59,6 +60,19 @@ export async function POST(request: NextRequest) {
   if (participantResult.error) return jsonError(participantResult.error.message, 502);
   const participant = participantResult.data as { id: string } | null;
   if (!participant) return jsonError("Participant was not found.", 404);
+
+  // The adaptive follow-up is stopped during a collection window (#165).
+  //
+  // Refused here and not only hidden in the UI: the questions are generated
+  // from what the participant wrote, and putting a model's reading of today's
+  // entry in front of them changes how they write tomorrow's — which is the
+  // thing the study is measuring. A client that still asks is a client that has
+  // drifted from the protocol, and storing its answers would put an
+  // intervention into the middle of the observation period without anyone
+  // deciding to.
+  if (await collectionOnlyForParticipant(serviceRoleClient(), participant.id)) {
+    return jsonError("研究期間中は、追加の質問を行いません。", 409, { code: "collection_only" });
+  }
 
   // And the entry has to be the caller's. Without this check a valid session
   // could attach answers to another participant's entry id.

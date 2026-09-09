@@ -68,6 +68,10 @@ const WRITE_FAILURES = [
   "consent_records insert: ${result.error.message}",
   "consent_records revoke: ${result.error.message}",
   "entry_sessions insert",
+  // The daily self-report's write failure (#165). Names a table and carries the
+  // driver's own message; it reaches a warning list the operator reads, never
+  // the participant, whose submission succeeds regardless.
+  "entry_self_reports upsert: ${insert.error.message}",
   "entry_fields insert: ${fieldsInsert.error.message}",
   "interaction_events insert: ${eventsInsert.error.message}",
   "entry_research_links insert: ${linkInsert.error.message}",

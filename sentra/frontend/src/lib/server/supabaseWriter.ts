@@ -29,6 +29,7 @@ import {
   telemetryAllowed,
 } from "@/lib/consent";
 import { consentMismatch, loadConsentState } from "@/lib/server/consentStore";
+import { SELF_REPORT_SCHEMA_ID } from "@/lib/selfReport";
 import { encryptRawText, rawTextExpiryFrom } from "@/lib/server/rawTextCrypto";
 import {
   MIN_BASELINE_DAYS,
@@ -152,6 +153,12 @@ export type SubmissionContext = {
    * disagreement between the two surfaces as a warning.
    */
   consent?: Json | null;
+  /**
+   * The daily fixed self-report, already validated against the pinned schema
+   * by the route (#165). Absent for a submission made outside the collection
+   * window, where the items are not asked.
+   */
+  selfReport?: Json | null;
   /**
    * Client-generated id for this submission, stable across retries. Two
    * requests carrying the same id resolve to one row (#132).
@@ -812,6 +819,38 @@ export async function writeEntryResult(
         source_hash: await sha256(`${journalText}\n\n${recallText}`),
       });
       if (linkInsert.error) throw new Error(`entry_research_links insert: ${linkInsert.error.message}`);
+    });
+  }
+
+  // The daily fixed self-report (#165).
+  //
+  // Written like the entry itself rather than like the telemetry mirrors: the
+  // participant typed these answers deliberately, in the same submission as
+  // the text, and dropping them for want of a research consent would lose part
+  // of what they chose to record. The consent gate that matters for them is at
+  // export, which re-reads consent at the time of the pull and excludes anyone
+  // who has not agreed or has withdrawn.
+  //
+  // Upsert on `entry_id`, so a retry of the same submission (#132) updates the
+  // one row rather than failing on the unique constraint. The entry is
+  // resolved idempotently above, so "the same submission" really is the same
+  // row.
+  if (context.selfReport && typeof context.selfReport === "object") {
+    await mirror("entry_self_reports", async () => {
+      const insert = await client
+        .from("entry_self_reports")
+        .upsert(
+          {
+            entry_id: entryId,
+            entry_session_id: entrySessionId,
+            owner_user_id: ownerUserId,
+            participant_id: participantId,
+            schema_id: SELF_REPORT_SCHEMA_ID,
+            responses_json: context.selfReport as Json,
+          },
+          { onConflict: "entry_id" },
+        );
+      if (insert.error) throw new Error(`entry_self_reports upsert: ${insert.error.message}`);
     });
   }
 
