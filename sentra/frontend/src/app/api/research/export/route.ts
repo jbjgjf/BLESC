@@ -93,8 +93,14 @@ export async function GET(request: NextRequest) {
   if (participantIds.length > 0) {
     // Same lookup the pseudonymised export uses, so a participant these two
     // outputs disagree about is impossible rather than merely unlikely.
-    const consentByParticipant = await loadResearchConsent(service, participantIds);
-    for (const [key, record] of consentByParticipant) {
+    const consent = await loadResearchConsent(service, participantIds);
+    // A failed lookup is a failed export, not an export of nothing. Both fail
+    // closed; only one of them may be recorded as completed.
+    if (!consent.ok) {
+      await audit("failed", 0, consent.error);
+      return jsonError(consent.error, 502);
+    }
+    for (const [key, record] of consent.byParticipant) {
       const state = normalizeConsent(record);
       researchAllowed.set(key, researchUseAllowed(state));
       retentionAllowed.set(key, rawTextRetentionAllowed(state));

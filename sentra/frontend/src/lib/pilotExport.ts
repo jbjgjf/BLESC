@@ -146,7 +146,15 @@ export type DatasetRow = {
   /**
    * How to reach the encrypted original, for an operator who has decided they
    * need to. Not the text and not a key: an entry id, whether ciphertext
-   * exists, which key version sealed it and when the purge job will remove it.
+   * exists, which key version sealed it, and when the purge job will remove it
+   * — **as a study day, never as a timestamp**.
+   *
+   * `raw_text_expires_at` is the submission time plus a fixed retention
+   * interval, so exporting it absolute would hand back the submission's
+   * calendar time by subtraction — reintroducing exactly the school-timetable
+   * alignment that exporting relative days is meant to prevent. As a relative
+   * day it still answers the operational question ("how long until this is
+   * purged") in the same units as the rest of the row.
    *
    * `entry_id` is the administrative reference #167 asks for. It is not a login
    * id and does not resolve to one without privileged access to `entries`,
@@ -157,7 +165,8 @@ export type DatasetRow = {
     entry_id: string;
     retained: boolean;
     key_version: string | null;
-    expires_at: string | null;
+    /** Study day on which retention expires. Null when nothing is retained. */
+    expires_relative_day: number | null;
   };
 
   /** Null when the entry has no queue row — no text was retained to scan. */
@@ -286,7 +295,9 @@ export function buildDatasetRow(source: DatasetSource): DatasetRow {
       entry_id: source.entry.id,
       retained: source.entry.raw_text_ciphertext !== null,
       key_version: source.entry.raw_text_key_version,
-      expires_at: source.entry.raw_text_expires_at,
+      expires_relative_day: source.entry.raw_text_expires_at
+        ? relativeDay(source.enrollment.collection_started_at, source.entry.raw_text_expires_at)
+        : null,
     },
 
     pii_review: source.piiReview
@@ -327,6 +338,14 @@ export const FORBIDDEN_DATASET_KEYS: readonly string[] = [
   "invitation_id",
   "raw_text",
   "raw_text_ciphertext",
+  // Absolute times, in any of the shapes they have appeared in. A retention
+  // expiry is the submission time plus a fixed interval, so one absolute
+  // timestamp anywhere in a row gives back the calendar date of the submission.
+  "raw_text_expires_at",
+  "expires_at",
+  "created_at",
+  "submitted_at",
+  "answered_at",
 ] as const;
 
 /**

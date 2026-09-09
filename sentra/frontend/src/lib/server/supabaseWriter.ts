@@ -858,15 +858,27 @@ export async function writeEntryResult(
   // acceptance criterion is that the scale version and the body sit on the same
   // entry *or* session, and carrying both costs one column.
   //
-  // Gated on research consent, not on app use. The journal text is the
-  // participant's own record and is stored either way; these five numbers exist
-  // only to be analysed, so a participant who never granted research use — or
-  // who revoked it yesterday — writes no reading today. `loadConsentState` is
-  // read at write time for exactly that reason.
+  // Two gates, and both are the server's own answer rather than the client's.
+  //
+  //   - `context.collectionOnly`, resolved from `pilot_collection_open`. These
+  //     five numbers are the study's instrument and exist only inside a
+  //     collection window. Without this gate a tab left open since last week
+  //     keeps writing pilot measurements after the enrollment completed, and a
+  //     direct API caller can write them before it opened — both of which
+  //     contaminate the series the export then attributes to the pilot. The
+  //     body of the request cannot move this gate; only the enrollment state
+  //     can.
+  //
+  //   - Research consent, read at write time. The journal text is the
+  //     participant's own record and is stored either way; these numbers exist
+  //     only to be analysed, so a participant who never granted research use —
+  //     or who revoked it yesterday — writes no reading today.
   let selfReportId: string | null = null;
   const selfReport = context.selfReport ?? null;
   if (selfReport && hasSelfReportContent(selfReport)) {
-    if (!researchUseAllowed(consentState)) {
+    if (!context.collectionOnly) {
+      consentGated.push("outside_collection_window:pilot_self_reports");
+    } else if (!researchUseAllowed(consentState)) {
       consentGated.push("pilot_self_reports");
     } else {
       await mirror("pilot_self_reports", async () => {
@@ -955,6 +967,29 @@ export async function writeEntryResult(
 
   // model_runs is not bookkeeping: the educator cohort view reads the
   // safety_assessment rows. Losing them empties the safety column.
+  //
+  // **This runs during a collection window too, and that is deliberate (#165).**
+  //
+  // Everything else derived from a submission is withheld while a window is
+  // open — the graph, the insight, the longitudinal series — because those are
+  // interpretations of a participant and the study said it would not form them.
+  // The safety assessment is the one exception, for two reasons:
+  //
+  //   1. It is not inference. `assessSafety` is deterministic rules over the
+  //      text, run locally, with no model and no external call. What #165
+  //      switches off is a system forming and showing readings of a person; a
+  //      keyword rule that notices 死にたい is not that.
+  //
+  //   2. Removing it would take the safety net off the study. The pilot
+  //      collects distress writing from minors for three weeks, and #168's
+  //      scenario list includes a crisis-disclosure drill that this row is what
+  //      triggers. A study that stops noticing a student in danger for the
+  //      duration of the study is not a safer study.
+  //
+  // So during a window an educator sees the safety flag and no anomaly score:
+  // the signal that someone may need help, and none of the interpretation. That
+  // split is the intent, not an oversight — a reviewer who reads the withheld
+  // list above and wonders why this is not on it should find this paragraph.
   await mirror("model_runs", async () => {
     const runInsert = await client
       .from("model_runs")

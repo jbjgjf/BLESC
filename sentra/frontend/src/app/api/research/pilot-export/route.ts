@@ -53,6 +53,7 @@ type EnrollmentRow = {
   is_minor: boolean;
   state: string;
   collection_started_at: string | null;
+  collection_ends_at: string | null;
 };
 
 type EntryRow = {
@@ -151,7 +152,7 @@ export async function GET(request: NextRequest) {
 
   const enrollmentResult = await service
     .from("pilot_enrollments")
-    .select("participant_id, research_code, cohort, is_minor, state, collection_started_at")
+    .select("participant_id, research_code, cohort, is_minor, state, collection_started_at, collection_ends_at")
     .eq("study_id", study.id);
   if (enrollmentResult.error) {
     await audit("failed", 0, { studyId: study.id, reason: enrollmentResult.error.message });
@@ -159,7 +160,7 @@ export async function GET(request: NextRequest) {
   }
   const allEnrollments = (enrollmentResult.data ?? []) as EnrollmentRow[];
 
-  const excluded = { withdrawn: 0, never_collected: 0, no_research_consent: 0 };
+  const excluded = { withdrawn: 0, never_collected: 0, no_research_consent: 0, outside_window: 0 };
   const eligible = new Map<string, EnrollmentRow>();
   const withdrawnParticipants: string[] = [];
   for (const enrollment of allEnrollments) {
@@ -182,9 +183,17 @@ export async function GET(request: NextRequest) {
   // Consent, read now. Same rule and same helper as #131's export: a
   // participant who revoked yesterday is not in today's file even though their
   // rows are still in the table.
-  const consentByParticipant = await loadResearchConsent(service, Array.from(eligible.keys()));
+  const consent = await loadResearchConsent(service, Array.from(eligible.keys()));
+  // A failed lookup is a failed export, not an export of nothing. Returning an
+  // empty result here would fail closed — correct — but record a *completed*
+  // zero-row pull, which makes an outage indistinguishable from a cohort that
+  // declined.
+  if (!consent.ok) {
+    await audit("failed", 0, { studyId: study.id, reason: consent.error });
+    return jsonError(consent.error, 502);
+  }
   for (const [participantId] of eligible) {
-    const state = consentByParticipant.get(participantId);
+    const state = consent.byParticipant.get(participantId);
     if (!state || !researchUseAllowed(normalizeConsent(state))) {
       eligible.delete(participantId);
       excluded.no_research_consent += 1;
@@ -197,19 +206,55 @@ export async function GET(request: NextRequest) {
   }
 
   const participantIds = Array.from(eligible.keys());
+
+  // Entries are scoped to each participant's own collection window, not to
+  // their membership.
+  //
+  // `entries` carries no study id — it is the product's journal table, and a
+  // participant may have been writing in it for months before the study, and
+  // `pilot_enrollments` permits one person to enroll in more than one study.
+  // Selecting by `participant_id` alone therefore exports every entry they have
+  // ever written and stamps it with this study's `research_code`, protocol
+  // version and phase. Their pre-study journal would arrive labelled as day
+  // -40 of a protocol it predates.
+  //
+  // The window is the linkage the table lacks: an entry belongs to this study
+  // if it was written between `collection_started_at` and `collection_ends_at`.
+  // The `gte` below is a cheap prefilter on the earliest start in the cohort;
+  // the exact per-participant bounds are applied in code, since each
+  // participant's window is their own.
+  //
+  // Residual, worth stating: two studies whose windows overlap for one person
+  // would still claim the same entry, under a different pseudonym in each. That
+  // is a protocol conflict rather than an export bug — the same day cannot
+  // belong to two collection windows — and it is `outside_window` in neither
+  // count, so it would show up as one participant's day appearing in two files.
+  const earliestStart = participantIds
+    .map((id) => eligible.get(id)!.collection_started_at as string)
+    .reduce((earliest, start) => (start < earliest ? start : earliest));
+
   const entriesResult = await service
     .from("entries")
     .select(
       "id, participant_id, created_at, observation_type, extraction_provider, extraction_model, raw_text_ciphertext, raw_text_key_version, raw_text_expires_at",
     )
     .in("participant_id", participantIds)
+    .gte("created_at", earliestStart)
     .order("created_at", { ascending: true })
     .limit(limit);
   if (entriesResult.error) {
     await audit("failed", 0, { studyId: study.id, reason: entriesResult.error.message });
     return jsonError(entriesResult.error.message, 502);
   }
-  const entries = (entriesResult.data ?? []) as EntryRow[];
+
+  const fetched = (entriesResult.data ?? []) as EntryRow[];
+  const entries = fetched.filter((entry) => {
+    const enrollment = eligible.get(entry.participant_id)!;
+    if (entry.created_at < (enrollment.collection_started_at as string)) return false;
+    if (enrollment.collection_ends_at && entry.created_at > enrollment.collection_ends_at) return false;
+    return true;
+  });
+  excluded.outside_window = fetched.length - entries.length;
   const entryIds = entries.map((entry) => entry.id);
 
   // Three side tables, keyed by entry. Fetched in one round each rather than

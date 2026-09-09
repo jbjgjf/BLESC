@@ -168,9 +168,34 @@ describe("a dataset row carries the pseudonym and nothing else identifying", () 
       entry_id: "prod_abcdef0123456789",
       retained: true,
       key_version: "v1",
-      expires_at: "2027-03-01T00:00:00.000Z",
+      // 2026-09-01 → 2027-03-01 is 181 study days.
+      expires_relative_day: 181,
     });
     assert.ok(!JSON.stringify(row).includes("sealed"), "the ciphertext leaked");
+  });
+
+  it("exports the retention expiry as a study day, never as a timestamp", () => {
+    // `raw_text_expires_at` is the submission time plus a fixed interval, so an
+    // absolute expiry hands back the submission's calendar date by subtraction
+    // — the school-timetable alignment relative days exist to prevent.
+    const row = buildDatasetRow(source());
+    const serialised = JSON.stringify(row);
+    assert.ok(!serialised.includes("2027-03-01"), "the absolute expiry leaked");
+    assert.ok(!serialised.includes("expires_at"), "the absolute expiry field is still present");
+    assert.equal(typeof row.raw_text_ref.expires_relative_day, "number");
+  });
+
+  it("has no expiry day when nothing is retained", () => {
+    const row = buildDatasetRow(source({ entry: { raw_text_ciphertext: null, raw_text_expires_at: null } }));
+    assert.equal(row.raw_text_ref.retained, false);
+    assert.equal(row.raw_text_ref.expires_relative_day, null);
+  });
+
+  it("refuses an absolute timestamp key anywhere in an envelope", () => {
+    assert.deepEqual(forbiddenKeysIn({ rows: [{ raw_text_ref: { expires_at: "2027-03-01" } }] }), [
+      "rows.0.raw_text_ref.expires_at",
+    ]);
+    assert.deepEqual(forbiddenKeysIn({ rows: [{ created_at: "2026-09-03" }] }), ["rows.0.created_at"]);
   });
 
   it("says so when no text was retained", () => {
@@ -520,6 +545,80 @@ describe("the identity map is a separate permission", () => {
       if (code.includes("owner_user_id")) leaking.push(relative);
     }
     assert.deepEqual(leaking, []);
+  });
+});
+
+describe("a consent lookup failure is not an empty cohort", () => {
+  it("reports the failure instead of returning nobody", async () => {
+    // Returning an empty map would fail closed — correct — but the export would
+    // then record a *completed* zero-row pull, making an outage look exactly
+    // like a cohort that declined.
+    const { loadResearchConsent } = await import("../src/lib/server/researchExportAudit.ts");
+    const failing = {
+      from: () => ({
+        select: () => ({
+          in: () => ({ order: async () => ({ data: null, error: { message: "permission denied" } }) }),
+        }),
+      }),
+    };
+    const result = await loadResearchConsent(failing, ["p1"]);
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "permission denied");
+  });
+
+  it("returns the newest record per participant on success", async () => {
+    const { loadResearchConsent } = await import("../src/lib/server/researchExportAudit.ts");
+    const rows = [
+      { participant_id: "p1", document_version: "v2" },
+      { participant_id: "p1", document_version: "v1" },
+      { participant_id: "p2", document_version: "v1" },
+    ];
+    const client = {
+      from: () => ({
+        select: () => ({ in: () => ({ order: async () => ({ data: rows, error: null }) }) }),
+      }),
+    };
+    const result = await loadResearchConsent(client, ["p1", "p2"]);
+    assert.equal(result.ok, true);
+    // Ordered newest first, so the first row seen for a participant wins.
+    assert.equal(result.byParticipant.get("p1").document_version, "v2");
+    assert.equal(result.byParticipant.size, 2);
+  });
+
+  it("succeeds with an empty map when there is nobody to look up", async () => {
+    const { loadResearchConsent } = await import("../src/lib/server/researchExportAudit.ts");
+    const result = await loadResearchConsent(null, []);
+    assert.equal(result.ok, true);
+    assert.equal(result.byParticipant.size, 0);
+  });
+});
+
+describe("the export is scoped to the collection window", () => {
+  it("filters entries by each participant's own window", async () => {
+    // `entries` has no study id, and a participant may have journalled for
+    // months before the study or be enrolled in a second one. Selecting by
+    // participant alone stamps their whole history with this study's
+    // research_code and protocol.
+    const file = fileURLToPath(new URL("../src/app/api/research/pilot-export/route.ts", import.meta.url));
+    const contents = await readFile(file, "utf8");
+    assert.ok(contents.includes('.gte("created_at", earliestStart)'), "no prefilter on the earliest window start");
+    assert.ok(
+      contents.includes("entry.created_at < (enrollment.collection_started_at as string)"),
+      "entries before a participant's own window are not excluded",
+    );
+    assert.ok(
+      contents.includes("enrollment.collection_ends_at && entry.created_at > enrollment.collection_ends_at"),
+      "entries after a participant's own window are not excluded",
+    );
+    assert.ok(contents.includes("excluded.outside_window"), "out-of-window entries are not counted");
+  });
+
+  it("a pre-study entry would otherwise land in the file as a negative day", () => {
+    // What the filter prevents, stated as arithmetic: an entry written six
+    // weeks before enrollment is day -42 of a protocol it predates.
+    const row = buildDatasetRow(source({ entry: { created_at: "2026-07-21T11:00:00.000Z" } }));
+    assert.equal(row.relative_day, -42);
+    assert.equal(row.study_phase, "before_window");
   });
 });
 

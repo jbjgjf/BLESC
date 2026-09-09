@@ -133,6 +133,44 @@ begin
 end;
 $$;
 
+-- Deleting the session detaches the reading; it does not fail, and it does not
+-- take the ownership with it.
+--
+-- A plain `on delete set null` on the composite key nulls every column in it,
+-- `owner_user_id` included, and that column is NOT NULL — so before the
+-- column-specific form this delete raised a not-null violation and the
+-- advertised cleanup could not run at all.
+insert into public.entry_sessions (id, owner_user_id)
+values ('00000000-0000-0000-0000-00000000ff01', '00000000-0000-0000-0000-0000000000f1');
+
+update public.pilot_self_reports
+   set entry_session_id = '00000000-0000-0000-0000-00000000ff01'
+ where entry_id = '00000000-0000-0000-0000-000000000e11';
+
+delete from public.entry_sessions where id = '00000000-0000-0000-0000-00000000ff01';
+
+do $$
+declare
+  detached boolean;
+  owner_kept boolean;
+  reading smallint;
+begin
+  select entry_session_id is null, owner_user_id is not null, mood
+    into detached, owner_kept, reading
+    from public.pilot_self_reports
+   where entry_id = '00000000-0000-0000-0000-000000000e11';
+  if not detached then
+    raise exception 'deleting the session left a dangling entry_session_id';
+  end if;
+  if not owner_kept then
+    raise exception 'deleting the session cleared owner_user_id as well';
+  end if;
+  if reading is null then
+    raise exception 'deleting the session destroyed the reading';
+  end if;
+end;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- The PII queue holds findings, never text.
 -- ---------------------------------------------------------------------------

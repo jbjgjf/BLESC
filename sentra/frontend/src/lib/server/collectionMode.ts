@@ -56,6 +56,14 @@
  *     whether or not the participant is ever shown it. The submission itself —
  *     text, telemetry, self-report, content hashes — is stored exactly as it
  *     would be otherwise.
+ *
+ * The one exception, stated here so the list above is not read as exhaustive:
+ * the deterministic **safety assessment** keeps running and keeps reaching the
+ * educator view. It is rules over the text rather than inference, and it is
+ * what a crisis disclosure depends on — a study that stops noticing a student
+ * in danger for the duration of the study is not a safer study. During a window
+ * an educator therefore sees the safety flag and no anomaly score. The full
+ * argument is at the `model_runs` mirror in `supabaseWriter`.
  * ---------------------------------------------------------------------------
  */
 

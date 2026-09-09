@@ -125,6 +125,19 @@ export default function JournalPage() {
   const [selfReport, setSelfReport] = useState<SelfReportValues>({});
 
   /**
+   * サーバーがこの提出について実際に使った判定（#165）。
+   *
+   * `collecting` は画面を描くための先読みで、確認が終わる前に提出されたり
+   * 問い合わせが失敗したりすると false のままになる。追加質問を出すかどうかを
+   * それで決めると、サーバーが収集期間中と判定した提出に追加質問が出てしまう。
+   *
+   * 保存の応答に入っている `collection_only` は、その提出について実際に使われた
+   * 答えなので、ここだけは先読みではなくこちらを見る。state ではなく ref なのは、
+   * await の直後に同じ関数の中で読むから。
+   */
+  const serverCollectionOnly = useRef<boolean | null>(null);
+
+  /**
    * 提出ごとに1つ振る id。再試行しても同じ値を送るので、サーバー側で
    * 同じ提出だと分かり、二重に保存されない（#132）。
    */
@@ -311,6 +324,7 @@ export default function JournalPage() {
           userAgent: typeof navigator === "undefined" ? undefined : navigator.userAgent,
         }),
       });
+      serverCollectionOnly.current = result.collection_only ?? null;
       const savedId = result.supabase_sync?.entry_id ?? null;
       if (!savedId) {
         // createEntry は id なしでは返らない契約だが、契約を二重に確かめる。
@@ -358,7 +372,13 @@ export default function JournalPage() {
     //
     // 出さないことが第一の制御で、サーバー側の拒否はその裏づけ。ここを通り
     // 抜けても回答は研究記録に入らない。
-    if (needsFollowUp() && !collecting) {
+    //
+    // 判断にはサーバーの答えを優先する。`collecting` は問い合わせが終わるまで
+    // false なので、それだけで決めると「先読みが間に合わなかった提出」に
+    // 追加質問が出る。サーバーの答えが無いのは Supabase 未設定などの場合で、
+    // そのときだけ先読みに落とす。
+    const collectionOnly = serverCollectionOnly.current ?? collecting;
+    if (needsFollowUp() && !collectionOnly) {
       setPhase("followup");
       askStep(0);
     } else {

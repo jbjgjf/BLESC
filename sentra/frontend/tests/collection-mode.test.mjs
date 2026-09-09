@@ -117,8 +117,47 @@ describe("adaptive surfaces are refused server-side, not merely hidden", () => {
     const file = fileURLToPath(new URL("../src/app/journal/page.tsx", import.meta.url));
     const source = await readFile(file, "utf8");
     assert.ok(
-      source.includes("needsFollowUp() && !collecting"),
+      source.includes("needsFollowUp() && !collectionOnly"),
       "the journal page must not enter the follow-up phase during a collection window",
+    );
+    // And the decision has to prefer the server's answer for this submission.
+    // The client-side lookup is false until it resolves, so deciding on it
+    // alone offers a follow-up to anyone who submits before it lands.
+    assert.ok(
+      source.includes("serverCollectionOnly.current ?? collecting"),
+      "the follow-up decision must prefer the server's collection_only over the client pre-read",
+    );
+  });
+
+  it("the writer stores a self-report only inside a window", async () => {
+    // Without this gate a tab left open since last week keeps writing pilot
+    // measurements after the enrollment completed, and a direct API caller can
+    // write them before it opened — either way contaminating the series the
+    // export then attributes to the pilot.
+    const file = fileURLToPath(new URL("../src/lib/server/supabaseWriter.ts", import.meta.url));
+    const source = await readFile(file, "utf8");
+    assert.ok(
+      source.includes("outside_collection_window:pilot_self_reports"),
+      "pilot_self_reports must not be written outside a collection window",
+    );
+  });
+
+  it("keeps the deterministic safety assessment running, and says why", async () => {
+    // The one deliberate exception to the withheld list. It is rules over the
+    // text rather than inference, and it is what a crisis disclosure depends
+    // on — a study that stops noticing a student in danger for its own duration
+    // is not a safer study. This test exists so removing it has to be a
+    // decision rather than a tidy-up.
+    const file = fileURLToPath(new URL("../src/lib/server/supabaseWriter.ts", import.meta.url));
+    const source = await readFile(file, "utf8");
+    const mirror = source.slice(source.indexOf('await mirror("model_runs"') - 2000, source.indexOf('await mirror("model_runs"'));
+    assert.ok(
+      mirror.includes("deliberate (#165)"),
+      "the safety-assessment exception must be documented where the mirror runs",
+    );
+    assert.ok(
+      !source.includes('context.collectionOnly) consentGated.push("collection_only:model_runs")'),
+      "the safety assessment must not be silently withheld",
     );
   });
 

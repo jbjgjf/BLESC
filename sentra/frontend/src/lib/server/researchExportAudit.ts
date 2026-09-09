@@ -93,6 +93,20 @@ export async function auditExport(client: SupabaseClient, audit: ExportAudit): P
 }
 
 /**
+/**
+ * The outcome of a consent lookup, as a value the caller has to open.
+ *
+ * Not a bare map. An outage, a permission error or a migration lag would
+ * otherwise come back as "nobody consented", and an export would report a
+ * successful zero-row pull — making an operational failure indistinguishable
+ * from a cohort that declined. Both fail closed, which is right; only one of
+ * them should be recorded as a completed export.
+ */
+export type ConsentLookup =
+  | { ok: true; byParticipant: Map<string, Record<string, unknown>> }
+  | { ok: false; error: string };
+
+/**
  * Current consent for each participant, newest record first.
  *
  * Read at export time rather than inherited from what was true when a row was
@@ -107,9 +121,9 @@ export async function auditExport(client: SupabaseClient, audit: ExportAudit): P
 export async function loadResearchConsent(
   client: SupabaseClient,
   participantIds: string[],
-): Promise<Map<string, Record<string, unknown>>> {
+): Promise<ConsentLookup> {
   const byParticipant = new Map<string, Record<string, unknown>>();
-  if (participantIds.length === 0) return byParticipant;
+  if (participantIds.length === 0) return { ok: true, byParticipant };
 
   const result = await client
     .from("consent_records")
@@ -120,10 +134,7 @@ export async function loadResearchConsent(
     .order("granted_at", { ascending: false });
   if (result.error) {
     console.error("[research-export] consent lookup failed", result.error.message);
-    // An empty map excludes everybody. A consent lookup that failed is not
-    // evidence of consent, and the export it feeds returns nothing rather than
-    // everything.
-    return byParticipant;
+    return { ok: false, error: result.error.message };
   }
 
   for (const record of (result.data ?? []) as Array<Record<string, unknown>>) {
@@ -132,5 +143,5 @@ export async function loadResearchConsent(
     // current one and the rest are superseded history.
     if (!byParticipant.has(key)) byParticipant.set(key, record);
   }
-  return byParticipant;
+  return { ok: true, byParticipant };
 }

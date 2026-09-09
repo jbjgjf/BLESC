@@ -108,10 +108,17 @@ create table if not exists public.pilot_self_reports (
     foreign key (entry_id, owner_user_id)
     references public.entries(id, owner_user_id)
     on delete cascade,
+  -- Column-specific SET NULL, and it has to be.
+  --
+  -- A plain `on delete set null` on a composite key nulls *every* column in it,
+  -- `owner_user_id` included — and that column is NOT NULL, so deleting a
+  -- session would fail on this row instead of detaching it. Naming the column
+  -- (PostgreSQL 15+) clears the session reference and leaves the ownership
+  -- intact, which is what the cascade was meant to do.
   constraint pilot_self_reports_session_owner_fk
     foreign key (entry_session_id, owner_user_id)
     references public.entry_sessions(id, owner_user_id)
-    on delete set null
+    on delete set null (entry_session_id)
 );
 
 -- One reading per entry. A retry updates it; it does not add a second.
