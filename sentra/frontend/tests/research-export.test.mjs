@@ -109,6 +109,15 @@ describe("buildResearchDataset — pseudonymity", () => {
     assert.equal(rows[0].day_index, 3); // window opens 9/6 JST, entry is 9/8 JST
   });
 
+  it("the guard catches a row that regained an absolute time", () => {
+    // The fix above removed the one field that leaked. This asserts the guard
+    // now refuses the whole class, so a later change that spreads another
+    // timestamp column into a row fails here rather than shipping.
+    const rows = build().rows;
+    rows[0].raw_text_expires_at = "2027-03-07T00:00:00Z";
+    assert.equal(identityLeakIn(rows), "raw_text_expires_at");
+  });
+
   it("keeps a management reference to the encrypted original", () => {
     const { rows } = build();
     assert.equal(rows[0].raw_text_ref, "entry-1");

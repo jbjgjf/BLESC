@@ -355,7 +355,18 @@ const FORBIDDEN_ROW_FIELDS = [
   "user_id",
   "invitation_id",
   "code_hash",
+  // Absolute times, named as a class rather than one at a time.
+  //
+  // `created_at` was here from the start and `raw_text_expires_at` was not, so
+  // it shipped: the submission instant plus a constant in this repository,
+  // which is the calendar date back by subtraction. The instance is fixed
+  // above; this is the class, so the next timestamp column spread into a row
+  // is caught by the guard instead of by a reviewer.
   "created_at",
+  "raw_text_expires_at",
+  "expires_at",
+  "submitted_at",
+  "updated_at",
 ];
 
 export function identityLeakIn(rows: ResearchRow[]): string | null {
