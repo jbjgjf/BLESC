@@ -1,19 +1,27 @@
 /**
- * Research export of retained journal text (#131).
+ * Pseudonymous research export (#131, #167).
  *
- * The point of retaining text at all is human evaluation of extraction
- * accuracy, and that needs a way to get it out. Three properties make this
- * safe to have:
+ * Four properties make this safe to have, and each one is enforced here rather
+ * than trusted to the caller:
  *
- *   - Authorization is an explicit allowlist (`RESEARCH_EXPORT_USER_IDS`), not
- *     a role anyone can end up in. An empty allowlist means nobody, so a
+ *   - **Authorization is an explicit allowlist** (`RESEARCH_EXPORT_USER_IDS`),
+ *     not a role anyone can end up in. An empty allowlist means nobody, so a
  *     deployment that has not decided who may export cannot export.
- *   - Only consented rows leave. Consent is re-checked at export time, not
- *     inherited from whatever was true when the row was written — a
- *     participant who revoked yesterday is not in today's export even if their
- *     text has not been purged yet.
- *   - Every attempt writes a `research_exports` row, including the denied ones.
- *     An export log that only records successes cannot answer "who tried".
+ *   - **Only consented rows leave.** Consent is re-checked at export time, not
+ *     inherited from whatever was true when the row was written — a participant
+ *     who revoked yesterday is not in today's export even if their text has not
+ *     been purged yet.
+ *   - **Withdrawn participants are gone.** Withdrawal is an enrollment state,
+ *     separate from consent, and #167 requires that it removes a participant
+ *     from every subsequent export. Checked before consent so that a withdrawal
+ *     whose consent row has not caught up still excludes.
+ *   - **The dataset cannot be re-identified from itself.** Rows carry
+ *     `research_code` and a relative day index. The map from code to database
+ *     identity is a different endpoint behind a different allowlist
+ *     (`/api/research/identity-map`).
+ *
+ * Every attempt writes a `research_exports` row, including the denied ones. An
+ * export log that only records successes cannot answer "who tried".
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -21,22 +29,32 @@ import { jsonError, requireUser } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { decryptRawText } from "@/lib/server/rawTextCrypto";
 import { normalizeConsent, rawTextRetentionAllowed, researchUseAllowed } from "@/lib/consent";
-import { auditExport, authorizedExporters, loadResearchConsent } from "@/lib/server/researchExportAudit";
+import {
+  buildResearchDataset,
+  identityLeakIn,
+  type ExportConsentState,
+  type ExportEnrollmentRow,
+  type ExportEntryRow,
+} from "@/lib/researchExport";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const MAX_ROWS = 1000;
+const DEFAULT_TIMEZONE = "Asia/Tokyo";
 
-type EntryRow = {
-  id: string;
-  participant_id: string;
-  created_at: string;
-  observation_type: string | null;
-  extraction_json: Record<string, unknown> | null;
-  raw_text_ciphertext: string | null;
-  raw_text_expires_at: string | null;
-};
+function studyTimezone(): string {
+  return process.env.PILOT_TIMEZONE?.trim() || DEFAULT_TIMEZONE;
+}
+
+function authorizedExporters(): Set<string> {
+  return new Set(
+    (process.env.RESEARCH_EXPORT_USER_IDS ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean),
+  );
+}
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser(request);
@@ -46,103 +64,171 @@ export async function GET(request: NextRequest) {
   if (!service) return jsonError("Supabase is not configured.", 503);
 
   const includeRawText = request.nextUrl.searchParams.get("include_raw_text") === "1";
-  const participantId = request.nextUrl.searchParams.get("participant_id");
+  const researchCode = request.nextUrl.searchParams.get("research_code");
   const limit = Math.min(Number(request.nextUrl.searchParams.get("limit") ?? 200) || 200, MAX_ROWS);
 
-  // The audit insert is shared with the pseudonymised dataset and the identity
-  // map (`lib/server/researchExportAudit.ts`), so all three disclosures land in
-  // `research_exports` in one shape and the table can be read as one log.
-  const audit = (status: "completed" | "denied" | "failed", rowCount: number, reason?: string) =>
-    auditExport(service, {
-      requestedBy: auth.user.id,
-      exportKind: includeRawText ? "entries_with_raw_text" : "entries_metadata",
-      scope: { participant_id: participantId, limit },
-      rowCount,
-      includedRawText: includeRawText,
-      includedIdentityMap: false,
+  const audit = async (
+    status: "completed" | "denied" | "failed",
+    rowCount: number,
+    reason?: string,
+  ) => {
+    const { error } = await service.from("research_exports").insert({
+      requested_by: auth.user.id,
+      export_kind: includeRawText ? "entries_with_raw_text" : "entries_metadata",
+      // The scope is recorded as the pseudonym the caller asked for. Writing a
+      // `participant_id` here would put the identifier this export exists to
+      // avoid into the audit log of the export that avoided it.
+      participant_scope_json: { research_code: researchCode, limit },
+      row_count: rowCount,
+      included_raw_text: includeRawText,
       status,
-      reason,
+      reason: reason ?? null,
     });
+    if (error) console.error("[research-export] audit row not written", error.message);
+  };
 
   if (!authorizedExporters().has(auth.user.id)) {
     await audit("denied", 0, "caller is not in RESEARCH_EXPORT_USER_IDS");
     return jsonError("この操作は許可されていません。", 403);
   }
 
-  let query = service
+  // Enrollments first. They carry the pseudonym, the window start every day
+  // index is measured from, and the withdrawal flag — so a caller scoping by
+  // `research_code` is resolved here and never has to name a participant id.
+  let enrollmentQuery = service
+    .from("pilot_enrollments")
+    .select("participant_id, research_code, cohort, state, collection_started_at, withdrawn_at");
+  if (researchCode) enrollmentQuery = enrollmentQuery.eq("research_code", researchCode);
+
+  const enrollmentResult = await enrollmentQuery;
+  if (enrollmentResult.error) {
+    await audit("failed", 0, enrollmentResult.error.message);
+    return jsonError(enrollmentResult.error.message, 502);
+  }
+  const enrollments = (enrollmentResult.data ?? []) as ExportEnrollmentRow[];
+
+  if (enrollments.length === 0) {
+    await audit("completed", 0, "no enrollments in scope");
+    return NextResponse.json({
+      rows: [],
+      count: 0,
+      participant_count: 0,
+      excluded: { withdrawn: 0, not_enrolled: 0, no_research_consent: 0, collection_not_started: 0 },
+    });
+  }
+
+  // Withdrawn participants are excluded from the query itself, not only from
+  // the assembled rows. Fetching their entries and dropping them later would
+  // work, but it would also mean the rows of someone who asked to leave the
+  // study keep passing through this process on every export.
+  const activeParticipantIds = enrollments
+    .filter((enrollment) => enrollment.state !== "withdrawn" && enrollment.withdrawn_at === null)
+    .map((enrollment) => enrollment.participant_id);
+  const withdrawnCount = enrollments.length - activeParticipantIds.length;
+
+  if (activeParticipantIds.length === 0) {
+    await audit("completed", 0, `all_in_scope_withdrawn:${withdrawnCount}`);
+    return NextResponse.json({
+      rows: [],
+      count: 0,
+      participant_count: 0,
+      excluded: {
+        withdrawn: withdrawnCount,
+        not_enrolled: 0,
+        no_research_consent: 0,
+        collection_not_started: 0,
+      },
+    });
+  }
+
+  const entryResult = await service
     .from("entries")
-    .select("id, participant_id, created_at, observation_type, extraction_json, raw_text_ciphertext, raw_text_expires_at")
+    .select(
+      "id, participant_id, created_at, observation_type, extraction_json, raw_text_ciphertext, raw_text_expires_at",
+    )
+    .in("participant_id", activeParticipantIds)
     .order("created_at", { ascending: false })
     .limit(limit);
-  if (participantId) query = query.eq("participant_id", participantId);
-
-  const result = await query;
-  if (result.error) {
-    await audit("failed", 0, result.error.message);
-    return jsonError(result.error.message, 502);
+  if (entryResult.error) {
+    await audit("failed", 0, entryResult.error.message);
+    return jsonError(entryResult.error.message, 502);
   }
-
-  const rows = (result.data ?? []) as EntryRow[];
+  const entries = (entryResult.data ?? []) as ExportEntryRow[];
 
   // Consent per participant, read now — not inherited from whatever was true
-  // when the row was written. One lookup per distinct participant rather than
-  // per row.
-  const participantIds = Array.from(new Set(rows.map((row) => row.participant_id)));
-  const researchAllowed = new Map<string, boolean>();
-  const retentionAllowed = new Map<string, boolean>();
+  // when the row was written. One lookup per distinct participant.
+  const consentByParticipant = new Map<string, ExportConsentState>();
+  const participantIds = Array.from(new Set(entries.map((row) => row.participant_id)));
   if (participantIds.length > 0) {
-    // Same lookup the pseudonymised export uses, so a participant these two
-    // outputs disagree about is impossible rather than merely unlikely.
-    const consent = await loadResearchConsent(service, participantIds);
-    // A failed lookup is a failed export, not an export of nothing. Both fail
-    // closed; only one of them may be recorded as completed.
-    if (!consent.ok) {
-      await audit("failed", 0, consent.error);
-      return jsonError(consent.error, 502);
+    const consentRows = await service
+      .from("consent_records")
+      .select(
+        "participant_id, app_use, research_analysis, anonymized_export, raw_text_retention, future_fine_tuning, minor_assent, guardian_consent, consent_version, document_version, status, granted_at, revoked_at, created_at",
+      )
+      .in("participant_id", participantIds)
+      .order("granted_at", { ascending: false });
+    if (consentRows.error) {
+      await audit("failed", 0, consentRows.error.message);
+      return jsonError(consentRows.error.message, 502);
     }
-    for (const [key, record] of consent.byParticipant) {
+    for (const record of (consentRows.data ?? []) as Array<Record<string, unknown>>) {
+      const key = String(record.participant_id);
+      // Ordered newest first, so the first row seen for a participant is the
+      // current one and later ones are superseded history.
+      if (consentByParticipant.has(key)) continue;
       const state = normalizeConsent(record);
-      researchAllowed.set(key, researchUseAllowed(state));
-      retentionAllowed.set(key, rawTextRetentionAllowed(state));
+      consentByParticipant.set(key, {
+        research: researchUseAllowed(state),
+        retention: rawTextRetentionAllowed(state),
+        consent_version: state.consent_version,
+        document_version: state.document_version,
+      });
     }
   }
 
-  // The consent gate applies to the whole row, not just the text.
-  //
-  // `extraction_json` is the structured reading of a journal entry — its
-  // events, its emotions, the relations between them. Handing that to a
-  // researcher is research use of the participant's data, and the rest of this
-  // change refuses to write it to `eval_examples` without consent. Filtering
-  // only the plaintext here would have let the same data out through a
-  // different door for participants who were never asked, who declined, or who
-  // revoked (#134).
-  //
-  // A participant with no consent record at all is not in the map, and
-  // `?? false` keeps them out.
-  const consented = rows.filter((row) => researchAllowed.get(row.participant_id) ?? false);
-  const withheld = rows.length - consented.length;
+  // Decryption happens before the dataset is built and only for rows that pass
+  // both gates, so the builder never has text it was not allowed to have.
+  const decryptedText = new Map<string, string | null>();
+  if (includeRawText) {
+    await Promise.all(
+      entries.map(async (entry) => {
+        if (!entry.raw_text_ciphertext) return;
+        if (!consentByParticipant.get(entry.participant_id)?.retention) return;
+        decryptedText.set(entry.id, await decryptRawText(entry.raw_text_ciphertext));
+      }),
+    );
+  }
 
-  const exported = await Promise.all(
-    consented.map(async (row) => {
-      const mayIncludeText =
-        includeRawText &&
-        row.raw_text_ciphertext !== null &&
-        (retentionAllowed.get(row.participant_id) ?? false);
-      return {
-        entry_id: row.id,
-        participant_id: row.participant_id,
-        created_at: row.created_at,
-        observation_type: row.observation_type,
-        extraction_json: row.extraction_json,
-        raw_text_expires_at: row.raw_text_expires_at,
-        raw_text: mayIncludeText ? await decryptRawText(row.raw_text_ciphertext as string) : null,
-      };
-    }),
-  );
+  const dataset = buildResearchDataset({
+    entries,
+    enrollments,
+    consentByParticipant,
+    timeZone: studyTimezone(),
+    decryptedText,
+  });
 
-  // The audit row records what left, and the count that did not — so a pull
-  // that returned little because consent is thin is distinguishable from one
-  // that returned little because the cohort is small.
-  await audit("completed", exported.length, withheld > 0 ? `withheld_without_consent:${withheld}` : undefined);
-  return NextResponse.json({ rows: exported, count: exported.length, withheld_without_consent: withheld });
+  // The rows are assembled from database output, so a column added to `entries`
+  // by a later change could ride along into the response. Refusing is the right
+  // failure: an export that silently carries an identifier is worse than one
+  // that does not run.
+  const leak = identityLeakIn(dataset.rows);
+  if (leak) {
+    await audit("failed", 0, `identity_field_in_row:${leak}`);
+    return jsonError("Export aborted: a row carried an identifying field.", 500);
+  }
+
+  const excluded = { ...dataset.excluded, withdrawn: dataset.excluded.withdrawn + withdrawnCount };
+  const reasons = Object.entries(excluded)
+    .filter(([, count]) => count > 0)
+    .map(([key, count]) => `${key}:${count}`)
+    .join(",");
+
+  await audit("completed", dataset.rows.length, reasons || undefined);
+  return NextResponse.json({
+    rows: dataset.rows,
+    count: dataset.rows.length,
+    participant_count: dataset.participant_count,
+    excluded,
+    timezone: studyTimezone(),
+  });
 }
