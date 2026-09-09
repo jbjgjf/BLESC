@@ -129,3 +129,43 @@ export function pendingRequirement(enrollment: PilotEnrollment): string | null {
       return null;
   }
 }
+
+/**
+ * Which screen of the join flow an enrollment is on.
+ *
+ * Extracted from `app/pilot/join/page.tsx` so the branch that matters can be
+ * tested: the first version routed *every* `participant_assented` enrollment to
+ * the guardian screen, including adults, whose only button there returns
+ * `guardian_not_required` — leaving them unable to reach the perfectly legal
+ * `participant_assented -> enrolled` transition, permanently stuck one step
+ * short of joining.
+ *
+ * A display decision, not a permission: the server decides every transition,
+ * and a participant who guesses a different screen still cannot advance.
+ */
+export type JoinStep =
+  | "invite"
+  | "information"
+  | "assent"
+  | "guardian"
+  | "finish"
+  | "done"
+  | "withdrawn";
+
+export function joinStep(enrollment: PilotEnrollment | null): JoinStep {
+  if (!enrollment) return "invite";
+  switch (enrollment.state) {
+    case "withdrawn":
+      return "withdrawn";
+    case "account_bound":
+      return "information";
+    case "information_read":
+      return "assent";
+    case "participant_assented":
+      return enrollment.is_minor ? "guardian" : "finish";
+    case "guardian_verified":
+      return "finish";
+    default:
+      return "done";
+  }
+}

@@ -93,6 +93,9 @@ const DEVELOPER_ERRORS = ["useAuth must be used inside AuthProvider"];
 const COLUMN_PROJECTIONS = [
   "app_use, research_analysis, anonymized_export, raw_text_retention, future_fine_tuning,",
   "id, study_id, research_code, cohort, state, is_minor, information_read_at, assented_at,",
+  // Guardian verifications (#164). Note what this list leaves out: `token_hash`
+  // is never selected, so a row that reaches a browser cannot carry one.
+  "id, enrollment_id, owner_user_id, token_prefix, requested_grants, channel, requested_at,",
 ];
 
 /**
@@ -114,6 +117,17 @@ const COLUMN_PROJECTIONS = [
 const OPERATOR_DIAGNOSTICS = [
   "PILOT_INVITE_HMAC_KEY is not configured.",
   "Generated an invalid code.",
+  // The two the operator guard itself returns (#164). They were exempt while
+  // the guard lived inside `api/pilot/admin/invitations/route.ts`, which the
+  // scanner skips; lifting it into `src/lib/server/pilotOperator.ts` so the
+  // guardian issuance route could share it brought them into range. The
+  // reasoning is unchanged: only an account in `PILOT_OPERATOR_USER_IDS` can
+  // see either, and "Not found." is deliberately the same answer this surface
+  // gives a student who guesses the URL — translating it would not help the one
+  // or two people who can reach it, and a Japanese 404 would tell a prober that
+  // something is there to be found.
+  "Not found.",
+  "Supabase is not configured.",
 ];
 
 /**

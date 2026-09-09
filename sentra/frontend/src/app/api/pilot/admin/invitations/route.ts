@@ -18,8 +18,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { jsonError, requireUser } from "@/lib/server/api";
-import { serviceRoleClient } from "@/lib/server/supabaseWriter";
+import { jsonError } from "@/lib/server/api";
+import { requireOperator } from "@/lib/server/pilotOperator";
 import { invitationUsage, issueInvitations, loadStudyBySlug, revokeInvitations } from "@/lib/server/pilotStore";
 import { inviteHashingConfigured } from "@/lib/server/inviteCodes";
 
@@ -27,31 +27,6 @@ export const runtime = "nodejs";
 
 /** Bounded so a mis-typed count cannot mint ten thousand codes. */
 const MAX_BATCH = 200;
-
-function authorizedOperators(): Set<string> {
-  return new Set(
-    (process.env.PILOT_OPERATOR_USER_IDS ?? "")
-      .split(",")
-      .map((id) => id.trim())
-      .filter(Boolean),
-  );
-}
-
-async function requireOperator(request: NextRequest) {
-  const auth = await requireUser(request);
-  if ("error" in auth) return auth;
-
-  if (!authorizedOperators().has(auth.user.id)) {
-    // 404, not 403. A signed-in student probing this path learns nothing about
-    // whether an operator surface exists.
-    return { error: jsonError("Not found.", 404) };
-  }
-
-  const service = serviceRoleClient();
-  if (!service) return { error: jsonError("Supabase is not configured.", 503) };
-
-  return { userId: auth.user.id, service };
-}
 
 export async function GET(request: NextRequest) {
   const operator = await requireOperator(request);
@@ -87,6 +62,15 @@ type IssueBody = {
   study?: string;
   count?: number;
   cohort?: string;
+  /**
+   * Whether the participants these codes are for need guardian verification.
+   * Set here, by the coordinator handing out the codes, because the alternative
+   * was asking the participant — and a minor who picks "18歳以上" on the join
+   * screen skips the guardian step entirely. Omitted, the code carries no
+   * answer and redemption falls back to the redeemer's own statement, which is
+   * the pre-20260909 behaviour and the weaker one.
+   */
+  is_minor?: boolean;
   max_redemptions?: number;
   expires_at?: string | null;
   note?: string | null;
@@ -122,6 +106,7 @@ export async function POST(request: NextRequest) {
     studyId: study.id,
     count,
     cohort: typeof body.cohort === "string" ? body.cohort : undefined,
+    isMinor: typeof body.is_minor === "boolean" ? body.is_minor : undefined,
     maxRedemptions: Number.isInteger(body.max_redemptions) ? Number(body.max_redemptions) : undefined,
     expiresAt: typeof body.expires_at === "string" ? body.expires_at : null,
     note: typeof body.note === "string" ? body.note.slice(0, 200) : null,
