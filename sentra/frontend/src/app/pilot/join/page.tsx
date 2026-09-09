@@ -18,8 +18,12 @@
  *      赤い枠にも警告アイコンにもしない。
  *
  *   3. **保護者の確認は、この画面からは絶対に完了しない。** 生徒の端末で
- *      「保護者が同意しました」を押せる導線は存在しない。ここでできるのは
- *      確認用リンクを発行して渡すことだけで、答えるのは別の端末。
+ *      「保護者が同意しました」を押せる導線は存在せず、確認用リンクも表示
+ *      されない。ここでできるのは「確認をお願いします」と依頼することだけで、
+ *      リンクを発行して渡すのは学校（コーディネータ）、答えるのは保護者の端末。
+ *      最初の実装ではこの画面にリンクを出していたが、リンクさえあれば誰でも
+ *      確認を完了できる以上、それは生徒に自分の保護者の同意を渡すのと同じ
+ *      だった（PR #170 のレビュー指摘）。
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -28,7 +32,7 @@ import { useAuth } from "@/lib/auth";
 import { ApiClient, type GuardianStatusResponse, type PilotEnrollmentSummary } from "@/api/client";
 import { Icon } from "@/components/ui/Icon";
 import { GUARDIAN_STATUS_MESSAGE } from "@/lib/guardianVerification";
-import { enrollmentProgress } from "@/lib/pilotEnrollment";
+import { enrollmentProgress, joinStep } from "@/lib/pilotEnrollment";
 
 /** 説明文書で個別に選べる項目。研究解析そのものは選択制ではない。 */
 const OPTIONAL_GRANTS = [
@@ -62,14 +66,28 @@ export default function PilotJoinPage() {
   const [isMinor, setIsMinor] = useState(true);
   const [assent, setAssent] = useState(false);
   const [optional, setOptional] = useState<Record<string, boolean>>({});
-  const [guardianUrl, setGuardianUrl] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!user) return;
     const rows = await ApiClient.pilotEnrollments();
     const live = rows.find((row) => row.state !== "withdrawn" && row.state !== "completed") ?? rows[0] ?? null;
     setEnrollment(live);
-    setGuardian(live && live.is_minor ? await ApiClient.guardianStatus(live.id) : null);
+
+    const status = live && live.is_minor ? await ApiClient.guardianStatus(live.id) : null;
+    setGuardian(status);
+    // The optional grants live in React state while the participant is ticking
+    // them, and nowhere else until the request is recorded. After a reload they
+    // came back empty, and the next request would have asked the guardian to
+    // approve nothing — silently converting every choice into a refusal. The
+    // outstanding request is the record of what was asked, so it seeds them.
+    if (status?.requested_grants) {
+      const restored = status.requested_grants;
+      setOptional({
+        raw_text_retention: restored.raw_text_retention === true,
+        anonymized_export: restored.anonymized_export === true,
+        future_fine_tuning: restored.future_fine_tuning === true,
+      });
+    }
     setLoaded(true);
   }, [user]);
 
@@ -86,15 +104,7 @@ export default function PilotJoinPage() {
     return () => clearInterval(timer);
   }, [guardian?.status, refresh]);
 
-  const step = useMemo(() => {
-    if (!enrollment) return "invite" as const;
-    if (enrollment.state === "withdrawn") return "withdrawn" as const;
-    if (enrollment.state === "account_bound") return "information" as const;
-    if (enrollment.state === "information_read") return "assent" as const;
-    if (enrollment.state === "participant_assented") return "guardian" as const;
-    if (enrollment.state === "guardian_verified") return "finish" as const;
-    return "done" as const;
-  }, [enrollment]);
+  const step = useMemo(() => joinStep(enrollment), [enrollment]);
 
   const run = async (action: () => Promise<string | null>) => {
     setBusy(true);
@@ -283,19 +293,15 @@ export default function PilotJoinPage() {
           ) : (
             <>
               <p className="bl-meta">
-                下のボタンで確認用リンクを作り、保護者の方に渡してください。
-                リンクは保護者の方の端末で開いていただく必要があります。
-                <strong>この画面で保護者の同意を代わりに入力することはできません。</strong>
+                確認は<strong>学校から保護者の方へ直接ご連絡</strong>します。確認用のリンクはこの画面には
+                表示されません — この端末から保護者の同意を入力することはできない仕組みになっています。
               </p>
-
-              {guardianUrl ? (
-                <div className="bl-notice bl-stack" style={{ gap: 6 }}>
-                  <span className="bl-label">確認用リンク</span>
-                  <code style={{ wordBreak: "break-all" }}>{guardianUrl}</code>
-                  <span className="bl-micro">
-                    有効期限は72時間です。この画面を離れると再表示できません。必要なら新しく作り直してください。
-                  </span>
-                </div>
+              {guardian?.status === "pending" ? (
+                <p className="bl-micro">
+                  {guardian.expires_at
+                    ? `保護者の方に送られたリンクの有効期限: ${new Date(guardian.expires_at).toLocaleString("ja-JP")}`
+                    : null}
+                </p>
               ) : null}
 
               <div className="bl-row" style={{ gap: 10, flexWrap: "wrap" }}>
@@ -305,17 +311,18 @@ export default function PilotJoinPage() {
                   disabled={busy}
                   onClick={() =>
                     run(async () => {
-                      const issued = await ApiClient.requestGuardianLink(enrollment!.id, {
+                      await ApiClient.requestGuardianVerification(enrollment!.id, {
                         raw_text_retention: optional.raw_text_retention === true,
                         anonymized_export: optional.anonymized_export === true,
                         future_fine_tuning: optional.future_fine_tuning === true,
                       });
-                      setGuardianUrl(issued.url);
                       return null;
                     })
                   }
                 >
-                  {guardian?.status === "pending" ? "リンクを作り直す" : "確認用リンクを作る"}
+                  {guardian?.status === "requested" || guardian?.status === "pending"
+                    ? "依頼をやり直す"
+                    : "確認を依頼する"}
                 </button>
                 <WithdrawButton busy={busy} enrollmentId={enrollment!.id} onDone={refresh} />
               </div>

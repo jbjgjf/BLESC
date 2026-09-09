@@ -73,7 +73,13 @@ export type GuardianStatusResponse = {
   can_request: boolean;
   status: GuardianVerificationStatus;
   message: string;
+  /** What the guardian is being asked to approve, so a reloaded screen shows
+   *  the scope that is actually pending rather than a blank set of boxes it
+   *  would then re-send as refusals. */
+  requested_grants: Record<string, boolean | string> | null;
+  /** Names a link for a coordinator on the phone. Cannot present one. */
   token_prefix: string | null;
+  issued_at: string | null;
   expires_at: string | null;
   decided_at: string | null;
 };
@@ -651,19 +657,22 @@ export class ApiClient {
   }
 
   /**
-   * Issue a verification link for a guardian.
+   * Ask for this participant's guardian to be contacted, and say what they are
+   * being asked to approve.
    *
-   * The URL comes back exactly once and is not stored anywhere the participant
-   * can read it again — losing it means issuing a new one, which supersedes the
-   * old. Note what this method cannot do: there is no client method that
-   * confirms a guardian, because there is no route that would accept one from
-   * this session.
+   * Returns a status, never a link. There is no client method that issues one
+   * and none that confirms a guardian, because there is no route that would
+   * accept either from this session: a coordinator issues the link
+   * (`/api/pilot/guardian/issue`, operator-only) and delivers it, and the
+   * guardian answers on their own device. Handing the token to the participant
+   * would make the whole separation decorative — whoever holds it is the
+   * guardian, as far as the confirm route can tell.
    */
-  static async requestGuardianLink(
+  static async requestGuardianVerification(
     enrollmentId: string,
     requestedGrants: Record<string, boolean>,
-  ): Promise<{ url: string; token_prefix: string; expires_at: string }> {
-    return this.fetch<{ url: string; token_prefix: string; expires_at: string }>("/pilot/guardian", {
+  ): Promise<{ status: GuardianVerificationStatus; message: string }> {
+    return this.fetch<{ status: GuardianVerificationStatus; message: string }>("/pilot/guardian", {
       method: "POST",
       body: JSON.stringify({ enrollment_id: enrollmentId, requested_grants: requestedGrants }),
     });

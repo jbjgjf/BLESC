@@ -15,7 +15,14 @@ import {
   participantConsentGrant,
 } from "../src/lib/guardianVerification.ts";
 import { NO_CONSENT } from "../src/lib/consent.ts";
+import { joinStep } from "../src/lib/pilotEnrollment.ts";
 
+const ISSUANCE_MIGRATION = fileURLToPath(
+  new URL("../../supabase/migrations/20260909000000_guardian_issuance_and_age_band.sql", import.meta.url),
+);
+const PARTICIPANT_ROUTE = fileURLToPath(new URL("../src/app/api/pilot/guardian/route.ts", import.meta.url));
+const ISSUE_ROUTE = fileURLToPath(new URL("../src/app/api/pilot/guardian/issue/route.ts", import.meta.url));
+const JOIN_PAGE = fileURLToPath(new URL("../src/app/pilot/join/page.tsx", import.meta.url));
 const MIGRATION = fileURLToPath(
   new URL("../../supabase/migrations/20260908000000_pilot_guardian_verification.sql", import.meta.url),
 );
@@ -28,7 +35,9 @@ const adult = (state) => ({ state, is_minor: false });
 
 const hoursFromNow = (hours) => new Date(Date.now() + hours * 3600 * 1000).toISOString();
 
+/** An issued, unanswered verification: a link is out and nobody has replied. */
 const row = (overrides = {}) => ({
+  issued_at: hoursFromNow(-1),
   expires_at: hoursFromNow(24),
   claimed_at: null,
   decision: null,
@@ -36,6 +45,10 @@ const row = (overrides = {}) => ({
   revoked_at: null,
   ...overrides,
 });
+
+/** A request the participant made that no coordinator has issued yet. */
+const requestedRow = (overrides = {}) =>
+  row({ issued_at: null, expires_at: null, ...overrides });
 
 describe("who needs a guardian", () => {
   it("asks for one for a minor and not for an adult", () => {
@@ -67,6 +80,14 @@ describe("guardianVerificationStatus", () => {
   it("reads a live unanswered row as pending", () => {
     assert.equal(guardianVerificationStatus(row()), "pending");
     assert.equal(guardianTokenUsable(row()), true);
+  });
+
+  it("separates a request nobody has sent yet from a link that is out", () => {
+    // A row with no token has not reached anybody. Calling that "waiting for
+    // the guardian" tells a participant their parent is sitting on a link that
+    // does not exist.
+    assert.equal(guardianVerificationStatus(requestedRow()), "requested");
+    assert.equal(guardianTokenUsable(requestedRow()), false);
   });
 
   it("reads a passed expiry as expired", () => {
@@ -128,10 +149,71 @@ describe("participantConsentGrant", () => {
   });
 
   it("lets research use through once the stored record carries a guardian", () => {
-    const grant = participantConsentGrant(asked, { guardianRequired: true, guardianConfirmed: true });
+    const grant = participantConsentGrant(asked, {
+      guardianRequired: true,
+      guardianConfirmed: true,
+      approvedScope: {
+        research_analysis: true,
+        anonymized_export: true,
+        raw_text_retention: true,
+        future_fine_tuning: true,
+      },
+    });
     assert.equal(grant.research_analysis, true);
     assert.equal(grant.raw_text_retention, true);
     assert.equal(grant.guardian_consent, true);
+  });
+
+  it("refuses to widen what the guardian approved", () => {
+    // The escalation this exists to stop: a guardian approves a request with
+    // future_fine_tuning off, and the minor ticks it afterwards on /consent.
+    // The record would then say both that a guardian consented and that
+    // fine-tuning was agreed to — a use nobody showed them.
+    const grant = participantConsentGrant(asked, {
+      guardianRequired: true,
+      guardianConfirmed: true,
+      approvedScope: {
+        research_analysis: true,
+        anonymized_export: false,
+        raw_text_retention: true,
+        future_fine_tuning: false,
+      },
+    });
+    assert.equal(grant.research_analysis, true);
+    assert.equal(grant.raw_text_retention, true);
+    assert.equal(grant.future_fine_tuning, false);
+    assert.equal(grant.anonymized_export, false);
+  });
+
+  it("lets a minor narrow what the guardian approved, with no new confirmation", () => {
+    // Withdrawing a grant is the participant taking something back. Nobody has
+    // to approve that, and requiring a guardian to would make refusal harder
+    // than agreement.
+    const grant = participantConsentGrant(
+      { ...asked, raw_text_retention: false },
+      {
+        guardianRequired: true,
+        guardianConfirmed: true,
+        approvedScope: {
+          research_analysis: true,
+          anonymized_export: true,
+          raw_text_retention: true,
+          future_fine_tuning: true,
+        },
+      },
+    );
+    assert.equal(grant.raw_text_retention, false);
+    assert.equal(grant.research_analysis, true);
+  });
+
+  it("applies no ceiling to an adult, who has no guardian to be bounded by", () => {
+    const grant = participantConsentGrant(asked, {
+      guardianRequired: false,
+      guardianConfirmed: false,
+      approvedScope: null,
+    });
+    assert.equal(grant.research_analysis, true);
+    assert.equal(grant.future_fine_tuning, true);
   });
 
   it("lets an adult through with no guardian at all", () => {
@@ -268,5 +350,91 @@ describe("the migration", () => {
 describe("the token", () => {
   it("gives a guardian long enough to answer without leaving a link live for weeks", () => {
     assert.equal(GUARDIAN_TOKEN_TTL_HOURS, 72);
+  });
+});
+
+describe("the join flow's screens", () => {
+  it("does not park an adult on the guardian screen", () => {
+    // The bug this replaces: every `participant_assented` enrollment was routed
+    // to the guardian step, adults included. The only button there calls the
+    // guardian endpoint, which refuses an adult with `guardian_not_required`,
+    // so the legal `participant_assented -> enrolled` transition was
+    // unreachable and the participant was stuck for good.
+    assert.equal(joinStep(adult("participant_assented")), "finish");
+    assert.equal(joinStep(minor("participant_assented")), "guardian");
+  });
+
+  it("walks the ordinary steps in order", () => {
+    assert.equal(joinStep(null), "invite");
+    assert.equal(joinStep(minor("account_bound")), "information");
+    assert.equal(joinStep(minor("information_read")), "assent");
+    assert.equal(joinStep(minor("guardian_verified")), "finish");
+    assert.equal(joinStep(minor("enrolled")), "done");
+    assert.equal(joinStep(minor("collecting")), "done");
+    assert.equal(joinStep(minor("withdrawn")), "withdrawn");
+  });
+});
+
+describe("who may hold a verification token", () => {
+  it("never returns one to the participant's session", () => {
+    // The finding this guards: the confirm route authenticates with the token
+    // and nothing else, so a participant holding their own link can record
+    // their own guardian's consent. The participant route may return a status
+    // and never a credential.
+    const source = readFileSync(PARTICIPANT_ROUTE, "utf8");
+    assert.doesNotMatch(source, /guardianVerificationUrl/);
+    assert.doesNotMatch(source, /issueVerification/);
+    assert.doesNotMatch(source, /\burl\s*:/);
+  });
+
+  it("issues only from the operator route, behind the operator allowlist", () => {
+    const source = readFileSync(ISSUE_ROUTE, "utf8");
+    assert.match(source, /requireOperator/);
+    assert.match(source, /issueVerification/);
+    assert.match(source, /guardianVerificationUrl/);
+  });
+
+  it("shows the participant no link on the join screen", () => {
+    const source = readFileSync(JOIN_PAGE, "utf8");
+    assert.doesNotMatch(source, /guardianUrl/);
+    assert.match(source, /requestGuardianVerification/);
+  });
+});
+
+describe("the issuance migration", () => {
+  const sql = readFileSync(ISSUANCE_MIGRATION, "utf8");
+
+  it("takes the age band from the invitation, not the redeemer", () => {
+    // A minor who picked 「18歳以上」 on the join screen skipped guardian
+    // verification entirely. The coordinator's answer now wins.
+    assert.match(sql, /alter table public\.pilot_invitations\s*\n\s*add column if not exists is_minor boolean/);
+    assert.match(sql, /coalesce\(v_invitation\.is_minor, p_is_minor, true\)/);
+  });
+
+  it("resolves an unknown age band toward asking a guardian", () => {
+    // `coalesce(..., true)`: no answer anywhere means a guardian is asked,
+    // never that the step is skipped.
+    const call = sql.match(/coalesce\(v_invitation\.is_minor, p_is_minor, (\w+)\)/);
+    assert.ok(call);
+    assert.equal(call[1], "true");
+  });
+
+  it("lets a request exist before its token, and not the reverse", () => {
+    assert.match(sql, /alter column token_hash drop not null/);
+    assert.match(sql, /pilot_guardian_verifications_issued_check/);
+    // A decision on a row that was never issued would be a guardian consent
+    // with no delivery behind it.
+    assert.match(sql, /check \(decision is null or token_hash is not null\)/);
+  });
+
+  it("allows only one outstanding request per enrollment", () => {
+    assert.match(sql, /create unique index if not exists pilot_guardian_verifications_one_pending_idx/);
+    assert.match(sql, /where decision is null and revoked_at is null/);
+  });
+
+  it("still keeps the token hash away from the research role", () => {
+    const grant = sql.match(/grant select \(([\s\S]*?)\)\s*\n\s*on public\.pilot_guardian_verifications to research_reader/);
+    assert.ok(grant, "expected a column-level grant to research_reader");
+    assert.doesNotMatch(grant[1], /token_hash/);
   });
 });

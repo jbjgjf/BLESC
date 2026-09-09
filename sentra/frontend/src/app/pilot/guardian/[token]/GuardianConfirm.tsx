@@ -70,7 +70,20 @@ export function GuardianConfirm({
       setError(typeof body.detail === "string" ? body.detail : "回答を記録できませんでした。");
       return;
     }
-    setAnswered(body.decision === "declined" ? "declined" : "confirmed");
+
+    // Only an explicit decision is a decision. `already_decided` with a null
+    // decision means another request holds the claim and has not finished —
+    // two tabs, or a retry — and mapping that to "confirmed" would tell a
+    // guardian their consent was recorded when it may still fail or turn out
+    // to be a decline. It is not an error either: nothing is wrong, the answer
+    // is simply not in yet.
+    if (body.decision === "confirmed" || body.decision === "declined") {
+      setAnswered(body.decision);
+      return;
+    }
+    setError(
+      "この確認は現在処理中です。少し時間をおいてから、同じリンクをもう一度開いてご確認ください。",
+    );
   };
 
   if (error || !context) {

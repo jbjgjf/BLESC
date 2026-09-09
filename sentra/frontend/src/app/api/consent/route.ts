@@ -94,24 +94,45 @@ export async function POST(request: NextRequest) {
   }
 
   // Whether a guardian is needed comes from the enrollment, which a coordinator
-  // set at redemption — not from the body, and not from a date of birth this
-  // study has no reason to hold. No enrollment means no study to consent to, so
-  // the safe reading of "unknown" is the one that asks for a guardian.
+  // set when the invitation was issued — not from the body, and not from a date
+  // of birth this study has no reason to hold.
   const enrollment = await loadEnrollmentByParticipant(
     resolved.service,
     resolved.ownerUserId,
     resolved.participantId,
   );
-  const needsGuardian = enrollment ? guardianRequired(enrollment) : true;
+
+  // No enrollment, no study to consent to. The first cut of this made "unknown"
+  // mean "a guardian is required", which on a non-pilot deployment produced a
+  // requirement nobody could ever satisfy — no enrollment means no way to ask a
+  // guardian, so research consent was silently unreachable. Refusing out loud
+  // is the honest version of the same safety property, and it is also true:
+  // research collection here is invitation-only (#163), so consent to it
+  // outside a study would describe nothing.
+  //
+  // What is *not* refused is ordinary app use. A participant with no enrollment
+  // still records `app_use` exactly as before.
+  if (body.research_analysis === true && !enrollment) {
+    return jsonError(
+      "研究利用への同意は、研究への参加登録がある場合にのみ記録できます。招待コードをお持ちの場合は、参加の手続きから進めてください。",
+      409,
+      { code: "research_requires_enrollment" },
+    );
+  }
+
+  const needsGuardian = enrollment ? guardianRequired(enrollment) : false;
 
   // Read, never trusted from the request: the guardian half is whatever the
   // stored record already says, which only the confirm route can have written.
+  // The same record is the ceiling on what a minor may (re-)grant — a guardian
+  // who approved a narrower scope is not consenting to a wider one later.
   const stored = await loadConsentState(resolved.service, resolved.ownerUserId, resolved.participantId);
   const guardianConfirmed = stored.guardian_consent === true;
 
   const grant = participantConsentGrant(body as Record<string, unknown>, {
     guardianRequired: needsGuardian,
     guardianConfirmed,
+    approvedScope: stored,
   });
 
   // Asking for research use before a guardian has answered is the ordinary
@@ -123,6 +144,14 @@ export async function POST(request: NextRequest) {
     ? "guardian_verification"
     : null;
 
+  // A grant the guardian has not approved is dropped rather than refused, but
+  // the caller is told which, so a screen can say "this needs a new
+  // confirmation" instead of silently unticking a box the participant ticked.
+  const outsideApprovedScope = needsGuardian && guardianConfirmed
+    ? (["research_analysis", "anonymized_export", "raw_text_retention", "future_fine_tuning"] as const)
+        .filter((key) => body[key] === true && grant[key] !== true)
+    : [];
+
   try {
     const consent = await recordConsent(
       resolved.service,
@@ -130,7 +159,12 @@ export async function POST(request: NextRequest) {
       resolved.participantId,
       { ...grant, document_version: body.document_version },
     );
-    return NextResponse.json({ consent, snapshot: consentSnapshot(consent), pending });
+    return NextResponse.json({
+      consent,
+      snapshot: consentSnapshot(consent),
+      pending,
+      outside_approved_scope: outsideApprovedScope,
+    });
   } catch (err) {
     return jsonError(err instanceof Error ? err.message : "同意を記録できませんでした。", 502);
   }

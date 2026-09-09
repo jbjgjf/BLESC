@@ -8,9 +8,18 @@
  * verification can be claimed — which is what keeps "confirm my own guardian
  * consent" from being a fetch a signed-in participant can write.
  *
- * The invariant these functions exist to keep: **a token is claimed exactly
- * once, by whoever presents it first, and a claim that does not finish is
- * released rather than left spent.**
+ * Two invariants these functions exist to keep:
+ *
+ *   - **A token is claimed exactly once**, by whoever presents it first, and a
+ *     claim that does not finish is released rather than left spent.
+ *
+ *   - **The participant never holds the token.** They create the request; a
+ *     coordinator issues the link onto it and delivers it. The first cut of
+ *     #164 returned the URL to the participant's own browser, which made the
+ *     whole separation decorative — the confirm route authenticates with the
+ *     token and nothing else, so whoever holds it is the guardian as far as the
+ *     server can tell. `requestVerification` therefore returns no token, and
+ *     `issueVerification` is reachable only from the operator route.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -25,10 +34,13 @@ export type GuardianVerificationRecord = {
   id: string;
   enrollment_id: string;
   owner_user_id: string;
-  token_prefix: string;
+  /** Null while the request is waiting for a coordinator to issue the link. */
+  token_prefix: string | null;
   requested_grants: RequestedGrants;
   channel: string;
-  expires_at: string;
+  requested_at: string;
+  issued_at: string | null;
+  expires_at: string | null;
   claimed_at: string | null;
   decision: "confirmed" | "declined" | null;
   decided_at: string | null;
@@ -44,8 +56,8 @@ export type GuardianVerificationRecord = {
  * never selected cannot be accidentally serialised into one.
  */
 const COLUMNS =
-  "id, enrollment_id, owner_user_id, token_prefix, requested_grants, channel, expires_at, " +
-  "claimed_at, decision, decided_at, revoked_at, created_at";
+  "id, enrollment_id, owner_user_id, token_prefix, requested_grants, channel, requested_at, " +
+  "issued_at, expires_at, claimed_at, decision, decided_at, revoked_at, created_at";
 
 function expiryFrom(now: Date = new Date()): string {
   return new Date(now.getTime() + GUARDIAN_TOKEN_TTL_HOURS * 3600 * 1000).toISOString();
@@ -72,17 +84,20 @@ export async function latestVerification(
 }
 
 /**
- * Issue a link.
+ * Record that a participant is asking for their guardian to be contacted, and
+ * what they are asking the guardian to approve.
  *
- * Outstanding requests for the same enrollment are revoked first, so that only
- * the newest link works. Two live links for one enrollment is a support problem
- * ("which one did I send?") before it is a security one, and revoking is
- * cheaper than explaining.
+ * Returns no token, because at this point none exists. What the participant
+ * gets back is a row a coordinator can act on.
  *
- * Returns the clear-text token **once**. It is not stored and cannot be
- * recovered: a lost link is reissued, never looked up.
+ * Re-requesting updates the outstanding request rather than adding a second
+ * one — the partial unique index in 20260909000000 allows only one undecided,
+ * un-revoked row per enrollment, and two pending requests would leave the
+ * coordinator guessing which scope the participant meant. Once a link has been
+ * issued, a re-request supersedes it: the scope may have changed, so the link
+ * already out is describing the wrong question.
  */
-export async function issueVerification(
+export async function requestVerification(
   client: SupabaseClient,
   params: {
     enrollmentId: string;
@@ -90,20 +105,39 @@ export async function issueVerification(
     requestedGrants: RequestedGrants;
     channel?: string;
   },
-): Promise<{ token: string; record: GuardianVerificationRecord } | { error: string }> {
-  const token = generateGuardianToken();
-  const hash = hashGuardianToken(token);
-  if (!hash) return { error: "unconfigured" };
+): Promise<{ record: GuardianVerificationRecord } | { error: string }> {
+  const outstanding = await latestVerification(client, params.enrollmentId);
 
-  const revoked = await client
-    .from("pilot_guardian_verifications")
-    .update({ revoked_at: new Date().toISOString() })
-    .eq("enrollment_id", params.enrollmentId)
-    .is("decision", null)
-    .is("revoked_at", null);
-  if (revoked.error) {
-    console.warn("[pilot-guardian] superseding earlier verifications failed", revoked.error.message);
-    return { error: "error" };
+  if (outstanding && !outstanding.decision && !outstanding.revoked_at) {
+    if (!outstanding.issued_at) {
+      const updated = await client
+        .from("pilot_guardian_verifications")
+        .update({ requested_grants: params.requestedGrants, requested_at: new Date().toISOString() })
+        .eq("id", outstanding.id)
+        .is("decision", null)
+        .is("revoked_at", null)
+        .select(COLUMNS)
+        .maybeSingle();
+
+      if (updated.error) {
+        console.warn("[pilot-guardian] updating the outstanding request failed", updated.error.message);
+        return { error: "error" };
+      }
+      if (updated.data) return { record: updated.data as unknown as GuardianVerificationRecord };
+      // Someone answered between the read and the write. Fall through and let
+      // the insert below fail on the unique index rather than overwrite it.
+    } else {
+      const revoked = await client
+        .from("pilot_guardian_verifications")
+        .update({ revoked_at: new Date().toISOString() })
+        .eq("id", outstanding.id)
+        .is("decision", null)
+        .is("revoked_at", null);
+      if (revoked.error) {
+        console.warn("[pilot-guardian] superseding the issued link failed", revoked.error.message);
+        return { error: "error" };
+      }
+    }
   }
 
   const result = await client
@@ -111,19 +145,59 @@ export async function issueVerification(
     .insert({
       enrollment_id: params.enrollmentId,
       owner_user_id: params.ownerUserId,
-      token_hash: hash,
-      token_prefix: guardianTokenPrefix(token),
       requested_grants: params.requestedGrants,
-      channel: params.channel ?? "link",
-      expires_at: expiryFrom(),
+      channel: params.channel ?? "school",
     })
     .select(COLUMNS)
     .single();
 
   if (result.error) {
-    console.warn("[pilot-guardian] issuing verification failed", result.error.message);
+    console.warn("[pilot-guardian] recording the request failed", result.error.message);
     return { error: "error" };
   }
+  return { record: result.data as unknown as GuardianVerificationRecord };
+}
+
+/**
+ * Issue the link for an outstanding request. **Operator only.**
+ *
+ * Returns the clear-text token exactly once, to the coordinator, who delivers
+ * it to the guardian through the channel the school already uses for consent
+ * forms. It is not stored and cannot be recovered: a lost link is re-issued,
+ * never looked up.
+ *
+ * There is deliberately no path from a participant's session to this function.
+ * See the header.
+ */
+export async function issueVerification(
+  client: SupabaseClient,
+  params: { verificationId: string; issuedBy: string; channel?: string },
+): Promise<{ token: string; record: GuardianVerificationRecord } | { error: string }> {
+  const token = generateGuardianToken();
+  const hash = hashGuardianToken(token);
+  if (!hash) return { error: "unconfigured" };
+
+  const result = await client
+    .from("pilot_guardian_verifications")
+    .update({
+      token_hash: hash,
+      token_prefix: guardianTokenPrefix(token),
+      expires_at: expiryFrom(),
+      issued_at: new Date().toISOString(),
+      issued_by: params.issuedBy,
+      ...(params.channel ? { channel: params.channel } : null),
+    })
+    .eq("id", params.verificationId)
+    .is("decision", null)
+    .is("revoked_at", null)
+    .select(COLUMNS)
+    .maybeSingle();
+
+  if (result.error) {
+    console.warn("[pilot-guardian] issuing the link failed", result.error.message);
+    return { error: "error" };
+  }
+  if (!result.data) return { error: "not_issuable" };
 
   return { token, record: result.data as unknown as GuardianVerificationRecord };
 }
@@ -166,7 +240,14 @@ export async function claimVerification(
   const row = (existing.data as unknown as GuardianVerificationRecord) ?? null;
   if (!row || row.revoked_at) return { outcome: "not_found" };
   if (row.decision) return { outcome: "already_decided", record: row };
-  if (Date.parse(row.expires_at) <= Date.now()) return { outcome: "expired", record: row };
+  // A row found by token hash necessarily carries an expiry — the
+  // `pilot_guardian_verifications_issued_check` constraint added in
+  // 20260909000000 does not allow a token without one. Treating a missing
+  // expiry as expired rather than as "no expiry" is the safe reading of a
+  // state the database says cannot exist.
+  if (!row.expires_at || Date.parse(row.expires_at) <= Date.now()) {
+    return { outcome: "expired", record: row };
+  }
 
   const claimed = await client
     .from("pilot_guardian_verifications")

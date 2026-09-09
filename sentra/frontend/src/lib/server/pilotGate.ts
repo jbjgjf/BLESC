@@ -25,7 +25,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isCollecting, pendingRequirement, type PilotEnrollment } from "@/lib/pilotEnrollment";
-import { collectionOpen } from "./pilotStore";
+import { collectionOpen, loadStudyBySlug } from "./pilotStore";
 
 /** The study this deployment collects for, or null on a normal deployment. */
 export function pilotStudySlug(): string | null {
@@ -66,13 +66,26 @@ export function redirectFor(outcome: GateOutcome): string | null {
  * route handler and the layout share one rule rather than two that agree today.
  */
 export function gateFromEnrollments(
-  enrollments: PilotEnrollment[],
-  options: { hasSession: boolean },
+  enrollments: (PilotEnrollment & { study_id?: string })[],
+  options: { hasSession: boolean; studyId?: string | null },
 ): GateOutcome {
   if (!pilotGateEnforced()) return { allowed: true, reason: "not_enforced" };
   if (!options.hasSession) return { allowed: false, reason: "no_session", pending: null };
 
-  const live = enrollments.find((row) => row.state !== "withdrawn" && row.state !== "completed");
+  // `PILOT_STUDY_SLUG` says which study this deployment collects for, and it
+  // has to mean that rather than being an on/off switch. A database holding a
+  // finished dry run alongside the real pilot would otherwise let an enrollment
+  // in either one open the journal here — including a `collecting` row from the
+  // study this deployment is not running.
+  //
+  // An unresolvable slug (a typo, a study not yet created) admits nobody. The
+  // safe direction is obvious: the alternative is a misconfigured deployment
+  // collecting from whoever happens to be enrolled in something.
+  const scoped = options.studyId
+    ? enrollments.filter((row) => row.study_id === options.studyId)
+    : [];
+
+  const live = scoped.find((row) => row.state !== "withdrawn" && row.state !== "completed");
   if (!live) return { allowed: false, reason: "no_enrollment", pending: null };
 
   if (isCollecting(live)) return { allowed: true, reason: "collecting" };
@@ -98,13 +111,20 @@ export function gateFromEnrollments(
 export async function gateForUser(
   service: SupabaseClient | null,
   ownerUserId: string | null,
-  enrollments: PilotEnrollment[],
+  enrollments: (PilotEnrollment & { study_id?: string })[],
   participantId: string | null,
 ): Promise<GateOutcome> {
   if (!pilotGateEnforced()) return { allowed: true, reason: "not_enforced" };
   if (!service || !ownerUserId) return { allowed: false, reason: "no_session", pending: null };
 
-  const structural = gateFromEnrollments(enrollments, { hasSession: true });
+  const slug = pilotStudySlug();
+  const study = slug ? await loadStudyBySlug(service, slug) : null;
+  if (!study) {
+    console.warn("[pilot-gate] PILOT_STUDY_SLUG does not resolve to a study; refusing collection");
+    return { allowed: false, reason: "no_enrollment", pending: null };
+  }
+
+  const structural = gateFromEnrollments(enrollments, { hasSession: true, studyId: study.id });
   if (!structural.allowed || !participantId) return structural;
 
   const open = await collectionOpen(service, participantId);

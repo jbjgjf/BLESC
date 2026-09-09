@@ -358,6 +358,10 @@ export async function issueInvitations(
     maxRedemptions?: number;
     expiresAt?: string | null;
     note?: string | null;
+    /** The coordinator's answer to "does this participant need a guardian".
+     *  Undefined leaves the column null, and redemption falls back to the
+     *  redeemer's own statement (20260909000000). */
+    isMinor?: boolean;
   },
 ): Promise<{ issued: IssuedInvitation[]; error?: string }> {
   const { generateInviteCode } = await import("./inviteCodes");
@@ -381,6 +385,7 @@ export async function issueInvitations(
       max_redemptions: params.maxRedemptions ?? 1,
       expires_at: params.expiresAt ?? null,
       note: params.note ?? null,
+      is_minor: params.isMinor ?? null,
     });
     issued.push({ code, prefix, expires_at: params.expiresAt ?? null });
   }

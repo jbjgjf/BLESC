@@ -88,6 +88,9 @@ export function canRequestGuardianVerification(enrollment: PilotEnrollment): boo
 /** The states a stored verification can be in, as a screen needs to say it. */
 export type GuardianVerificationStatus =
   | "none"
+  /** The participant asked; the coordinator has not sent the link yet. */
+  | "requested"
+  /** The link is out and unanswered. */
   | "pending"
   | "expired"
   | "confirmed"
@@ -95,7 +98,9 @@ export type GuardianVerificationStatus =
   | "revoked";
 
 export type GuardianVerificationRow = {
-  expires_at: string;
+  /** Null until a coordinator issues the link (20260909000000). */
+  expires_at: string | null;
+  issued_at: string | null;
   claimed_at: string | null;
   decision: "confirmed" | "declined" | null;
   decided_at: string | null;
@@ -109,6 +114,11 @@ export type GuardianVerificationRow = {
  * expiry. A guardian who confirmed on the last hour of the third day confirmed,
  * and a row that reported "expired" afterwards would lose a consent that was
  * actually given.
+ *
+ * `requested` sits before `pending` for the same kind of reason: a row with no
+ * token has not been sent to anybody, and calling that "waiting for the
+ * guardian" would tell a participant their parent is sitting on a link that
+ * does not exist.
  */
 export function guardianVerificationStatus(
   row: GuardianVerificationRow | null,
@@ -118,6 +128,7 @@ export function guardianVerificationStatus(
   if (row.decision === "confirmed") return "confirmed";
   if (row.decision === "declined") return "declined";
   if (row.revoked_at) return "revoked";
+  if (!row.issued_at || !row.expires_at) return "requested";
   if (Date.parse(row.expires_at) <= now.getTime()) return "expired";
   return "pending";
 }
@@ -175,17 +186,45 @@ export function guardianConsentGrant(
  */
 export function participantConsentGrant(
   requested: Record<string, unknown>,
-  options: { guardianRequired: boolean; guardianConfirmed: boolean },
+  options: {
+    guardianRequired: boolean;
+    guardianConfirmed: boolean;
+    /**
+     * What the guardian actually approved — the stored consent record they
+     * produced. Required whenever a guardian is required, and it is a
+     * **ceiling**, not a default: see below.
+     */
+    approvedScope?: Partial<ConsentGrants> | null;
+  },
 ): ConsentGrants & { minor_assent: boolean; guardian_consent: boolean } {
   const wantsResearch = requested.research_analysis === true;
   const researchAllowed = !options.guardianRequired || options.guardianConfirmed;
 
+  /**
+   * A minor may narrow what they agreed to, never widen it.
+   *
+   * Without this, the guardian's confirmation became a permanent yes: a parent
+   * could approve a request with `future_fine_tuning: false`, and the
+   * participant could then tick that box on `/consent` and get a record saying
+   * both that a guardian consented and that fine-tuning was agreed to — a use
+   * the guardian never saw. Turning a grant back on is a new question for the
+   * guardian, so it needs a new verification; turning one off is the
+   * participant withdrawing something, which nobody has to approve.
+   *
+   * No guardian required (an adult) means no ceiling: the scope is theirs.
+   */
+  const withinApprovedScope = (key: keyof ConsentGrants): boolean => {
+    if (requested[key] !== true || !researchAllowed) return false;
+    if (!options.guardianRequired) return true;
+    return options.approvedScope?.[key] === true;
+  };
+
   return {
     app_use: requested.app_use === true,
-    research_analysis: wantsResearch && researchAllowed,
-    anonymized_export: requested.anonymized_export === true && researchAllowed,
-    raw_text_retention: requested.raw_text_retention === true && researchAllowed,
-    future_fine_tuning: requested.future_fine_tuning === true && researchAllowed,
+    research_analysis: wantsResearch && researchAllowed && (!options.guardianRequired || options.approvedScope?.research_analysis === true),
+    anonymized_export: withinApprovedScope("anonymized_export"),
+    raw_text_retention: withinApprovedScope("raw_text_retention"),
+    future_fine_tuning: withinApprovedScope("future_fine_tuning"),
     minor_assent: requested.minor_assent === true,
     // Never from the caller. See the header.
     guardian_consent: options.guardianConfirmed,
@@ -202,10 +241,11 @@ export function participantConsentGrant(
  * 表示や偽のエラーを出さない).
  */
 export const GUARDIAN_STATUS_MESSAGE: Record<GuardianVerificationStatus, string> = {
-  none: "保護者の方に確認をお願いする準備ができています。",
+  none: "保護者の方への確認を、学校を通じて依頼できます。",
+  requested: "確認の依頼を受け付けました。学校から保護者の方へご連絡します。",
   pending: "保護者の方の確認をお待ちしています。確認が終わると、この画面が進みます。",
-  expired: "確認用リンクの有効期限が切れました。新しいリンクを発行できます。",
+  expired: "確認用リンクの有効期限が切れました。学校に再送を依頼できます。",
   confirmed: "保護者の方の確認が完了しました。",
   declined: "保護者の方は、今回は参加に同意されませんでした。ご相談は研究担当までご連絡ください。",
-  revoked: "このリンクは無効になりました。新しいリンクを発行できます。",
+  revoked: "この確認の依頼は取り消されました。もう一度依頼できます。",
 };
