@@ -67,6 +67,7 @@ export default function ConsentPage() {
     future_fine_tuning: false,
   });
   const [assent, setAssent] = useState(false);
+  const [isMinor, setIsMinor] = useState(true);
   const [readDocument, setReadDocument] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -74,7 +75,12 @@ export default function ConsentPage() {
 
   const load = useCallback(async () => {
     if (demo) return;
-    const current = await ApiClient.getConsent(userId);
+    const [current, enrollments] = await Promise.all([
+      ApiClient.getConsent(userId),
+      ApiClient.pilotEnrollments(),
+    ]);
+    const enrollment = enrollments[0];
+    setIsMinor(enrollment ? enrollment.is_minor : true);
     setStored(current);
     setChecked({
       research_analysis: current.research_analysis,
@@ -204,7 +210,9 @@ export default function ConsentPage() {
       <section className="bl-card bl-stack">
         <h2 className="bl-h3">同意する人</h2>
         <p className="bl-meta">
-          研究利用には、本人の同意と保護者の同意の両方が必要です。どちらか一方だけでは記録できません。
+          {isMinor
+            ? "研究利用には、本人の同意と保護者の同意の両方が必要です。保護者の確認は学校から届ける別のリンクで記録されます。"
+            : "18歳以上の参加者は、本人の同意だけで研究利用に進めます。"}
         </p>
         <label className={styles.check}>
           <input
@@ -224,18 +232,22 @@ export default function ConsentPage() {
           実際に確認するのは別の端末・別のリンクで、サーバー側もこの画面からの
           guardian_consent を受け取らない。
         */}
-        <p className={styles.check}>
-          <Icon name={stored.guardian_consent ? "check_circle" : "history"} size={16} />
-          <span>
-            {stored.guardian_consent
-              ? "保護者の方の確認は完了しています。"
-              : "保護者の方の確認はまだ完了していません。確認は保護者の方の端末で行います。"}
-          </span>
-        </p>
-        {stored.guardian_consent ? null : (
-          <a className="bl-btn bl-btn--ghost" href="/pilot/join">
-            保護者の方への確認を依頼する
-          </a>
+        {isMinor && (
+          <>
+            <p className={styles.check}>
+              <Icon name={stored.guardian_consent ? "check_circle" : "history"} size={16} />
+              <span>
+                {stored.guardian_consent
+                  ? "保護者の方の確認は完了しています。"
+                  : "保護者の方の確認はまだ完了していません。確認は保護者の方の端末で行います。"}
+              </span>
+            </p>
+            {stored.guardian_consent ? null : (
+              <a className="bl-btn bl-btn--ghost" href="/pilot/join">
+                保護者の方への確認を依頼する
+              </a>
+            )}
+          </>
         )}
       </section>
 

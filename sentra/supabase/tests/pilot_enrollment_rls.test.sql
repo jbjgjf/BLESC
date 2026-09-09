@@ -519,11 +519,24 @@ reset role;
 set local role anon;
 set local request.jwt.claims = '{"role": "anon"}';
 
+-- Two ways to see nothing, and this accepts either.
+--
+-- Before 20260907000000 `anon` held Supabase's default table grant, so the
+-- read succeeded and RLS filtered it to zero rows. That migration revokes the
+-- grant, so the same read now raises instead. The guarantee under test is "an
+-- anonymous caller cannot learn a single enrollment", which the privilege
+-- error satisfies more strongly than the empty result did — but a test that
+-- only accepted the error would fail on any deployment still carrying the old
+-- grant while the property it cares about still held.
 do $$
 declare
   visible integer;
 begin
-  select count(*) into visible from public.pilot_enrollments;
+  begin
+    select count(*) into visible from public.pilot_enrollments;
+  exception when insufficient_privilege then
+    return;
+  end;
   if visible <> 0 then
     raise exception 'an anonymous caller saw % enrollments', visible;
   end if;
