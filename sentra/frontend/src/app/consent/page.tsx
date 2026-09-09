@@ -11,7 +11,8 @@
  * ここでの原則:
  *   - 説明を読んでからでないとチェックできない。
  *   - 項目ごとに別々のチェック。まとめて「同意する」ボタンは置かない。
- *   - 本人の同意と保護者の同意は別の欄。片方だけでは研究利用に進めない。
+ *   - 本人の同意と保護者の同意は別の経路。この画面で記録できるのは本人の分
+ *     だけで、保護者の分は別端末の確認リンクからしか入らない（#164）。
  *   - いつでも撤回でき、撤回すると保存済みの本文はその場で削除される。
  */
 
@@ -66,7 +67,7 @@ export default function ConsentPage() {
     future_fine_tuning: false,
   });
   const [assent, setAssent] = useState(false);
-  const [guardian, setGuardian] = useState(false);
+  const [isMinor, setIsMinor] = useState(true);
   const [readDocument, setReadDocument] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -74,7 +75,12 @@ export default function ConsentPage() {
 
   const load = useCallback(async () => {
     if (demo) return;
-    const current = await ApiClient.getConsent(userId);
+    const [current, enrollments] = await Promise.all([
+      ApiClient.getConsent(userId),
+      ApiClient.pilotEnrollments(),
+    ]);
+    const enrollment = enrollments[0];
+    setIsMinor(enrollment ? enrollment.is_minor : true);
     setStored(current);
     setChecked({
       research_analysis: current.research_analysis,
@@ -83,7 +89,6 @@ export default function ConsentPage() {
       future_fine_tuning: current.future_fine_tuning,
     });
     setAssent(current.minor_assent);
-    setGuardian(current.guardian_consent);
   }, [demo, userId]);
 
   useEffect(() => {
@@ -92,10 +97,10 @@ export default function ConsentPage() {
 
   const active = researchUseAllowed(stored);
 
-  // 研究利用に同意するなら、本人と保護者の両方が要る。サーバー側でも同じ
-  // 条件で弾くが、押せてしまうボタンを置かないほうが分かりやすい。
-  const canSubmit =
-    readDocument && (!checked.research_analysis || (assent && guardian)) && !busy;
+  // ここで押せるのは「本人の同意」まで。保護者の確認が未了でも保存はできて、
+  // サーバーが研究利用のフラグだけを保留する（#164）。押せないボタンにすると、
+  // 生徒には「自分の同意すら記録されない」ように見えてしまう。
+  const canSubmit = readDocument && (!checked.research_analysis || assent) && !busy;
 
   const save = async () => {
     setBusy(true);
@@ -109,7 +114,6 @@ export default function ConsentPage() {
         anonymized_export: checked.anonymized_export,
         future_fine_tuning: checked.future_fine_tuning,
         minor_assent: assent,
-        guardian_consent: guardian,
         document_version: CONSENT_DOCUMENT_VERSION,
       });
       setStored(next);
@@ -135,7 +139,6 @@ export default function ConsentPage() {
         future_fine_tuning: false,
       });
       setAssent(false);
-      setGuardian(false);
       setMessage("同意を撤回しました。保管していた日記の本文は削除されました。");
     } catch (err) {
       setError(err instanceof Error ? err.message : "同意を撤回できませんでした。");
@@ -207,7 +210,9 @@ export default function ConsentPage() {
       <section className="bl-card bl-stack">
         <h2 className="bl-h3">同意する人</h2>
         <p className="bl-meta">
-          研究利用には、本人の同意と保護者の同意の両方が必要です。どちらか一方だけでは記録できません。
+          {isMinor
+            ? "研究利用には、本人の同意と保護者の同意の両方が必要です。保護者の確認は学校から届ける別のリンクで記録されます。"
+            : "18歳以上の参加者は、本人の同意だけで研究利用に進めます。"}
         </p>
         <label className={styles.check}>
           <input
@@ -218,15 +223,32 @@ export default function ConsentPage() {
           />
           <span>本人が同意します。</span>
         </label>
-        <label className={styles.check}>
-          <input
-            type="checkbox"
-            checked={guardian}
-            disabled={!readDocument}
-            onChange={(event) => setGuardian(event.target.checked)}
-          />
-          <span>保護者が同意しました。</span>
-        </label>
+
+        {/*
+          保護者の同意は、ここでは「表示」しかしない（#164）。
+          以前はこの位置に「保護者が同意しました。」というチェックボックスがあり、
+          生徒自身の端末で生徒自身が押せた。押された結果は consent_records に
+          保護者の同意として残るので、監査のときには保護者が同意した証跡に見える。
+          実際に確認するのは別の端末・別のリンクで、サーバー側もこの画面からの
+          guardian_consent を受け取らない。
+        */}
+        {isMinor && (
+          <>
+            <p className={styles.check}>
+              <Icon name={stored.guardian_consent ? "check_circle" : "history"} size={16} />
+              <span>
+                {stored.guardian_consent
+                  ? "保護者の方の確認は完了しています。"
+                  : "保護者の方の確認はまだ完了していません。確認は保護者の方の端末で行います。"}
+              </span>
+            </p>
+            {stored.guardian_consent ? null : (
+              <a className="bl-btn bl-btn--ghost" href="/pilot/join">
+                保護者の方への確認を依頼する
+              </a>
+            )}
+          </>
+        )}
       </section>
 
       {error && (

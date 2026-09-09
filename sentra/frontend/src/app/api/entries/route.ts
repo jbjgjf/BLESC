@@ -14,6 +14,8 @@ import {
   collectionOnlyForParticipant,
 } from "@/lib/server/collectionMode";
 import { recordSubmissionFailure } from "@/lib/server/submissionFailures";
+import { gateForUser, pilotGateEnforced } from "@/lib/server/pilotGate";
+import { loadEnrollmentsForUser } from "@/lib/server/pilotStore";
 import { jsonError, requireUser } from "@/lib/server/api";
 
 export const runtime = "nodejs";
@@ -299,6 +301,26 @@ export async function POST(request: NextRequest) {
   if (participantResult.error) return jsonError(participantResult.error.message, 502);
   const participant = participantResult.data as { id: string } | null;
   if (!participant) return jsonError("Participant was not found.", 404);
+
+  // May this account be collected from at all (#164)? The journal layout asks
+  // the same question before rendering, and asking it again here is not
+  // belt-and-braces: a POST does not render a layout, and an account that was
+  // never invited must not be able to produce rows a research export would
+  // later have to filter out.
+  //
+  // Off entirely unless `PILOT_STUDY_SLUG` is set, so no non-pilot deployment
+  // changes behaviour. See `pilotGate.ts`.
+  if (pilotGateEnforced()) {
+    const service = serviceRoleClient();
+    const enrollments = service ? await loadEnrollmentsForUser(service, auth.user.id) : [];
+    const gate = await gateForUser(service, auth.user.id, enrollments, participant.id);
+    if (!gate.allowed) {
+      return jsonError("この研究の収集期間ではないため、記録を保存できません。", 403, {
+        code: gate.reason,
+        pending: gate.pending,
+      });
+    }
+  }
 
   // Is this participant inside an open collection window? Everything that would
   // send their text to a third party consults this one answer (#165). Resolved
