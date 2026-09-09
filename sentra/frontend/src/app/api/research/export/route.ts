@@ -21,20 +21,12 @@ import { jsonError, requireUser } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { decryptRawText } from "@/lib/server/rawTextCrypto";
 import { normalizeConsent, rawTextRetentionAllowed, researchUseAllowed } from "@/lib/consent";
+import { auditExport, authorizedExporters, loadResearchConsent } from "@/lib/server/researchExportAudit";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const MAX_ROWS = 1000;
-
-function authorizedExporters(): Set<string> {
-  return new Set(
-    (process.env.RESEARCH_EXPORT_USER_IDS ?? "")
-      .split(",")
-      .map((id) => id.trim())
-      .filter(Boolean),
-  );
-}
 
 type EntryRow = {
   id: string;
@@ -57,22 +49,20 @@ export async function GET(request: NextRequest) {
   const participantId = request.nextUrl.searchParams.get("participant_id");
   const limit = Math.min(Number(request.nextUrl.searchParams.get("limit") ?? 200) || 200, MAX_ROWS);
 
-  const audit = async (
-    status: "completed" | "denied" | "failed",
-    rowCount: number,
-    reason?: string,
-  ) => {
-    const { error } = await service.from("research_exports").insert({
-      requested_by: auth.user.id,
-      export_kind: includeRawText ? "entries_with_raw_text" : "entries_metadata",
-      participant_scope_json: { participant_id: participantId, limit },
-      row_count: rowCount,
-      included_raw_text: includeRawText,
+  // The audit insert is shared with the pseudonymised dataset and the identity
+  // map (`lib/server/researchExportAudit.ts`), so all three disclosures land in
+  // `research_exports` in one shape and the table can be read as one log.
+  const audit = (status: "completed" | "denied" | "failed", rowCount: number, reason?: string) =>
+    auditExport(service, {
+      requestedBy: auth.user.id,
+      exportKind: includeRawText ? "entries_with_raw_text" : "entries_metadata",
+      scope: { participant_id: participantId, limit },
+      rowCount,
+      includedRawText: includeRawText,
+      includedIdentityMap: false,
       status,
-      reason: reason ?? null,
+      reason,
     });
-    if (error) console.error("[research-export] audit row not written", error.message);
-  };
 
   if (!authorizedExporters().has(auth.user.id)) {
     await audit("denied", 0, "caller is not in RESEARCH_EXPORT_USER_IDS");
@@ -101,26 +91,13 @@ export async function GET(request: NextRequest) {
   const researchAllowed = new Map<string, boolean>();
   const retentionAllowed = new Map<string, boolean>();
   if (participantIds.length > 0) {
-    const consentRows = await service
-      .from("consent_records")
-      .select(
-        "participant_id, app_use, research_analysis, anonymized_export, raw_text_retention, future_fine_tuning, minor_assent, guardian_consent, consent_version, document_version, status, granted_at, revoked_at, created_at",
-      )
-      .in("participant_id", participantIds)
-      .order("granted_at", { ascending: false });
-    if (consentRows.error) {
-      await audit("failed", 0, consentRows.error.message);
-      return jsonError(consentRows.error.message, 502);
-    }
-    for (const record of (consentRows.data ?? []) as Array<Record<string, unknown>>) {
-      const key = String(record.participant_id);
-      // Ordered newest first, so the first row seen for a participant is the
-      // current one and later ones are superseded history.
-      if (!researchAllowed.has(key)) {
-        const state = normalizeConsent(record);
-        researchAllowed.set(key, researchUseAllowed(state));
-        retentionAllowed.set(key, rawTextRetentionAllowed(state));
-      }
+    // Same lookup the pseudonymised export uses, so a participant these two
+    // outputs disagree about is impossible rather than merely unlikely.
+    const consentByParticipant = await loadResearchConsent(service, participantIds);
+    for (const [key, record] of consentByParticipant) {
+      const state = normalizeConsent(record);
+      researchAllowed.set(key, researchUseAllowed(state));
+      retentionAllowed.set(key, rawTextRetentionAllowed(state));
     }
   }
 

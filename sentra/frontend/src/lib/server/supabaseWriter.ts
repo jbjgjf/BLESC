@@ -30,6 +30,7 @@ import {
   telemetryAllowed,
 } from "@/lib/consent";
 import { hasSelfReportContent, type NormalizedSelfReport } from "@/lib/pilotSelfReport";
+import { PII_SCANNER_VERSION, scanForPii, summarizeFindings } from "@/lib/piiScan";
 import { consentMismatch, loadConsentState } from "@/lib/server/consentStore";
 import { encryptRawText, rawTextExpiryFrom } from "@/lib/server/rawTextCrypto";
 import {
@@ -604,6 +605,10 @@ export async function writeEntryResult(
   // `encryptRawText` returns null and nothing is stored — a deployment missing
   // its key retains no text rather than retaining it in the clear.
   let rawTextColumns: Json = { raw_text: null, is_masked: true };
+  // Kinds and character offsets of anything the scanner took for an identifier,
+  // computed here because this is the only place in the write that holds the
+  // plaintext. Never the matched text itself (#167).
+  let piiSummary: ReturnType<typeof summarizeFindings> | null = null;
   if (rawTextRetentionAllowed(consentState)) {
     const retained = [
       journalText.trim() ? `Journal entry:\n${journalText.trim()}` : "",
@@ -611,6 +616,7 @@ export async function writeEntryResult(
     ]
       .filter(Boolean)
       .join("\n\n");
+    if (retained) piiSummary = summarizeFindings(scanForPii(retained));
     const sealed = retained ? await encryptRawText(retained) : null;
     if (sealed) {
       rawTextColumns = {
@@ -889,6 +895,37 @@ export async function writeEntryResult(
         selfReportId = row.id as string;
       });
     }
+  }
+
+  // The PII review queue (#167).
+  //
+  // Scanned here, at write time, and not at export time: by the time an export
+  // runs the text may already have been purged, and a reviewer would then be
+  // asked to clear a record whose content no longer exists. `piiSummary` is
+  // computed above, next to the plaintext, and holds kinds and offsets only —
+  // no matched text — so this row is safe to read while counting a queue.
+  //
+  // Only retained text is queued. Text that was never stored cannot reach an
+  // export, so there is nothing for a reviewer to decide about it.
+  if (piiSummary) {
+    const summary = piiSummary;
+    await mirror("pilot_pii_reviews", async () => {
+      const insert = await client.from("pilot_pii_reviews").upsert(
+        {
+          owner_user_id: ownerUserId,
+          participant_id: participantId,
+          entry_id: entryId,
+          scanner_version: PII_SCANNER_VERSION,
+          finding_count: summary.finding_count,
+          max_severity: summary.max_severity,
+          kinds: summary.kinds,
+          findings_json: summary.findings,
+          status: summary.finding_count > 0 ? "pending" : "clear",
+        },
+        { onConflict: "entry_id" },
+      );
+      if (insert.error) throw new Error(`pilot_pii_reviews upsert: ${insert.error.message}`);
+    });
   }
 
   const embeddingArtifacts = computed.research_artifacts?.embedding_artifacts ?? [];
