@@ -12,6 +12,7 @@ import {
   formatDate,
 } from "@/lib/blesc/labels";
 import type { DiaryEntry, EventCategory, Mood } from "@/lib/blesc/types";
+import { t } from "@/lib/i18n";
 import styles from "./reflect.module.css";
 
 export default function ReflectPage() {
@@ -47,9 +48,9 @@ export default function ReflectPage() {
   return (
     <div className="bl-wrap bl-stack">
       <header className={styles.head}>
-        <h1 className="bl-h1">自分の振り返り</h1>
+        <h1 className="bl-h1">{t.reflect.title}</h1>
         <p className="bl-meta">
-          これまでに記録した{MY_ENTRIES.length}日分をまとめています。
+          {t.reflect.intro(MY_ENTRIES.length)}
         </p>
       </header>
 
@@ -57,7 +58,7 @@ export default function ReflectPage() {
       <section className="bl-card bl-rise">
         <div className="bl-card-head">
           <Icon name="monitoring" size={21} />
-          <h2 className="bl-h2">気分の移り変わり</h2>
+          <h2 className="bl-h2">{t.reflect.moodTrendTitle}</h2>
         </div>
         <MoodTrend series={series} />
       </section>
@@ -66,14 +67,14 @@ export default function ReflectPage() {
       <section className="bl-card bl-rise">
         <div className="bl-card-head">
           <Icon name="mood" size={21} />
-          <h2 className="bl-h2">気分の内訳</h2>
+          <h2 className="bl-h2">{t.reflect.moodBreakdownTitle}</h2>
         </div>
 
         <MoodBloom
           counts={Object.fromEntries(MOODS.map((mood) => [mood.value, moodCounts.get(mood.value) ?? 0])) as Record<Mood, number>}
         />
         <p className="bl-micro" style={{ marginTop: 14, textAlign: "center" }}>
-          花びらは5つの気分です。多く記録した気分ほど大きく開きます。
+          {t.reflect.moodBreakdownNote}
         </p>
       </section>
 
@@ -81,7 +82,7 @@ export default function ReflectPage() {
       <section className="bl-card bl-rise">
         <div className="bl-card-head">
           <Icon name="calendar_month" size={21} />
-          <h2 className="bl-h2">よく書いている出来事</h2>
+          <h2 className="bl-h2">{t.reflect.eventsTitle}</h2>
         </div>
 
         <div className={styles.catList}>
@@ -107,9 +108,9 @@ export default function ReflectPage() {
       <section className={`${styles.streak} bl-rise`}>
         <Icon name="local_fire_department" size={30} fill />
         <div>
-          <h2 className="bl-h2">{MY_STATS.streak}日つづけて記録しています</h2>
+          <h2 className="bl-h2">{t.reflect.streakTitle(MY_STATS.streak)}</h2>
           <p className="bl-body">
-            今月の提出率は {Math.round(MY_STATS.monthRate * 100)}% です。無理のないペースで大丈夫です。
+            {t.reflect.streakNote(Math.round(MY_STATS.monthRate * 100))}
           </p>
         </div>
       </section>
@@ -118,7 +119,7 @@ export default function ReflectPage() {
       <section className="bl-card bl-rise">
         <div className="bl-card-head">
           <Icon name="history" size={21} />
-          <h2 className="bl-h2">過去の日記</h2>
+          <h2 className="bl-h2">{t.reflect.pastEntriesTitle}</h2>
         </div>
 
         <div className="bl-stack-s">
@@ -170,7 +171,7 @@ function EntryRow({
 
       {open && (
         <div className={styles.entryBody}>
-          <Field label="今日のこと" icon="edit_note" value={entry.body} />
+          <Field label={t.reflect.fieldNote} icon="edit_note" value={entry.body} />
 
           {entry.followUp && (
             <div className={styles.followUp}>
@@ -211,7 +212,7 @@ function Field({
         <Icon name={icon} size={17} />
         {label}
       </div>
-      <p className={value ? "bl-body" : styles.fieldEmpty}>{value || "記録なし"}</p>
+      <p className={value ? "bl-body" : styles.fieldEmpty}>{value || t.reflect.fieldEmpty}</p>
     </div>
   );
 }

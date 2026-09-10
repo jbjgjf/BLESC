@@ -12,13 +12,14 @@ import { useAuth } from "@/lib/auth";
 import { useDemoMode } from "@/lib/demo";
 import { CURRENT_STUDENT, MY_ENTRIES, MY_STATS } from "@/lib/blesc/fixtures";
 import { MOOD_BY_VALUE, TODAY, addDays, formatDate, relativeDays, weekdayOf } from "@/lib/blesc/labels";
+import { t } from "@/lib/i18n";
 import styles from "./home.module.css";
 
 function greetingFor(hour: number): string {
-  if (hour < 5) return "こんばんは";
-  if (hour < 11) return "おはよう";
-  if (hour < 18) return "こんにちは";
-  return "こんばんは";
+  if (hour < 5) return t.home.greeting.evening;
+  if (hour < 11) return t.home.greeting.morning;
+  if (hour < 18) return t.home.greeting.afternoon;
+  return t.home.greeting.evening;
 }
 
 /**
@@ -32,7 +33,7 @@ function useGreeting(): string {
   return useSyncExternalStore(
     neverChanges,
     () => greetingFor(new Date().getHours()),
-    () => "こんにちは",
+    () => t.home.greeting.neutral,
   );
 }
 
@@ -61,7 +62,7 @@ function LiveTodayPage() {
       .catch((reason: unknown) => {
         if (cancelled) return;
         setEntries([]);
-        setError(reason instanceof Error ? reason.message : "記録の読み込みに失敗しました。");
+        setError(reason instanceof Error ? reason.message : t.home.loadFailed);
       });
     return () => {
       cancelled = true;
@@ -101,34 +102,34 @@ function LiveTodayPage() {
         </div>
         <div className={styles.todayBody}>
           <h2 className="bl-h2">
-            {submittedToday ? "今日の日記は提出済みです" : "今日の日記はまだです"}
+            {submittedToday ? t.home.todayDoneTitle : t.home.todayPendingTitle}
           </h2>
           <p className="bl-body">
             {entries === null
-              ? "提出状況を読み込んでいます…"
+              ? t.home.todayLoading
               : submittedToday
-                ? "今日の記録は安全に保存されています。"
-                : "今日の気分と出来事を、1問ずつ記録できます。"}
+                ? t.home.todayDoneBody
+                : t.home.todayPendingBody}
           </p>
         </div>
         <TransitionLink href="/journal" className="bl-btn bl-btn--primary bl-btn--lg">
           <Icon name="edit_note" size={19} />
-          {submittedToday ? "もう一度記録する" : "日記を書く"}
+          {submittedToday ? t.home.writeAgain : t.home.write}
         </TransitionLink>
       </section>
 
       <section className="bl-grid bl-grid--3">
         <div className="bl-card">
-          <span className="bl-num">{entries === null ? "—" : recentCount}</span>
-          <p className="bl-meta">過去30日の記録</p>
+          <span className="bl-num">{entries === null ? t.home.noValue : recentCount}</span>
+          <p className="bl-meta">{t.home.recentCount}</p>
         </div>
         <TransitionLink href="/timeline" className="bl-card bl-card--link">
           <Icon name="timeline" size={24} />
-          <span className="bl-h3">変化のタイムライン</span>
+          <span className="bl-h3">{t.home.timelineLink}</span>
         </TransitionLink>
         <TransitionLink href="/chat" className="bl-card bl-card--link">
           <Icon name="chat_bubble" size={24} />
-          <span className="bl-h3">blescに相談する</span>
+          <span className="bl-h3">{t.home.chatLink}</span>
         </TransitionLink>
       </section>
     </div>
@@ -153,7 +154,7 @@ function DemoTodayPage() {
         <Image src="/flower.png" alt="" width={52} height={52} className={styles.helloFlower} priority />
         <div>
           <h1 className="bl-h1">
-            {greeting}、{firstName}さん
+            {t.home.greetingWithName(greeting, firstName)}
           </h1>
           <p className="bl-meta">
             {formatDate(TODAY)} ・ {CURRENT_STUDENT.grade}
@@ -170,11 +171,13 @@ function DemoTodayPage() {
               <Icon name="check_circle" size={30} fill />
             </div>
             <div className={styles.todayBody}>
-              <h2 className="bl-h2">今日の日記は提出済みです</h2>
-              <p className="bl-body">{formatDate(todayEntry.date, false)}の記録を保存しました。</p>
+              <h2 className="bl-h2">{t.home.todayDoneTitle}</h2>
+              <p className="bl-body">
+                {t.home.todayDoneBodyDated(formatDate(todayEntry.date, false))}
+              </p>
             </div>
             <TransitionLink href="/journal" className="bl-btn bl-btn--secondary">
-              内容を見る
+              {t.home.viewEntry}
             </TransitionLink>
           </>
         ) : (
@@ -183,12 +186,12 @@ function DemoTodayPage() {
               <Icon name="edit_note" size={30} />
             </div>
             <div className={styles.todayBody}>
-              <h2 className="bl-h2">今日の日記はまだです</h2>
-              <p className="bl-body">今日の気分と出来事を、1分ほどで記録できます。</p>
+              <h2 className="bl-h2">{t.home.todayPendingTitle}</h2>
+              <p className="bl-body">{t.home.todayPendingBodyShort}</p>
             </div>
             <TransitionLink href="/journal" className="bl-btn bl-btn--primary bl-btn--lg">
               <Icon name="edit_note" size={19} />
-              日記を書く
+              {t.home.write}
             </TransitionLink>
           </>
         )}
@@ -204,15 +207,15 @@ function DemoTodayPage() {
         <div className={styles.stats}>
           <div className={styles.stat}>
             <span className="bl-num">{streak}</span>
-            <span className="bl-meta">連続提出日数</span>
+            <span className="bl-meta">{t.home.statStreak}</span>
           </div>
           <div className={styles.stat}>
             <span className="bl-num">{weekCount}</span>
-            <span className="bl-meta">今週の提出</span>
+            <span className="bl-meta">{t.home.statWeek}</span>
           </div>
           <div className={styles.stat}>
             <span className="bl-num">{monthRate}%</span>
-            <span className="bl-meta">今月の提出率</span>
+            <span className="bl-meta">{t.home.statMonthRate}</span>
           </div>
         </div>
 
@@ -228,7 +231,11 @@ function DemoTodayPage() {
                   size={22}
                   color={mood?.color}
                   filled={Boolean(mood)}
-                  title={mood ? `${formatDate(date, false)} ${mood.label}` : `${formatDate(date, false)} 未提出`}
+                  title={
+                    mood
+                      ? t.home.dayTitle(formatDate(date, false), mood.label)
+                      : t.home.dayTitleMissing(formatDate(date, false))
+                  }
                 />
                 <span className={styles.dayLabel}>
                   {new Date(`${date}T00:00:00`).getDate()}
@@ -239,7 +246,7 @@ function DemoTodayPage() {
         </div>
 
         <p className="bl-micro" style={{ marginTop: 14 }}>
-          最終提出：{relativeDays(MY_STATS.lastSubmitted)}
+          {t.home.lastSubmitted(relativeDays(MY_STATS.lastSubmitted))}
         </p>
       </section>
 
@@ -248,8 +255,8 @@ function DemoTodayPage() {
         <TransitionLink href="/chat" className={`bl-card bl-card--link ${styles.tile}`}>
           <Icon name="chat_bubble" size={26} fill />
           <div>
-            <h3 className="bl-h3">blescに相談する</h3>
-            <p className="bl-meta">気持ちの整理を手伝います。話したくないことは話さなくて大丈夫です。</p>
+            <h3 className="bl-h3">{t.home.chatLink}</h3>
+            <p className="bl-meta">{t.home.chatHint}</p>
           </div>
           <Icon name="chevron_right" size={20} />
         </TransitionLink>
@@ -257,8 +264,8 @@ function DemoTodayPage() {
         <TransitionLink href="/reflect" className={`bl-card bl-card--link ${styles.tile}`}>
           <Icon name="insights" size={26} fill />
           <div>
-            <h3 className="bl-h3">自分の振り返り</h3>
-            <p className="bl-meta">これまでの気分の移り変わりと、よく書いている出来事を見られます。</p>
+            <h3 className="bl-h3">{t.home.reflectLink}</h3>
+            <p className="bl-meta">{t.home.reflectHint}</p>
           </div>
           <Icon name="chevron_right" size={20} />
         </TransitionLink>
@@ -268,7 +275,7 @@ function DemoTodayPage() {
       <section className="bl-card bl-reveal">
         <div className="bl-card-head">
           <Icon name="history" size={21} />
-          <h2 className="bl-h2">最近の日記</h2>
+          <h2 className="bl-h2">{t.home.recentTitle}</h2>
         </div>
 
         <div className="bl-stack-s">
@@ -285,7 +292,7 @@ function DemoTodayPage() {
                     <span className="bl-micro">{mood.label}</span>
                   </div>
                   <p className={`bl-body ${styles.recentText}`}>
-                    {entry.body || "（本文なし）"}
+                    {entry.body || t.home.emptyBody}
                   </p>
                 </div>
               </article>
@@ -294,7 +301,7 @@ function DemoTodayPage() {
         </div>
 
         <TransitionLink href="/reflect" className="bl-btn bl-btn--ghost bl-btn--sm" style={{ marginTop: 12 }}>
-          すべて見る
+          {t.home.seeAll}
           <Icon name="arrow_forward" size={17} />
         </TransitionLink>
       </section>

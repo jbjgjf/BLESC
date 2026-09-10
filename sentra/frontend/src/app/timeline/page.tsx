@@ -16,6 +16,7 @@ import { ApiClient } from "@/api/client";
 import type { AnomalyResult } from "@/api/models";
 import { useAuth } from "@/lib/auth";
 import { Icon } from "@/components/ui/Icon";
+import { t } from "@/lib/i18n";
 
 /** 2.0 を超えた日は、教員が内容を確認する目安になる。 */
 const REVIEW_THRESHOLD = 2.0;
@@ -33,7 +34,7 @@ export default function TimelinePage() {
       setData(await ApiClient.getTimeline(userId));
     } catch (err) {
       setData([]);
-      setError(err instanceof Error ? err.message : "タイムラインの読み込みに失敗しました。");
+      setError(err instanceof Error ? err.message : t.timeline.loadFailed);
     } finally {
       setIsLoading(false);
     }
@@ -56,7 +57,7 @@ export default function TimelinePage() {
   if (isLoading) {
     return (
       <div className="bl-wrap" style={{ display: "grid", placeItems: "center", minHeight: "50vh" }}>
-        <span className="bl-loader" aria-label="読み込み中" />
+        <span className="bl-loader" aria-label={t.common.loading} />
       </div>
     );
   }
@@ -64,9 +65,9 @@ export default function TimelinePage() {
   return (
     <div className="bl-wrap bl-stack">
       <header style={{ padding: "2px 2px 0" }}>
-        <h1 className="bl-h1">変化のタイムライン</h1>
+        <h1 className="bl-h1">{t.timeline.title}</h1>
         <p className="bl-meta" style={{ marginTop: 3 }}>
-          その人自身のふだんの状態と比べて、どれくらい変化があったかを日ごとに表しています。
+          {t.timeline.intro}
         </p>
       </header>
 
@@ -80,9 +81,7 @@ export default function TimelinePage() {
       {data.length === 0 ? (
         <div className="bl-card bl-empty">
           <Icon name="timeline" size={40} />
-          <p className="bl-body">
-            グラフを作るにはまだ記録が足りません。日記を続けると表示されます。
-          </p>
+          <p className="bl-body">{t.timeline.empty}</p>
         </div>
       ) : (
         <>
@@ -90,28 +89,34 @@ export default function TimelinePage() {
             <div className="bl-card">
               <span className={`bl-chip ${needsReview ? "bl-chip--watch" : hasSignal ? "bl-chip--calm" : ""}`}>
                 <Icon name={needsReview ? "warning" : hasSignal ? "check_circle" : "history"} size={15} fill />
-                {needsReview ? "確認をおすすめします" : hasSignal ? "ふだんの範囲です" : "ふだんの状態を学習中です"}
+                {needsReview
+                  ? t.timeline.statusReview
+                  : hasSignal
+                    ? t.timeline.statusUsual
+                    : t.timeline.statusLearning}
               </span>
               <p className="bl-meta" style={{ marginTop: 10 }}>
-                直近の値{" "}
-                {latestScore === null ? "—" : latestScore.toFixed(2)}
+                {t.timeline.latestLabel}{" "}
+                {latestScore === null ? t.timeline.noValue : latestScore.toFixed(2)}
               </p>
             </div>
 
             <div className="bl-card">
               <span className="bl-num">
                 {highSignalDays}
-                <span style={{ fontSize: "0.9rem", fontWeight: 600, marginLeft: 3 }}>日</span>
+                <span style={{ fontSize: "0.9rem", fontWeight: 600, marginLeft: 3 }}>
+                  {t.timeline.dayUnit}
+                </span>
               </span>
-              <p className="bl-meta">目安の {REVIEW_THRESHOLD.toFixed(1)} を超えた日</p>
+              <p className="bl-meta">{t.timeline.daysAboveThreshold(REVIEW_THRESHOLD.toFixed(1))}</p>
             </div>
 
             <Link href="/insights" className="bl-card bl-card--link" style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <Icon name="insights" size={24} style={{ color: "var(--bl-blue)" }} />
               <span style={{ flex: 1 }}>
-                <span className="bl-h3">内訳を見る</span>
+                <span className="bl-h3">{t.timeline.breakdownLink}</span>
                 <span className="bl-micro" style={{ display: "block", marginTop: 2 }}>
-                  何がこの値につながったか
+                  {t.timeline.breakdownHint}
                 </span>
               </span>
               <Icon name="chevron_right" size={20} style={{ color: "var(--bl-ink-3)" }} />
@@ -121,7 +126,7 @@ export default function TimelinePage() {
           <section className="bl-card">
             <div className="bl-card-head">
               <Icon name="monitoring" size={21} />
-              <h2 className="bl-h2">日ごとの変化</h2>
+              <h2 className="bl-h2">{t.timeline.chartTitle}</h2>
             </div>
 
             <div style={{ height: "22rem", width: "100%", fontSize: "0.75rem" }}>
@@ -159,7 +164,7 @@ export default function TimelinePage() {
                   <ReferenceLine
                     y={REVIEW_THRESHOLD}
                     label={{
-                      value: "確認の目安",
+                      value: t.timeline.thresholdLabel,
                       fill: "var(--bl-watch-ink)",
                       fontSize: 11,
                       fontFamily: "var(--bl-font)",
@@ -175,7 +180,7 @@ export default function TimelinePage() {
                     strokeWidth={2.5}
                     dot={{ r: 3.5, fill: "var(--bl-blue)", strokeWidth: 2, stroke: "#ffffff" }}
                     activeDot={{ r: 6, strokeWidth: 0, fill: "var(--bl-blue)" }}
-                     name="変化の大きさ"
+                     name={t.timeline.seriesName}
                      animationDuration={900}
                      connectNulls={false}
                    />
@@ -188,7 +193,7 @@ export default function TimelinePage() {
 
       <p className="bl-disclaimer">
         <Icon name="medical_information" size={15} />
-        この値は日記の書き方の変化をまとめたものです。診断ではありません。
+        {t.timeline.disclaimer}
       </p>
     </div>
   );
