@@ -1,0 +1,90 @@
+{
+  "schema_version": "explanation-v0",
+  "run_id": "run-smoke-0001",
+  "forecast_id": "forecast-4f2a9c1e7b3d5a6c8e0f1b2d",
+  "abstraction_id": "sparse-projection-v0",
+  "node_schema_id": "synthetic-axes-v0",
+  "states": [
+    {
+      "id": "z0",
+      "label": "説明軸 z0",
+      "semantic_status": "unvalidated_latent",
+      "unit": "normalized",
+      "value": 0.42,
+      "uncertainty": 0.08
+    },
+    {
+      "id": "z1",
+      "label": "説明軸 z1",
+      "semantic_status": "unvalidated_latent",
+      "unit": "normalized",
+      "value": -0.13,
+      "uncertainty": 0.11
+    },
+    {
+      "id": "z2",
+      "label": "説明軸 z2",
+      "semantic_status": "unvalidated_latent",
+      "unit": "normalized",
+      "value": 0.05,
+      "uncertainty": null
+    }
+  ],
+  "candidate_edges": [
+    {
+      "source_ids": [
+        "z0"
+      ],
+      "target_id": "z1",
+      "lag_days": 1.0,
+      "interaction_order": 1,
+      "interaction_function": "identity",
+      "coefficient": 0.34,
+      "uncertainty_method": "bootstrap_frequency",
+      "uncertainty": 0.86,
+      "model_id": "sparse-projection-v0",
+      "evidence_scope": "model_candidate",
+      "source_refs": []
+    },
+    {
+      "source_ids": [
+        "z0",
+        "z2"
+      ],
+      "target_id": "z1",
+      "lag_days": 1.0,
+      "interaction_order": 1,
+      "interaction_function": "product",
+      "coefficient": -0.21,
+      "uncertainty_method": "bootstrap_frequency",
+      "uncertainty": 0.61,
+      "model_id": "sparse-projection-v0",
+      "evidence_scope": "model_candidate",
+      "source_refs": []
+    }
+  ],
+  "residual_summary": {
+    "unexplained_variance_ratio": 0.27,
+    "max_abs_residual": 0.41
+  },
+  "fidelity_metrics": {
+    "paired_rollout_mae": 0.06,
+    "paired_rollout_max_error": 0.19
+  },
+  "source_refs": [
+    "generator-v0/S3"
+  ],
+  "assumptions": [
+    "説明モデルは1日固定lagの線形＋積項に限定している",
+    "係数はモデル内の候補であり、現実の因果効果ではない"
+  ],
+  "capability_flags": {
+    "trained_encoder": true,
+    "trained_dynamics": true,
+    "calibrated_uncertainty": false,
+    "model_interventions": true,
+    "real_world_causal_effects": false,
+    "active_questioning": false
+  },
+  "status": "ok"
+}

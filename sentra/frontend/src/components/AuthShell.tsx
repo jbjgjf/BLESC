@@ -15,6 +15,13 @@ import { RouteAnnouncer } from "@/components/a11y/RouteAnnouncer";
 //: it used to achieve that with `position: fixed; inset: 0; z-index: 60`,
 //: which painted over the sticky header and took the navigation with it.
 const FULL_BLEED_ROUTES = ["/chat"];
+
+//: Routes under a demo-only prefix that are nevertheless real screens. The
+//: world-model research page (#151) reads a live run through a credentialed
+//: server route, so gating it behind demo mode would make it unreachable by
+//: the researchers it exists for.
+const DEMO_ONLY_EXCEPTIONS = ["/research/world-model"];
+
 //: Routes that must render without a session at all.
 //:
 //: The guardian confirmation screen (#164) is opened by a parent on their own
@@ -101,9 +108,10 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   const isFullBleed = FULL_BLEED_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`),
   );
-  const isDemoOnly = !demo && DEMO_ONLY_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(`${route}/`),
-  );
+  const isDemoOnly =
+    !demo &&
+    !DEMO_ONLY_EXCEPTIONS.includes(pathname) &&
+    DEMO_ONLY_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 
   return (
     <div

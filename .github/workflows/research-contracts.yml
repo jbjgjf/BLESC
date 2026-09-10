@@ -29,6 +29,25 @@ jobs:
       - name: Run backend research tests
         run: PYTHONDONTWRITEBYTECODE=1 python -m pytest tests -q
 
+      # The Day 3 acceptance condition, executed rather than described: a fresh
+      # checkout runs the documented command with no key, no network and no GPU,
+      # and the process exits non-zero if any leakage check in the report is red.
+      # `ci.json` is the short configuration - it proves the path, not the
+      # science; the numbers to read come from `smoke.json`.
+      - name: Run the research engine smoke path
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python -m research_engine.cli smoke \
+            --config research_engine/configs/ci.json \
+            --out "${RUNNER_TEMP}/blesc-research-smoke"
+
+      - name: Upload the research run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-engine-run
+          path: ${{ runner.temp }}/blesc-research-smoke
+          if-no-files-found: warn
+
       # Printed on every run so a drop in coverage is visible in the log rather
       # than only when someone thinks to look. Deliberately not a gate (#79):
       # there is no distribution to set a threshold against yet, and one chosen

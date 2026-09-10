@@ -1,0 +1,103 @@
+{
+  "manifest": {
+    "dataset_id": "synthetic-dev-v0",
+    "schema_version": "observation-v0",
+    "feature_schema_id": "synthetic-features-v0",
+    "file_hashes": {
+      "observations.jsonl": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "split_id": "participant-holdout-v0",
+    "split_assignment_ref": "splits/participant-holdout-v0.json",
+    "generation_or_collection_protocol": "generator-v0/S1",
+    "permitted_uses": [
+      "synthetic_training",
+      "synthetic_evaluation"
+    ],
+    "created_at": "2026-09-01T00:00:00Z",
+    "feature_names": [
+      "x1",
+      "x2"
+    ],
+    "units": [
+      "simulation_unit",
+      "simulation_unit"
+    ],
+    "normalizer_id": null
+  },
+  "observations": [
+    {
+      "schema_version": "observation-v0",
+      "dataset_id": "synthetic-dev-v0",
+      "participant_key": "synthetic-001",
+      "event_id": "synthetic-001-event-01",
+      "occurred_at": null,
+      "recorded_at": "2026-09-01T12:00:00Z",
+      "available_at": "2026-09-01T12:00:01Z",
+      "timezone": "Asia/Tokyo",
+      "feature_schema_id": "synthetic-features-v0",
+      "feature_names": [
+        "x1",
+        "x2"
+      ],
+      "units": [
+        "simulation_unit",
+        "simulation_unit"
+      ],
+      "values": [
+        0.2,
+        null
+      ],
+      "observed_mask": [
+        true,
+        false
+      ],
+      "source_kind": "synthetic",
+      "source_refs": [
+        "generator-v0/seed-11/event-01"
+      ],
+      "extractor_version": null,
+      "consent_snapshot_id": null,
+      "permitted_uses": [
+        "synthetic_training",
+        "synthetic_evaluation"
+      ]
+    },
+    {
+      "schema_version": "observation-v0",
+      "dataset_id": "synthetic-dev-v0",
+      "participant_key": "synthetic-001",
+      "event_id": "synthetic-001-event-02",
+      "occurred_at": "2026-09-02T09:00:00Z",
+      "recorded_at": "2026-09-02T12:00:00Z",
+      "available_at": "2026-09-02T12:00:01Z",
+      "timezone": "Asia/Tokyo",
+      "feature_schema_id": "synthetic-features-v1",
+      "feature_names": [
+        "x1",
+        "x2"
+      ],
+      "units": [
+        "simulation_unit",
+        "simulation_unit"
+      ],
+      "values": [
+        0.35,
+        -0.1
+      ],
+      "observed_mask": [
+        true,
+        true
+      ],
+      "source_kind": "synthetic",
+      "source_refs": [
+        "generator-v0/seed-11/event-02"
+      ],
+      "extractor_version": null,
+      "consent_snapshot_id": null,
+      "permitted_uses": [
+        "synthetic_training",
+        "synthetic_evaluation"
+      ]
+    }
+  ]
+}

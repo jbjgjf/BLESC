@@ -1,0 +1,253 @@
+{
+  "contract": "pilot_data_dictionary",
+  "version": "pilot-protocol-v1",
+  "status": "draft",
+  "purpose": "The collected fields of the 50x21 pilot, as one machine-readable source. The app, the export and the analysis all read the field names and scales from here rather than each carrying its own copy - which is how a scale ends up meaning 0-10 in one place and 1-7 in another. `implementation` records whether the field exists in code yet; a field marked not_implemented is a protocol decision that still needs building, not a field that quietly returns null.",
+  "notes": [
+    "Every self-report item is optional. A missing answer is null with observed=false, never 0 and never the midpoint.",
+    "Times are stored as timestamptz. The analysis uses relative day numbers, not calendar dates, so the export cannot be aligned to a school timetable.",
+    "No field in this dictionary is sent to an external AI provider during the collection window. See sentra/frontend/src/lib/server/collectionMode.ts.",
+    "`DECISION REQUIRED` in a description means the item is not settled. It must not be implemented from a guess."
+  ],
+  "identity": {
+    "research_code": {
+      "type": "string",
+      "description": "研究用の仮名ID。参加者に見える識別子はこれだけ。auth上のuser idともemailとも結び付けてexportしない。",
+      "in_export": true,
+      "implementation": "implemented",
+      "code_ref": "public.pilot_enrollments.research_code"
+    },
+    "relative_day": {
+      "type": "integer",
+      "description": "登録日を0とした相対日。暦日はexportしない。",
+      "in_export": true,
+      "implementation": "not_implemented",
+      "code_ref": "derived at export time from pilot_enrollments.collection_started_at"
+    },
+    "study_phase": {
+      "type": "enum",
+      "values": [
+        "baseline",
+        "observation"
+      ],
+      "description": "相対日1-14がbaseline、15-21がobservation。",
+      "in_export": true,
+      "implementation": "not_implemented"
+    }
+  },
+  "daily_self_report": {
+    "schema_id": "pilot-selfreport-v1",
+    "presentation_order_is_fixed": true,
+    "items": [
+      {
+        "id": "mood",
+        "label_ja": "今日の気分",
+        "type": "integer",
+        "scale": "likert_0_10",
+        "anchors_ja": {
+          "0": "とても悪い",
+          "10": "とても良い"
+        },
+        "required": false,
+        "order": 1,
+        "in_export": true,
+        "implementation": "not_implemented"
+      },
+      {
+        "id": "stress",
+        "label_ja": "今日のストレス",
+        "type": "integer",
+        "scale": "likert_0_10",
+        "anchors_ja": {
+          "0": "まったくない",
+          "10": "とても強い"
+        },
+        "required": false,
+        "order": 2,
+        "in_export": true,
+        "implementation": "not_implemented"
+      },
+      {
+        "id": "sleep_quality",
+        "label_ja": "昨夜の睡眠の質",
+        "type": "integer",
+        "scale": "likert_0_10",
+        "anchors_ja": {
+          "0": "とても悪い",
+          "10": "とても良い"
+        },
+        "required": false,
+        "order": 3,
+        "in_export": true,
+        "implementation": "not_implemented"
+      },
+      {
+        "id": "sleep_hours",
+        "label_ja": "昨夜の睡眠時間",
+        "type": "number",
+        "scale": "hours_0_5_step",
+        "range": [
+          0,
+          16
+        ],
+        "required": false,
+        "order": 4,
+        "in_export": true,
+        "implementation": "not_implemented"
+      },
+      {
+        "id": "event_intensity",
+        "label_ja": "今日の出来事の大きさ",
+        "type": "integer",
+        "scale": "likert_0_10",
+        "anchors_ja": {
+          "0": "なにもなかった",
+          "10": "とても大きい"
+        },
+        "required": false,
+        "order": 5,
+        "in_export": true,
+        "implementation": "not_implemented"
+      },
+      {
+        "id": "support_contact",
+        "label_ja": "誰かに相談できたか",
+        "type": "enum",
+        "values": [
+          "yes",
+          "no",
+          "prefer_not_to_say"
+        ],
+        "required": false,
+        "order": 6,
+        "in_export": true,
+        "implementation": "not_implemented",
+        "description": "DECISION REQUIRED: 採用するかどうか未決定。質問すること自体が相談を促す介入になりうる。決定者は研究倫理責任者。",
+        "scale": "enum(yes, no, prefer_not_to_say)"
+      }
+    ]
+  },
+  "journal": {
+    "text": {
+      "type": "string",
+      "description": "自由記述。収集期間中は外部AIへ送らない。保持は暗号化列でのみ行い、鍵がなければ保持しない。",
+      "in_export": "pseudonymised_only",
+      "implementation": "implemented",
+      "code_ref": "public.entries.raw_text_ciphertext / raw_text_key_version / raw_text_expires_at"
+    },
+    "client_submission_id": {
+      "type": "string",
+      "description": "再送で重複行を作らないための冪等キー。",
+      "in_export": false,
+      "implementation": "implemented",
+      "code_ref": "public.entries.client_submission_id (unique index)"
+    },
+    "submitted_at": {
+      "type": "timestamptz",
+      "description": "exportでは相対日へ変換する。",
+      "in_export": "as_relative_day",
+      "implementation": "implemented"
+    }
+  },
+  "process_telemetry": {
+    "description": "書く過程の記録。参加者の画面には返さない。",
+    "fields": [
+      {
+        "id": "compose_duration_ms",
+        "type": "integer",
+        "in_export": true,
+        "implementation": "implemented"
+      },
+      {
+        "id": "pause_count",
+        "type": "integer",
+        "in_export": true,
+        "implementation": "implemented"
+      },
+      {
+        "id": "revision_count",
+        "type": "integer",
+        "in_export": true,
+        "implementation": "implemented"
+      },
+      {
+        "id": "field_order",
+        "type": "array",
+        "in_export": true,
+        "implementation": "implemented"
+      }
+    ],
+    "code_ref": "sentra/frontend/src/lib/telemetry.ts"
+  },
+  "consent": {
+    "app_use": {
+      "type": "boolean",
+      "default": false,
+      "implementation": "implemented",
+      "code_ref": "public.consent_records.app_use"
+    },
+    "research_analysis": {
+      "type": "boolean",
+      "default": false,
+      "implementation": "implemented",
+      "code_ref": "public.consent_records.research_analysis"
+    },
+    "minor_assent": {
+      "type": "boolean",
+      "default": false,
+      "implementation": "implemented",
+      "code_ref": "public.consent_records.minor_assent"
+    },
+    "guardian_consent": {
+      "type": "boolean",
+      "default": false,
+      "implementation": "implemented",
+      "code_ref": "public.consent_records.guardian_consent"
+    },
+    "raw_text_retention": {
+      "type": "boolean",
+      "default": false,
+      "implementation": "implemented",
+      "code_ref": "public.consent_records.raw_text_retention"
+    },
+    "model_training_use": {
+      "type": "boolean",
+      "default": false,
+      "implementation": "not_implemented",
+      "description": "二次利用・fine-tuningへの別opt-in。本文提出への同意とは別に取る。未実装のため、現状はどの参加者のデータも学習に使えない。"
+    },
+    "document_version": {
+      "type": "string",
+      "default": "research-consent-doc-v1",
+      "implementation": "implemented",
+      "code_ref": "public.consent_records.document_version"
+    }
+  },
+  "operations": {
+    "submission_failures": {
+      "description": "書き込みに失敗した提出の記録。本文は含まない。参加者と運営者の両方が失敗を検知できることが要件。",
+      "in_export": false,
+      "implementation": "implemented",
+      "code_ref": "public.submission_failures"
+    },
+    "enrollment_events": {
+      "description": "登録状態の遷移。誰がいつ何をしたかの追記ログ。",
+      "in_export": false,
+      "implementation": "implemented",
+      "code_ref": "public.pilot_enrollment_events"
+    },
+    "research_exports": {
+      "description": "exportの実行記録。",
+      "in_export": false,
+      "implementation": "implemented",
+      "code_ref": "public.research_exports"
+    }
+  },
+  "never_collected": [
+    "実名、住所、電話番号、学籍番号",
+    "所属クラス・部活動（個人が特定されうる粒度）",
+    "医療・診断・服薬に関する直接の質問",
+    "位置情報",
+    "端末の連絡先・写真・他アプリの利用状況"
+  ]
+}

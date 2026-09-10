@@ -1,0 +1,59 @@
+{
+  "schema_version": "forecast-v0",
+  "run_id": "run-smoke-0001",
+  "forecast_id": "forecast-4f2a9c1e7b3d5a6c8e0f1b2d",
+  "model_id": "memory-gru-v0",
+  "encoder_id": "gru-lite-v0",
+  "dataset_id": "synthetic-dev-v0",
+  "split_id": "participant-holdout-v0",
+  "participant_key": "synthetic-001",
+  "cutoff_at": "2026-09-03T00:00:00Z",
+  "target_times": [
+    "2026-09-04T00:00:00Z",
+    "2026-09-05T00:00:00Z"
+  ],
+  "target_names": [
+    "x1",
+    "x2"
+  ],
+  "target_units": [
+    "simulation_unit",
+    "simulation_unit"
+  ],
+  "distribution_method": "deterministic",
+  "means": [
+    [
+      0.31,
+      -0.08
+    ],
+    [
+      0.29,
+      -0.05
+    ]
+  ],
+  "scales_or_samples": [
+    [
+      0.12,
+      0.15
+    ],
+    [
+      0.16,
+      0.19
+    ]
+  ],
+  "inference_mode": "forecast",
+  "source_event_ids": [
+    "synthetic-001-event-01",
+    "synthetic-001-event-02"
+  ],
+  "capability_flags": {
+    "trained_encoder": true,
+    "trained_dynamics": true,
+    "calibrated_uncertainty": false,
+    "model_interventions": true,
+    "real_world_causal_effects": false,
+    "active_questioning": false
+  },
+  "status": "ok",
+  "reasons": []
+}

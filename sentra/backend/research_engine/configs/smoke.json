@@ -1,0 +1,13 @@
+{
+  "config_id": "research-smoke-v0",
+  "scenarios": ["S1", "S2", "S3", "S4", "S5"],
+  "seeds": [11, 12, 13],
+  "n_participants": 18,
+  "n_days": 40,
+  "latent_dim": 8,
+  "epochs": 150,
+  "horizons": [1, 2, 3],
+  "cutoff_fraction": 0.7,
+  "bootstrap_rounds": 40,
+  "fidelity_steps": 3
+}
