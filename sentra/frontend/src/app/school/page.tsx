@@ -4,7 +4,11 @@ import { useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { SCHOOL_STATS } from "@/lib/blesc/fixtures";
 import { THEMES } from "@/lib/blesc/labels";
+import { t } from "@/lib/i18n";
 import styles from "./school.module.css";
+
+/** この画面の文言。参照が多いので短く束ねる。 */
+const S = t.educatorDemo.school;
 
 /**
  * 学校全体・学年全体の統計分析（追加機能）。
@@ -24,7 +28,7 @@ export default function SchoolPage() {
     <div className="bl-wrap bl-wrap--wide bl-stack">
       <header className={styles.head}>
         <div>
-          <h1 className="bl-h1">学校全体の傾向</h1>
+          <h1 className="bl-h1">{S.title}</h1>
           <p className="bl-meta">{stats.scope} ・ 在籍 {stats.studentCount.toLocaleString()}名</p>
         </div>
         <div className={styles.scopeSwitch}>
@@ -35,7 +39,7 @@ export default function SchoolPage() {
             onClick={() => setScope("school")}
           >
             <Icon name="apartment" size={17} />
-            学校全体
+            {S.wholeSchool}
           </button>
           <button
             type="button"
@@ -44,7 +48,7 @@ export default function SchoolPage() {
             onClick={() => setScope("grade")}
           >
             <Icon name="school" size={17} />
-            学年別
+            {S.byGrade}
           </button>
         </div>
       </header>
@@ -52,8 +56,7 @@ export default function SchoolPage() {
       <div className="bl-notice bl-rise">
         <Icon name="shield" size={19} />
         <span>
-          個人を特定しない集計のみを表示しています。集計対象が{stats.minCellSize}名未満になる区分は、
-          個人が推定されうるため値を伏せています。個別の生徒の状態はこの画面からは確認できません。
+          {S.suppressionNote(stats.minCellSize)}
         </span>
       </div>
 
@@ -62,15 +65,17 @@ export default function SchoolPage() {
           <section className="bl-grid bl-grid--3 bl-rise">
             <div className="bl-card">
               <span className="bl-num">{stats.studentCount.toLocaleString()}</span>
-              <p className="bl-meta">対象生徒数</p>
+              <p className="bl-meta">{S.studentCount}</p>
             </div>
             <div className="bl-card">
               <span className="bl-num">{Math.round(stats.submissionRate * 100)}%</span>
-              <p className="bl-meta">日記の提出率（今月）</p>
+              <p className="bl-meta">{S.submissionRate}</p>
             </div>
             <div className="bl-card">
-              <span className="bl-num">6<span className={styles.unit}>学年</span></span>
-              <p className="bl-meta">集計対象</p>
+              <span className="bl-num">
+                6<span className={styles.unit}>{S.gradeUnit}</span>
+              </span>
+              <p className="bl-meta">{S.gradeCount}</p>
             </div>
           </section>
 
@@ -78,7 +83,7 @@ export default function SchoolPage() {
           <section className="bl-card bl-rise">
             <div className="bl-card-head">
               <Icon name="pie_chart" size={21} />
-              <h2 className="bl-h2">記述されている内容の内訳</h2>
+              <h2 className="bl-h2">{S.breakdownTitle}</h2>
             </div>
 
             <div className={styles.breakdown}>
@@ -100,7 +105,7 @@ export default function SchoolPage() {
                       name={item.delta > 0 ? "trending_up" : item.delta < 0 ? "trending_down" : "trending_flat"}
                       size={15}
                     />
-                    {item.delta === 0 ? "±0" : `${item.delta > 0 ? "+" : ""}${Math.round(item.delta * 100)}`}
+                    {item.delta === 0 ? S.noChange : `${item.delta > 0 ? "+" : ""}${Math.round(item.delta * 100)}`}
                   </span>
                 </div>
               ))}
@@ -111,13 +116,13 @@ export default function SchoolPage() {
           <section className="bl-card bl-rise">
             <div className="bl-card-head">
               <Icon name="monitoring" size={21} />
-              <h2 className="bl-h2">6週間の推移</h2>
+              <h2 className="bl-h2">{S.trendTitle}</h2>
               <span className="bl-spacer" />
               <div className={styles.legend}>
                 {[
-                  { key: "academic", label: "学業", color: "var(--bl-blue)" },
-                  { key: "relationships", label: "人間関係", color: "hsl(172 52% 52%)" },
-                  { key: "health", label: "睡眠", color: "hsl(255 45% 68%)" },
+                  { key: "academic", label: S.theme.academic, color: "var(--bl-blue)" },
+                  { key: "relationships", label: S.theme.relationships, color: "hsl(172 52% 52%)" },
+                  { key: "health", label: S.theme.health, color: "hsl(255 45% 68%)" },
                 ].map((item) => (
                   <span key={item.key} className="bl-row" style={{ gap: 6 }}>
                     <span className="bl-dot" style={{ background: item.color }} />
@@ -133,15 +138,15 @@ export default function SchoolPage() {
                   <div className={styles.bars}>
                     <span
                       style={{ height: `${(week.academic / maxTrend) * 100}%`, background: "var(--bl-blue)" }}
-                      title={`学業 ${Math.round(week.academic * 100)}%`}
+                      title={S.shareTitle(S.theme.academic, Math.round(week.academic * 100))}
                     />
                     <span
                       style={{ height: `${(week.relationships / maxTrend) * 100}%`, background: "hsl(172 52% 52%)" }}
-                      title={`人間関係 ${Math.round(week.relationships * 100)}%`}
+                      title={S.shareTitle(S.theme.relationships, Math.round(week.relationships * 100))}
                     />
                     <span
                       style={{ height: `${(week.health / maxTrend) * 100}%`, background: "hsl(255 45% 68%)" }}
-                      title={`睡眠 ${Math.round(week.health * 100)}%`}
+                      title={S.shareTitle(S.theme.health, Math.round(week.health * 100))}
                     />
                   </div>
                   <span className={styles.chartLabel}>{week.label}</span>
@@ -157,10 +162,10 @@ export default function SchoolPage() {
             <table className={styles.table}>
               <thead>
                 <tr>
-                  <th scope="col">学年</th>
-                  <th scope="col">対象生徒数</th>
-                  <th scope="col">提出率</th>
-                  <th scope="col">最も多い記述</th>
+                  <th scope="col">{S.tableGrade}</th>
+                  <th scope="col">{S.studentCount}</th>
+                  <th scope="col">{S.tableSubmissionRate}</th>
+                  <th scope="col">{S.tableTopTheme}</th>
                 </tr>
               </thead>
               <tbody>
@@ -169,10 +174,10 @@ export default function SchoolPage() {
                   return (
                     <tr key={grade.grade}>
                       <th scope="row">{grade.grade}</th>
-                      <td className={styles.num}>{grade.studentCount}名</td>
+                      <td className={styles.num}>{S.studentCountValue(grade.studentCount)}</td>
                       <td>
                         {suppressed ? (
-                          <span className="bl-micro">—（母数が小さいため非表示）</span>
+                          <span className="bl-micro">{S.suppressed}</span>
                         ) : (
                           <span className={styles.rateCell}>
                             <span className="bl-bar" style={{ width: 110 }}>
@@ -184,7 +189,7 @@ export default function SchoolPage() {
                       </td>
                       <td>
                         {suppressed ? (
-                          <span className="bl-micro">—</span>
+                          <span className="bl-micro">{S.suppressedShort}</span>
                         ) : (
                           <span className="bl-chip bl-chip--tint">
                             <Icon name={THEMES[grade.top].icon} size={15} />
@@ -203,7 +208,7 @@ export default function SchoolPage() {
 
       <p className="bl-disclaimer">
         <Icon name="medical_information" size={15} />
-        この集計は学校全体の傾向把握を目的としたものです。個人の状態を示すものではなく、診断でもありません。
+        {S.disclaimer}
       </p>
     </div>
   );

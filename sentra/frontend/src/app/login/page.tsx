@@ -5,28 +5,29 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { Icon } from "@/components/ui/Icon";
+import { t } from "@/lib/i18n";
 import styles from "./login.module.css";
 
 /** Supabase の英語メッセージを、生徒にも読める日本語に置き換える。 */
 function localizeAuthError(message: string): string {
   const lower = message.toLowerCase();
   if (lower.includes("invalid login credentials")) {
-    return "メールアドレスまたはパスワードが正しくありません。";
+    return t.login.error.invalidCredentials;
   }
   if (lower.includes("email not confirmed")) {
-    return "メールアドレスの確認が完了していません。届いたメールのリンクを開いてください。";
+    return t.login.error.emailNotConfirmed;
   }
   if (lower.includes("user already registered")) {
-    return "このメールアドレスはすでに登録されています。ログインを選んでください。";
+    return t.login.error.alreadyRegistered;
   }
   if (lower.includes("password should be at least")) {
-    return "パスワードは6文字以上で入力してください。";
+    return t.login.error.passwordTooShort;
   }
   if (lower.includes("rate limit") || lower.includes("too many")) {
-    return "試行回数が多すぎます。しばらく待ってからもう一度お試しください。";
+    return t.login.error.rateLimited;
   }
   if (lower.includes("fetch") || lower.includes("network")) {
-    return "通信に失敗しました。接続を確認してもう一度お試しください。";
+    return t.login.error.network;
   }
   return message;
 }
@@ -63,7 +64,7 @@ export default function LoginPage() {
     }
 
     if (mode === "signup" && !result.data.session) {
-      setMessage("確認メールを送りました。メール内のリンクを開いたあと、ログインしてください。");
+      setMessage(t.login.confirmationSent);
       return;
     }
 
@@ -78,7 +79,7 @@ export default function LoginPage() {
           <div>
             <h1 className="bl-h2">blesc</h1>
             <p className="bl-meta">
-              {mode === "signin" ? "ログインしてはじめる" : "アカウントを作成する"}
+              {mode === "signin" ? t.login.signinLead : t.login.signupLead}
             </p>
           </div>
         </div>
@@ -87,7 +88,7 @@ export default function LoginPage() {
           <div>
             <label className="bl-label" htmlFor="email">
               <Icon name="person" size={19} />
-              メールアドレス
+              {t.login.email}
             </label>
               <input
                 id="email"
@@ -105,7 +106,7 @@ export default function LoginPage() {
           <div>
             <label className="bl-label" htmlFor="password">
               <Icon name="lock" size={19} />
-              パスワード
+              {t.login.password}
             </label>
               <input
                 id="password"
@@ -117,7 +118,7 @@ export default function LoginPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               className="bl-input"
-              placeholder={mode === "signup" ? "6文字以上" : ""}
+              placeholder={mode === "signup" ? t.login.passwordHint : ""}
             />
           </div>
 
@@ -130,7 +131,7 @@ export default function LoginPage() {
 
           <button type="submit" data-testid="login-submit" disabled={isSubmitting} className="bl-btn bl-btn--primary bl-btn--block bl-btn--lg">
             {isSubmitting && <span className={styles.spinner} aria-hidden="true" />}
-            {mode === "signin" ? "ログイン" : "アカウントを作成"}
+            {mode === "signin" ? t.login.signin : t.login.signup}
           </button>
         </form>
 
@@ -143,12 +144,12 @@ export default function LoginPage() {
           className="bl-btn bl-btn--ghost bl-btn--block"
           style={{ marginTop: 10 }}
         >
-          {mode === "signin" ? "アカウントをお持ちでない方はこちら" : "すでにアカウントをお持ちの方はこちら"}
+          {mode === "signin" ? t.login.toSignup : t.login.toSignin}
         </button>
 
         <p className="bl-disclaimer" style={{ marginTop: 18, justifyContent: "center" }}>
           <Icon name="shield" size={15} />
-          blescは診断や緊急対応を行うものではありません。
+          {t.login.notClinicalService}
         </p>
       </section>
     </main>

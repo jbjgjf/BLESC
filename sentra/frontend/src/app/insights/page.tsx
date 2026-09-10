@@ -45,7 +45,7 @@ export default function Insights() {
     } catch (err) {
       setAnomaly(null);
       setExplanation(null);
-      setError(err instanceof Error ? err.message : "内訳の読み込みに失敗しました。");
+      setError(err instanceof Error ? err.message : t.insights.loadFailed);
     } finally {
       setIsLoading(false);
     }
@@ -58,7 +58,7 @@ export default function Insights() {
   if (isLoading) {
     return (
       <div className="bl-wrap" style={{ display: "grid", placeItems: "center", minHeight: "50vh" }}>
-        <span className="bl-loader" aria-label="読み込み中" />
+        <span className="bl-loader" aria-label={t.common.loading} />
       </div>
     );
   }
@@ -71,9 +71,9 @@ export default function Insights() {
   return (
     <div className="bl-wrap bl-wrap--wide bl-stack">
       <header style={{ padding: "2px 2px 0" }}>
-        <h1 className="bl-h1">変化の内訳</h1>
+        <h1 className="bl-h1">{t.insights.title}</h1>
         <p className="bl-meta" style={{ marginTop: 3 }}>
-          タイムラインの値が、どんな要素から出てきたのかを分解して見られます。
+          {t.insights.intro}
         </p>
       </header>
 
@@ -87,34 +87,34 @@ export default function Insights() {
       {!anomaly ? (
         <div className="bl-card bl-empty">
           <Icon name="insights" size={40} />
-          <p className="bl-body">まだ内訳を出せる記録がありません。日記を提出すると表示されます。</p>
+          <p className="bl-body">{t.insights.empty}</p>
         </div>
       ) : (
         <div className={styles.grid}>
           <section className="bl-stack">
             <div className={styles.score}>
-              <span className="bl-eyebrow">変化の大きさ</span>
+              <span className="bl-eyebrow">{t.insights.scoreLabel}</span>
               <div className={styles.scoreValue}>
-                {anomaly.anomaly_score === null ? "—" : anomaly.anomaly_score.toFixed(2)}
+                {anomaly.anomaly_score === null ? t.insights.noValue : anomaly.anomaly_score.toFixed(2)}
               </div>
               <p className="bl-body" style={{ marginTop: 12 }}>
                 {anomaly.anomaly_score === null
                   ? baselineMessage
-                  : "ルールの反応、ふだんとの差、日ごとの移り変わりをまとめた値です。診断ではありません。"}
+                  : t.insights.scoreNote}
               </p>
             </div>
 
             <div className="bl-card">
-              <SectionHead icon="monitoring" label="ふだんとの差" />
+              <SectionHead icon="monitoring" label={t.insights.deviationTitle} />
               {zscores.length === 0 ? (
-                <Empty text={anomaly.anomaly_score === null ? baselineMessage : "差を出せる項目がありません。"} />
+                <Empty text={anomaly.anomaly_score === null ? baselineMessage : t.insights.deviationEmpty} />
               ) : (
                 <div className={styles.rows}>
                   {zscores.slice(0, 6).map(([feature, z]) => (
                     <div key={feature} className={styles.row}>
                       <span>{feature}</span>
                       <span className={styles.mono}>
-                        {Number.isFinite(Number(z)) ? Number(z).toFixed(2) : "—"}
+                        {Number.isFinite(Number(z)) ? Number(z).toFixed(2) : t.insights.noValue}
                       </span>
                     </div>
                   ))}
@@ -125,9 +125,9 @@ export default function Insights() {
 
           <section className="bl-stack">
             <div className="bl-card">
-              <SectionHead icon="auto_awesome" label="反応したルール" />
+              <SectionHead icon="auto_awesome" label={t.insights.rulesTitle} />
               {!explanation || explanation.triggered_rules_json.length === 0 ? (
-                <Empty text="反応したルールはありません。" />
+                <Empty text={t.insights.rulesEmpty} />
               ) : (
                 <div className={styles.rules}>
                   {explanation.triggered_rules_json.map((rule) => (
@@ -147,9 +147,9 @@ export default function Insights() {
 
             <div className="bl-grid bl-grid--2">
               <div className="bl-card">
-                <SectionHead icon="timeline" label="関係の変化" />
+                <SectionHead icon="timeline" label={t.insights.relationChangeTitle} />
                 {!explanation || explanation.changed_relations_json.length === 0 ? (
-                  <Empty text="関係の変化は検出されていません。" />
+                  <Empty text={t.insights.relationChangeEmpty} />
                 ) : (
                   <div className={styles.rows}>
                     {explanation.changed_relations_json.map((rel, index) => (
@@ -162,7 +162,7 @@ export default function Insights() {
               </div>
 
               <div className="bl-card">
-                <SectionHead icon="psychology" label="支えの変化と不確かさ" />
+                <SectionHead icon="psychology" label={t.insights.supportTitle} />
                 <details className={styles.details} open>
                   <summary>支えになっていたものの減り方</summary>
                   <pre className={styles.code}>{formatRecord(explanation?.protective_decline_json)}</pre>
@@ -175,9 +175,9 @@ export default function Insights() {
             </div>
 
             <div className="bl-card">
-              <SectionHead icon="graphic_eq" label="主な関係" />
+              <SectionHead icon="graphic_eq" label={t.insights.relationsTitle} />
               {!explanation || explanation.key_relations.length === 0 ? (
-                <Empty text="表示できる関係がありません。" />
+                <Empty text={t.insights.relationsEmpty} />
               ) : (
                 <div className={styles.rows}>
                   {explanation.key_relations.slice(0, 8).map((rel) => (
@@ -197,7 +197,7 @@ export default function Insights() {
 
       <p className="bl-disclaimer">
         <Icon name="medical_information" size={15} />
-        ここに出る値と根拠は、教員や本人が状況を確認するための材料です。診断ではありません。
+        {t.insights.disclaimer}
       </p>
     </div>
   );

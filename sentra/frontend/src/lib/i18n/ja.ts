@@ -259,8 +259,49 @@ export const ja = {
   },
 
   /** The student's own record of what the AI did with their entry. */
+  /**
+   * AI処理の記録（`/audit`）。生徒が自分の記録に何が起きたかをたどる画面。
+   * 出るのはハッシュと構造化された情報だけで、本文は含まれない — 説明文の
+   * その一文は、実装の約束そのものなので弱めない。
+   */
   audit: {
+    title: "AI処理の記録",
+    intro: "AIがどう応答を作ったかを、あとから確認できます。",
+    scopeTitle: "処理の内訳をたどれます",
+    scopeBody:
+      "感情の抽出、安全性の判定、根拠の参照、使用したモデルの情報を確認できます。表示されるのはハッシュと構造化された情報だけで、日記の本文や認証情報は含まれません。",
+    filterPlaceholder: "記録のIDで絞り込む（任意）",
+    filterLabel: "記録のIDで絞り込む",
+    search: "検索",
+    reload: "再読み込み",
+    loading: "処理履歴を読み込んでいます…",
+    emptyFiltered: (filter: string) => `「${filter}」に一致する処理履歴はありません。`,
+    empty: "まだ処理履歴がありません。日記を提出すると記録されます。",
+    status: {
+      completed: "完了",
+      suppressed: "表示を抑制",
+      failed: "失敗",
+      error: "エラー",
+    },
+    providerModel: "提供元 / モデル",
+    promptVersion: "プロンプト版",
+    pipeline: "パイプライン",
     temperature: "生成のばらつき（temperature）",
+    outputHash: "出力ハッシュ",
+    /** `提供元 ・ モデル` のような並記に使う。 */
+    inlineSeparator: " ・ ",
+    listSeparator: "、",
+    safetyDecision: "安全性の判定",
+    escalationRequired: " ・ エスカレーションが必要",
+    safetyReasons: (reasons: string) => `根拠：${reasons}`,
+    safetyPolicies: (refs: string) => `ポリシー：${refs}`,
+    evidenceRefs: "根拠の参照",
+    errorLine: (message: string) => `エラー：${message}`,
+    trailEyebrow: "1件の記録の処理履歴",
+    trailSummary: (count: number, date: string) => `${count}件の処理 ・ ${date}`,
+    hasSafetyFlag: "安全性の記録あり",
+    hasFailure: "失敗あり",
+    loadFailed: "処理履歴の読み込みに失敗しました。",
   },
 
   /** Cards for the recurring topics the recall workspace found. */
@@ -269,7 +310,57 @@ export const ja = {
     importance: (percent: number) => `重要度 ${percent}%`,
   },
 
+  /**
+   * 共有の設定（`/sharing`）。ここの文言は同意の説明そのものなので、
+   * 「何が共有され、何が共有されないか」を曖昧にする言い換えをしない。
+   * `notShared` に挙げたものは、実装でも実際に送っていないこと。
+   */
   sharing: {
+    title: "共有の設定",
+    intro: "決めるのはあなたです。あなたが「はい」と言うまで、何も共有されません。",
+    scopeTitle: "共有されるのは、状態のまとめだけです",
+    scopeBodyBefore: "ここに表示される学校や団体は、あなたの",
+    scopeBodyEmphasis: "状態のまとめ",
+    scopeBodyAfter:
+      "（状態の区分・傾向・安全に関する記録）を見ることを申請しています。閲覧はすべて記録され、下の一覧で確認できます。共有はいつでも止められます。",
+    notShared: [
+      "日記の本文",
+      "対話型AIとのやりとりの内容",
+      "あなたが「話したくない」を選んだ内容",
+    ],
+    notSharedSuffix: "は共有されません",
+    status: {
+      inactive: "申請は無効です",
+      active: "共有中",
+      revoked: "共有を停止しました",
+      pending: "あなたの判断待ち",
+    },
+    loading: "共有設定を読み込んでいます…",
+    emptyTitle: "いまのところ、共有を申請している学校・団体はありません。",
+    emptyBody: "学校がblescを使いはじめると、ここに申請が表示されます。",
+    grantedSince: (date: string) => `${date}から`,
+    stop: "共有を止める",
+    grant: "共有を許可する",
+    sharedSummariesTitle: "共有した支援サマリー",
+    counselorNamed: " · 指定したカウンセラー",
+    counselorOrg: " · 所属カウンセラー",
+    separator: " · ",
+    reflectionCount: (count: number) => `${count}件の記録`,
+    stopping: "停止中…",
+    stopShare: "共有を停止",
+    stopped: "停止済み",
+    accessLogTitle: "だれが見たか",
+    /** `<org>が<これ>` と続くので、動詞で終わる形にしてある。 */
+    viewLabel: {
+      roster: "一覧であなたの状態を確認しました",
+      alerts: "あなたを含むアラートを確認しました",
+      student_overview: "あなたの詳細画面を開きました",
+      alert_ack: "あなたに関するアラートを確認済みにしました",
+    } as Record<string, string>,
+    /** 団体名を <strong> で囲むため、助詞だけを別に持つ。 */
+    accessedByParticle: "が",
+    loadFailed: "共有設定の読み込みに失敗しました。",
+    updateFailed: "共有設定の更新に失敗しました。",
     revokeFailed: "共有を取り消せませんでした。",
   },
 
@@ -463,6 +554,495 @@ export const ja = {
   },
 
   /** The 3D relation graph and the panels beside it. */
+
+  /**
+   * 変化のタイムライン。値は本人自身のふだんの状態との比較で、他人との比較でも
+   * 判定でもない — 見出しから注記まで、その一点を崩さない言い回しにしている。
+   */
+  timeline: {
+    title: "変化のタイムライン",
+    intro:
+      "その人自身のふだんの状態と比べて、どれくらい変化があったかを日ごとに表しています。",
+    empty: "グラフを作るにはまだ記録が足りません。日記を続けると表示されます。",
+    /** 直近の値に添える一言。「高い/低い」ではなく、確認を促すかどうかだけを言う。 */
+    statusReview: "確認をおすすめします",
+    statusUsual: "ふだんの範囲です",
+    statusLearning: "ふだんの状態を学習中です",
+    latestLabel: "直近の値",
+    noValue: "—",
+    daysAboveThreshold: (threshold: string) => `目安の ${threshold} を超えた日`,
+    dayUnit: "日",
+    breakdownLink: "内訳を見る",
+    breakdownHint: "何がこの値につながったか",
+    chartTitle: "日ごとの変化",
+    thresholdLabel: "確認の目安",
+    seriesName: "変化の大きさ",
+    disclaimer: "この値は日記の書き方の変化をまとめたものです。診断ではありません。",
+    loadFailed: "タイムラインの読み込みに失敗しました。",
+  },
+
+
+  /**
+   * 保護者の画面。ここに置く文言は、そのまま「保護者に何を見せないか」の
+   * 約束になる — 本文・対話・分析結果・支援の検討状況は表示しない。文言を
+   * 変えるときは、画面の実装も同じだけ変わっているか確かめること。
+   */
+  guardian: {
+    title: (studentName: string) => `${studentName}さんの記録`,
+    submissionTitle: "日記の提出状況",
+    statStreak: "連続提出日数",
+    statWeek: "今週の提出",
+    statMonthRate: "今月の提出率",
+    lastSubmitted: (relative: string) => `最終提出：${relative}`,
+    moodTitle: "気分の記録",
+    moodConsented: "本人が共有に同意",
+    moodDisclaimer:
+      "これは本人が選んだ「その日の気分」の記録です。心理的な評価や診断ではありません。",
+    noticesTitle: "学校からのお知らせ",
+    hiddenTitle: "表示していない情報",
+    hiddenIntro:
+      "お子さまが安心して記録を続けられるよう、次の情報は保護者の方には表示していません。",
+    hidden: [
+      "日記の本文",
+      "対話型AIとのやりとりの内容",
+      "AIによる分析結果や状態の判定",
+      "学校内での支援の検討状況",
+    ],
+    hiddenFooter:
+      "気になることがあるときは、担任またはスクールカウンセラーにご相談ください。",
+  },
+
+
+  /**
+   * 押して話す入力ボタン。全画面の音声モード（`voice`）とは別物で、こちらは
+   * 日記やチャットの入力欄に文字を入れるための短い録音。
+   *
+   * `error.*` は HTTP のステータスから引く。原文の英語をそのまま出すと、生徒が
+   * 直せることなのか、こちらの不具合なのかが読み取れないため、原因ごとに
+   * 分けている。
+   */
+  voiceInput: {
+    labelIdle: "音声で入力",
+    labelRecording: "聞いています",
+    labelTranscribing: "文字にしています",
+    labelPermission: "マイクを許可してください",
+    labelReady: "入力しました",
+    labelError: "音声入力に失敗",
+    titleStop: "録音を止める",
+    ariaStart: "音声入力を始める",
+    ariaStop: "音声入力を止める",
+    error: {
+      generic: "音声入力に失敗しました。",
+      notConfigured: "サーバー側で音声の文字起こしが設定されていません。",
+      auth: "音声の文字起こしの認証に失敗しました。",
+      rateLimited: "音声の文字起こしが混み合っています。少し待ってからお試しください。",
+      unsupportedFormat: "このブラウザで録音した形式には対応していません。",
+      /** 原文が英語のまま届いたときの頭だけを差し替える。 */
+      transcriptionFailed: "文字起こしに失敗",
+      noRecorder: "このブラウザは音声の録音に対応していません。",
+      recordingFailed: "録音に失敗しました。",
+      emptyRecording: "音声が録音されませんでした。",
+      permissionDenied: "マイクの使用が許可されませんでした。",
+    },
+  },
+
+
+  /**
+   * 今日の画面（`/`）。生徒がアプリを開いて最初に読むところなので、催促に
+   * ならない言い方を選ぶ — 「まだです」であって「未提出です」ではない。
+   *
+   * `greeting.*` は端末の時計から引く。サーバー描画とハイドレーションでは
+   * 時刻が読めないので `neutral` を出す。
+   */
+  home: {
+    greeting: {
+      morning: "おはよう",
+      afternoon: "こんにちは",
+      evening: "こんばんは",
+      /** 時計が読めない間（サーバー描画・ハイドレーション）に出す。 */
+      neutral: "こんにちは",
+    },
+    greetingWithName: (greeting: string, firstName: string) =>
+      `${greeting}、${firstName}さん`,
+    todayDoneTitle: "今日の日記は提出済みです",
+    todayPendingTitle: "今日の日記はまだです",
+    todayLoading: "提出状況を読み込んでいます…",
+    todayDoneBody: "今日の記録は安全に保存されています。",
+    todayDoneBodyDated: (date: string) => `${date}の記録を保存しました。`,
+    todayPendingBody: "今日の気分と出来事を、1問ずつ記録できます。",
+    todayPendingBodyShort: "今日の気分と出来事を、1分ほどで記録できます。",
+    writeAgain: "もう一度記録する",
+    write: "日記を書く",
+    viewEntry: "内容を見る",
+    recentCount: "過去30日の記録",
+    noValue: "—",
+    timelineLink: "変化のタイムライン",
+    chatLink: "blescに相談する",
+    chatHint: "気持ちの整理を手伝います。話したくないことは話さなくて大丈夫です。",
+    reflectLink: "自分の振り返り",
+    reflectHint: "これまでの気分の移り変わりと、よく書いている出来事を見られます。",
+    statStreak: "連続提出日数",
+    statWeek: "今週の提出",
+    statMonthRate: "今月の提出率",
+    dayTitle: (date: string, mood: string) => `${date} ${mood}`,
+    dayTitleMissing: (date: string) => `${date} 未提出`,
+    lastSubmitted: (relative: string) => `最終提出：${relative}`,
+    recentTitle: "最近の日記",
+    emptyBody: "（本文なし）",
+    seeAll: "すべて見る",
+    loadFailed: "記録の読み込みに失敗しました。",
+  },
+
+
+  /**
+   * 相談（`/chat`）。生徒が自分から書きはじめられないときのために、最初の
+   * 一言を3つ置いている。どれも「困っている」と認めなくても押せる言い方に
+   * してある。
+   */
+  chat: {
+    starters: [
+      "今日あったことを話したい",
+      "最近ちょっとしんどい",
+      "考えを整理したい",
+    ],
+    /** 応答が空で返ったときの埋め草。無言よりは何かが返ったほうがよい。 */
+    emptyAnswer: "…",
+    sendFailed: "うまく送信できませんでした。",
+    retry: "もう一度試す",
+    thinking: "blescが考えています",
+    placeholder: "blescに話す…",
+    send: "送信",
+  },
+
+
+  /**
+   * 変化の内訳（`/insights`）。タイムラインの1つの値を、何がその値にした
+   * のかまで開く画面。`signal.*` がルール名と根拠文を持ち、ここは器の側の
+   * 見出しだけを持つ。
+   */
+  insights: {
+    title: "変化の内訳",
+    intro: "タイムラインの値が、どんな要素から出てきたのかを分解して見られます。",
+    empty: "まだ内訳を出せる記録がありません。日記を提出すると表示されます。",
+    scoreLabel: "変化の大きさ",
+    noValue: "—",
+    scoreNote:
+      "ルールの反応、ふだんとの差、日ごとの移り変わりをまとめた値です。診断ではありません。",
+    deviationTitle: "ふだんとの差",
+    deviationEmpty: "差を出せる項目がありません。",
+    rulesTitle: "反応したルール",
+    rulesEmpty: "反応したルールはありません。",
+    relationChangeTitle: "関係の変化",
+    relationChangeEmpty: "関係の変化は検出されていません。",
+    supportTitle: "支えの変化と不確かさ",
+    relationsTitle: "主な関係",
+    relationsEmpty: "表示できる関係がありません。",
+    disclaimer:
+      "ここに出る値と根拠は、教員や本人が状況を確認するための材料です。診断ではありません。",
+    loadFailed: "内訳の読み込みに失敗しました。",
+  },
+
+
+  /**
+   * ログイン（`/login`）。生徒も教員も同じ画面から入る。
+   *
+   * `error.*` は Supabase が返す英語のメッセージを引き当てて置き換えるもの。
+   * 原文をそのまま出すと、入力を直せばよいのか、こちらの不具合なのかが
+   * 読み取れない。当てはまらないものは原文のまま出す — 訳せないものを
+   * 「エラーが発生しました」に潰すと、問い合わせる手がかりまで消える。
+   */
+  login: {
+    signinLead: "ログインしてはじめる",
+    signupLead: "アカウントを作成する",
+    email: "メールアドレス",
+    password: "パスワード",
+    passwordHint: "6文字以上",
+    signin: "ログイン",
+    signup: "アカウントを作成",
+    toSignup: "アカウントをお持ちでない方はこちら",
+    toSignin: "すでにアカウントをお持ちの方はこちら",
+    /** `common.notClinicalService` と同じ約束の、このカードに収まる短い形。 */
+    notClinicalService: "blescは診断や緊急対応を行うものではありません。",
+    confirmationSent:
+      "確認メールを送りました。メール内のリンクを開いたあと、ログインしてください。",
+    error: {
+      invalidCredentials: "メールアドレスまたはパスワードが正しくありません。",
+      emailNotConfirmed:
+        "メールアドレスの確認が完了していません。届いたメールのリンクを開いてください。",
+      alreadyRegistered:
+        "このメールアドレスはすでに登録されています。ログインを選んでください。",
+      passwordTooShort: "パスワードは6文字以上で入力してください。",
+      rateLimited: "試行回数が多すぎます。しばらく待ってからもう一度お試しください。",
+      network: "通信に失敗しました。接続を確認してもう一度お試しください。",
+    },
+  },
+
+
+  /**
+   * 日記（`/journal`）。入力は1問ずつで、どの設問にも「話したくない」に
+   * あたる選択肢がある — 答えないことを選べるのは仕様であって、抜け道では
+   * ない。文言を足すときも同じ逃げ道を残すこと。
+   *
+   * `probe.*` の文面は、回答と一緒に `probe_id` と台本の version を保存して
+   * いる（#133）。文面を変えるときは version も上げること。上げないと、
+   * 保存済みの回答がどの問いに対するものか後から分からなくなる。
+   */
+  journal: {
+    stepTitle: {
+      recall: "まず思い浮かぶこと",
+      mood: "今日の気分",
+      events: "今日あった出来事",
+      note: "今日のこと",
+    },
+    progressLabel: "入力の進み具合",
+    required: "必須",
+    optional: "任意",
+    recallPrompt: "30秒くらい、考え込まずに最初に浮かんだことをそのまま書いてください。",
+    moodHint: "いちばん近いものをひとつ選んでください。",
+    moodRequired: "今日の気分を選んでください。",
+    recallPlaceholder: "いま頭に浮かんでいること",
+    recallHint: "正解はありません。書かずに次へ進んでも大丈夫です。",
+    eventsHint: "あてはまるものをすべて選べます。",
+    eventsRequired: "出来事を1つ以上選んでください。",
+    noteHint:
+      "あったこと、印象に残ったこと、悩んでいること — 書きたいことだけ、自由に書いてください。",
+    notePlaceholder: "どんな一日でしたか",
+    noteHintOptional: "書きたくないことは、書かなくて大丈夫です。",
+    privacyNote: "日記は先生に全文が見えるわけではありません。",
+    back: "戻る",
+    next: "次へ",
+    submitting: "保存中…",
+    submit: "日記を提出する",
+    submitEmpty: "書かずに提出する",
+    retrySave: "もう一度保存する",
+
+    /** 保存した本文の組み立て。ラベルは保存先にも残る。 */
+    moodUnselected: "未選択",
+    categorySeparator: "、",
+    lineMood: (label: string) => `気分: ${label}`,
+    lineEvents: (labels: string) => `出来事: ${labels}`,
+    lineBody: (body: string) => `日記: ${body}`,
+    bodyEmpty: "本文なし",
+
+    saveFailed: "日記を保存できませんでした。もう一度お試しください。",
+    saveFailedKept:
+      "日記を保存できませんでした。書いた内容は画面に残っています。もう一度お試しください。",
+    saveFailedWithReason: (reason: string) => `日記を保存できませんでした（${reason}）`,
+    saveFailedShort: "日記を保存できませんでした。",
+
+    probe: {
+      topic: {
+        question: "特に気になった出来事はありましたか。",
+        choices: [
+          "勉強や課題",
+          "友人関係",
+          "部活動",
+          "家庭",
+          "体調や睡眠",
+          "まだ整理できない",
+          "話したくない",
+        ],
+      },
+      detail: {
+        question: "どのようなことがありましたか。話せる範囲で記録してください。",
+        placeholder: "書ける範囲で大丈夫です",
+      },
+      duration: {
+        question:
+          "そのように感じる出来事は今日だけでしたか。それとも最近も続いていますか。",
+        choices: [
+          "今日だけ",
+          "数日前から続いている",
+          "以前から続いている",
+          "分からない",
+          "答えたくない",
+        ],
+      },
+      /** これ以上聞かずに終える回答。上の選択肢と同じ文字列であること。 */
+      stopAnswers: ["話したくない", "まだ整理できない", "答えたくない"],
+      acknowledged: "わかりました。話したくなったら、いつでも聞かせてください。",
+      decline: "答えたくない",
+      send: "送信",
+      thinking: "blescが考えています",
+      end: "ここで終える",
+    },
+
+    doneTitle: "今日の日記を記録しました",
+    home: "ホームに戻る",
+    talkMore: "もう少し話す",
+  },
+
+
+  /**
+   * 自分の振り返り（`/reflect`）。生徒が自分の記録を見返す画面で、教員には
+   * 出さない。続けられていないことを責める言い方をしない — 「無理のない
+   * ペースで大丈夫です」はその方針そのもの。
+   */
+  reflect: {
+    title: "自分の振り返り",
+    intro: (days: number) => `これまでに記録した${days}日分をまとめています。`,
+    moodTrendTitle: "気分の移り変わり",
+    moodBreakdownTitle: "気分の内訳",
+    moodBreakdownNote: "花びらは5つの気分です。多く記録した気分ほど大きく開きます。",
+    eventsTitle: "よく書いている出来事",
+    streakTitle: (days: number) => `${days}日つづけて記録しています`,
+    streakNote: (rate: number) =>
+      `今月の提出率は ${rate}% です。無理のないペースで大丈夫です。`,
+    pastEntriesTitle: "過去の日記",
+    fieldNote: "今日のこと",
+    fieldEmpty: "記録なし",
+  },
+
+
+  /**
+   * デモ用の教員画面（`/educator/alerts`, `/educator/class`, `/educator/meetings`,
+   * `/school`）。企画書の各機能を通しで見せるための固定データ画面で、通常の
+   * ナビゲーションには出ない（`AppNav` の `DEMO_ONLY_NAV_PATHS`）。
+   *
+   * この4画面は生徒ごとのリスクバンド（`blesc/labels.ts` の `BANDS`）を描画して
+   * おり、`docs/educator_display_policy.md` の規則1に反している。文言をここへ
+   * 移したのは #116 のカタログ移行のためで、バンドの是非とは別。画面を作り
+   * 直すときは、この節も一緒に書き直すことになる。
+   */
+  educatorDemo: {
+    alerts: {
+      title: "アラート",
+      intro: "確認のきっかけとして使ってください。アラートだけで状態を判断しないでください。",
+      count: (n: number) => `${n}件`,
+      urgentTitle: "優先度の高いアラート",
+      urgentEmpty: "優先度の高いアラートはありません。",
+      attention: "要確認",
+      flowTitle: "対応の流れ",
+      flow: [
+        "担当教員または指定された支援担当者に通知",
+        "学校の定める緊急対応フローに沿って状況を確認",
+        "必要に応じて保健室・スクールカウンセラー・管理職・保護者と連携",
+      ],
+      viewDetail: "詳細を確認",
+      acknowledge: "確認しました",
+      acknowledged: "確認済み",
+      acknowledgeShort: "確認",
+      missingTitle: "日記の未提出",
+      missingNote:
+        "未提出は体調・行事・端末の不調など様々な理由で起こります。声掛けのきっかけとしてお使いください。",
+      kind: {
+        missing_3d: "3日以上未提出",
+        unused_1w: "1週間未利用",
+        streak_broken: "連続提出が中断",
+        rate_drop: "提出頻度が低下",
+      },
+      overdueTitle: "フォロー漏れ",
+      overdueEmpty: "フォロー漏れはありません。",
+      overdueNote: (days: number, next: string) =>
+        `前回面談から${days}日、次回は${next}です。`,
+      notScheduled: "未設定",
+      scheduleMeeting: "面談を設定",
+    },
+    class: {
+      title: "クラス全体",
+      subtitle: (className: string, count: number) => `${className} ・ ${count}名`,
+      heatmapTitle: "クラス全体ヒートマップ",
+      /** バンドの色を説明する注記。バンドごと消えるときに一緒に消える。 */
+      heatmapNote: "色は日記と対話の内容からAIが算出した傾向です。診断ではありません。",
+      cellTitle: (name: string, band: string) => `${name} ・ ${band}`,
+      missedDays: (days: number) => `${days}日未提出`,
+      submittedYesterday: "昨日までに日記を提出",
+      withFollowUp: "対話型AIによる補足あり",
+      inProgress: "対応が進行中",
+      personUnit: "名",
+      breakdownTitle: "クラス全体の傾向",
+      breakdownIntro:
+        "日記と対話の内容から、いま何についての記述が多いかを集計しています。",
+      deltaNote: "右端の数値は先週との差（ポイント）です。",
+      noChange: "±0",
+      hintsTitle: "学級運営のヒント",
+      hints: [
+        "学業ストレスに関する記述が先週より5ポイント増えています。課題量の偏りを確認してみてください。",
+        "睡眠に関する記述が増加傾向です。保健だよりや朝の声掛けと合わせて確認できます。",
+        "人間関係に関する記述はやや減少しています。",
+      ],
+    },
+    meetings: {
+      title: "面談",
+      intro: "面談の記録と、AIによる面談サポートをまとめています。",
+      recordTitle: "面談を記録する",
+      student: "生徒",
+      required: "必須",
+      optional: "任意",
+      selectPlaceholder: "選択してください",
+      studentOption: (name: string, grade: string, className: string) =>
+        `${name}（${grade}${className}）`,
+      supportTitle: "AIによる面談サポート",
+      supportHint: (name: string) =>
+        `${name}さんの記録から、面談で確認したい質問案を用意できます。`,
+      makeQuestions: "質問案を作る",
+      supportHeading: (name: string) => `面談サポート — ${name}`,
+      close: "閉じる",
+      loadingRecords: "記録を読み込んでいます…",
+      questionsLabel: "確認したい質問案",
+      contextLabel: "面談前に押さえておきたい背景",
+      cautionsLabel: "触れ方に注意したい点",
+      notes: "面談メモ",
+      notesPlaceholder: "話した内容を記録します",
+      impression: "生徒の様子",
+      impressionPlaceholder: "表情、話し方、沈黙の有無など",
+      nextAction: "次回対応予定",
+      nextNote: "次回の内容",
+      nextNotePlaceholder: "例：生活リズムの変化を確認",
+      summaryTitle: "面談内容の要約",
+      summarising: "作成中…",
+      summarise: "AIに要約してもらう",
+      summaryPending: "要約を作成しています",
+      /** 要約は入力から組み立てる定型文。実際のモデル出力ではない。 */
+      summaryWithNotes: "面談では、記録された内容をもとに本人の状況を確認しました。",
+      summaryWithoutNotes: "面談メモが未入力のため、要約は限定的です。",
+      summaryImpression: (impression: string) =>
+        `生徒の様子として「${impression}」が記録されています。`,
+      summaryNextAction: (date: string) => `次回対応は ${date} に予定されています。`,
+      summaryNoNextAction:
+        "次回対応は未設定です。フォロー漏れを防ぐため日程の設定をおすすめします。",
+      visibility: "面談記録は担当教員と支援担当者が閲覧できます。",
+      save: "記録を保存",
+      saved: "面談記録を保存しました。（デモのため実際には保存されません）",
+      historyTitle: "これまでの面談",
+      followUp: {
+        overdue: "フォロー未実施",
+        done: "対応済み",
+        ongoing: "フォロー中",
+      },
+      nextLine: (date: string, note: string) => `次回 ${date} ｜ ${note}`,
+    },
+    school: {
+      wholeSchool: "学校全体",
+      byGrade: "学年別",
+      suppressionNote: (minCellSize: number) =>
+        `個人を特定しない集計のみを表示しています。集計対象が${minCellSize}名未満になる区分は、個人が推定されうるため値を伏せています。個別の生徒の状態はこの画面からは確認できません。`,
+      noChange: "±0",
+      theme: {
+        academic: "学業",
+        relationships: "人間関係",
+        health: "睡眠",
+      },
+      shareTitle: (theme: string, percent: number) => `${theme} ${percent}%`,
+      title: "学校全体の傾向",
+      studentCount: "対象生徒数",
+      submissionRate: "日記の提出率（今月）",
+      gradeCount: "集計対象",
+      gradeUnit: "学年",
+      breakdownTitle: "記述されている内容の内訳",
+      trendTitle: "6週間の推移",
+      tableGrade: "学年",
+      tableSubmissionRate: "提出率",
+      tableTopTheme: "最も多い記述",
+      studentCountValue: (count: number) => `${count}名`,
+      /** 母数が小さい区分は値を伏せる。伏せた理由まで書く。 */
+      suppressed: "—（母数が小さいため非表示）",
+      suppressedShort: "—",
+      disclaimer:
+        "この集計は学校全体の傾向把握を目的としたものです。個人の状態を示すものではなく、診断でもありません。",
+    },
+  },
+
   graph: {
     /** The five ontology categories, keyed by the stored enum value. */
     category: {

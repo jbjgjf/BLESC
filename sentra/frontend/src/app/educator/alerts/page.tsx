@@ -6,13 +6,17 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { CLASS_ROSTER, FOLLOW_UPS, SUBMISSION_ALERTS } from "@/lib/blesc/fixtures";
 import { formatDate, formatDateTime, relativeDays } from "@/lib/blesc/labels";
 import type { SubmissionAlert } from "@/lib/blesc/types";
+import { t } from "@/lib/i18n";
 import styles from "./alerts.module.css";
 
+/** この画面の文言。参照が多いので短く束ねる。 */
+const A = t.educatorDemo.alerts;
+
 const ALERT_META: Record<SubmissionAlert["kind"], { label: string; icon: IconName }> = {
-  missing_3d:    { label: "3日以上未提出",   icon: "event_busy" },
-  unused_1w:     { label: "1週間未利用",     icon: "visibility" },
-  streak_broken: { label: "連続提出が中断",  icon: "local_fire_department" },
-  rate_drop:     { label: "提出頻度が低下",  icon: "trending_down" },
+  missing_3d:    { label: A.kind.missing_3d,    icon: "event_busy" },
+  unused_1w:     { label: A.kind.unused_1w,     icon: "visibility" },
+  streak_broken: { label: A.kind.streak_broken, icon: "local_fire_department" },
+  rate_drop:     { label: A.kind.rate_drop,     icon: "trending_down" },
 };
 
 export default function AlertsPage() {
@@ -34,9 +38,9 @@ export default function AlertsPage() {
   return (
     <div className="bl-stack">
       <header style={{ padding: "2px 2px 0" }}>
-        <h1 className="bl-h1">アラート</h1>
+        <h1 className="bl-h1">{A.title}</h1>
         <p className="bl-meta" style={{ marginTop: 3 }}>
-          確認のきっかけとして使ってください。アラートだけで状態を判断しないでください。
+          {A.intro}
         </p>
       </header>
 
@@ -44,14 +48,14 @@ export default function AlertsPage() {
       <section className="bl-stack-s bl-rise">
         <div className="bl-row" style={{ gap: 9, padding: "0 2px" }}>
           <Icon name="priority_high" size={20} fill style={{ color: "var(--bl-alert)" }} />
-          <h2 className="bl-h2">優先度の高いアラート</h2>
-          <span className="bl-chip bl-chip--alert">{urgent.length}件</span>
+          <h2 className="bl-h2">{A.urgentTitle}</h2>
+          <span className="bl-chip bl-chip--alert">{A.count(urgent.length)}</span>
         </div>
 
         {urgent.length === 0 ? (
           <div className="bl-card bl-empty">
             <Icon name="check_circle" size={38} />
-            <p className="bl-body">優先度の高いアラートはありません。</p>
+            <p className="bl-body">{A.urgentEmpty}</p>
           </div>
         ) : (
           urgent.map((student) => (
@@ -59,7 +63,7 @@ export default function AlertsPage() {
               <div className={styles.urgentTop}>
                 <span className="bl-chip bl-chip--alert">
                   <Icon name="priority_high" size={15} fill />
-                  要確認
+                  {A.attention}
                 </span>
                 <Link href={`/educator/student/${student.id}`} className={styles.name}>
                   {student.name}
@@ -83,17 +87,17 @@ export default function AlertsPage() {
               </div>
 
               <div className={styles.flow}>
-                <span className="bl-micro" style={{ fontWeight: 700 }}>対応の流れ</span>
+                <span className="bl-micro" style={{ fontWeight: 700 }}>{A.flowTitle}</span>
                 <ol>
-                  <li>担当教員または指定された支援担当者に通知</li>
-                  <li>学校の定める緊急対応フローに沿って状況を確認</li>
-                  <li>必要に応じて保健室・スクールカウンセラー・管理職・保護者と連携</li>
+                  {A.flow.map((entry) => (
+                    <li key={entry}>{entry}</li>
+                  ))}
                 </ol>
               </div>
 
               <div className={styles.cardActions}>
                 <Link href={`/educator/student/${student.id}`} className="bl-btn bl-btn--primary bl-btn--sm">
-                  詳細を確認
+                  {A.viewDetail}
                   <Icon name="arrow_forward" size={16} />
                 </Link>
                 <button
@@ -102,7 +106,7 @@ export default function AlertsPage() {
                   onClick={() => toggleAck(student.id)}
                 >
                   <Icon name={acknowledged.has(student.id) ? "check_circle" : "check"} size={16} fill={acknowledged.has(student.id)} />
-                  {acknowledged.has(student.id) ? "確認済み" : "確認しました"}
+                  {acknowledged.has(student.id) ? A.acknowledged : A.acknowledge}
                 </button>
               </div>
             </article>
@@ -114,8 +118,8 @@ export default function AlertsPage() {
       <section className="bl-card bl-rise">
         <div className="bl-card-head">
           <Icon name="event_busy" size={21} />
-          <h2 className="bl-h2">日記の未提出</h2>
-          <span className="bl-chip bl-chip--watch">{SUBMISSION_ALERTS.length}件</span>
+          <h2 className="bl-h2">{A.missingTitle}</h2>
+          <span className="bl-chip bl-chip--watch">{A.count(SUBMISSION_ALERTS.length)}</span>
         </div>
 
         <div className="bl-stack-s">
@@ -146,7 +150,7 @@ export default function AlertsPage() {
                   onClick={() => toggleAck(alert.studentId)}
                 >
                   <Icon name={done ? "check_circle" : "check"} size={16} fill={done} />
-                  {done ? "確認済み" : "確認"}
+                  {done ? A.acknowledged : A.acknowledgeShort}
                 </button>
               </div>
             );
@@ -155,7 +159,7 @@ export default function AlertsPage() {
 
         <p className="bl-disclaimer" style={{ marginTop: 14 }}>
           <Icon name="info" size={14} />
-          未提出は体調・行事・端末の不調など様々な理由で起こります。声掛けのきっかけとしてお使いください。
+          {A.missingNote}
         </p>
       </section>
 
@@ -163,16 +167,16 @@ export default function AlertsPage() {
       <section className="bl-card bl-rise">
         <div className="bl-card-head">
           <Icon name="event_repeat" size={21} />
-          <h2 className="bl-h2">フォロー漏れ</h2>
+          <h2 className="bl-h2">{A.overdueTitle}</h2>
           {overdueFollowUps.length > 0 && (
-            <span className="bl-chip bl-chip--watch">{overdueFollowUps.length}件</span>
+            <span className="bl-chip bl-chip--watch">{A.count(overdueFollowUps.length)}</span>
           )}
         </div>
 
         {overdueFollowUps.length === 0 ? (
           <div className="bl-empty">
             <Icon name="check_circle" size={38} />
-            <p className="bl-body">フォロー漏れはありません。</p>
+            <p className="bl-body">{A.overdueEmpty}</p>
           </div>
         ) : (
           <div className="bl-stack-s">
@@ -186,12 +190,15 @@ export default function AlertsPage() {
                     {item.studentName}
                   </Link>
                   <span className="bl-micro" style={{ display: "block", marginTop: 3 }}>
-                    {item.note} 前回面談から{item.daysSince}日、次回は
-                    {item.nextMeeting ? formatDate(item.nextMeeting, false) : "未設定"}です。
+                    {item.note}{" "}
+                    {A.overdueNote(
+                      item.daysSince,
+                      item.nextMeeting ? formatDate(item.nextMeeting, false) : A.notScheduled,
+                    )}
                   </span>
                 </span>
                 <Link href={`/educator/meetings?student=${item.studentId}`} className="bl-btn bl-btn--secondary bl-btn--sm">
-                  面談を設定
+                  {A.scheduleMeeting}
                 </Link>
               </div>
             ))}

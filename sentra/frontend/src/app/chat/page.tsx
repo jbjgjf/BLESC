@@ -18,11 +18,7 @@ type Message = {
   retryText?: string;
 };
 
-const STARTERS = [
-  "今日あったことを話したい",
-  "最近ちょっとしんどい",
-  "考えを整理したい",
-];
+const STARTERS = t.chat.starters;
 
 const WAVE_PATHS = [
   "M0,96 C120,64 240,128 360,96 C480,64 600,128 720,96 C840,64 960,128 1080,96 C1200,64 1320,128 1440,96 L1440,200 L0,200 Z",
@@ -84,7 +80,7 @@ export default function ChatPage() {
         });
         setMessages((current) => [
           ...current,
-          { id: `a-${Date.now()}`, role: "ai", text: response.answer || "…" },
+          { id: `a-${Date.now()}`, role: "ai", text: response.answer || t.chat.emptyAnswer },
         ]);
       } catch (err) {
         setMessages((current) => [
@@ -94,7 +90,7 @@ export default function ChatPage() {
             role: "ai",
             error: true,
             retryText: text,
-            text: err instanceof Error ? err.message : "うまく送信できませんでした。",
+            text: err instanceof Error ? err.message : t.chat.sendFailed,
           },
         ]);
       } finally {
@@ -183,7 +179,7 @@ export default function ChatPage() {
                   {message.text}
                   {message.error && message.retryText && (
                     <button type="button" className={styles.retry} onClick={() => retry(message)}>
-                      もう一度試す
+                      {t.chat.retry}
                     </button>
                   )}
                 </div>
@@ -194,7 +190,7 @@ export default function ChatPage() {
           {isThinking && (
             <div className={styles.row}>
               <Image src="/flower.png" alt="" width={32} height={32} className={styles.avatar} />
-              <div className={`${styles.bubble} ${styles.bubbleAi} ${styles.typing}`} aria-label="blescが考えています">
+              <div className={`${styles.bubble} ${styles.bubbleAi} ${styles.typing}`} aria-label={t.chat.thinking}>
                 <span />
                 <span />
                 <span />
@@ -226,7 +222,7 @@ export default function ChatPage() {
             ref={textareaRef}
             className={styles.textarea}
             rows={1}
-            placeholder="blescに話す…"
+            placeholder={t.chat.placeholder}
             value={input}
             onChange={(e) => {
               setInput(e.target.value);
@@ -253,7 +249,7 @@ export default function ChatPage() {
             className={styles.send}
             onClick={sendFromInput}
             disabled={isThinking || !input.trim()}
-            aria-label="送信"
+            aria-label={t.chat.send}
           >
             <svg viewBox="0 0 100 100" className={styles.sendShape} aria-hidden="true">
               <path

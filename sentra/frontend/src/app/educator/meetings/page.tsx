@@ -7,7 +7,11 @@ import { Icon } from "@/components/ui/Icon";
 import { WaveBed } from "@/components/ui/WaveBed";
 import { ALL_MEETINGS, CLASS_ROSTER, MEETING_SUPPORT } from "@/lib/blesc/fixtures";
 import { TODAY, formatDate, formatDateTime } from "@/lib/blesc/labels";
+import { t } from "@/lib/i18n";
 import styles from "./meetings.module.css";
+
+/** この画面の文言。参照が多いので短く束ねる。 */
+const M = t.educatorDemo.meetings;
 
 export default function MeetingsPage() {
   const params = useSearchParams();
@@ -46,13 +50,11 @@ export default function MeetingsPage() {
       setSummaryLoading(false);
       setSummary(
         [
-          notes.trim()
-            ? "面談では、記録された内容をもとに本人の状況を確認しました。"
-            : "面談メモが未入力のため、要約は限定的です。",
-          impression.trim() ? `生徒の様子として「${impression.trim()}」が記録されています。` : "",
+          notes.trim() ? M.summaryWithNotes : M.summaryWithoutNotes,
+          impression.trim() ? M.summaryImpression(impression.trim()) : "",
           nextAction
-            ? `次回対応は ${formatDate(nextAction, false)} に予定されています。`
-            : "次回対応は未設定です。フォロー漏れを防ぐため日程の設定をおすすめします。",
+            ? M.summaryNextAction(formatDate(nextAction, false))
+            : M.summaryNoNextAction,
         ]
           .filter(Boolean)
           .join(" "),
@@ -69,9 +71,9 @@ export default function MeetingsPage() {
   return (
     <div className="bl-stack">
       <header style={{ padding: "2px 2px 0" }}>
-        <h1 className="bl-h1">面談</h1>
+        <h1 className="bl-h1">{M.title}</h1>
         <p className="bl-meta" style={{ marginTop: 3 }}>
-          面談の記録と、AIによる面談サポートをまとめています。
+          {M.intro}
         </p>
       </header>
 
@@ -79,15 +81,15 @@ export default function MeetingsPage() {
       <section className="bl-card bl-rise">
         <div className="bl-card-head">
           <Icon name="edit_note" size={21} />
-          <h2 className="bl-h2">面談を記録する</h2>
+          <h2 className="bl-h2">{M.recordTitle}</h2>
         </div>
 
         <div className="bl-stack">
           <div>
             <label className="bl-label" htmlFor="student">
               <Icon name="person" size={19} />
-              生徒
-              <span className="bl-required">必須</span>
+              {M.student}
+              <span className="bl-required">{M.required}</span>
             </label>
             <select
               id="student"
@@ -99,10 +101,10 @@ export default function MeetingsPage() {
                 setSummary(null);
               }}
             >
-              <option value="">選択してください</option>
+              <option value="">{M.selectPlaceholder}</option>
               {CLASS_ROSTER.map((student) => (
                 <option key={student.id} value={student.id}>
-                  {student.name}（{student.grade}{student.className}）
+                  {M.studentOption(student.name, student.grade, student.className)}
                 </option>
               ))}
             </select>
@@ -112,13 +114,13 @@ export default function MeetingsPage() {
             <div className={styles.supportBar}>
               <Icon name="auto_awesome" size={20} />
               <span style={{ flex: 1 }}>
-                <span className="bl-h3">AIによる面談サポート</span>
+                <span className="bl-h3">{M.supportTitle}</span>
                 <span className="bl-micro" style={{ display: "block", marginTop: 2 }}>
-                  {selected.name}さんの記録から、面談で確認したい質問案を用意できます。
+                  {M.supportHint(selected.name)}
                 </span>
               </span>
               <button type="button" className="bl-btn bl-btn--primary bl-btn--sm" onClick={openSupport}>
-                質問案を作る
+                {M.makeQuestions}
               </button>
             </div>
           )}
@@ -130,12 +132,12 @@ export default function MeetingsPage() {
 
               <div className={styles.supportHead}>
                 <Icon name="auto_awesome" size={20} fill />
-                <span className="bl-h3">面談サポート — {selected.name}</span>
+                <span className="bl-h3">{M.supportHeading(selected.name)}</span>
                 <span className="bl-spacer" />
                 <button
                   type="button"
                   className="bl-icon-btn"
-                  aria-label="閉じる"
+                  aria-label={M.close}
                   onClick={() => setSupportOpen(false)}
                 >
                   <Icon name="close" size={19} />
@@ -144,12 +146,12 @@ export default function MeetingsPage() {
 
               {supportLoading ? (
                 <p className="bl-body" style={{ position: "relative", zIndex: 2 }}>
-                  記録を読み込んでいます…
+                  {M.loadingRecords}
                 </p>
               ) : (
                 <div className={styles.supportBody}>
                   <div>
-                    <h4 className={styles.supportLabel}>確認したい質問案</h4>
+                    <h4 className={styles.supportLabel}>{M.questionsLabel}</h4>
                     <ol className={styles.questions}>
                       {MEETING_SUPPORT.questions.map((question) => (
                         <li key={question.text}>
@@ -161,7 +163,7 @@ export default function MeetingsPage() {
                   </div>
 
                   <div>
-                    <h4 className={styles.supportLabel}>面談前に押さえておきたい背景</h4>
+                    <h4 className={styles.supportLabel}>{M.contextLabel}</h4>
                     <ul className={styles.bullets}>
                       {MEETING_SUPPORT.context.map((item) => (
                         <li key={item}>{item}</li>
@@ -172,7 +174,7 @@ export default function MeetingsPage() {
                   <div className={styles.cautions}>
                     <h4 className={styles.supportLabel}>
                       <Icon name="warning" size={16} fill />
-                      触れ方に注意したい点
+                      {M.cautionsLabel}
                     </h4>
                     <ul className={styles.bullets}>
                       {MEETING_SUPPORT.cautions.map((item) => (
@@ -188,13 +190,13 @@ export default function MeetingsPage() {
           <div>
             <label className="bl-label" htmlFor="notes">
               <Icon name="notes" size={19} />
-              面談メモ
-              <span className="bl-required">必須</span>
+              {M.notes}
+              <span className="bl-required">{M.required}</span>
             </label>
             <textarea
               id="notes"
               className="bl-textarea"
-              placeholder="話した内容を記録します"
+              placeholder={M.notesPlaceholder}
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
             />
@@ -203,13 +205,13 @@ export default function MeetingsPage() {
           <div>
             <label className="bl-label" htmlFor="impression">
               <Icon name="visibility" size={19} />
-              生徒の様子
+              {M.impression}
               <span className="bl-optional">任意</span>
             </label>
             <textarea
               id="impression"
               className="bl-textarea"
-              placeholder="表情、話し方、沈黙の有無など"
+              placeholder={M.impressionPlaceholder}
               value={impression}
               onChange={(event) => setImpression(event.target.value)}
             />
@@ -219,8 +221,8 @@ export default function MeetingsPage() {
             <div>
               <label className="bl-label" htmlFor="nextAction">
                 <Icon name="event_note" size={19} />
-                次回対応予定
-                <span className="bl-optional">任意</span>
+                {M.nextAction}
+                <span className="bl-optional">{M.optional}</span>
               </label>
               <input
                 id="nextAction"
@@ -234,14 +236,14 @@ export default function MeetingsPage() {
             <div>
               <label className="bl-label" htmlFor="nextNote">
                 <Icon name="description" size={19} />
-                次回の内容
-                <span className="bl-optional">任意</span>
+                {M.nextNote}
+                <span className="bl-optional">{M.optional}</span>
               </label>
               <input
                 id="nextNote"
                 type="text"
                 className="bl-input"
-                placeholder="例：生活リズムの変化を確認"
+                placeholder={M.nextNotePlaceholder}
                 value={nextNote}
                 onChange={(event) => setNextNote(event.target.value)}
               />
@@ -252,19 +254,19 @@ export default function MeetingsPage() {
           <div className={styles.summaryBox}>
             <div className="bl-row" style={{ gap: 10, flexWrap: "wrap" }}>
               <Icon name="summarize" size={20} />
-              <span className="bl-h3" style={{ flex: 1 }}>面談内容の要約</span>
+              <span className="bl-h3" style={{ flex: 1 }}>{M.summaryTitle}</span>
               <button
                 type="button"
                 className="bl-btn bl-btn--secondary bl-btn--sm"
                 onClick={makeSummary}
                 disabled={summaryLoading}
               >
-                {summaryLoading ? "作成中…" : "AIに要約してもらう"}
+                {summaryLoading ? M.summarising : M.summarise}
               </button>
             </div>
 
             {summaryLoading && (
-              <div className={styles.summaryTyping} aria-label="要約を作成しています">
+              <div className={styles.summaryTyping} aria-label={M.summaryPending}>
                 <span />
                 <span />
                 <span />
@@ -277,7 +279,7 @@ export default function MeetingsPage() {
           <div className="bl-row-between" style={{ flexWrap: "wrap", gap: 12 }}>
             <p className="bl-disclaimer">
               <Icon name="lock" size={15} />
-              面談記録は担当教員と支援担当者が閲覧できます。
+              {M.visibility}
             </p>
             <button
               type="button"
@@ -286,14 +288,14 @@ export default function MeetingsPage() {
               disabled={!studentId || !notes.trim()}
             >
               <Icon name="check" size={19} />
-              記録を保存
+              {M.save}
             </button>
           </div>
 
           {saved && (
             <div className="bl-notice bl-pop" style={{ background: "var(--bl-calm-bg)", borderColor: "var(--bl-calm-line)", color: "var(--bl-calm-ink)" }}>
               <Icon name="check_circle" size={19} fill style={{ color: "var(--bl-calm)" }} />
-              面談記録を保存しました。（デモのため実際には保存されません）
+              {M.saved}
             </div>
           )}
         </div>
@@ -303,7 +305,7 @@ export default function MeetingsPage() {
       <section className="bl-card bl-rise">
         <div className="bl-card-head">
           <Icon name="history" size={21} />
-          <h2 className="bl-h2">これまでの面談</h2>
+          <h2 className="bl-h2">{M.historyTitle}</h2>
         </div>
 
         <div className="bl-stack-s">
@@ -328,10 +330,10 @@ export default function MeetingsPage() {
                     }`}
                   >
                     {meeting.followUpState === "overdue"
-                      ? "フォロー未実施"
+                      ? M.followUp.overdue
                       : meeting.followUpState === "done"
-                        ? "対応済み"
-                        : "フォロー中"}
+                        ? M.followUp.done
+                        : M.followUp.ongoing}
                   </span>
                 </span>
               </div>
@@ -340,7 +342,10 @@ export default function MeetingsPage() {
 
               {meeting.nextAction && (
                 <p className="bl-micro" style={{ marginTop: 8 }}>
-                  次回 {formatDate(meeting.nextAction, false)} ｜ {meeting.nextActionNote}
+                  {M.nextLine(
+                    formatDate(meeting.nextAction, false),
+                    meeting.nextActionNote,
+                  )}
                 </p>
               )}
             </article>

@@ -13,6 +13,7 @@ import { useDemoMode } from "@/lib/demo";
 import { CATEGORIES, MOODS, TODAY, formatDate } from "@/lib/blesc/labels";
 import { EntryTelemetryCollector, clientTimeZone, newSessionId } from "@/lib/telemetry";
 import { EMPTY_STATS, type JournalStats } from "@/lib/journalStats";
+import { t } from "@/lib/i18n";
 import type { EventCategory, Mood } from "@/lib/blesc/types";
 import { SelfReportBlock, type SelfReportValues } from "@/components/SelfReportBlock";
 import type { SelfReportItemId } from "@/lib/pilotSelfReport";
@@ -33,27 +34,19 @@ type Step = {
 const STEPS: Step[] = [
   {
     id: "topic",
-    question: "特に気になった出来事はありましたか。",
-    choices: [
-      "勉強や課題",
-      "友人関係",
-      "部活動",
-      "家庭",
-      "体調や睡眠",
-      "まだ整理できない",
-      "話したくない",
-    ],
+    question: t.journal.probe.topic.question,
+    choices: [...t.journal.probe.topic.choices],
   },
   {
     id: "detail",
-    question: "どのようなことがありましたか。話せる範囲で記録してください。",
+    question: t.journal.probe.detail.question,
     choices: null,
-    placeholder: "書ける範囲で大丈夫です",
+    placeholder: t.journal.probe.detail.placeholder,
   },
   {
     id: "duration",
-    question: "そのように感じる出来事は今日だけでしたか。それとも最近も続いていますか。",
-    choices: ["今日だけ", "数日前から続いている", "以前から続いている", "分からない", "答えたくない"],
+    question: t.journal.probe.duration.question,
+    choices: [...t.journal.probe.duration.choices],
   },
 ];
 
@@ -64,7 +57,7 @@ const STEPS: Step[] = [
 const PROBE_VERSION = "followup-script-v1";
 
 /** これ以上聞かずに終える回答 */
-const STOP_ANSWERS = new Set(["話したくない", "まだ整理できない", "答えたくない"]);
+const STOP_ANSWERS = new Set<string>(t.journal.probe.stopAnswers);
 
 type Turn = { role: "ai" | "student"; text: string };
 
@@ -76,12 +69,7 @@ type FormStep = "recall" | "mood" | "events" | "note";
 
 const FORM_STEPS: FormStep[] = ["recall", "mood", "events", "note"];
 
-const STEP_TITLE: Record<FormStep, string> = {
-  recall: "まず思い浮かぶこと",
-  mood: "今日の気分",
-  events: "今日あった出来事",
-  note: "今日のこと",
-};
+const STEP_TITLE: Record<FormStep, string> = t.journal.stepTitle;
 
 export default function JournalPage() {
   const { userId } = useAuth();
@@ -298,15 +286,16 @@ export default function JournalPage() {
     // デモは Supabase に触れないので、保存の成否という概念がない。
     if (demo) return true;
 
-    const moodLabel = MOODS.find((option) => option.value === mood)?.label ?? "未選択";
+    const moodLabel =
+      MOODS.find((option) => option.value === mood)?.label ?? t.journal.moodUnselected;
     const categoryLabels = CATEGORIES
       .filter((option) => categories.includes(option.value))
       .map((option) => option.label)
-      .join("、");
+      .join(t.journal.categorySeparator);
     const journalText = [
-      `気分: ${moodLabel}`,
-      `出来事: ${categoryLabels}`,
-      `日記: ${body.trim() || "本文なし"}`,
+      t.journal.lineMood(moodLabel),
+      t.journal.lineEvents(categoryLabels),
+      t.journal.lineBody(body.trim() || t.journal.bodyEmpty),
     ].join("\n");
 
     setIsSubmitting(true);
@@ -329,7 +318,7 @@ export default function JournalPage() {
       if (!savedId) {
         // createEntry は id なしでは返らない契約だが、契約を二重に確かめる。
         // ここを通り抜けると、また「保存できていないのに完了画面」になる。
-        setSubmitError("日記を保存できませんでした。もう一度お試しください。");
+        setSubmitError(t.journal.saveFailed);
         return false;
       }
       setEntryId(savedId);
@@ -338,10 +327,10 @@ export default function JournalPage() {
     } catch (error) {
       const message =
         error instanceof EntryNotPersistedError
-          ? "日記を保存できませんでした。書いた内容は画面に残っています。もう一度お試しください。"
+          ? t.journal.saveFailedKept
           : error instanceof Error
-            ? `日記を保存できませんでした（${error.message}）`
-            : "日記を保存できませんでした。";
+            ? t.journal.saveFailedWithReason(error.message)
+            : t.journal.saveFailedShort;
       telemetry.submitFailed(error instanceof Error ? error.name : "unknown");
       setSubmitError(message);
       return false;
@@ -436,7 +425,7 @@ export default function JournalPage() {
       window.setTimeout(() => {
         setTurns((current) => [
           ...current,
-          { role: "ai", text: "わかりました。話したくなったら、いつでも聞かせてください。" },
+          { role: "ai", text: t.journal.probe.acknowledged },
         ]);
         window.setTimeout(() => setPhase("done"), 900);
       }, 700);
@@ -487,7 +476,7 @@ export default function JournalPage() {
               aria-valuemin={1}
               aria-valuemax={FORM_STEPS.length}
               aria-valuenow={formStepIndex + 1}
-              aria-label="入力の進み具合"
+              aria-label={t.journal.progressLabel}
             >
               {FORM_STEPS.map((name, index) => (
                 <span key={name} className={styles.progressSeg} data-done={index <= formStepIndex} />
@@ -511,14 +500,14 @@ export default function JournalPage() {
                 {/* ── 4-2 感情（必須） ─────────────────── */}
                 <div className="bl-label">
                   <Icon name="mood" size={20} />
-                  今日の気分
-                  <span className="bl-required">必須</span>
+                  {t.journal.stepTitle.mood}
+                  <span className="bl-required">{t.journal.required}</span>
                 </div>
                 <p className="bl-meta" style={{ marginTop: -4, marginBottom: 11 }}>
-                  いちばん近いものをひとつ選んでください。
+                  {t.journal.moodHint}
                 </p>
 
-                <div className={styles.moods} role="radiogroup" aria-label="今日の気分">
+                <div className={styles.moods} role="radiogroup" aria-label={t.journal.stepTitle.mood}>
                   {MOODS.map((option) => {
                     const selected = mood === option.value;
                     return (
@@ -546,7 +535,7 @@ export default function JournalPage() {
                 {moodError && (
                   <p role="alert" className={styles.error}>
                     <Icon name="error" size={16} fill />
-                    今日の気分を選んでください。
+                    {t.journal.moodRequired}
                   </p>
                 )}
               </>
@@ -556,17 +545,17 @@ export default function JournalPage() {
               <>
                 <label className="bl-label" htmlFor="recall">
                   <Icon name="psychology" size={20} />
-                  まず思い浮かぶこと
-                  <span className="bl-optional">任意</span>
+                  {t.journal.stepTitle.recall}
+                  <span className="bl-optional">{t.journal.optional}</span>
                 </label>
                 <p className="bl-meta" style={{ marginTop: -4, marginBottom: 11 }}>
-                  30秒くらい、考え込まずに最初に浮かんだことをそのまま書いてください。
+                  {t.journal.recallPrompt}
                 </p>
                 <textarea
                   id="recall"
                   className={`bl-textarea ${styles.bodyInput}`}
                   rows={3}
-                  placeholder="いま頭に浮かんでいること"
+                  placeholder={t.journal.recallPlaceholder}
                   value={recallText}
                   onFocus={() => telemetry.focus("first_recall_30")}
                   onBlur={() => telemetry.blur("first_recall_30")}
@@ -581,7 +570,7 @@ export default function JournalPage() {
                   }}
                 />
                 <p className="bl-micro" style={{ marginTop: 9 }}>
-                  正解はありません。書かずに次へ進んでも大丈夫です。
+                  {t.journal.recallHint}
                 </p>
               </>
             )}
@@ -591,11 +580,11 @@ export default function JournalPage() {
                 {/* ── 4-3 出来事（必須） ───────────────── */}
                 <div className="bl-label">
                   <Icon name="calendar_month" size={20} />
-                  今日あった出来事
-                  <span className="bl-required">必須</span>
+                  {t.journal.stepTitle.events}
+                  <span className="bl-required">{t.journal.required}</span>
                 </div>
                 <p className="bl-meta" style={{ marginTop: -4, marginBottom: 11 }}>
-                  あてはまるものをすべて選べます。
+                  {t.journal.eventsHint}
                 </p>
 
                 <div className={styles.categories}>
@@ -618,7 +607,7 @@ export default function JournalPage() {
                 {categoryError && (
                   <p role="alert" className={styles.error}>
                     <Icon name="error" size={16} fill />
-                    出来事を1つ以上選んでください。
+                    {t.journal.eventsRequired}
                   </p>
                 )}
               </>
@@ -629,16 +618,16 @@ export default function JournalPage() {
                 {/* ── 4-1 記述項目（任意） ─────────────── */}
                 <label className="bl-label" htmlFor="body">
                   <Icon name="edit_note" size={20} />
-                  今日のこと
-                  <span className="bl-optional">任意</span>
+                  {t.journal.stepTitle.note}
+                  <span className="bl-optional">{t.journal.optional}</span>
                 </label>
                 <p className="bl-meta" style={{ marginTop: -4, marginBottom: 11 }}>
-                  あったこと、印象に残ったこと、悩んでいること — 書きたいことだけ、自由に書いてください。
+                  {t.journal.noteHint}
                 </p>
                 <textarea
                   id="body"
                   className={`bl-textarea ${styles.bodyInput}`}
-                  placeholder="どんな一日でしたか"
+                  placeholder={t.journal.notePlaceholder}
                   value={body}
                   onFocus={() => telemetry.focus("journal_entry")}
                   onBlur={() => telemetry.blur("journal_entry")}
@@ -652,7 +641,7 @@ export default function JournalPage() {
                   }}
                 />
                 <p className="bl-micro" style={{ marginTop: 9 }}>
-                  書きたくないことは、書かなくて大丈夫です。
+                  {t.journal.noteHintOptional}
                 </p>
 
                 {/* 研究の固定自己評定（#165）。収集期間中の参加者にだけ出す。
@@ -688,20 +677,20 @@ export default function JournalPage() {
                   {/* アイコンは自前のサブセットフォントなので、すでに使われて
                       いる字形から選ぶ。追加すると欠字になる。 */}
                   <Icon name="send" size={16} />
-                  もう一度保存する
+                  {t.journal.retrySave}
                 </button>
               </div>
             )}
             <p className="bl-disclaimer">
               <Icon name="lock" size={15} />
-              日記は先生に全文が見えるわけではありません。
+              {t.journal.privacyNote}
             </p>
 
             <div className={styles.stepNav}>
               {formStepIndex > 0 && (
                 <button type="button" className="bl-btn bl-btn--ghost" onClick={goBack}>
                   <Icon name="arrow_back" size={18} />
-                  戻る
+                  {t.journal.back}
                 </button>
               )}
 
@@ -713,11 +702,15 @@ export default function JournalPage() {
                   onClick={() => void submit()}
                 >
                   <Icon name="check" size={20} />
-                  {isSubmitting ? "保存中…" : body.trim() ? "日記を提出する" : "書かずに提出する"}
+                  {isSubmitting
+                    ? t.journal.submitting
+                    : body.trim()
+                      ? t.journal.submit
+                      : t.journal.submitEmpty}
                 </button>
               ) : (
                 <button type="button" className="bl-btn bl-btn--primary bl-btn--lg" onClick={goNext}>
-                  次へ
+                  {t.journal.next}
                   <Icon name="arrow_forward" size={18} />
                 </button>
               )}
@@ -740,7 +733,7 @@ export default function JournalPage() {
             <button
               type="button"
               className="bl-icon-btn"
-              aria-label="ここで終える"
+              aria-label={t.journal.probe.end}
               onClick={endFollowUp}
             >
               <Icon name="close" size={20} />
@@ -758,7 +751,7 @@ export default function JournalPage() {
             ))}
 
             {thinking && (
-              <div className={`${styles.turn} ${styles.typing}`} aria-label="blescが考えています">
+              <div className={`${styles.turn} ${styles.typing}`} aria-label={t.journal.probe.thinking}>
                 <span />
                 <span />
                 <span />
@@ -792,9 +785,9 @@ export default function JournalPage() {
                     <button
                       type="button"
                       className="bl-btn bl-btn--ghost bl-btn--sm"
-                      onClick={() => answer("答えたくない")}
+                      onClick={() => answer(t.journal.probe.decline)}
                     >
-                      答えたくない
+                      {t.journal.probe.decline}
                     </button>
                     <button
                       type="button"
@@ -803,7 +796,7 @@ export default function JournalPage() {
                       onClick={() => answer(detailDraft.trim())}
                     >
                       <Icon name="send" size={16} />
-                      送信
+                      {t.journal.probe.send}
                     </button>
                   </div>
                 </div>
@@ -852,7 +845,7 @@ function DoneScreen({ userId, demo }: { userId: string; demo: boolean }) {
         </div>
 
         <h1 className="bl-h1 bl-rise" style={{ animationDelay: "480ms" }}>
-          今日の日記を記録しました
+          {t.journal.doneTitle}
         </h1>
         <p className="bl-body bl-rise" style={{ animationDelay: "560ms" }}>
           {formatDate(TODAY)}の記録です。書いてくれてありがとう。
@@ -872,11 +865,11 @@ function DoneScreen({ userId, demo }: { userId: string; demo: boolean }) {
         <div className={`${styles.doneActions} bl-rise`} style={{ animationDelay: "760ms" }}>
           <TransitionLink href="/" className="bl-btn bl-btn--primary">
             <Icon name="home" size={19} />
-            ホームに戻る
+            {t.journal.home}
           </TransitionLink>
           <TransitionLink href="/chat" className="bl-btn bl-btn--secondary">
             <Icon name="chat_bubble" size={19} />
-            もう少し話す
+            {t.journal.talkMore}
           </TransitionLink>
         </div>
       </section>
