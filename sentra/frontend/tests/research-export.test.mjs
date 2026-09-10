@@ -109,6 +109,15 @@ describe("buildResearchDataset — pseudonymity", () => {
     assert.equal(rows[0].day_index, 3); // window opens 9/6 JST, entry is 9/8 JST
   });
 
+  it("the guard catches a row that regained an absolute time", () => {
+    // The fix above removed the one field that leaked. This asserts the guard
+    // now refuses the whole class, so a later change that spreads another
+    // timestamp column into a row fails here rather than shipping.
+    const rows = build().rows;
+    rows[0].raw_text_expires_at = "2027-03-07T00:00:00Z";
+    assert.equal(identityLeakIn(rows), "raw_text_expires_at");
+  });
+
   it("keeps a management reference to the encrypted original", () => {
     const { rows } = build();
     assert.equal(rows[0].raw_text_ref, "entry-1");
@@ -251,7 +260,36 @@ describe("buildResearchDataset — accounting", () => {
       not_enrolled: 0,
       no_research_consent: 0,
       collection_not_started: 0,
+      outside_window: 0,
     });
+  });
+
+  it("excludes an entry written before the participant's window opened", () => {
+    // `entries` has no study id, so selecting by participant alone would stamp
+    // a pre-study journal with this study's research_code and protocol and hand
+    // it over as day 0 of a window it predates.
+    const result = build({ entries: [entry({ created_at: "2026-08-01T02:00:00Z" })] });
+    assert.deepEqual(result.rows, []);
+    assert.equal(result.excluded.outside_window, 1);
+  });
+
+  it("excludes an entry written after the window closed", () => {
+    const result = build({
+      enrollments: [enrollment({ collection_ends_at: "2026-09-10T00:00:00Z" })],
+      entries: [entry({ created_at: "2026-09-20T02:00:00Z" })],
+    });
+    assert.deepEqual(result.rows, []);
+    assert.equal(result.excluded.outside_window, 1);
+  });
+
+  it("exports the retention expiry as a study day, never as a timestamp", () => {
+    // The expiry is submission time plus a fixed interval, so an absolute value
+    // hands the submission's calendar date back by subtraction — the same
+    // re-identification dropping `created_at` was meant to prevent.
+    const [row] = build({ entries: [entry({ raw_text_expires_at: "2027-03-01T00:00:00Z" })] }).rows;
+    assert.equal(typeof row.raw_text_expires_day, "number");
+    assert.ok(!("raw_text_expires_at" in row), "the absolute expiry is still on the row");
+    assert.ok(!JSON.stringify(row).includes("2027-03-01"), "the absolute expiry leaked");
   });
 });
 

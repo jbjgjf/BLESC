@@ -14,6 +14,8 @@ import { CATEGORIES, MOODS, TODAY, formatDate } from "@/lib/blesc/labels";
 import { EntryTelemetryCollector, clientTimeZone, newSessionId } from "@/lib/telemetry";
 import { EMPTY_STATS, type JournalStats } from "@/lib/journalStats";
 import type { EventCategory, Mood } from "@/lib/blesc/types";
+import { SelfReportBlock, type SelfReportValues } from "@/components/SelfReportBlock";
+import type { SelfReportItemId } from "@/lib/pilotSelfReport";
 import styles from "./journal.module.css";
 
 /* ── 4-6 対話型AIサポートの台本 ─────────────────────────────
@@ -113,6 +115,29 @@ export default function JournalPage() {
   const [entrySessionId, setEntrySessionId] = useState<string | null>(null);
 
   /**
+   * 研究の収集期間中かどうかと、固定自己評定の回答（#165）。
+   *
+   * 表示の判断にだけ使う。保存するかどうかはサーバーが自分で判定するので
+   * （`lib/server/collectionMode.ts`）、ここが false になっても
+   * 「研究対象でない人の回答が保存される」は起こらない。
+   */
+  const [collecting, setCollecting] = useState(false);
+  const [selfReport, setSelfReport] = useState<SelfReportValues>({});
+
+  /**
+   * サーバーがこの提出について実際に使った判定（#165）。
+   *
+   * `collecting` は画面を描くための先読みで、確認が終わる前に提出されたり
+   * 問い合わせが失敗したりすると false のままになる。追加質問を出すかどうかを
+   * それで決めると、サーバーが収集期間中と判定した提出に追加質問が出てしまう。
+   *
+   * 保存の応答に入っている `collection_only` は、その提出について実際に使われた
+   * 答えなので、ここだけは先読みではなくこちらを見る。state ではなく ref なのは、
+   * await の直後に同じ関数の中で読むから。
+   */
+  const serverCollectionOnly = useRef<boolean | null>(null);
+
+  /**
    * 提出ごとに1つ振る id。再試行しても同じ値を送るので、サーバー側で
    * 同じ提出だと分かり、二重に保存されない（#132）。
    */
@@ -153,6 +178,23 @@ export default function JournalPage() {
   useEffect(() => () => {
     if (advanceTimer.current) window.clearTimeout(advanceTimer.current);
   }, []);
+
+  /**
+   * 収集期間中かどうかを一度だけ確認する（#165）。
+   *
+   * デモでは問い合わせない。デモは Supabase に触れないので、答えは常に
+   * 「収集期間ではない」であり、研究の項目はデモ画面に出ない。
+   */
+  useEffect(() => {
+    if (demo) return;
+    let cancelled = false;
+    void ApiClient.isCollecting().then((open) => {
+      if (!cancelled) setCollecting(open);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [demo]);
 
   /**
    * 自動で進む予約を取り消す。手で操作したのに、あとから予約が発火して
@@ -274,11 +316,15 @@ export default function JournalPage() {
         journal_text: journalText,
         recall_text: recallText.trim(),
         client_submission_id: submissionIdRef.current,
+        // 収集期間中だけ送る。期間外は項目そのものを出していないので、
+        // 送るべき回答が存在しない（#165）。
+        self_report: collecting ? selfReport : undefined,
         telemetry: telemetry.finalize({
           timeZone: clientTimeZone(),
           userAgent: typeof navigator === "undefined" ? undefined : navigator.userAgent,
         }),
       });
+      serverCollectionOnly.current = result.collection_only ?? null;
       const savedId = result.supabase_sync?.entry_id ?? null;
       if (!savedId) {
         // createEntry は id なしでは返らない契約だが、契約を二重に確かめる。
@@ -318,7 +364,21 @@ export default function JournalPage() {
     }
     if (!(await persistJournal())) return;
 
-    if (needsFollowUp()) {
+    // 収集期間中は追加質問を出さない（#165）。
+    //
+    // 追加質問は「つらい日」「本文が短い日」に出る適応的なもので、それ自体が
+    // 介入になる。問いかけられた人は、翌日の日記を問いかけられた人として書く。
+    // 書き方を測る研究が、同時に書き方へ介入することはできない。
+    //
+    // 出さないことが第一の制御で、サーバー側の拒否はその裏づけ。ここを通り
+    // 抜けても回答は研究記録に入らない。
+    //
+    // 判断にはサーバーの答えを優先する。`collecting` は問い合わせが終わるまで
+    // false なので、それだけで決めると「先読みが間に合わなかった提出」に
+    // 追加質問が出る。サーバーの答えが無いのは Supabase 未設定などの場合で、
+    // そのときだけ先読みに落とす。
+    const collectionOnly = serverCollectionOnly.current ?? collecting;
+    if (needsFollowUp() && !collectionOnly) {
       setPhase("followup");
       askStep(0);
     } else {
@@ -594,6 +654,18 @@ export default function JournalPage() {
                 <p className="bl-micro" style={{ marginTop: 9 }}>
                   書きたくないことは、書かなくて大丈夫です。
                 </p>
+
+                {/* 研究の固定自己評定（#165）。収集期間中の参加者にだけ出す。
+                    通常利用の日記画面はこれまでどおり変わらない。 */}
+                {collecting && (
+                  <SelfReportBlock
+                    values={selfReport}
+                    disabled={isSubmitting}
+                    onChange={(id: SelfReportItemId, value: number | null) =>
+                      setSelfReport((current) => ({ ...current, [id]: value }))
+                    }
+                  />
+                )}
               </>
             )}
           </fieldset>

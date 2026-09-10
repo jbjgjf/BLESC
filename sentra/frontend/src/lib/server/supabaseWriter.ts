@@ -26,8 +26,11 @@ import {
   consentSnapshot,
   evalDatasetAllowed,
   rawTextRetentionAllowed,
+  researchUseAllowed,
   telemetryAllowed,
 } from "@/lib/consent";
+import { hasSelfReportContent, type NormalizedSelfReport } from "@/lib/pilotSelfReport";
+import { PII_SCANNER_VERSION, forStorage, scanForPii, summarizePii } from "@/lib/piiScanner";
 import { consentMismatch, loadConsentState } from "@/lib/server/consentStore";
 import { encryptRawText, rawTextExpiryFrom } from "@/lib/server/rawTextCrypto";
 import {
@@ -51,6 +54,10 @@ export type SupabaseSyncResult = {
   graph_snapshot_id?: string | null;
   insight_id?: string | null;
   entry_session_id?: string | null;
+  /** The stored self-report row, when one was written (#165). Null when the
+   *  submission carried no self-report, or when research consent does not
+   *  cover storing one — `consent_gated` says which. */
+  self_report_id?: string | null;
   /** The stored insight, so the caller renders what landed rather than the
    *  empty placeholder it posted. Absent when no insight row was written. */
   anomaly_result?: Record<string, unknown>;
@@ -157,6 +164,31 @@ export type SubmissionContext = {
    * requests carrying the same id resolve to one row (#132).
    */
   clientSubmissionId?: string | null;
+  /**
+   * The fixed self-report block, already validated (#165). Normalised by the
+   * route so that this module stores a decided value set rather than deciding
+   * what an out-of-range slider means.
+   */
+  selfReport?: NormalizedSelfReport | null;
+  /**
+   * True while this participant's collection window is open (#165).
+   *
+   * Resolved by the route from `collectionOnlyForParticipant` and passed in
+   * rather than re-read here, so that one request asks the question once and
+   * every write it performs agrees on the answer.
+   *
+   * What it withholds is the *derived* record: the graph snapshot, the graph
+   * version history, the insight row and the evaluation example. The
+   * participant's own submission — text, telemetry, self-report, content
+   * hashes — is stored exactly as it would be otherwise.
+   *
+   * Withholding at the write, and not only at the screen, is the difference
+   * between a study that does not show a participant an interpretation and a
+   * study that does not form one. The interpretation is what the educator
+   * alerts read, so a stored insight is a reading of a participant that
+   * somebody can act on, whether or not the participant sees it.
+   */
+  collectionOnly?: boolean;
 };
 
 const MAX_INTERACTION_EVENTS = 1200;
@@ -573,6 +605,13 @@ export async function writeEntryResult(
   // `encryptRawText` returns null and nothing is stored — a deployment missing
   // its key retains no text rather than retaining it in the clear.
   let rawTextColumns: Json = { raw_text: null, is_masked: true };
+  // Kinds and character offsets of anything the scanner took for an identifier,
+  // computed here because this is the only place in the write that holds the
+  // plaintext. Never the matched text itself (#167) — `forStorage` drops it.
+  let piiSummary: {
+    counts: ReturnType<typeof summarizePii>;
+    findings: ReturnType<typeof forStorage>;
+  } | null = null;
   if (rawTextRetentionAllowed(consentState)) {
     const retained = [
       journalText.trim() ? `Journal entry:\n${journalText.trim()}` : "",
@@ -580,6 +619,10 @@ export async function writeEntryResult(
     ]
       .filter(Boolean)
       .join("\n\n");
+    if (retained) {
+      const findings = scanForPii(retained);
+      piiSummary = { counts: summarizePii(findings), findings: forStorage(findings) };
+    }
     const sealed = retained ? await encryptRawText(retained) : null;
     if (sealed) {
       rawTextColumns = {
@@ -621,7 +664,7 @@ export async function writeEntryResult(
     );
     entryId = entryRow.id as string;
 
-    if (computed.graph_snapshot) {
+    if (computed.graph_snapshot && !context.collectionOnly) {
       const snapshot = computed.graph_snapshot;
       const day = asDay(snapshot.day) ?? new Date().toISOString().slice(0, 10);
       const { diff: temporalDiff, previousDayGraph } = await temporalDiffAgainstSupabase(
@@ -658,7 +701,7 @@ export async function writeEntryResult(
       graphSnapshotId = graphRow.id as string;
     }
 
-    if (computed.anomaly_result || computed.explanation) {
+    if ((computed.anomaly_result || computed.explanation) && !context.collectionOnly) {
       insightDay =
         asDay(computed.anomaly_result?.day) ??
         asDay(computed.explanation?.day) ??
@@ -815,6 +858,96 @@ export async function writeEntryResult(
     });
   }
 
+  // The fixed self-report block (#165).
+  //
+  // Written after `entry_sessions` so the row can carry the session id: the
+  // acceptance criterion is that the scale version and the body sit on the same
+  // entry *or* session, and carrying both costs one column.
+  //
+  // Two gates, and both are the server's own answer rather than the client's.
+  //
+  //   - `context.collectionOnly`, resolved from `pilot_collection_open`. These
+  //     five numbers are the study's instrument and exist only inside a
+  //     collection window. Without this gate a tab left open since last week
+  //     keeps writing pilot measurements after the enrollment completed, and a
+  //     direct API caller can write them before it opened — both of which
+  //     contaminate the series the export then attributes to the pilot. The
+  //     body of the request cannot move this gate; only the enrollment state
+  //     can.
+  //
+  //   - Research consent, read at write time. The journal text is the
+  //     participant's own record and is stored either way; these numbers exist
+  //     only to be analysed, so a participant who never granted research use —
+  //     or who revoked it yesterday — writes no reading today.
+  let selfReportId: string | null = null;
+  const selfReport = context.selfReport ?? null;
+  if (selfReport && hasSelfReportContent(selfReport)) {
+    if (!context.collectionOnly) {
+      consentGated.push("outside_collection_window:pilot_self_reports");
+    } else if (!researchUseAllowed(consentState)) {
+      consentGated.push("pilot_self_reports");
+    } else {
+      await mirror("pilot_self_reports", async () => {
+        // Upsert on (owner, entry): a retried submission resolves to the entry
+        // that already exists, and its reading updates rather than doubling.
+        const row = unwrap(
+          "pilot_self_reports upsert",
+          await client
+            .from("pilot_self_reports")
+            .upsert(
+              {
+                owner_user_id: ownerUserId,
+                participant_id: participantId,
+                entry_id: entryId,
+                entry_session_id: entrySessionId,
+                client_submission_id: context.clientSubmissionId ?? null,
+                schema_version: selfReport.schema_version,
+                ...selfReport.values,
+                rejected_json: selfReport.rejected,
+              },
+              { onConflict: "owner_user_id,entry_id" },
+            )
+            .select("id")
+            .single(),
+        );
+        selfReportId = row.id as string;
+      });
+    }
+  }
+
+  // The PII review queue (#167).
+  //
+  // Scanned here, at write time, and not at export time: by the time an export
+  // runs the text may already have been purged, and a reviewer would then be
+  // asked to clear a record whose content no longer exists. `piiSummary` is
+  // computed above, next to the plaintext, and holds kinds and offsets only —
+  // no matched text — so this row is safe to read while counting a queue.
+  //
+  // Only retained text is queued. Text that was never stored cannot reach an
+  // export, so there is nothing for a reviewer to decide about it.
+  if (piiSummary) {
+    const { counts, findings } = piiSummary;
+    // The highest confidence present, which is what a reviewer triages by.
+    const topConfidence = counts.high > 0 ? "high" : counts.medium > 0 ? "medium" : counts.low > 0 ? "low" : null;
+    await mirror("pilot_pii_reviews", async () => {
+      const insert = await client.from("pilot_pii_reviews").upsert(
+        {
+          owner_user_id: ownerUserId,
+          participant_id: participantId,
+          entry_id: entryId,
+          scanner_version: PII_SCANNER_VERSION,
+          finding_count: counts.total,
+          max_confidence: topConfidence,
+          kinds: Object.keys(counts.kinds).sort(),
+          findings_json: findings,
+          status: counts.total > 0 ? "pending" : "clear",
+        },
+        { onConflict: "entry_id" },
+      );
+      if (insert.error) throw new Error(`pilot_pii_reviews upsert: ${insert.error.message}`);
+    });
+  }
+
   const embeddingArtifacts = computed.research_artifacts?.embedding_artifacts ?? [];
   if (embeddingArtifacts.length > 0) {
     await mirror("entry_embeddings", async () => {
@@ -842,6 +975,29 @@ export async function writeEntryResult(
 
   // model_runs is not bookkeeping: the educator cohort view reads the
   // safety_assessment rows. Losing them empties the safety column.
+  //
+  // **This runs during a collection window too, and that is deliberate (#165).**
+  //
+  // Everything else derived from a submission is withheld while a window is
+  // open — the graph, the insight, the longitudinal series — because those are
+  // interpretations of a participant and the study said it would not form them.
+  // The safety assessment is the one exception, for two reasons:
+  //
+  //   1. It is not inference. `assessSafety` is deterministic rules over the
+  //      text, run locally, with no model and no external call. What #165
+  //      switches off is a system forming and showing readings of a person; a
+  //      keyword rule that notices 死にたい is not that.
+  //
+  //   2. Removing it would take the safety net off the study. The pilot
+  //      collects distress writing from minors for three weeks, and #168's
+  //      scenario list includes a crisis-disclosure drill that this row is what
+  //      triggers. A study that stops noticing a student in danger for the
+  //      duration of the study is not a safer study.
+  //
+  // So during a window an educator sees the safety flag and no anomaly score:
+  // the signal that someone may need help, and none of the interpretation. That
+  // split is the intent, not an oversight — a reviewer who reads the withheld
+  // list above and wonders why this is not on it should find this paragraph.
   await mirror("model_runs", async () => {
     const runInsert = await client
       .from("model_runs")
@@ -914,7 +1070,7 @@ export async function writeEntryResult(
     if (extractionInsert.error) throw new Error(`extractions insert: ${extractionInsert.error.message}`);
   });
 
-  if (computed.graph_snapshot) {
+  if (computed.graph_snapshot && !context.collectionOnly) {
     await mirror("graph_versions", async () => {
       const snapshot = computed.graph_snapshot!;
       const existing = await client
@@ -973,7 +1129,14 @@ export async function writeEntryResult(
     });
   }
 
-  await mirror("longitudinal_features", async () => {
+  // Derived series, withheld for the same reason the insight row is (#165).
+  //
+  // A collection-only submission has an empty extraction, so these rows would
+  // be a run of zeroes — and a flat time series reads as a measurement of a
+  // participant who changed in no way, not as an absence of measurement.
+  // Nothing is legible as nothing; a series of zeroes is not.
+  if (context.collectionOnly) consentGated.push("collection_only:longitudinal_features");
+  else await mirror("longitudinal_features", async () => {
     const snapshot = computed.graph_snapshot;
     const day =
       asDay(snapshot?.day) ?? asDay(computed.anomaly_result?.day) ?? new Date().toISOString().slice(0, 10);
@@ -1020,7 +1183,12 @@ export async function writeEntryResult(
     if (insert.error) throw new Error(`longitudinal_features insert: ${insert.error.message}`);
   });
 
-  if (!evalDatasetAllowed(consentState)) {
+  if (context.collectionOnly) {
+    // The extraction that would be the example is the empty one this mode
+    // stores. An evaluation dataset of empty extractions teaches nothing and
+    // costs review time to discover.
+    consentGated.push("collection_only:eval_examples");
+  } else if (!evalDatasetAllowed(consentState)) {
     consentGated.push("eval_examples");
   } else {
     await mirror("eval_examples", async () => {
@@ -1048,13 +1216,14 @@ export async function writeEntryResult(
     });
   }
 
-  console.info("[supabase-sync] core rows written", { entryId, graphSnapshotId, insightId, warnings, consentGated });
+  console.info("[supabase-sync] core rows written", { entryId, graphSnapshotId, insightId, selfReportId, warnings, consentGated });
   return {
     status: "written",
     entry_id: entryId,
     graph_snapshot_id: graphSnapshotId,
     insight_id: insightId,
     entry_session_id: entrySessionId,
+    self_report_id: selfReportId,
     duplicate: false,
     consent_gated: consentGated,
     // The insight travels back so the caller renders what was stored rather

@@ -340,6 +340,17 @@ export interface EntrySubmissionResponse {
     pipeline_version?: string;
   };
   /**
+   * Whether the server resolved this submission as inside a collection window
+   * (#165). Authoritative in a way no client-side lookup is: it is the answer
+   * the server actually used when deciding what to store for *this* request.
+   *
+   * A client that asks the enrollment question itself has a window between page
+   * load and submit in which the answer is still unknown, and defaulting that
+   * to "not collecting" offers the participant an adaptive follow-up the study
+   * had switched off. Reading it back from the response closes that window.
+   */
+  collection_only?: boolean;
+  /**
    * What the backend wrote to Supabase for this submission (#2). `written`
    * carries the row ids; `skipped` means no Supabase was configured, which is
    * the local-development path; `failed` means the entry computed but is not

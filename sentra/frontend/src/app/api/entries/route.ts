@@ -13,6 +13,7 @@ import {
   collectionOnlyExtraction,
   collectionOnlyForParticipant,
 } from "@/lib/server/collectionMode";
+import { normalizeSelfReport } from "@/lib/pilotSelfReport";
 import { recordSubmissionFailure } from "@/lib/server/submissionFailures";
 import { gateForUser, pilotGateEnforced } from "@/lib/server/pilotGate";
 import { loadEnrollmentsForUser } from "@/lib/server/pilotStore";
@@ -34,6 +35,13 @@ type EntryRequest = {
   /** Stable across retries of one submission, so a retry cannot create a
    *  second entry (#132). */
   client_submission_id?: string;
+  /**
+   * The fixed self-report block (#165): mood, stress, sleep quality, sleep
+   * hours, event intensity. Every item optional. Validated against the pinned
+   * scale below — an out-of-range value is rejected and recorded as a
+   * rejection, never clamped into a reading the participant did not give.
+   */
+  self_report?: Record<string, unknown>;
   // No identity fields. The owner and participant are derived from the
   // caller's session below, never read from the body — the write uses the
   // service-role key, which bypasses RLS, so a body-supplied id would let any
@@ -267,6 +275,10 @@ export async function POST(request: NextRequest) {
   const userId = searchParams.get("user_id") || "research_user_01";
   const observationType = searchParams.get("observation_type") || "daily";
   const payload = await request.json().catch(() => ({})) as EntryRequest;
+  // Validated here, in the route, so that the writer stores a decided value set
+  // rather than deciding what an out-of-range slider means. Total: a malformed
+  // self-report never costs the participant their journal text.
+  const selfReport = normalizeSelfReport(payload.self_report);
   const journalText = payload.journal_text || payload.text || "";
   const recallText = payload.recall_text || "";
   const entryText = [
@@ -508,6 +520,11 @@ export async function POST(request: NextRequest) {
       telemetry: payload.telemetry,
       consent: payload.consent,
       clientSubmissionId: payload.client_submission_id ?? null,
+      selfReport,
+      // Resolved once above and passed down, so the extraction gate and the
+      // write gate cannot disagree about whether this participant is inside a
+      // collection window.
+      collectionOnly,
     },
   );
 
@@ -515,7 +532,19 @@ export async function POST(request: NextRequest) {
   // it the journal screen cannot distinguish "the study withheld extraction"
   // from "extraction failed", and would show the failure copy for a submission
   // that worked exactly as designed.
-  const body = { ...computed, supabase_sync: supabaseSync, collection_only: collectionOnly };
+  // `self_report` echoes what was accepted and what was not. A client that sent
+  // an out-of-range value gets told so rather than seeing its slider silently
+  // become a blank in the dataset (#165).
+  const body = {
+    ...computed,
+    supabase_sync: supabaseSync,
+    collection_only: collectionOnly,
+    self_report: {
+      schema_version: selfReport.schema_version,
+      answered: selfReport.answered,
+      rejected: selfReport.rejected,
+    },
+  };
   const durable = supabaseSync.status === "written" && Boolean(supabaseSync.entry_id);
 
   if (!durable) {

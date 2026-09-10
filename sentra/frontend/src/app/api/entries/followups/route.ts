@@ -13,6 +13,11 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/server/api";
+import {
+  COLLECTION_ONLY_MESSAGE,
+  COLLECTION_ONLY_STATUS,
+  collectionOnlyForParticipant,
+} from "@/lib/server/collectionMode";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 
 export const runtime = "nodejs";
@@ -73,6 +78,33 @@ export async function POST(request: NextRequest) {
 
   const service = serviceRoleClient();
   if (!service) return jsonError("Supabase is not configured.", 503);
+
+  // Adaptive follow-ups do not run during a collection window (#165).
+  //
+  // The follow-up script is adaptive by design: it fires for a hard day, a low
+  // mood, or a body too short to read. That makes it an intervention — the
+  // participant who is asked "何がいちばん大変でしたか" has been prompted to
+  // reflect further, and tomorrow's entry is written by someone who was
+  // prompted. A study measuring how people write cannot also be nudging them.
+  //
+  // The screen is the first control — the journal page does not offer the probe
+  // during a window — and this is the backstop, for a stale tab, a replayed
+  // request, or a client build from before the study started.
+  //
+  // What the backstop can still do is keep the answer out of the research
+  // record; by the time a request arrives, the question has already been asked
+  // and the nudge has already happened. That is why the refusal is worth having
+  // even though it cannot undo the intervention, and why the display gate above
+  // is the one that matters.
+  //
+  // The gate fails closed (`collectionMode.ts`), so a database error refuses the
+  // write rather than allowing it. During an outage that costs a non-pilot
+  // student's follow-up answer, which is the cheaper of the two mistakes: the
+  // other direction puts an adaptive probe's answer into a study that says it
+  // collected none.
+  if (await collectionOnlyForParticipant(service, participant.id)) {
+    return jsonError(COLLECTION_ONLY_MESSAGE, 409, { status: COLLECTION_ONLY_STATUS });
+  }
 
   // Upsert on (owner, entry, probe): a retried request — the network dropped,
   // the student answered again after a reconnect — updates the answer rather

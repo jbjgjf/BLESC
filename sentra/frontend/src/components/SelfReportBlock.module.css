@@ -1,0 +1,90 @@
+/* The fixed self-report block (#165). Uses the product's own tokens so the
+   study screen is the product, not a form bolted onto it. */
+
+.block {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--bl-line);
+}
+
+.item {
+  border: 0;
+  padding: 0;
+  margin: 16px 0 0;
+  min-inline-size: 0; /* a fieldset defaults to min-content and would not shrink */
+}
+
+.itemLabel {
+  padding: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--bl-ink);
+}
+
+.anchors {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 3px 0 7px;
+  font-size: 0.72rem;
+  color: var(--bl-ink-3);
+}
+
+.scale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.point {
+  flex: 1 1 auto;
+  min-width: 38px;
+  min-height: 40px; /* a touch target a thumb can hit on a phone */
+  padding: 6px 8px;
+  border: 1px solid var(--bl-line);
+  border-radius: 9px;
+  background: var(--bl-surface);
+  color: var(--bl-ink-2);
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color 0.16s var(--bl-ease), background 0.16s var(--bl-ease);
+}
+
+.point:hover { border-color: var(--bl-blue); background: var(--bl-mist); }
+.point:active { transform: scale(0.96); }
+.point:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+
+.point[data-selected="true"] {
+  border-color: var(--bl-blue);
+  background: var(--bl-blue);
+  color: #fff;
+}
+
+/* 「答えない」 is the same height and the same weight as the numbers. Making it
+   smaller or quieter turns an optional item into one that is answered under
+   mild pressure, and an instrument answered under pressure measures the
+   pressure. It is wider only so the label fits. */
+.skip {
+  flex: 0 0 auto;
+  min-width: 5.5rem;
+}
+
+.select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--bl-line);
+  border-radius: 9px;
+  background: var(--bl-surface);
+  color: var(--bl-ink);
+  font-size: 0.9rem;
+}
+
+.select:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
+
+.item:disabled .point,
+.item:disabled .select {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

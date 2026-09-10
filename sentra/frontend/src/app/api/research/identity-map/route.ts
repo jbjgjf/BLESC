@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
 
   let query = service
     .from("pilot_enrollments")
-    .select("participant_id, research_code, cohort, state, collection_started_at, withdrawn_at")
+    .select("participant_id, research_code, cohort, state, collection_started_at, collection_ends_at, withdrawn_at")
     .order("research_code", { ascending: true });
   if (researchCode) query = query.eq("research_code", researchCode);
 

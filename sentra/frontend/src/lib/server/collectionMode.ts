@@ -33,6 +33,38 @@
  * `tests/collection-mode.test.mjs` scans `src/app/api` for `api.openai.com` and
  * fails on a route that reaches it without importing this file, so a sixth send
  * point cannot be added quietly.
+ *
+ * ---------------------------------------------------------------------------
+ * Two things that are switched off without any external call being involved
+ *
+ * #165 asks for more than "no external send". The AI reply, the generated
+ * advice, the adaptive follow-up, the personal graph and the educator inference
+ * all stop during a collection window, and two of those never touch the
+ * network:
+ *
+ *   - `api/entries/followups` refuses to store an adaptive probe's answer. The
+ *     follow-up script fires for a hard day, a low mood, or a body too short to
+ *     read — which makes it an intervention. A participant asked
+ *     「何がいちばん大変でしたか」 writes tomorrow's entry having been
+ *     prompted, and a study measuring how people write cannot also prompt them.
+ *
+ *   - `lib/server/supabaseWriter` withholds the derived record: the graph
+ *     snapshot, its version history, the insight row, the longitudinal series
+ *     and the evaluation example. Those are readings *of* a participant, and
+ *     the educator alerts are built from the insight row — so storing one means
+ *     somebody can act on an interpretation the study said it would not form,
+ *     whether or not the participant is ever shown it. The submission itself —
+ *     text, telemetry, self-report, content hashes — is stored exactly as it
+ *     would be otherwise.
+ *
+ * The one exception, stated here so the list above is not read as exhaustive:
+ * the deterministic **safety assessment** keeps running and keeps reaching the
+ * educator view. It is rules over the text rather than inference, and it is
+ * what a crisis disclosure depends on — a study that stops noticing a student
+ * in danger for the duration of the study is not a safer study. During a window
+ * an educator therefore sees the safety flag and no anomaly score. The full
+ * argument is at the `model_runs` mirror in `supabaseWriter`.
+ * ---------------------------------------------------------------------------
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
