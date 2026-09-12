@@ -48,7 +48,26 @@ const JAPANESE = /[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]/;
 /** Two or more consecutive Latin letters — enough to be a word, not a unit. */
 const LATIN_WORD = /[A-Za-z]{2,}/g;
 /** Punctuation that only appears in code, never in a sentence on screen. */
-const CODE_FRAGMENT = /;|=>|&&|\?\?|===|!==|\)\s*:|^\s*:\s|^\s*return\s*\(/;
+const CODE_FRAGMENT = /=>|&&|\?\?|===|!==|\)\s*:|^\s*:\s|^\s*return\s*\(/;
+
+/**
+ * A semicolon is a code marker everywhere except inside a sentence.
+ *
+ * It used to sit in `CODE_FRAGMENT` beside `=>` and `&&`, and it cost a real
+ * string: `Layout is visual; it is not diagnostic.` sat on the graph screen in
+ * English for as long as this file has existed, because the scan read its
+ * semicolon and classified the sentence as code. English prose uses
+ * semicolons; a rule that throws away everything containing one throws away
+ * prose.
+ *
+ * Dropping the rule outright is worse — the JSX-text sweep reads the span
+ * between two tags, which for a component body is `;\n\n  return (`, and 27
+ * of those arrived the moment the semicolon stopped excluding them. So the
+ * semicolon disqualifies text only when something else in it is also code:
+ * a bracket, an equals sign, or a keyword. A sentence has none of those.
+ */
+const SEMICOLON = /;/;
+const CODE_NEIGHBOUR = /[()[\]{}=]|\b(const|let|var|return|await|function|import|export)\b/;
 
 /**
  * Shapes that are always an identifier rather than copy: paths, MIME types,
@@ -184,7 +203,9 @@ const HTML_ENTITY = /&[a-z]+;|&#\d+;/gi;
 
 /** True when the text reads as copy rather than as an identifier. */
 function looksLikeCopy(text, kind) {
-  if (CODE_FRAGMENT.test(text.replace(HTML_ENTITY, " "))) return false;
+  const withoutEntities = text.replace(HTML_ENTITY, " ");
+  if (CODE_FRAGMENT.test(withoutEntities)) return false;
+  if (SEMICOLON.test(withoutEntities) && (kind !== "jsx-text" || CODE_NEIGHBOUR.test(withoutEntities))) return false;
   // An id built from a template — `demo-entry-${n}` — is the same shape as one
   // written out, so the shapes are tried against the interpolation-free form as
   // well. Prose is unaffected: "こんにちは、${name}さん" matches none of them.

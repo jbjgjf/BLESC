@@ -29,7 +29,7 @@ export default function SchoolPage() {
       <header className={styles.head}>
         <div>
           <h1 className="bl-h1">{S.title}</h1>
-          <p className="bl-meta">{stats.scope} ・ 在籍 {stats.studentCount.toLocaleString()}名</p>
+          <p className="bl-meta">{stats.scope} ・ 在籍 {stats.studentCount.toLocaleString("ja-JP")}名</p>
         </div>
         <div className={styles.scopeSwitch}>
           <button
@@ -64,7 +64,7 @@ export default function SchoolPage() {
         <>
           <section className="bl-grid bl-grid--3 bl-rise">
             <div className="bl-card">
-              <span className="bl-num">{stats.studentCount.toLocaleString()}</span>
+              <span className="bl-num">{stats.studentCount.toLocaleString("ja-JP")}</span>
               <p className="bl-meta">{S.studentCount}</p>
             </div>
             <div className="bl-card">

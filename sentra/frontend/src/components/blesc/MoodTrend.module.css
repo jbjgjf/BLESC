@@ -57,7 +57,26 @@
   white-space: nowrap;
   flex: 1;
   text-align: center;
+  /* One cell per data point, so the labels line up with the chart above. The
+     cells are `flex: 1` from a zero basis, which should divide the row into N
+     equal parts — but a flex item's `min-width` defaults to `auto`, and with
+     `nowrap` that floor is the full width of the date. Twenty-one dates then
+     demand ~800px whatever the container is, and on a phone the whole page
+     scrolled sideways (#116, found in the display QA). The hidden cells are
+     hidden with `visibility`, so they were claiming that width too, invisibly.
+
+     `min-width: 0` lets the cells be the width they were meant to be. A shown
+     label is wider than its cell and overflows it, which is fine: what it
+     overflows into is its hidden neighbours, and `labelEvery` keeps three
+     empty cells between any two shown ones. */
+  min-width: 0;
 }
+
+/* The first and last labels have no neighbour on one side, so they are
+   anchored to the row's edges rather than centred — otherwise half of each
+   would hang outside the card. */
+.dates > span:first-child { text-align: left; }
+.dates > span:last-child { text-align: right; }
 
 .dates > span[data-show="false"] {
   visibility: hidden;

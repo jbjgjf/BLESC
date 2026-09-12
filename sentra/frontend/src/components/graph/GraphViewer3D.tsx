@@ -367,7 +367,7 @@ export function GraphViewer3D({
           </span>
           <span className="rounded border border-slate-200 bg-white px-3 py-1">{modelLabel}</span>
           <span className="rounded border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800">
-            Layout is visual; it is not diagnostic.
+            {t.graph.layoutNotice}
           </span>
         </div>
       </div>

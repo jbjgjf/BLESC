@@ -78,7 +78,10 @@ export function generateCounselorSummary(events: CounselorTimelineEvent[], now =
 
 export function counselorSummaryToText(summary: CounselorSupportSummary) {
   const range = summary.date_range.from && summary.date_range.to
-    ? `${new Date(summary.date_range.from).toLocaleDateString()} – ${new Date(summary.date_range.to).toLocaleDateString()}`
+    // Pinned, not left to the runtime: this string is copied into the summary
+    // a student shares with a counsellor, and it is generated wherever the
+    // code happens to run (#116).
+    ? `${new Date(summary.date_range.from).toLocaleDateString("ja-JP")} – ${new Date(summary.date_range.to).toLocaleDateString("ja-JP")}`
     : "記録の期間が取得できません";
   const lines = [`支援用のまとめ`, `${range} ・ ${summary.reflection_count}件の記録`, ""];
   for (const item of summary.sections) lines.push(item.title, ...(item.items.length ? item.items.map((value) => `- ${value}`) : ["- 該当する記録はありません。"]), "");

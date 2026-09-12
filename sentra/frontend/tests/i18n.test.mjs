@@ -75,3 +75,50 @@ describe("the message catalogue", () => {
     assert.deepEqual(empty, [], `Empty catalogue entries:\n${empty.join("\n")}`);
   });
 });
+
+describe("dates and numbers are formatted for one locale", () => {
+  /**
+   * `toLocaleDateString()` with no locale asks the runtime what language it is
+   * in. On the server that is Node's default and in the browser it is the
+   * reader's browser setting, so the same screen renders `Sep 11, 09:14 PM` or
+   * 「9月11日 21:14」 depending on where it was rendered. The research screen
+   * did exactly that until the display QA opened it (#116).
+   *
+   * The product has one language. The locale is a decision, not a runtime
+   * question, so it is written at every call site.
+   */
+  it("no call site leaves the locale to the runtime", async () => {
+    const { readFile, readdir } = await import("node:fs/promises");
+    const path = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+
+    const root = fileURLToPath(new URL("../src", import.meta.url));
+    const files = [];
+    const walk = async (dir) => {
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) await walk(full);
+        else if (/\.(ts|tsx)$/.test(entry.name)) files.push(full);
+      }
+    };
+    await walk(root);
+
+    // `toLocaleLowerCase` is a string operation, not a display decision.
+    const unpinned = /\.toLocale(?!LowerCase|UpperCase)[A-Za-z]*\(\s*(\)|undefined|\{)/;
+    const offenders = [];
+    for (const file of files) {
+      const source = await readFile(file, "utf8");
+      source.split("\n").forEach((line, index) => {
+        if (unpinned.test(line)) {
+          offenders.push(`${path.relative(root, file)}:${index + 1}  ${line.trim().slice(0, 80)}`);
+        }
+      });
+    }
+
+    assert.deepEqual(
+      offenders,
+      [],
+      `A locale is left to the runtime here. Pass "ja-JP" explicitly:\n${offenders.join("\n")}`,
+    );
+  });
+});

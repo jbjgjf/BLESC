@@ -942,7 +942,13 @@ export default function Home() {
                     className="text-xs mb-1"
                     style={{ ...displayFont, color: "var(--ink-faint)", letterSpacing: "0.08em" }}
                   >
-                    {new Date(entry.created_at).toLocaleDateString(undefined, {
+                    {/* `undefined` means "whatever locale the runtime is set
+                        to", which on the server is Node's default and in the
+                        browser is the reader's — so this rendered
+                        `Sep 11, 09:14 PM` on a Japanese screen (#116). The
+                        product has one language; the locale is not a runtime
+                        question. */}
+                    {new Date(entry.created_at).toLocaleDateString("ja-JP", {
                       month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
                     })}
                   </div>
