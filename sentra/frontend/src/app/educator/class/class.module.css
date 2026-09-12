@@ -1,57 +1,76 @@
-/* クラス全体ヒートマップ・分析 — 企画書 6-1 / 6-2 */
+/* クラス全体（観測一覧・名簿・クラス分析） — #175 でヒートマップを置き換えた */
 
-.legend {
+/* ── 観測された記述 ─────────────────────────────────── */
+.observations {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: flex;
-  gap: 14px;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.observation {
+  padding: 14px 15px;
+  border: 1px solid var(--bl-line);
+  border-radius: var(--bl-radius-sm);
+  corner-shape: squircle;
+  background: var(--bl-surface-2, transparent);
+}
+
+.observationHead {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   flex-wrap: wrap;
 }
 
-/* ── 6-1 ヒートマップ ───────────────────────────────── */
-.heatmap {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 8px;
+.name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--bl-ink);
 }
 
-.cell {
-  position: relative;
+.reasons {
+  margin-top: 10px;
+}
+
+.reasons ul {
+  margin: 5px 0 0;
+  padding-left: 19px;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reasons li {
+  font-size: 0.85rem;
+  line-height: 1.65;
+  color: var(--bl-ink-2);
+}
+
+/* ── 名簿 ───────────────────────────────────────────── */
+.roster {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.rosterRow {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 13px;
-  border-radius: var(--bl-radius-sm);
-  corner-shape: squircle;
-  border: 1px solid;
-  text-decoration: none;
-  font-size: 0.85rem;
-  font-weight: 600;
-  transition: transform 0.14s var(--bl-ease), box-shadow 0.14s var(--bl-ease);
+  gap: 10px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--bl-line);
 }
 
-.cell:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 0 0 1px currentColor;
-}
-
-.cell:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
-
-.cellName {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cellBadge {
-  display: inline-flex;
-  flex-shrink: 0;
-  opacity: 0.75;
-}
+.rosterRow:last-child { border-bottom: 0; }
 
 @media (max-width: 560px) {
-  .heatmap { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
-  .cell { padding: 10px; font-size: 0.78rem; gap: 6px; }
+  .rosterRow { flex-wrap: wrap; gap: 7px; }
 }
 
 .unit {

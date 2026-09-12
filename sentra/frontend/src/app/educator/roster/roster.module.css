@@ -94,9 +94,9 @@
 .table tbody tr:hover { background: var(--bl-mist); }
 
 /* 状態を行の左端にも出す — 色だけに頼らずチップと併記している */
-.table tbody tr[data-band="alert"] { box-shadow: inset 3px 0 0 var(--bl-alert); }
-.table tbody tr[data-band="watch"] { box-shadow: inset 3px 0 0 var(--bl-watch); }
-.table tbody tr[data-band="calm"]  { box-shadow: inset 3px 0 0 var(--bl-calm); }
+/* 行を生徒の分類で色分けする規則がここにあった（#175 で削除）。この画面は
+   対応する属性を出力していないので既に死んでいたが、CSS側が残っている限り、
+   属性を1つ足すだけで分類が画面に戻る。 */
 
 .table td,
 .table tbody th {

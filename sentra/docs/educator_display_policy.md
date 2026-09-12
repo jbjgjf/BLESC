@@ -86,6 +86,51 @@ applying it.
 
 `state_band` is derived client-side from `anomaly_score` and was never stored.
 
+### Second instance: the demo educator screens (#175)
+
+The same failure, in the same shape, found on 2026-09-10 during the #116
+message-catalogue migration and fixed in #175.
+
+This policy was applied to `src/app/educator/` — the screens that read real
+data — and not to `src/lib/blesc/`, the fixtures the demo screens are built
+from. `/educator/class` went on painting a three-way band (`calm` / `watch` /
+`alert`) across all 33 students of the demo class: rendered as a colour, counted
+in a legend, and carried in each cell's `title`. `TRENDS` went further than the
+band, offering 悪化傾向 / 改善傾向 — not a classification of the state but a
+judgement about its direction, which is the inference about a minor's internal
+state this document is named after.
+
+No real student data flowed through those screens; they are reachable only under
+`next dev`, `NEXT_PUBLIC_DEMO_MODE=1` or `?demo=1`. That is what made it a P1
+rather than a P0, and it is also what made it worse than a display bug: **the
+demo is the artefact shown to schools.** The demo's own narration told the
+viewer 「リスクの判定は表示しません」 while the next screen displayed one.
+
+What changed:
+
+- `BANDS`, `BAND_ORDER` and `TRENDS` deleted from `lib/blesc/labels.ts`;
+  `RiskBand`, `Trend`, `StudentSummary.band`, `StudentSummary.trend` and
+  `TimelineItem.direction` deleted from `lib/blesc/types.ts`.
+- The fixtures no longer derive anything from a band. Support status and
+  follow-up presence are explicit tables again — deriving "a meeting was held"
+  from a model's judgement meant the judgement survived in the shape of an
+  operational record even after the colour was removed.
+- `/educator/class` rebuilt as observations (what, when, which surface, on what
+  grounds) over a roster ordered by last submission, with the ordering stated on
+  the screen. Rule 1 is about the sort order as much as the colour.
+- The band's CSS — the dot modifiers and a set of dead `[data-band]` rules still
+  sitting in the real roster's stylesheet — removed. The rules rendered nothing,
+  because that page emits no such attribute; they were one attribute away from
+  rendering again.
+
+**Why a scan now exists.** Two instances is a pattern, and both were found by
+accident while doing something else. Review does not catch the third instance
+either, because the third instance will also be in the file nobody thought to
+open. `sentra/frontend/tests/educator-display-policy.test.mjs` scans every
+source file for the classification vocabulary and for the `data-band` attribute,
+and fails on it. The equivalent guard on the landing page is
+`jbjgjf/BLESC-website#15`.
+
 ## Relationship to the landing page
 
 Rows ② (second clause) and ④ of the LP's technical claims are changed to match

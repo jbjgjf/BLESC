@@ -550,13 +550,13 @@ export function demoEducatorAccess(): StudentAccessRecord[] {
 /**
  * The roster, in the shape the educator screens read.
  *
- * `CLASS_ROSTER` carries a `band` — the three-way classification the educator
- * display policy removed from the interface. It is deliberately NOT mapped onto
- * `safety_level` here: a band is an inference about a student, and
- * `safety_level` is a record that the deterministic layer matched something
- * they wrote. Only the students whose fixture actually describes such a day
- * carry an observation, and every one of them carries the reason and the
- * surface with it, because an educator must never see a flag they cannot trace.
+ * `CLASS_ROSTER` no longer carries a `band`: the three-way classification was
+ * deleted in #175, from the fixtures and the type as well as from the screens.
+ * Nothing here is derived from one. `safety_level` is a record that the
+ * deterministic layer matched something the student wrote — only the students
+ * whose fixture actually describes such a day carry an observation, and every
+ * one of them carries the reason and the surface with it, because an educator
+ * must never see a flag they cannot trace.
  */
 const OBSERVED: Record<string, { level: string; reasons: string[]; surface: string; dayOffset: number }> = {
   "s-08": {

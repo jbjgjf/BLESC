@@ -899,10 +899,11 @@ export const ja = {
    * `/school`）。企画書の各機能を通しで見せるための固定データ画面で、通常の
    * ナビゲーションには出ない（`AppNav` の `DEMO_ONLY_NAV_PATHS`）。
    *
-   * この4画面は生徒ごとのリスクバンド（`blesc/labels.ts` の `BANDS`）を描画して
-   * おり、`docs/educator_display_policy.md` の規則1に反している。文言をここへ
-   * 移したのは #116 のカタログ移行のためで、バンドの是非とは別。画面を作り
-   * 直すときは、この節も一緒に書き直すことになる。
+   * `/educator/class` は生徒ごとのリスクバンドを色で描いていた（#175）。
+   * バンドと傾向判定（悪化傾向／改善傾向）は削除し、観測・時刻・入力元・根拠を
+   * 出す形に作り直してある。`docs/educator_display_policy.md` の規則1〜3。
+   * 生徒の状態を段階や方向で言い表す語を、ここに足さないこと。
+   * `tests/educator-display-policy.test.mjs` がその語彙を走査している。
    */
   educatorDemo: {
     alerts: {
@@ -941,10 +942,23 @@ export const ja = {
     class: {
       title: "クラス全体",
       subtitle: (className: string, count: number) => `${className} ・ ${count}名`,
-      heatmapTitle: "クラス全体ヒートマップ",
-      /** バンドの色を説明する注記。バンドごと消えるときに一緒に消える。 */
-      heatmapNote: "色は日記と対話の内容からAIが算出した傾向です。診断ではありません。",
-      cellTitle: (name: string, band: string) => `${name} ・ ${band}`,
+      observationsTitle: "観測された記述",
+      orderedByTime: "新しい順",
+      observationsEmpty: "観測された記述はありません。",
+      surface: {
+        diary: "日記",
+        followup: "対話",
+      },
+      reasonsLabel: "観測の根拠",
+      provenance: "決定的な語句のマッチによる観測です。AIによる状態の推論は含みません。",
+      observationsNote:
+        "表示されるのは、観測された記述とその時刻・根拠だけです。生徒の状態の判定・ランク付けは行いません。根拠を辿れない観測は表示しません。",
+      rosterTitle: "名簿",
+      orderedByLastEntry: "最終提出の新しい順",
+      lastEntry: (date: string, relative: string) => `${date}（${relative}）`,
+      noEntry: "記録なし",
+      rosterNote:
+        "並びは最終提出の時刻順です。生徒の状態による並び替え・色分けは行いません。",
       missedDays: (days: number) => `${days}日未提出`,
       submittedYesterday: "昨日までに日記を提出",
       withFollowUp: "対話型AIによる補足あり",

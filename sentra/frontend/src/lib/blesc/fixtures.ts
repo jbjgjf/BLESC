@@ -241,15 +241,25 @@ const ROSTER_NAMES = [
   "森 陽太",   "山口 詩織", "吉田 桜",
 ];
 
-const BAND_PLAN: Array<StudentSummary["band"]> = [
-  "calm", "calm", "watch", "calm", "calm",
-  "calm", "calm", "alert", "calm", "calm",
-  "watch", "calm", "calm", "alert", "calm",
-  "calm", "calm", "calm", "watch", "calm",
-  "calm", "calm", "watch", "calm", "calm",
-  "calm", "calm", "calm", "calm", "calm",
-  "calm", "calm", "calm",
-];
+/**
+ * 対応状況とフォローの有無は、以前はリスクバンドから導出していた（#175）。
+ *
+ * 導出をやめて明示の表に戻したのは、バンドを消したからではなく、
+ * 導出そのものが逆だったからである。「面談を実施した」は学校が行った
+ * 事実であって、AIの判定から導けるものではない。判定から運用状態を
+ * 生成すると、画面からバンドを消しても、判定は運用状態の形で残る。
+ */
+const STATUS_PLAN: Record<number, StudentSummary["status"]> = {
+  2: "watching",
+  7: "meeting_done",
+  10: "watching",
+  13: "meeting_scheduled",
+  18: "watching",
+  22: "watching",
+};
+
+/** 対話型AIが補足の質問を返した生徒。提出の事実であって判定ではない。 */
+const FOLLOW_UP_INDICES = new Set([0, 2, 7, 10, 13, 14, 18, 21, 22, 28]);
 
 const THEME_PLAN: StudentSummary["topThemes"][] = [
   ["academic"], ["relationships"], ["academic", "sleep"], [], ["academic"],
@@ -273,30 +283,18 @@ const MISSED_PLAN: Record<number, number> = {
 };
 
 function makeStudent(index: number): StudentSummary {
-  const name = ROSTER_NAMES[index];
-  const band = BAND_PLAN[index] ?? "calm";
-  const themes = THEME_PLAN[index] ?? [];
   const missed = MISSED_PLAN[index] ?? 0;
   return {
     id: `s-${String(index + 1).padStart(2, "0")}`,
-    name,
+    name: ROSTER_NAMES[index],
     grade: "2年",
     className: "A組",
-    band,
-    trend: band === "alert" ? "rising" : band === "watch" ? (index % 2 ? "rising" : "flat") : "flat",
     lastEntry: missed > 0 ? addDays(TODAY, -missed) : addDays(TODAY, -1),
     missedDays: missed,
-    hasFollowUp: band !== "calm" || index % 7 === 0,
-    status:
-      band === "alert"
-        ? index % 2 === 0
-          ? "meeting_done"
-          : "meeting_scheduled"
-        : band === "watch"
-          ? "watching"
-          : "none",
+    hasFollowUp: FOLLOW_UP_INDICES.has(index),
+    status: STATUS_PLAN[index] ?? "none",
     teacher: "山本 直樹",
-    topThemes: themes,
+    topThemes: THEME_PLAN[index] ?? [],
   };
 }
 
@@ -310,8 +308,6 @@ if (focusIndex >= 0) {
   CLASS_ROSTER[focusIndex] = {
     ...CLASS_ROSTER[focusIndex],
     name: "小野 陽菜",
-    band: "alert",
-    trend: "falling",
     status: "sharing",
     missedDays: 0,
     lastEntry: addDays(TODAY, -1),
@@ -330,20 +326,39 @@ if (focusIndex >= 0) {
   };
 }
 
+/**
+ * 2人目の観測。`demoApi.ts` の `OBSERVED` が s-14 を elevated として返すので、
+ * 名簿側にも同じ生徒を置く。片方にしかない観測は、デモの2画面が別々の学級を
+ * 見ているように読める。
+ */
+const SECOND_OBSERVED_ID = "s-14";
+const secondIndex = CLASS_ROSTER.findIndex((student) => student.id === SECOND_OBSERVED_ID);
+if (secondIndex >= 0) {
+  CLASS_ROSTER[secondIndex] = {
+    ...CLASS_ROSTER[secondIndex],
+    urgent: {
+      detectedAt: `${addDays(TODAY, -4)}T21:05:00`,
+      detail: "強い落ち込みを示す記述があった。急迫した危険を示す語は含まれていない。",
+      surface: "followup",
+      reasons: ["「もうだめだ」を含む記述が1回", "課題量に関する記述が4日連続"],
+    },
+  };
+}
+
 const FOCUS_TIMELINE: TimelineItem[] = [
-  { date: "2026-07-12", text: "友人関係に関するネガティブな記述が初めて出現", direction: "worse", source: "diary" },
-  { date: "2026-07-18", text: "睡眠不足に関する発言が増加", direction: "worse", source: "followup" },
-  { date: "2026-07-25", text: "自己否定的な表現が急増し、リスクが上昇", direction: "worse", source: "diary" },
-  { date: "2026-07-29", text: "部活動について前向きな記述が増え、リスクがやや改善", direction: "better", source: "diary" },
-  { date: "2026-08-04", text: "感情の選択が「ふつう」に戻る日が増加", direction: "better", source: "diary" },
+  { date: "2026-07-12", text: "友人関係に関する否定的な記述が初めて出現", source: "diary" },
+  { date: "2026-07-18", text: "睡眠不足に関する発言が増加", source: "followup" },
+  { date: "2026-07-25", text: "自己否定的な表現が3日間で4回出現", source: "diary" },
+  { date: "2026-07-29", text: "部活動について前向きな記述が増加", source: "diary" },
+  { date: "2026-08-04", text: "感情の選択が「ふつう」に戻る日が増加", source: "diary" },
 ];
 
 const FOCUS_ACTIONS: SupportAction[] = [
-  { id: "a1", date: "2026-07-25", kind: "ai_detect", text: "AIが高リスク傾向を検知", actor: "blesc" },
+  { id: "a1", date: "2026-07-25", kind: "ai_detect", text: "自己否定的な表現の増加を観測", actor: "blesc" },
   { id: "a2", date: "2026-07-26", kind: "meeting", text: "担任が面談を実施", actor: "山本 直樹" },
   { id: "a3", date: "2026-07-27", kind: "guardian", text: "保護者へ連絡", actor: "山本 直樹" },
   { id: "a4", date: "2026-08-02", kind: "counselor", text: "スクールカウンセラーが面談を実施", actor: "西村 かおり" },
-  { id: "a5", date: "2026-08-06", kind: "improvement", text: "日記内容と感情に改善傾向を確認", actor: "blesc" },
+  { id: "a5", date: "2026-08-06", kind: "improvement", text: "前向きな記述と「ふつう」の感情選択が増加", actor: "blesc" },
 ];
 
 const FOCUS_MEETINGS: MeetingRecord[] = [
@@ -472,13 +487,17 @@ export function getStudentDetail(id: string): StudentDetail | null {
   const student = CLASS_ROSTER.find((row) => row.id === id);
   if (!student) return null;
 
-  const moodByBand: Record<StudentSummary["band"], Array<StudentDetail["moodSeries"][number]["mood"]>> = {
-    alert: ["neutral", "low", "low", "hard", "hard", "low", "low"],
-    watch: ["good", "neutral", "neutral", "low", "neutral", "low", "neutral"],
-    calm:  ["good", "good", "neutral", "good", "very_good", "good", "neutral"],
-  };
+  // 気分は生徒自身が選んだ記録であって、こちらの判定ではない。以前はバンド
+  // ごとに用意した系列を返していたが、それは判定を気分の形で描き直すのと
+  // 同じだった（#175）。名簿上の位置から決めた3通りを順に割り当てる。
+  const MOOD_PATTERNS: Array<Array<StudentDetail["moodSeries"][number]["mood"]>> = [
+    ["good", "good", "neutral", "good", "very_good", "good", "neutral"],
+    ["good", "neutral", "neutral", "low", "neutral", "low", "neutral"],
+    ["neutral", "low", "neutral", "good", "neutral", "neutral", "good"],
+  ];
 
-  const moods = moodByBand[student.band];
+  const rosterIndex = CLASS_ROSTER.findIndex((row) => row.id === student.id);
+  const moods = MOOD_PATTERNS[rosterIndex % MOOD_PATTERNS.length];
   const moodSeries = moods.map((mood, index) => ({
     date: addDays(TODAY, -(moods.length - index) * 2),
     mood,
@@ -486,7 +505,7 @@ export function getStudentDetail(id: string): StudentDetail | null {
 
   const categoryCounts = CATEGORY_ORDER.map((category, index) => ({
     category,
-    count: Math.max(0, 6 - index - (student.band === "calm" ? 2 : 0)),
+    count: Math.max(0, 6 - index),
   }));
 
   return {

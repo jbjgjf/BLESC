@@ -62,11 +62,14 @@ export interface SubmissionStats {
 
 /* ── 教員側 ─────────────────────────────────────────────────── */
 
-/** 5-1 生徒の状態。緑 安定 / 黄 要注意 / 赤 高リスク */
-export type RiskBand = "calm" | "watch" | "alert";
-
-/** リスク傾向 */
-export type Trend = "rising" | "falling" | "flat";
+/**
+ * 生徒ごとのリスク判定（`RiskBand`）と傾向判定（`Trend`）は削除した。
+ *
+ * 判定を出さないのは検証待ちだからではなく算術による（#175 /
+ * `docs/educator_display_policy.md`）。型を残すと、次に画面を足す人が
+ * 「既にある型」として使ってしまう。教員画面が扱うのは観測（何が・いつ・
+ * どの入力元で・どの根拠で記録されたか）だけである。
+ */
 
 /** 対応ステータス */
 export type SupportStatus =
@@ -84,8 +87,6 @@ export interface StudentSummary {
   /** 例: 2年A組 */
   grade: string;
   className: string;
-  band: RiskBand;
-  trend: Trend;
   /** 最終日記提出日 YYYY-MM-DD */
   lastEntry: string | null;
   /** 未提出日数 */
@@ -112,13 +113,20 @@ export type AnalysisTheme =
   | "missing"
   | "usage_drop";
 
-/** 6-6 AIタイムラインの1項目 */
+/**
+ * 6-6 AIタイムラインの1項目。
+ *
+ * `direction`（worse / better / neutral）は削除した（#175）。「その時点の
+ * リスク方向」は、バンドより踏み込んだ判定である — 状態の分類ではなく、
+ * 生徒の状態が良くなっている／悪くなっているという時間方向の推論で、
+ * `docs/educator_display_policy.md` が「an inference about a minor's
+ * internal state」と呼ぶものそのものにあたる。残るのは観測（何が・いつ・
+ * どの入力元で）だけである。
+ */
 export interface TimelineItem {
   /** YYYY-MM-DD */
   date: string;
   text: string;
-  /** その時点のリスク方向 */
-  direction: "worse" | "better" | "neutral";
   /** 根拠となった日記／対話の出典 */
   source: "diary" | "followup" | "submission";
 }

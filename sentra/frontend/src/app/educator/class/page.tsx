@@ -1,24 +1,57 @@
 "use client";
 
-import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
 import { CLASS_BREAKDOWN, CLASS_ROSTER } from "@/lib/blesc/fixtures";
-import { BANDS, BAND_ORDER, THEMES } from "@/lib/blesc/labels";
-import type { RiskBand } from "@/lib/blesc/types";
+import { THEMES, formatDate, formatDateTime, relativeDays } from "@/lib/blesc/labels";
+import type { StudentSummary } from "@/lib/blesc/types";
 import { t } from "@/lib/i18n";
 import styles from "./class.module.css";
 
 /** この画面の文言。参照が多いので短く束ねる。 */
 const C = t.educatorDemo.class;
 
+/**
+ * クラス全体（デモ）。
+ *
+ * ここにあったのは、生徒33名をリスクバンドの色で塗ったヒートマップだった
+ * （#175）。描画・タイル集計・凡例の3つとも、`docs/educator_display_policy.md`
+ * の規則1が禁じている「生徒に紐づく分類の表示」にあたっていた。
+ *
+ * 作り直した先は、実データ側の教員画面（`/educator`、`/educator/roster`）が
+ * すでに従っている形である。
+ *
+ *   - **観測は根拠と時刻を伴う。** 根拠のない観測は行として出さない。
+ *     教員が生徒の記述まで辿れない指摘は、指摘がないより悪い（規則2）。
+ *   - **並びは時刻順で、そう明示する。** 判定で並べ替えると、分類は
+ *     ソート順という形で画面に戻ってくる（規則1）。
+ *   - **名簿は提出の事実だけを持つ。** 色による強調をしない。33名を
+ *     等しく並べ、最終提出と未提出日数を出す。
+ */
+
+/** 観測を持つ生徒。新しい順。時刻のない観測は、辿れないので出さない。 */
+function observedStudents(): StudentSummary[] {
+  return CLASS_ROSTER.filter((student) => student.urgent && student.urgent.reasons.length > 0)
+    .slice()
+    .sort((a, b) => Date.parse(b.urgent!.detectedAt) - Date.parse(a.urgent!.detectedAt));
+}
+
+/** 名簿。最終提出の新しい順。未提出の生徒が下に集まる。 */
+function rosterByLastEntry(): StudentSummary[] {
+  return CLASS_ROSTER.slice().sort((a, b) => {
+    if (a.lastEntry === b.lastEntry) return a.name.localeCompare(b.name, "ja");
+    if (!a.lastEntry) return 1;
+    if (!b.lastEntry) return -1;
+    return b.lastEntry.localeCompare(a.lastEntry);
+  });
+}
+
 export default function ClassPage() {
-  const counts = CLASS_ROSTER.reduce(
-    (acc, student) => ({ ...acc, [student.band]: (acc[student.band] ?? 0) + 1 }),
-    {} as Record<RiskBand, number>,
-  );
+  const observed = observedStudents();
+  const roster = rosterByLastEntry();
 
   const submitted = CLASS_ROSTER.filter((student) => student.missedDays === 0).length;
   const withFollowUp = CLASS_ROSTER.filter((student) => student.hasFollowUp).length;
+  const inProgress = CLASS_ROSTER.filter((student) => student.status !== "none").length;
 
   return (
     <div className="bl-stack">
@@ -29,50 +62,57 @@ export default function ClassPage() {
         </p>
       </header>
 
-      {/* ── 6-1 クラス全体ヒートマップ ───────────────── */}
+      {/* ── 観測された記述 ───────────────────────────── */}
       <section className="bl-card bl-rise">
         <div className="bl-card-head">
-          <Icon name="grid_view" size={21} />
-          <h2 className="bl-h2">{C.heatmapTitle}</h2>
+          <Icon name="visibility" size={21} />
+          <h2 className="bl-h2">{C.observationsTitle}</h2>
           <span className="bl-spacer" />
-          <div className={styles.legend}>
-            {BAND_ORDER.slice().reverse().map((band) => (
-              <span key={band} className="bl-row" style={{ gap: 6 }}>
-                <span className={`bl-dot ${BANDS[band].dot}`} />
-                <span className="bl-micro">
-                  {BANDS[band].label} {counts[band] ?? 0}
-                </span>
-              </span>
-            ))}
-          </div>
+          <span className="bl-micro">{C.orderedByTime}</span>
         </div>
 
-        <div className={styles.heatmap}>
-          {CLASS_ROSTER.map((student) => {
-            const meta = BANDS[student.band];
-            return (
-              <Link
-                key={student.id}
-                href={`/educator/student/${student.id}`}
-                className={styles.cell}
-                style={{ background: meta.bg, borderColor: meta.line, color: meta.ink }}
-                title={C.cellTitle(student.name, meta.label)}
-              >
-                <span className={`bl-dot ${meta.dot}`} />
-                <span className={styles.cellName}>{student.name}</span>
-                {student.missedDays > 0 && (
-                  <span className={styles.cellBadge} title={C.missedDays(student.missedDays)}>
-                    <Icon name="event_busy" size={13} />
+        {observed.length === 0 ? (
+          <div className="bl-empty">
+            <Icon name="check_circle" size={38} />
+            <p className="bl-body">{C.observationsEmpty}</p>
+          </div>
+        ) : (
+          <ul className={styles.observations}>
+            {observed.map((student) => (
+              <li key={student.id} className={styles.observation}>
+                <div className={styles.observationHead}>
+                  <span className={styles.name}>{student.name}</span>
+                  <span className="bl-chip bl-chip--tint">{C.surface[student.urgent!.surface]}</span>
+                  <span className="bl-spacer" />
+                  <span className="bl-micro">{formatDateTime(student.urgent!.detectedAt)}</span>
+                </div>
+
+                <p className="bl-body" style={{ marginTop: 8 }}>
+                  {student.urgent!.detail}
+                </p>
+
+                <div className={styles.reasons}>
+                  <span className="bl-micro" style={{ fontWeight: 700 }}>
+                    {C.reasonsLabel}
                   </span>
-                )}
-              </Link>
-            );
-          })}
-        </div>
+                  <ul>
+                    {student.urgent!.reasons.map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <p className="bl-micro" style={{ marginTop: 8 }}>
+                  {C.provenance}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
 
         <p className="bl-disclaimer" style={{ marginTop: 14 }}>
           <Icon name="info" size={14} />
-          {C.heatmapNote}
+          {C.observationsNote}
         </p>
       </section>
 
@@ -91,11 +131,46 @@ export default function ClassPage() {
         </div>
         <div className="bl-card">
           <span className="bl-num">
-            {CLASS_ROSTER.filter((s) => s.status !== "none").length}
+            {inProgress}
             <span className={styles.unit}>{C.personUnit}</span>
           </span>
           <p className="bl-meta">{C.inProgress}</p>
         </div>
+      </section>
+
+      {/* ── 名簿 ─────────────────────────────────────── */}
+      <section className="bl-card bl-rise">
+        <div className="bl-card-head">
+          <Icon name="groups" size={21} />
+          <h2 className="bl-h2">{C.rosterTitle}</h2>
+          <span className="bl-spacer" />
+          <span className="bl-micro">{C.orderedByLastEntry}</span>
+        </div>
+
+        <ul className={styles.roster}>
+          {roster.map((student) => (
+            <li key={student.id} className={styles.rosterRow}>
+              <span className={styles.name}>{student.name}</span>
+              <span className="bl-spacer" />
+              {student.missedDays > 0 && (
+                <span className="bl-chip bl-chip--tint">
+                  <Icon name="event_busy" size={14} />
+                  {C.missedDays(student.missedDays)}
+                </span>
+              )}
+              <span className="bl-micro" style={{ minWidth: "8.5rem", textAlign: "right" }}>
+                {student.lastEntry
+                  ? C.lastEntry(formatDate(student.lastEntry, false), relativeDays(student.lastEntry))
+                  : C.noEntry}
+              </span>
+            </li>
+          ))}
+        </ul>
+
+        <p className="bl-disclaimer" style={{ marginTop: 14 }}>
+          <Icon name="info" size={14} />
+          {C.rosterNote}
+        </p>
       </section>
 
       {/* ── 6-2 クラス全体分析 ───────────────────────── */}

@@ -56,7 +56,8 @@
 
   --bl-surface: #ffffff;
 
-  /* 状態色 — 企画書 5-1 / 6-1 の 緑 安定・黄 要注意・赤 高リスク */
+  /* 意味色 — 緑は成功、黄は注意、赤は失敗。生徒の状態を三段階に分ける用途で
+     使わないこと（#175 / docs/educator_display_policy.md）。 */
   --bl-calm: hsl(158 54% 40%);
   --bl-calm-bg: hsl(158 52% 95.5%);
   --bl-calm-line: hsl(158 44% 82%);
@@ -368,9 +369,10 @@ fieldset {
   border-radius: var(--bl-pill);
   flex-shrink: 0;
 }
-.bl-dot--calm  { background: var(--bl-calm); }
-.bl-dot--watch { background: var(--bl-watch); }
-.bl-dot--alert { background: var(--bl-alert); }
+/* .bl-dot--calm / --watch / --alert は、生徒を三段階に塗り分ける凡例と
+   ヒートマップの専用クラスだった（#175 で削除）。--bl-calm などのトークン
+   自体は保存の成功・失敗の表示に使われているので残る。生徒の状態を表す色を
+   ここから引き直さないこと。 */
 .bl-dot--none  { background: var(--bl-line); }
 
 /* ── Fields ─────────────────────────────────────────────────── */

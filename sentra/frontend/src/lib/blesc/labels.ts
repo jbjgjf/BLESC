@@ -2,9 +2,7 @@ import type {
   AnalysisTheme,
   EventCategory,
   Mood,
-  RiskBand,
   SupportStatus,
-  Trend,
 } from "./types";
 import type { IconName } from "@/components/ui/Icon";
 
@@ -67,50 +65,19 @@ export const THEMES: Record<AnalysisTheme, { label: string; icon: IconName }> = 
   usage_drop:    { label: "利用頻度の低下",     icon: "trending_down" },
 };
 
-/** 5-1 / 6-1 の色分け。緑 安定・黄 要注意・赤 高リスク。 */
-export const BANDS: Record<
-  RiskBand,
-  { label: string; chip: string; dot: string; icon: IconName; color: string; bg: string; line: string; ink: string }
-> = {
-  calm: {
-    label: "安定",
-    chip: "bl-chip--calm",
-    dot: "bl-dot--calm",
-    icon: "check_circle",
-    color: "var(--bl-calm)",
-    bg: "var(--bl-calm-bg)",
-    line: "var(--bl-calm-line)",
-    ink: "var(--bl-calm-ink)",
-  },
-  watch: {
-    label: "要注意",
-    chip: "bl-chip--watch",
-    dot: "bl-dot--watch",
-    icon: "warning",
-    color: "var(--bl-watch)",
-    bg: "var(--bl-watch-bg)",
-    line: "var(--bl-watch-line)",
-    ink: "var(--bl-watch-ink)",
-  },
-  alert: {
-    label: "高リスク",
-    chip: "bl-chip--alert",
-    dot: "bl-dot--alert",
-    icon: "priority_high",
-    color: "var(--bl-alert)",
-    bg: "var(--bl-alert-bg)",
-    line: "var(--bl-alert-line)",
-    ink: "var(--bl-alert-ink)",
-  },
-};
-
-export const BAND_ORDER: RiskBand[] = ["alert", "watch", "calm"];
-
-export const TRENDS: Record<Trend, { label: string; icon: IconName; color: string }> = {
-  rising:  { label: "悪化傾向", icon: "trending_up",   color: "var(--bl-alert)" },
-  falling: { label: "改善傾向", icon: "trending_down", color: "var(--bl-calm)" },
-  flat:    { label: "横ばい",   icon: "trending_flat", color: "var(--bl-ink-3)" },
-};
+/*
+ * 生徒ごとの三段階の色分けと、時間方向の傾向判定は、ここにあった（#175 で削除）。
+ *
+ * 消したのはモデルの精度が足りないからではない。有病率5%・感度80%／特異度90%
+ * なら陽性的中率は約30%で、そう表示された生徒の7割が非該当になる。モデルを
+ * 改善してもこの構造は変わらないので、精度が上がったときに戻せる種類のもの
+ * ではない。`docs/educator_display_policy.md` 規則1。
+ *
+ * 定数を残さないのは、対応表があると1行で引けてしまうからである。型と色
+ * トークンが揃って残っていると、次の画面で「既にあるもの」として使われ、
+ * ポリシーは2度目の破られ方をする。`tests/educator-display-policy.test.mjs`
+ * が語彙を走査して戻りを止める。
+ */
 
 export const STATUSES: Record<SupportStatus, { label: string; icon: IconName }> = {
   none:              { label: "未対応",     icon: "more_horiz" },
