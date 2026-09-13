@@ -15,6 +15,7 @@ import {
   EXPRESSIONS,
   PEBBLE_VIEWBOX,
   PHASE_SWAY,
+  shapeRoom,
 } from "../src/lib/assistant/pebble.ts";
 import { assessSafety } from "../src/lib/safety-assessment.ts";
 
@@ -294,6 +295,59 @@ describe("pebble", () => {
   it("落ち着いた表情は伏し目で、跳ねる余地を持たない", () => {
     assert.ok(EXPRESSIONS.steady.upL < EXPRESSIONS.steady.downL);
     assert.equal(EXPRESSIONS.steady.lift, 0);
+  });
+
+  it("伸び縮みの上限いっぱいでも、描いた曲線は線の太さごと viewBox に収まる", () => {
+    const [vx, vy, vw, vh] = PEBBLE_VIEWBOX.split(" ").map(Number);
+    // 曲線そのものを細かく辿る。制御点で調べると、曲線が収まっていても外に出たと判定してしまう。
+    const curvePoints = (path) => {
+      const numbers = path.match(/-?\d+\.?\d*/g).map(Number);
+      const points = [];
+      let [x0, y0] = numbers;
+      for (let i = 2; i + 5 < numbers.length; i += 6) {
+        const [x1, y1, x2, y2, x3, y3] = numbers.slice(i, i + 6);
+        for (let step = 0; step <= 8; step += 1) {
+          const t = step / 8, u = 1 - t;
+          points.push([
+            u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3,
+            u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3,
+          ]);
+        }
+        [x0, y0] = [x3, y3];
+      }
+      return points;
+    };
+    for (const size of [30, 54]) {
+      const strokeHalf = (1.75 * vw) / size / 2;
+      for (const lift of [-5.5, -3, -1, 0, 1, 3, 5.5]) {
+        const room = shapeRoom(lift, strokeHalf);
+        for (const [name, params] of Object.entries(EXPRESSIONS)) {
+          // 伸ばしたうえで上限に当てる — 実際の描画と同じ順序。
+          const stretched = { ...params, lift, rx: Math.min(params.rx * 1.2, room.rx), ry: Math.min(params.ry * 1.2, room.ry) };
+          for (const phase of [-PHASE_SWAY, 0, PHASE_SWAY]) {
+            for (const [x, y] of curvePoints(bodyPath(stretched, phase))) {
+              assert.ok(x - strokeHalf >= vx && x + strokeHalf <= vx + vw, `${size}px ${name} lift=${lift}: x=${x.toFixed(2)}`);
+              assert.ok(y - strokeHalf >= vy && y + strokeHalf <= vy + vh, `${size}px ${name} lift=${lift}: y=${y.toFixed(2)}`);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("上限は伸びを殺さない（飛び上がった直後の、聞いている顔が 6% 伸びられる）", () => {
+    const strokeHalf = (1.75 * 82) / 54 / 2;
+    const room = shapeRoom(-1.5, strokeHalf);
+    assert.ok(room.ry >= EXPRESSIONS.listening.ry * 1.016 * 1.06, `ry room ${room.ry.toFixed(2)}`);
+  });
+
+  it("上限は、止まっているときの表情を削らない（呼吸で膨らんだぶんまで）", () => {
+    const strokeHalf = (1.75 * 82) / 54 / 2;
+    for (const [name, params] of Object.entries(EXPRESSIONS)) {
+      const room = shapeRoom(Math.abs(params.lift) + 0.5, strokeHalf);
+      assert.ok(params.rx * 1.012 <= room.rx, `${name}: rx ${(params.rx * 1.012).toFixed(2)} > room ${room.rx.toFixed(2)}`);
+      assert.ok(params.ry * 1.016 <= room.ry, `${name}: ry ${(params.ry * 1.016).toFixed(2)} > room ${room.ry.toFixed(2)}`);
+    }
   });
 
   it("目は左右が中心から等しく離れる", () => {

@@ -49,6 +49,49 @@ const HARMONICS: ReadonlyArray<{ n: number; amp: number; phase: number }> = [
   { n: 5, amp: 0.013, phase: 0.35 },
 ];
 
+/**
+ * 輪郭が、半径に対して横（x）と縦（y）へ張り出す最大の割合。倍音と、呼吸で
+ * 揺らす位相の幅を含めて読み込み時に一度だけ測る。
+ *
+ * 横と縦は別に測る。半径がいちばん大きくなる向きは真横でも真上でもないので、
+ * 1 つの値で済ませると張り出しを大きく見積もり、笑った顔の横幅まで削って
+ * しまう（倍音の振幅をただ足した 1.099 では、止まっているだけで削れた）。
+ */
+const BULGE = (() => {
+  let x = 0;
+  let y = 0;
+  for (let step = 0; step < 720; step += 1) {
+    const theta = (step / 720) * Math.PI * 2;
+    for (const sway of [-PHASE_SWAY, -PHASE_SWAY / 2, 0, PHASE_SWAY / 2, PHASE_SWAY]) {
+      let radius = 1;
+      for (const harmonic of HARMONICS) radius += harmonic.amp * Math.cos(harmonic.n * theta + harmonic.phase + sway);
+      x = Math.max(x, radius * Math.abs(Math.cos(theta)));
+      y = Math.max(y, radius * Math.abs(Math.sin(theta)));
+    }
+  }
+  // 標本点のあいだを通る曲線と、傾けたときに縦横が混ざるぶんを見込む。
+  return { x: x * 1.03, y: y * 1.03 };
+})();
+
+/**
+ * 伸び縮みしても viewBox に収まる半径の上限。
+ *
+ * 浮いているぶん（lift）上下の余白が減り、線の太さの半分（strokeHalf）だけ
+ * 内側に下がる。固定の上限にすると、跳ねて伸びる瞬間に頭打ちになる — 縦
+ * 半径を 32 で止めていたときは、聞いている顔の伸びが 3% で止まり、ほとんど
+ * 見えなかった。伸びが最大になるのは飛び上がった直後で、まだ高く浮いて
+ * いないので、そのときの浮きで測れば余白は十分にある。
+ */
+export function shapeRoom(lift: number, strokeHalf: number): { rx: number; ry: number } {
+  const [vx, vy, vw, vh] = PEBBLE_VIEWBOX.split(" ").map(Number);
+  const halfWidth = Math.min(CX - vx, vx + vw - CX);
+  const halfHeight = Math.min(CY - vy, vy + vh - CY);
+  return {
+    rx: (halfWidth - strokeHalf) / BULGE.x,
+    ry: (halfHeight - strokeHalf - Math.abs(lift)) / BULGE.y,
+  };
+}
+
 /** 目の位置。中心より少し上に置くと幼く、下げると老けて見える。 */
 const EYE_CY = 48;
 

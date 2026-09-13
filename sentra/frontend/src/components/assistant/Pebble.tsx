@@ -10,6 +10,7 @@ import {
   PARAM_KEYS,
   PEBBLE_VIEWBOX,
   PHASE_SWAY,
+  shapeRoom,
   type Expression,
   type PebbleParams,
 } from "@/lib/assistant/pebble";
@@ -57,15 +58,15 @@ const THINK_BOB_MS = 900;
  */
 const HOP_SPEED = 60;
 const GRAVITY = 560;
-/** 着地の勢いを形のばねへ渡す割合。縦につぶれ、横に広がる。 */
-const SQUASH_Y = 0.45;
-const SQUASH_X = 0.3;
+/**
+ * 着地の勢いを形のばねへ渡す割合。縦につぶれ、横に広がる。
+ * 1.1 で縦に最大 8% ほどつぶれる（54px のランチャーで約 1.5px）。0.45 では
+ * 3% しかつぶれず、呼吸の揺れ（±1.6%）に埋もれて目に見えなかった。
+ */
+const SQUASH_Y = 1.1;
+const SQUASH_X = 0.75;
 /** viewBox からはみ出さないための上限。tests/assistant.test.mjs の余白と対。 */
 const LIFT_LIMIT = 5.5;
-/** 伸び縮みしても viewBox に収まる上限。 */
-const RX_LIMIT = 37;
-const RY_LIMIT = 32;
-
 /** この速さ（単位/秒）で最大まで伸びる。 */
 const STRETCH_SPEED = 700;
 const STRETCH_MAX = 0.09;
@@ -149,6 +150,7 @@ export function Pebble({ expression, size, hopKey = 0, gaze = null, className }:
     // ばねの状態はループの中に置く。止めて再開したときは、そのときの
     // 目標から始め直せば足りる（止まっている間は最終形を描いているので、
     // 見た目はつながる）。
+    const strokeHalf = strokeFor(size) / 2;
     const start = EXPRESSIONS[target.current];
     const state = Float64Array.from(PARAM_KEYS, (key) => start[key]);
     const velocity = new Float64Array(PARAM_KEYS.length);
@@ -238,8 +240,9 @@ export function Pebble({ expression, size, hopKey = 0, gaze = null, className }:
       // 速く動いているほど、進む向きに伸ばす（squash & stretch）。
       // 縦に伸びたぶん横を細らせて、中身の量が変わらないように見せる。
       const stretch = Math.min(Math.abs(hopSpeed) / STRETCH_SPEED, STRETCH_MAX);
-      params.ry = Math.min(params.ry * (1 + stretch), RY_LIMIT);
-      params.rx = Math.min(params.rx * (1 - stretch * 0.6), RX_LIMIT);
+      const room = shapeRoom(params.lift, strokeHalf);
+      params.ry = Math.min(params.ry * (1 + stretch), room.ry);
+      params.rx = Math.min(params.rx * (1 - stretch * 0.6), room.rx);
 
       // 三日月の目をまばたきさせても、平たくなるだけで何も起きない。
       if (target.current !== "happy") {
@@ -263,7 +266,7 @@ export function Pebble({ expression, size, hopKey = 0, gaze = null, className }:
 
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [reduced]);
+  }, [reduced, size]);
 
   // サーバーと最初の描画は表情そのまま。ここが揃っていれば差異は出ない。
   const initial = EXPRESSIONS[expression];
