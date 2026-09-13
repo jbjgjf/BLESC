@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { useA11y } from "@/lib/a11y";
 
 /**
  * モーションの共通ユーティリティ。
@@ -9,8 +10,9 @@ import { useEffect, useState, useSyncExternalStore } from "react";
  * IntersectionObserver だけで、演出の大半は blesc.css 側の CSS が持つ。
  * 学校の端末でも軽く動くことを優先している。
  *
- * どの関数も「視差効果を減らす」設定を尊重し、その場合は動きを止めて
- * 最終状態をそのまま出す。
+ * どの関数も「動きを減らす」指定を尊重し、その場合は動きを止めて
+ * 最終状態をそのまま出す。指定は 2 か所から来る — OS の「視差効果を
+ * 減らす」と、アプリの表示設定。どちらか一方でも立っていれば止める。
  */
 
 const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
@@ -18,7 +20,13 @@ const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 /** 描画の外（イベントハンドラなど）から読むとき用。 */
 export function prefersReducedMotion(): boolean {
   if (typeof window === "undefined") return false;
-  return window.matchMedia(REDUCED_MOTION).matches;
+  // アプリ側の指定は <html data-bl-motion> に出ている（lib/a11y.ts）。
+  // CSS はこれを見て CSS の動きを止めるが、requestAnimationFrame や
+  // View Transitions のような JS 側の動きには届かないので、ここでも見る。
+  return (
+    document.documentElement.dataset.blMotion === "reduced" ||
+    window.matchMedia(REDUCED_MOTION).matches
+  );
 }
 
 function subscribeToMotionPreference(onChange: () => void) {
@@ -30,13 +38,18 @@ function subscribeToMotionPreference(onChange: () => void) {
 /**
  * 描画中に読む版。サーバーと最初の描画では false を返すので、
  * ハイドレーションはずれない。設定を途中で変えても追従する。
+ *
+ * 表示設定のほうも購読しているので、案内役に「動きを止めて」と頼んだ
+ * 瞬間に、案内役自身の動きも止まる。
  */
 export function useReducedMotion(): boolean {
-  return useSyncExternalStore(
+  const system = useSyncExternalStore(
     subscribeToMotionPreference,
     () => window.matchMedia(REDUCED_MOTION).matches,
     () => false,
   );
+  const { motion } = useA11y();
+  return system || motion === "reduced";
 }
 
 /**
