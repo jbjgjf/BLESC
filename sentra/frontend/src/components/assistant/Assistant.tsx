@@ -10,11 +10,13 @@ import { useReducedMotion } from "@/lib/motion";
 import { assessSafety } from "@/lib/safety-assessment";
 import { pilotProgress, usePilotToday } from "@/lib/blesc/pilot";
 import {
+  ASSISTANT_COPY,
   routeIntent,
-  SUGGESTIONS,
   type AssistantAction,
+  type AssistantContext,
   type AssistantOffer,
   type AssistantReply,
+  type Audience,
 } from "@/lib/assistant/intents";
 import type { Expression } from "@/lib/assistant/pebble";
 import { HANDOFF_KEY } from "@/lib/assistant/handoff";
@@ -24,10 +26,14 @@ import styles from "./Assistant.module.css";
 /**
  * 画面の隅にいる案内役。
  *
- * できることは 2 つだけ — ページを開くことと、見え方を変えること。
+ * できることは 3 つ — ページを開く、見え方を変える、画面に出ている言葉を
+ * 説明してその場所を示す。生徒と教員のどちらの画面にも置き、audience で
+ * 行き先・言葉の説明・つらさへの返事を切り替える。
+ *
  * 悩みを聞く役は持たせていない。それは /chat が同意と記録の仕組みごと
  * 引き受けている仕事で、ここに 2 つ目の窓口を作ると、相談の中身が
- * どこにも残らないまま漏れていく。気持ちの話だと分かった時点で渡す。
+ * どこにも残らないまま漏れていく。生徒の画面では、気持ちの話だと分かった
+ * 時点で渡す。
  *
  * 置き場所は AuthShell。ページの外側にいるので、案内して画面が変わっても
  * 会話はそのまま残る。
@@ -50,6 +56,13 @@ const EXIT_MS = 180;
 /** 打つ手が止まってから、目線を戻すまで。 */
 const TYPING_IDLE_MS = 900;
 
+/** 示した場所の枠を残す長さ。blesc.css の bl-spotlight（0.9 秒 × 3 回）と揃える。 */
+const SPOTLIGHT_MS = 2700;
+
+/** ページを開いてから見出しが描かれるまで、探し直す回数と間隔。 */
+const SHOW_ATTEMPTS = 25;
+const SHOW_RETRY_MS = 120;
+
 /**
  * 目線の向き（-1〜1）。ランチャーはパネルの右下にいるので、パネルを見るとき
  * は左上、入力欄を見るときは左。パネルの中の小石は入力欄を見下ろす。
@@ -60,7 +73,7 @@ const LOOK_DOWN_AT_INPUT = { x: 0.15, y: 1 };
 
 type Entry = {
   id: string;
-  role: "student" | "pebble";
+  role: "user" | "pebble";
   text: string;
   offers?: readonly AssistantOffer[];
   calm?: boolean;
@@ -69,12 +82,78 @@ type Entry = {
 let sequence = 0;
 const nextId = () => `a${(sequence += 1)}`;
 
-export function Assistant() {
+type Found = { label: HTMLElement; region: HTMLElement };
+type Located = Found | { hidden: true } | null;
+
+/**
+ * 見出しの文字から、画面の中の場所を探す。
+ *
+ * 見出しが見えていないとき（狭い画面で表がカード表示に切り替わっているなど）
+ * は、ページ側が data-bl-term で「この値はこの見出しのもの」と印を付けた要素
+ * を探す。それも無く、見出しが隠れているだけなら hidden を返す。見つからない
+ * 理由を分けておくと、「ありません」ではなく「隠れています」と言える。
+ */
+function locate(heading: string): Located {
+  const main = document.getElementById("bl-main");
+  if (!main) return null;
+  const flat = (value: string | null) => (value ?? "").replace(/\s+/g, "");
+  const target = flat(heading);
+  const shown = (element: HTMLElement) => element.getClientRects().length > 0;
+  const headings = [...main.querySelectorAll<HTMLElement>("h1, h2, h3, th, .bl-h3, .bl-meta")];
+  const exact = headings.filter((element) => flat(element.textContent) === target);
+  const label = exact.find(shown) ?? headings.find((element) => shown(element) && flat(element.textContent).startsWith(target));
+  if (label) return { label, region: regionOf(label) };
+
+  const marked = [...main.querySelectorAll<HTMLElement>("[data-bl-term]")].find(
+    (element) => element.dataset.blTerm === heading && shown(element),
+  );
+  if (marked) return { label: marked, region: marked.closest<HTMLElement>("[data-bl-term-card]") ?? marked };
+
+  return exact.length > 0 ? { hidden: true } : null;
+}
+
+const isFound = (located: Located): located is Found => located !== null && "label" in located;
+
+/** 示せなかったときの返事。隠れているのか、そもそも無いのかで言い分ける。 */
+function missing(heading: string, located: Located, arrived: boolean): AssistantReply {
+  const say =
+    located && "hidden" in located
+      ? `この画面の表示では「${heading}」の欄が隠れています。画面を横に広げると表示されることがあります。`
+      : arrived
+        ? `開いたページに「${heading}」が見つかりませんでした。`
+        : `いまの画面には「${heading}」が表示されていないようです。`;
+  return { say, expression: "oops", actions: [], offers: [] };
+}
+
+/** 枠を付ける範囲。表の列は見出しのセル、数字のタイルはタイル、それ以外はカード。 */
+function regionOf(heading: HTMLElement): HTMLElement {
+  if (heading.matches("th")) return heading;
+  if (heading.matches(".bl-meta")) return heading.parentElement ?? heading;
+  return heading.closest<HTMLElement>(".bl-card, section, header") ?? heading;
+}
+
+/**
+ * 画面の中の場所を示す。スクロールして枠を付け、見出しにフォーカスを移す。
+ * 読み上げを使っている人には、フォーカスが移ることで「ここ」が伝わる。
+ */
+function spotlight({ label, region }: Found, reduced: boolean): void {
+  region.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
+  region.setAttribute("data-bl-spotlight", "");
+  window.setTimeout(() => region.removeAttribute("data-bl-spotlight"), SPOTLIGHT_MS);
+  if (!label.hasAttribute("tabindex")) {
+    label.setAttribute("tabindex", "-1");
+    label.addEventListener("blur", () => label.removeAttribute("tabindex"), { once: true });
+  }
+  label.focus({ preventScroll: true });
+}
+
+export function Assistant({ audience }: { audience: Audience }) {
   const pathname = usePathname();
   const navigate = useTransitionNavigate();
   const settings = useA11y();
   const reduced = useReducedMotion();
   const today = usePilotToday();
+  const copy = ASSISTANT_COPY[audience];
 
   const [open, setOpen] = useState(false);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -98,6 +177,8 @@ export function Assistant() {
   const settleTimer = useRef(0);
   const exitTimer = useRef(0);
   const typingTimer = useRef(0);
+  // ページを開いてから示す見出し。遷移が終わるまで預かる。
+  const pendingShow = useRef<string | null>(null);
 
   const later = useCallback((run: () => void, delay: number) => {
     const id = window.setTimeout(() => {
@@ -223,23 +304,29 @@ export function Assistant() {
     [run, settle],
   );
 
+  const contextFor = useCallback(
+    (text: string, turn: number): AssistantContext => ({
+      audience,
+      pathname,
+      settings,
+      pilot: today ? pilotProgress(today) : null,
+      safety: assessSafety(text),
+      turn,
+    }),
+    [audience, pathname, settings, today],
+  );
+
   const ask = useCallback(
     (raw: string) => {
       const text = raw.trim();
       if (!text || busy) return;
 
-      setEntries((current) => [...current, { id: nextId(), role: "student" as const, text }].slice(-PANEL_MAX));
+      setEntries((current) => [...current, { id: nextId(), role: "user" as const, text }].slice(-PANEL_MAX));
       setDraft("");
       setBusy(true);
       setExpression("thinking");
 
-      const reply = routeIntent(text, {
-        pathname,
-        settings,
-        pilot: today ? pilotProgress(today) : null,
-        safety: assessSafety(text),
-        turn: entries.filter((entry) => entry.role === "student").length,
-      });
+      const reply = routeIntent(text, contextFor(text, entries.filter((entry) => entry.role === "user").length));
 
       // 間を置くのは、打った言葉が画面に出て、小石が反応するのを
       // 見てから画面が変わるようにするため。動きを減らす設定の人には
@@ -247,21 +334,82 @@ export function Assistant() {
       if (reduced) respond(reply);
       else later(() => respond(reply), BEAT_MS);
     },
-    [busy, pathname, settings, today, reduced, respond, later, entries],
+    [busy, contextFor, entries, reduced, respond, later],
   );
+
+  /** 画面の中の場所を示す。別のページにあるときは、開いてから示す。 */
+  const show = useCallback(
+    (heading: string, href: string | null) => {
+      if (href && href !== pathname) {
+        pendingShow.current = heading;
+        navigate(href);
+        close();
+        return;
+      }
+      const located = locate(heading);
+      if (!isFound(located)) {
+        respond(missing(heading, located, false));
+        return;
+      }
+      close();
+      // パネルが閉じ始めてから動かす。同じフレームで始めると、まだ残っている
+      // パネルの陰でスクロールが始まり、どこへ動いたのか見えにくい。
+      window.requestAnimationFrame(() => spotlight(located, reduced));
+    },
+    [pathname, navigate, close, respond, reduced],
+  );
+
+  // ページを開いたあとで、預かっていた見出しを示す。新しいページは描画に
+  // 少し時間がかかるので、見つかるまで何度か探し直す。
+  useEffect(() => {
+    const heading = pendingShow.current;
+    if (!heading) return;
+    let attempts = 0;
+    let timer = 0;
+    const attempt = () => {
+      const located = locate(heading);
+      if (isFound(located)) {
+        pendingShow.current = null;
+        spotlight(located, reduced);
+        return;
+      }
+      attempts += 1;
+      if (attempts < SHOW_ATTEMPTS) {
+        timer = window.setTimeout(attempt, SHOW_RETRY_MS);
+        return;
+      }
+      // 見つからなかったことは黙らずに伝える。閉じたパネルに書いても
+      // 誰にも届かないので、開き直す。
+      pendingShow.current = null;
+      openPanel();
+      respond(missing(heading, located, true));
+    };
+    timer = window.setTimeout(attempt, SHOW_RETRY_MS);
+    return () => window.clearTimeout(timer);
+  }, [pathname, reduced, openPanel, respond]);
 
   const act = useCallback(
     (offer: AssistantOffer) => {
-      if (offer.action.kind === "help") {
-        respond(routeIntent("使い方", { pathname, settings, pilot: null, safety: assessSafety(""), turn: 0 }));
+      const { action } = offer;
+      if (action.kind === "help") {
+        respond(routeIntent("使い方", contextFor("", 0)));
         return;
       }
-      run(offer.action);
+      if (action.kind === "ask") {
+        ask(action.text);
+        inputRef.current?.focus();
+        return;
+      }
+      if (action.kind === "show") {
+        show(action.heading, action.href);
+        return;
+      }
+      run(action);
       setHopKey((key) => key + 1);
       setExpression("happy");
       settle();
     },
-    [run, respond, pathname, settings, settle],
+    [run, respond, contextFor, ask, show, settle],
   );
 
   return (
@@ -306,7 +454,7 @@ export function Assistant() {
           />
           <div>
             <p className={styles.headName}>blescの案内役</p>
-            <p className={styles.headRole}>ページの移動と、見え方の調整</p>
+            <p className={styles.headRole}>ページの移動、見え方、画面の説明</p>
           </div>
           <button type="button" className={`bl-icon-btn ${styles.close}`} onClick={close} aria-label="閉じる">
             <Icon name="close" size={20} />
@@ -316,11 +464,9 @@ export function Assistant() {
         <div className={styles.thread} ref={threadRef} role="log" aria-live="polite">
           {entries.length === 0 ? (
             <div className={styles.intro}>
-              <p className={styles.introText}>
-                行きたいページや、読みにくいところを教えてください。
-              </p>
+              <p className={styles.introText}>{copy.intro}</p>
               <ul className={styles.suggestions}>
-                {SUGGESTIONS.map((suggestion, index) => (
+                {copy.suggestions.map((suggestion, index) => (
                   <li key={suggestion.label} style={{ "--i": index } as React.CSSProperties}>
                     <button
                       type="button"
@@ -362,7 +508,7 @@ export function Assistant() {
 
         {/* 注記は入力欄の上に置く。入力欄をパネルの下の角に接させないと、
             角の丸みが入力欄のピルと同心にならない。 */}
-        <p className={styles.note}>ここでの言葉は端末の外に出ません。相談は「相談」のページで。</p>
+        <p className={styles.note}>{copy.note}</p>
 
         <form
           className={styles.foot}
@@ -382,7 +528,7 @@ export function Assistant() {
               window.clearTimeout(typingTimer.current);
               typingTimer.current = window.setTimeout(() => setTyping(false), TYPING_IDLE_MS);
             }}
-            placeholder="日記、文字を大きく…"
+            placeholder={copy.placeholder}
             aria-label="案内役に伝えたいこと"
             enterKeyHint="send"
             autoComplete="off"
@@ -400,7 +546,6 @@ export function Assistant() {
             <Icon name="arrow_forward" size={16} className={styles.sendIcon} />
           </button>
         </form>
-
       </div>
 
       <DisplaySettings open={settingsOpen} onClose={() => setSettingsOpen(false)} />

@@ -64,9 +64,10 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
         {children}
       </main>
       <RouteAnnouncer />
-      {/* 案内役は生徒の画面にだけ置く。危機のアラートを読んでいる教員の
-          横で、表情の付いた小石がまばたきしているべきではない。 */}
-      {context === "student" && <Assistant />}
+      {/* 案内役は生徒と教員の画面に置く（保護者の画面にはまだ置かない）。
+          どちら向けかで、行き先・画面の説明・つらさへの返事が変わる。
+          側を切り替えたら会話を持ち越さないよう、key で作り直す。 */}
+      {(context === "student" || context === "educator") && <Assistant key={context} audience={context} />}
       {demo && (
         <div className="bl-demo-badge">
           <Icon name="visibility" size={14} />

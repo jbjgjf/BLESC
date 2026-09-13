@@ -163,7 +163,7 @@
   gap: 8px;
 }
 
-.turn[data-role="student"] {
+.turn[data-role="user"] {
   align-items: flex-end;
 }
 
@@ -187,7 +187,7 @@
   border-color: var(--bl-line-soft);
 }
 
-.turn[data-role="student"] .bubble {
+.turn[data-role="user"] .bubble {
   background: var(--bl-blue);
   transform-origin: right bottom;
   animation-name: bubble-in-right;

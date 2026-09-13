@@ -991,33 +991,6 @@ fieldset {
   }
 }
 
-/* ── 案内役との同居 ─────────────────────────────────
-   右下の角は案内役の小石が使う。デモ表示の札はその左へ避ける。 */
-[data-bl-context="student"] .bl-demo-badge {
-  right: 84px;
-}
-
-/* 最後の行まで小石の上へスクロールできるように、下に逃げ場を足す。 */
-[data-bl-context="student"] .bl-app__main {
-  padding-bottom: 104px;
-}
-
-/* キーボードで移動したとき、ブラウザは要素を画面内に入れるだけで、
-   固定表示の小石の下に隠れていても止まる（WCAG 2.4.11）。
-   その分だけスクロールの到達点を持ち上げる。 */
-html:has([data-bl-assistant]) {
-  scroll-padding-bottom: 96px;
-}
-
-@media (max-width: 640px) {
-  [data-bl-context="student"] .bl-app__main {
-    padding-bottom: calc(160px + env(safe-area-inset-bottom));
-  }
-  html:has([data-bl-assistant]) {
-    scroll-padding-bottom: calc(150px + env(safe-area-inset-bottom));
-  }
-}
-
 /* ════════════════════════════════════════════════════════════
    アクセシビリティ
    「特別な人のための設定」ではなく、既定で満たしておくべきもの。
@@ -1152,6 +1125,54 @@ html[data-bl-motion="reduced"] *::after {
   scroll-behavior: auto !important;
 }
 
+/* ── 案内役 ─────────────────────────────────────────
+   右下の角は案内役の小石が使う。生徒と教員のどちらの画面にも出るので、
+   画面の種類ではなく「小石がいるかどうか」で判定する。生徒テーマの層に
+   置かないのはそのため。 */
+
+/* デモ表示の札は小石の左へ避ける。 */
+.bl-app:has([data-bl-assistant]) .bl-demo-badge {
+  right: 84px;
+}
+
+/* 最後の行まで小石の上へスクロールできるように、下に逃げ場を足す。 */
+.bl-app:has([data-bl-assistant]) .bl-app__main {
+  padding-bottom: 104px;
+}
+
+/* キーボードで移動したとき、ブラウザは要素を画面内に入れるだけで、
+   固定表示の小石の下に隠れていても止まる（WCAG 2.4.11）。
+   その分だけスクロールの到達点を持ち上げる。 */
+html:has([data-bl-assistant]) {
+  scroll-padding-bottom: 96px;
+}
+
+@media (max-width: 640px) {
+  .bl-app:has([data-bl-assistant]) .bl-app__main {
+    padding-bottom: calc(160px + env(safe-area-inset-bottom));
+  }
+  html:has([data-bl-assistant]) {
+    scroll-padding-bottom: calc(150px + env(safe-area-inset-bottom));
+  }
+}
+
+/* 「画面で見る」で示した場所。フォーカスリングと同じ太さ・色の枠を、
+   少しだけ脈打たせる。光らせない。 */
+[data-bl-spotlight] {
+  outline: 3px solid var(--bl-blue-strong);
+  outline-offset: 5px;
+  animation: bl-spotlight 0.9s var(--bl-ease) 3;
+}
+
+@keyframes bl-spotlight {
+  0%, 100% { outline-offset: 5px; }
+  50%      { outline-offset: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-bl-spotlight] { animation: none; }
+}
+
 /* ── Windows ハイコントラストモード ─────────────────
    背景色が全て置き換わるため、境界を地の色で描き直す。 */
 @media (forced-colors: active) {
@@ -1181,5 +1202,8 @@ html[data-bl-motion="reduced"] *::after {
   .bl-skip:focus,
   *:focus-visible {
     outline: 3px solid Highlight;
+  }
+  [data-bl-spotlight] {
+    outline-color: Highlight;
   }
 }

@@ -181,29 +181,39 @@ export default function RosterPage() {
       {/* ── カード（モバイル） ─────────────────────── */}
       <div className={styles.cards}>
         {rows.map((student) => (
-          <Link key={student.id} href={`/educator/student/${student.id}`} className={`bl-card bl-card--link ${styles.card}`}>
+          // data-bl-term は案内役の「画面で見る」用。狭い画面では表の列見出しが
+          // 隠れるので、カードの中のどの値がどの列にあたるかを示しておく。
+          <Link
+            key={student.id}
+            href={`/educator/student/${student.id}`}
+            className={`bl-card bl-card--link ${styles.card}`}
+            data-bl-term-card=""
+          >
             <div className="bl-row-between">
               <span className="bl-h3">{student.name}</span>
-              <BandChip band={student.band} size="sm" />
+              <BandChip band={student.band} size="sm" data-bl-term="状態" />
             </div>
             <div className="bl-row" style={{ gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-              <TrendChip trend={student.trend} />
+              <TrendChip trend={student.trend} data-bl-term="傾向" />
               {student.hasFollowUp && (
-                <span className="bl-chip bl-chip--tint">
+                <span className="bl-chip bl-chip--tint" data-bl-term="AI補足">
                   <Icon name="forum" size={14} fill />
                   AI補足
                 </span>
               )}
               {student.missedDays > 0 && (
-                <span className="bl-chip bl-chip--watch">
+                <span className="bl-chip bl-chip--watch" data-bl-term="未提出">
                   <Icon name="event_busy" size={14} />
                   {student.missedDays}日未提出
                 </span>
               )}
             </div>
             <p className="bl-micro" style={{ marginTop: 8 }}>
-              最終提出 {student.lastEntry ? formatDate(student.lastEntry, false) : "記録なし"} ・{" "}
-              {STATUSES[student.status].label}
+              <span data-bl-term="最終提出">
+                最終提出 {student.lastEntry ? formatDate(student.lastEntry, false) : "記録なし"}
+              </span>
+              {" ・ "}
+              <span data-bl-term="対応">{STATUSES[student.status].label}</span>
             </p>
           </Link>
         ))}
