@@ -9,6 +9,7 @@ import { useIsHydrated } from "@/lib/hydration";
 import { Icon } from "@/components/ui/Icon";
 import { AppNav } from "@/components/AppNav";
 import { RouteAnnouncer } from "@/components/a11y/RouteAnnouncer";
+import { Assistant } from "@/components/assistant/Assistant";
 
 export function AuthShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -53,14 +54,19 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   // The chat surface is full-bleed and brings its own header.
   if (pathname === "/chat") return <>{children}</>;
 
+  const context = contextForPath(pathname);
+
   return (
-    <div className="bl-page bl-app" data-bl-context={contextForPath(pathname)}>
+    <div className="bl-page bl-app" data-bl-context={context}>
       <a className="bl-skip" href="#bl-main">本文へスキップ</a>
       <AppNav />
       <main id="bl-main" className="bl-app__main" tabIndex={-1}>
         {children}
       </main>
       <RouteAnnouncer />
+      {/* 案内役は生徒の画面にだけ置く。危機のアラートを読んでいる教員の
+          横で、表情の付いた小石がまばたきしているべきではない。 */}
+      {context === "student" && <Assistant />}
       {demo && (
         <div className="bl-demo-badge">
           <Icon name="visibility" size={14} />

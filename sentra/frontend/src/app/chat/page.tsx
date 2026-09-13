@@ -7,6 +7,7 @@ import { ApiClient } from "@/api/client";
 import { useAuth } from "@/lib/auth";
 import { Send } from "lucide-react";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
+import { clearHandoff, readHandoff } from "@/lib/assistant/handoff";
 import styles from "./chat.module.css";
 
 type Message = {
@@ -32,7 +33,10 @@ const WAVE_PATHS = [
 export default function ChatPage() {
   const { userId } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
+  // 案内役から渡された言葉があれば、下書きとして置いておく。送るかどうかは
+  // 本人が決める。このページは AuthShell がハイドレーション後にしか描かない
+  // ので、初期化関数で sessionStorage を読んでもサーバーの HTML とずれない。
+  const [input, setInput] = useState(readHandoff);
   const [isThinking, setIsThinking] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -53,6 +57,18 @@ export default function ChatPage() {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
     }
   }, [messages, isThinking]);
+
+  // 受け取った下書きは消し、複数行でも全体が見える高さにして、続きを
+  // 打てるよう末尾にカーソルを置く。
+  useEffect(() => {
+    clearHandoff();
+    const el = textareaRef.current;
+    if (!el?.value) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 130)}px`;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
 
   const autoGrow = () => {
     const el = textareaRef.current;

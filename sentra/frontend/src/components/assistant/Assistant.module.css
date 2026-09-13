@@ -1,0 +1,340 @@
+/* ════════════════════════════════════════════════════════════
+   案内役
+   角の丸みは入れ子で揃えてある（外側の半径 = 内側の半径 + 余白 + 枠線）。
+   パネルの角にくるのは、下の入力欄（高さ 46px のピル）と、右上の閉じる
+   ボタン（38px の円）の 2 つ。
+
+     入力欄   23px + 余白 11px + 枠線 1px = 35px
+     閉じる   19px + 余白 15px + 枠線 1px = 35px
+
+   円のほうが 8px 小さいので、余白を 4px 多く取ると同じ弧の中心に乗る。
+   ════════════════════════════════════════════════════════════ */
+
+.launcher {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 95;
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--bl-pill);
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--bl-t-release) var(--bl-pop);
+}
+
+.launcher:active {
+  transform: scale(0.92);
+  transition-duration: var(--bl-t-press);
+  transition-timing-function: var(--bl-ease);
+}
+
+.launcher:focus-visible {
+  outline: 3px solid var(--bl-blue-strong);
+  outline-offset: 2px;
+}
+
+/* ── パネル ─────────────────────────────────────────── */
+.panel {
+  --inset: 11px;
+  --compose-h: 46px;
+
+  position: fixed;
+  right: 14px;
+  bottom: 90px;
+  z-index: 96;
+  width: min(372px, calc(100vw - 28px));
+  max-height: min(580px, calc(100dvh - 160px));
+  display: flex;
+  flex-direction: column;
+  background: var(--bl-surface);
+  border: var(--bl-bd) solid var(--bl-line);
+  border-radius: calc(var(--compose-h) / 2 + var(--inset) + var(--bl-bd));
+  corner-shape: squircle;
+  font-family: var(--bl-font);
+  color: var(--bl-ink);
+  /* 小石から膨らんで出てくるように、原点をランチャーの位置に置く。 */
+  transform-origin: calc(100% - 32px) calc(100% + 44px);
+  animation: panel-in 0.34s var(--bl-pop) both;
+}
+
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.92); }
+  to   { opacity: 1; transform: none; }
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 15px 15px 12px 18px;
+  /* 会話が流れたとき、吹き出しがここで切れる。線を引いて、切れ目を
+     「スクロールの境目」として見せる。上のナビと同じ細さ。 */
+  border-bottom: var(--bl-bd) solid var(--bl-line-soft);
+}
+
+/* 閉じるボタンは上端に留める。行の中で上下中央に置くと、隣の見出しが
+   2 行ぶん背が高いため 3px 下がり、角の弧の中心から外れる。しかも文字を
+   大きくする設定ほど下がっていく。上端に留めれば、どの文字サイズでも
+   余白は 15px のまま（19 + 15 + 1 = 35px）。 */
+.close {
+  align-self: flex-start;
+}
+
+.headPebble {
+  flex-shrink: 0;
+}
+
+.head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.headName {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.headRole {
+  margin: 1px 0 0;
+  font-size: 0.74rem;
+  color: var(--bl-ink-3);
+}
+
+/* ── 会話 ───────────────────────────────────────────── */
+.thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 12px;
+}
+
+.intro {
+  padding: 2px 2px 0;
+}
+
+.introText {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--bl-ink-2);
+}
+
+.suggestions,
+.offers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.turn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.turn[data-role="student"] {
+  align-items: flex-end;
+}
+
+.bubble {
+  margin: 0;
+  max-width: 88%;
+  padding: 10px 14px;
+  border: var(--bl-bd) solid transparent;
+  border-radius: var(--bl-radius-inner);
+  corner-shape: squircle;
+  font-size: 0.9rem;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  animation: bubble-in 0.3s var(--bl-pop) both;
+}
+
+.turn[data-role="pebble"] .bubble {
+  background: var(--bl-mist);
+  border-color: var(--bl-line-soft);
+}
+
+.turn[data-role="student"] .bubble {
+  background: var(--bl-blue);
+}
+
+/* つらさに触れた返事。弾ませず、静かに出す。背景も白に落として、
+   ほかの返事と同じ軽さに見えないようにする。 */
+.bubble[data-calm="true"] {
+  background: var(--bl-surface);
+  border-color: var(--bl-line);
+  animation: calm-in 0.6s var(--bl-ease) both;
+}
+
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes calm-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── 入力 ───────────────────────────────────────────── */
+.note {
+  margin: 0;
+  padding: 0 18px 9px;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--bl-ink-3);
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--compose-h);
+  margin: 0 var(--inset) var(--inset);
+  padding: 0 3px 0 18px;
+  border: var(--bl-bd) solid var(--bl-line);
+  border-radius: var(--bl-pill);
+  background: var(--bl-surface);
+  transition: border-color 0.15s var(--bl-ease);
+}
+
+.foot:hover {
+  border-color: var(--bl-blue);
+}
+
+/* 入力欄そのものの枠は消してあるので、フォーカスは外側のピルに出す。
+   送信ボタンにフォーカスがあるときは、ボタン自身の輪が出るので重ねない。 */
+.foot:has(.input:focus-visible) {
+  outline: 3px solid var(--bl-blue-strong);
+  outline-offset: 2px;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  /* 16px 未満だと iOS がフォーカス時に画面を拡大する。 */
+  font-size: 1rem;
+  color: var(--bl-ink);
+}
+
+.input::placeholder {
+  color: var(--bl-ink-3);
+}
+
+/* 送信は相談ページと同じ五角形。 */
+.send {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--bl-blue);
+  cursor: pointer;
+  transition: color 0.15s var(--bl-ease), opacity 0.15s var(--bl-ease),
+    transform var(--bl-t-release) var(--bl-pop);
+}
+
+.send::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.send:hover:not(:disabled) {
+  color: var(--bl-blue-hover);
+}
+
+.send:active:not(:disabled) {
+  transform: scale(0.92);
+  transition-duration: var(--bl-t-press);
+  transition-timing-function: var(--bl-ease);
+}
+
+.send:focus-visible {
+  outline: 3px solid var(--bl-blue-strong);
+  outline-offset: 2px;
+  border-radius: var(--bl-pill);
+}
+
+.send:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sendShape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.sendIcon {
+  position: relative;
+  color: var(--bl-ink);
+  /* 上が尖った五角形なので、見た目の重心は下に寄る。 */
+  margin-top: 4px;
+}
+
+/* ── 狭い画面 ─────────────────────────────────────────
+   下のタブバーの上に乗せる。パネルは左右いっぱいに広げる。 */
+@media (max-width: 640px) {
+  .launcher {
+    right: 10px;
+    bottom: calc(74px + env(safe-area-inset-bottom));
+    width: 58px;
+    height: 58px;
+  }
+
+  .panel {
+    left: 10px;
+    right: 10px;
+    width: auto;
+    bottom: calc(140px + env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 140px - 70px - env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .bubble,
+  .bubble[data-calm="true"] {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .panel,
+  .foot,
+  .bubble {
+    border-color: CanvasText;
+  }
+}

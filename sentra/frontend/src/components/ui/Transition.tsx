@@ -72,6 +72,17 @@ export function TransitionProvider({ children }: { children: React.ReactNode }) 
   return <NavigateContext.Provider value={navigate}>{children}</NavigateContext.Provider>;
 }
 
+/**
+ * TransitionLink と同じ遷移を、リンクではない場所から呼ぶ。
+ * 案内役のように、押された要素ではなく言葉から移動するときに使う。
+ * Provider の外では通常の遷移に落ちる。
+ */
+export function useTransitionNavigate(): Navigate {
+  const navigate = useContext(NavigateContext);
+  const router = useRouter();
+  return navigate ?? ((href) => router.push(href));
+}
+
 type TransitionLinkProps = ComponentProps<typeof Link> & { href: string };
 
 /**

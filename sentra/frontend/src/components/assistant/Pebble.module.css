@@ -1,0 +1,31 @@
+/* 塗りは属性ではなくここで持つ。SVG の表示属性に var() を書くと、
+   ブラウザによっては解釈されずに黒く塗られる。 */
+.body {
+  fill: var(--bl-blue);
+  stroke: var(--bl-blue-strong);
+  stroke-linejoin: round;
+}
+
+.eye {
+  fill: var(--bl-surface);
+}
+
+/* 高コントラスト設定では輪郭を文字色まで濃くする。 */
+:global(html[data-bl-contrast="high"]) .body {
+  stroke: var(--bl-ink);
+}
+
+/* Windows ハイコントラスト。塗りがシステム配色に置き換わると、目と体が
+   同じ色になって顔が消える。自分で地の色と文字色に塗り分ける。 */
+@media (forced-colors: active) {
+  .svg {
+    forced-color-adjust: none;
+  }
+  .body {
+    fill: CanvasText;
+    stroke: CanvasText;
+  }
+  .eye {
+    fill: Canvas;
+  }
+}

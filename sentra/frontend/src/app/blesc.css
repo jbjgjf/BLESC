@@ -991,6 +991,33 @@ fieldset {
   }
 }
 
+/* ── 案内役との同居 ─────────────────────────────────
+   右下の角は案内役の小石が使う。デモ表示の札はその左へ避ける。 */
+[data-bl-context="student"] .bl-demo-badge {
+  right: 84px;
+}
+
+/* 最後の行まで小石の上へスクロールできるように、下に逃げ場を足す。 */
+[data-bl-context="student"] .bl-app__main {
+  padding-bottom: 104px;
+}
+
+/* キーボードで移動したとき、ブラウザは要素を画面内に入れるだけで、
+   固定表示の小石の下に隠れていても止まる（WCAG 2.4.11）。
+   その分だけスクロールの到達点を持ち上げる。 */
+html:has([data-bl-assistant]) {
+  scroll-padding-bottom: 96px;
+}
+
+@media (max-width: 640px) {
+  [data-bl-context="student"] .bl-app__main {
+    padding-bottom: calc(160px + env(safe-area-inset-bottom));
+  }
+  html:has([data-bl-assistant]) {
+    scroll-padding-bottom: calc(150px + env(safe-area-inset-bottom));
+  }
+}
+
 /* ════════════════════════════════════════════════════════════
    アクセシビリティ
    「特別な人のための設定」ではなく、既定で満たしておくべきもの。
