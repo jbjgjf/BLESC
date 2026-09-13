@@ -29,7 +29,7 @@ type Navigate = (href: string) => void;
 const NavigateContext = createContext<Navigate | null>(null);
 
 type ViewTransitionDocument = Document & {
-  startViewTransition?: (callback: () => unknown) => { finished: Promise<void> };
+  startViewTransition?: (callback: () => unknown) => { ready: Promise<void>; finished: Promise<void> };
 };
 
 /** 遷移先の描画が詰まっても、静止画のまま固まらないようにする上限。 */
@@ -53,18 +53,27 @@ export function TransitionProvider({ children }: { children: React.ReactNode }) 
     (href) => {
       const doc = document as ViewTransitionDocument;
 
-      if (!doc.startViewTransition || prefersReducedMotion()) {
+      // 見えていないタブで始めると、ブラウザは演出を打ち切って
+      // InvalidStateError で reject する。見えないものを動かす意味もないので、
+      // 演出なしで進める。
+      if (!doc.startViewTransition || prefersReducedMotion() || document.visibilityState !== "visible") {
         router.push(href);
         return;
       }
 
-      doc.startViewTransition(() => {
+      const transition = doc.startViewTransition(() => {
         router.push(href);
         return new Promise<void>((resolve) => {
           release.current = resolve;
           window.setTimeout(resolve, HOLD_LIMIT_MS);
         });
       });
+
+      // 続けざまに遷移すると前の演出は打ち切られ、ready が reject される。
+      // 遷移そのものは進むので、ここで受け止める。受けないと
+      // 「Uncaught (in promise)」としてコンソールに残る。
+      transition.ready.catch(() => {});
+      transition.finished.catch(() => {});
     },
     [router],
   );
