@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { Icon } from "@/components/ui/Icon";
 import {
   A11Y_DEFAULTS,
@@ -80,6 +80,9 @@ const GROUPS: Array<Group<keyof A11ySettings>> = [
 ];
 
 export function DisplaySettings({ open, onClose }: { open: boolean; onClose: () => void }) {
+  // 見出しの id は固定にしない。案内役も同じダイアログを持つので、固定だと
+  // id が重複し、2 つ目の aria-labelledby が 1 つ目の見出しを指してしまう。
+  const titleId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const settings = useA11y();
 
@@ -113,14 +116,14 @@ export function DisplaySettings({ open, onClose }: { open: boolean; onClose: () 
     <dialog
       ref={dialogRef}
       className={styles.dialog}
-      aria-labelledby="bl-display-settings-title"
+      aria-labelledby={titleId}
       onClick={(event) => {
         if (event.target === dialogRef.current) onClose();
       }}
     >
       <div className={styles.inner}>
         <div className={styles.head}>
-          <h2 id="bl-display-settings-title" className="bl-h2">
+          <h2 id={titleId} className="bl-h2">
             表示設定
           </h2>
           <button type="button" className="bl-icon-btn" onClick={onClose} aria-label="表示設定を閉じる">
