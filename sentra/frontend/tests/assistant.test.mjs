@@ -26,6 +26,7 @@ const context = (text, overrides = {}) => ({
   settings,
   pilot: { elapsed: 7, remaining: 24, phase: "during" },
   safety: assessSafety(text),
+  turn: 0,
   ...overrides,
 });
 
@@ -177,6 +178,59 @@ describe("routeIntent — 拾えないとき", () => {
 
   it("一文字では動かさない", () => {
     assert.equal(navigated(ask("日")), null);
+  });
+});
+
+describe("routeIntent — 雑談", () => {
+  it("あいさつに、あいさつで返す（移動はしない）", () => {
+    const reply = ask("こんにちは");
+    assert.match(reply.say, /^こんにちは。/);
+    assert.equal(navigated(reply), null);
+    assert.equal(reply.expression, "happy");
+  });
+
+  it("あいさつの種類に合わせる", () => {
+    assert.match(ask("おはよう！").say, /^おはようございます。/);
+    assert.match(ask("こんばんは").say, /^こんばんは。/);
+    assert.match(ask("よろしく").say, /^よろしくお願いします。/);
+  });
+
+  it("あいさつと頼みごとが一緒なら、あいさつを返してから動く", () => {
+    const reply = ask("こんにちは、日記を書きたい");
+    assert.equal(navigated(reply), "/journal");
+    assert.match(reply.say, /^こんにちは。日記のページを開きますね。/);
+  });
+
+  it("同じあいさつでも、送った回数で言い回しが変わる", () => {
+    assert.notEqual(ask("こんにちは", { turn: 0 }).say, ask("こんにちは", { turn: 1 }).say);
+  });
+
+  it("気分が沈んだ言葉には明るく返さず、相談への道を出す", () => {
+    for (const text of ["疲れた", "元気がない", "なんかしんどい"]) {
+      const reply = ask(text);
+      assert.equal(reply.calm, true, text);
+      assert.equal(reply.expression, "steady", text);
+      assert.equal(reply.offers.find((offer) => offer.action.kind === "handoff")?.action.text, text);
+    }
+  });
+
+  it("「元気？」と「元気がない」を取り違えない", () => {
+    assert.notEqual(ask("元気？").calm, true);
+    assert.equal(ask("元気がない").calm, true);
+  });
+
+  it("「目が疲れた」は気分ではなく、動きを減らす頼みとして扱う", () => {
+    assert.deepEqual(patched(ask("目が疲れた")), { motion: "reduced" });
+  });
+
+  it("短い相づちは、言葉全体が一致したときだけ拾う", () => {
+    assert.match(ask("はい").say, /はい|わかりました/);
+    assert.equal(navigated(ask("うんどう会の日記")), "/journal");
+  });
+
+  it("別れのあいさつ", () => {
+    assert.equal(ask("おやすみ").say, "おやすみなさい。");
+    assert.equal(ask("またね").actions.length, 0);
   });
 });
 

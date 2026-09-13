@@ -44,6 +44,20 @@ const SETTLE_MS = 2400;
 /** この幅より狭いとパネルが画面をほぼ覆う。案内したら閉じて道を空ける。 */
 const NARROW = "(max-width: 640px)";
 
+/** 閉じる動きの長さ。CSS の panel-out と揃える。 */
+const EXIT_MS = 180;
+
+/** 打つ手が止まってから、目線を戻すまで。 */
+const TYPING_IDLE_MS = 900;
+
+/**
+ * 目線の向き（-1〜1）。ランチャーはパネルの右下にいるので、パネルを見るとき
+ * は左上、入力欄を見るときは左。パネルの中の小石は入力欄を見下ろす。
+ */
+const LOOK_AT_PANEL = { x: -0.6, y: -0.7 };
+const LOOK_AT_INPUT = { x: -0.95, y: -0.3 };
+const LOOK_DOWN_AT_INPUT = { x: 0.15, y: 1 };
+
 type Entry = {
   id: string;
   role: "student" | "pebble";
@@ -71,6 +85,10 @@ export function Assistant() {
   const [busy, setBusy] = useState(false);
   // 指やカーソルが乗っている、またはフォーカスがある。小石がこちらを向く。
   const [attending, setAttending] = useState(false);
+  // 閉じる動きの最中。見た目はまだ出ているが、操作の上ではもう閉じている。
+  const [closing, setClosing] = useState(false);
+  const [typing, setTyping] = useState(false);
+  const expanded = open && !closing;
 
   const panelId = useId();
   const launcherRef = useRef<HTMLButtonElement>(null);
@@ -78,6 +96,8 @@ export function Assistant() {
   const threadRef = useRef<HTMLDivElement>(null);
   const timers = useRef(new Set<number>());
   const settleTimer = useRef(0);
+  const exitTimer = useRef(0);
+  const typingTimer = useRef(0);
 
   const later = useCallback((run: () => void, delay: number) => {
     const id = window.setTimeout(() => {
@@ -102,6 +122,8 @@ export function Assistant() {
     return () => {
       pending.forEach(window.clearTimeout);
       window.clearTimeout(settleTimer.current);
+      window.clearTimeout(exitTimer.current);
+      window.clearTimeout(typingTimer.current);
     };
   }, []);
 
@@ -111,12 +133,33 @@ export function Assistant() {
   }, [open]);
 
   const close = useCallback(() => {
-    setOpen(false);
     launcherRef.current?.focus();
+    window.clearTimeout(exitTimer.current);
+    if (reduced) {
+      setOpen(false);
+      return;
+    }
+    // フォーカスとボタンの状態はすぐに戻し、見た目だけ縮む動きを見せてから
+    // 消す。読み上げには、押した瞬間に閉じたと伝わる。
+    setClosing(true);
+    exitTimer.current = window.setTimeout(() => {
+      setOpen(false);
+      setClosing(false);
+    }, EXIT_MS);
+  }, [reduced]);
+
+  const openPanel = useCallback(() => {
+    window.clearTimeout(exitTimer.current);
+    setClosing(false);
+    setOpen(true);
+    // パネルを放り出すように一度跳ねる。
+    setHopKey((key) => key + 1);
+    // 閉じかけを開き直したときは open が変わらず effect が走らないので、ここでも入れる。
+    inputRef.current?.focus();
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!expanded) return;
     const onKeyDown = (event: KeyboardEvent) => {
       // 表示設定のダイアログが開いているときの Esc は、ダイアログが自分で
       // 受けて閉じる。ここでも拾うとパネルまで閉じ、フォーカスの戻り先を
@@ -125,13 +168,13 @@ export function Assistant() {
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, close, settingsOpen]);
+  }, [expanded, close, settingsOpen]);
 
   // 会話が伸びたら最後まで送る。
   useEffect(() => {
     const thread = threadRef.current;
-    if (thread) thread.scrollTop = thread.scrollHeight;
-  }, [entries]);
+    if (thread) thread.scrollTo({ top: thread.scrollHeight, behavior: reduced ? "auto" : "smooth" });
+  }, [entries, reduced]);
 
   const run = useCallback(
     (action: AssistantAction) => {
@@ -195,6 +238,7 @@ export function Assistant() {
         settings,
         pilot: today ? pilotProgress(today) : null,
         safety: assessSafety(text),
+        turn: entries.filter((entry) => entry.role === "student").length,
       });
 
       // 間を置くのは、打った言葉が画面に出て、小石が反応するのを
@@ -203,13 +247,13 @@ export function Assistant() {
       if (reduced) respond(reply);
       else later(() => respond(reply), BEAT_MS);
     },
-    [busy, pathname, settings, today, reduced, respond, later],
+    [busy, pathname, settings, today, reduced, respond, later, entries],
   );
 
   const act = useCallback(
     (offer: AssistantOffer) => {
       if (offer.action.kind === "help") {
-        respond(routeIntent("使い方", { pathname, settings, pilot: null, safety: assessSafety("") }));
+        respond(routeIntent("使い方", { pathname, settings, pilot: null, safety: assessSafety(""), turn: 0 }));
         return;
       }
       run(offer.action);
@@ -231,12 +275,17 @@ export function Assistant() {
         onPointerLeave={() => setAttending(false)}
         onFocus={() => setAttending(true)}
         onBlur={() => setAttending(false)}
-        aria-expanded={open}
+        aria-expanded={expanded}
         aria-controls={panelId}
-        aria-label={open ? "blescの案内役を閉じる" : "blescの案内役を開く"}
-        onClick={() => (open ? close() : setOpen(true))}
+        aria-label={expanded ? "blescの案内役を閉じる" : "blescの案内役を開く"}
+        onClick={() => (expanded ? close() : openPanel())}
       >
-        <Pebble expression={open || attending ? "listening" : expression} size={54} hopKey={hopKey} />
+        <Pebble
+          expression={expanded || attending ? "listening" : expression}
+          size={54}
+          hopKey={hopKey}
+          gaze={expanded ? (typing ? LOOK_AT_INPUT : LOOK_AT_PANEL) : null}
+        />
       </button>
 
       <div
@@ -245,9 +294,16 @@ export function Assistant() {
         role="dialog"
         aria-label="blescの案内役"
         hidden={!open}
+        data-closing={closing ? "" : undefined}
       >
         <div className={styles.head}>
-          <Pebble expression={expression} size={30} hopKey={hopKey} className={styles.headPebble} />
+          <Pebble
+            expression={expression}
+            size={30}
+            hopKey={hopKey}
+            gaze={typing ? LOOK_DOWN_AT_INPUT : null}
+            className={styles.headPebble}
+          />
           <div>
             <p className={styles.headName}>blescの案内役</p>
             <p className={styles.headRole}>ページの移動と、見え方の調整</p>
@@ -264,8 +320,8 @@ export function Assistant() {
                 行きたいページや、読みにくいところを教えてください。
               </p>
               <ul className={styles.suggestions}>
-                {SUGGESTIONS.map((suggestion) => (
-                  <li key={suggestion.label}>
+                {SUGGESTIONS.map((suggestion, index) => (
+                  <li key={suggestion.label} style={{ "--i": index } as React.CSSProperties}>
                     <button
                       type="button"
                       className="bl-choice"
@@ -289,8 +345,8 @@ export function Assistant() {
                 </p>
                 {entry.offers && entry.offers.length > 0 && (
                   <ul className={styles.offers}>
-                    {entry.offers.map((offer) => (
-                      <li key={offer.label}>
+                    {entry.offers.map((offer, index) => (
+                      <li key={offer.label} style={{ "--i": index } as React.CSSProperties}>
                         <button type="button" className="bl-choice" onClick={() => act(offer)}>
                           <Icon name={offer.icon} size={17} />
                           {offer.label}
@@ -319,7 +375,13 @@ export function Assistant() {
             ref={inputRef}
             className={styles.input}
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              // 打っている間は、小石が入力欄を見る。
+              setTyping(true);
+              window.clearTimeout(typingTimer.current);
+              typingTimer.current = window.setTimeout(() => setTyping(false), TYPING_IDLE_MS);
+            }}
             placeholder="日記、文字を大きく…"
             aria-label="案内役に伝えたいこと"
             enterKeyHint="send"

@@ -78,6 +78,8 @@ export type AssistantContext = {
   pilot: PilotProgress | null;
   /** lib/safety-assessment.ts の判定結果。 */
   safety: SafetyAssessment;
+  /** これまでに生徒が送った回数。雑談の返事を毎回同じ言い回しにしないために使う。 */
+  turn: number;
 };
 
 /** 小さい順。a11y.ts の TextSize を大小で並べたもの。 */
@@ -98,11 +100,32 @@ export function normalize(text: string): string {
     .replace(/[\s、。，．!！?？「」『』()（）]/g, "");
 }
 
+type Said = { text: string; raw: string };
+
 type Intent = {
   id: string;
   words: readonly string[];
-  reply: (context: AssistantContext) => AssistantReply;
+  /**
+   * 入力全体がこの語と同じときだけ拾う。「はい」「うん」のような短い相づちは、
+   * 部分一致にすると「うんどう会」のような別の言葉に紛れ込む。
+   */
+  exact?: readonly string[];
+  /** 雑談。操作を頼む言葉と一緒に来たら、操作のほうを優先する。 */
+  chat?: boolean;
+  reply: (context: AssistantContext, said: Said) => AssistantReply;
 };
+
+/** 言い回しを送った回数で回す。乱数にしないのは、試験で再現できるように。 */
+const pick = (lines: readonly string[], turn: number) => lines[turn % lines.length];
+
+/** 相手のあいさつに合わせて返す。 */
+function greetingFor(text: string): string {
+  if (text.includes("おはよう")) return "おはようございます。";
+  if (text.includes("こんばんは") || text.includes("こんばんわ")) return "こんばんは。";
+  if (text.includes("はじめまして")) return "はじめまして。";
+  if (text.includes("よろしく")) return "よろしくお願いします。";
+  return "こんにちは。";
+}
 
 const goTo = (destination: Destination, context: AssistantContext, say: string): AssistantReply => {
   if (context.pathname === destination.href) {
@@ -319,8 +342,99 @@ const INTENTS: readonly Intent[] = [
       offers: [{ label: "相談へ", icon: DESTINATIONS.chat.icon, action: { kind: "navigate", href: DESTINATIONS.chat.href } }],
     }),
   },
+  // ── 雑談 ─────────────────────────────────────────────
+  // 気分が沈んだ言葉を先に置く。「すごい疲れた」のように同じ強さで並んだとき、
+  // 明るい返事のほうを選ばないように。
+  {
+    id: "low",
+    chat: true,
+    words: ["つらい", "辛い", "しんどい", "疲れた", "つかれた", "元気がない", "元気ない", "落ち込", "だるい", "さみしい", "寂しい", "不安"],
+    reply: (context, said) => ({
+      say: pick(["話してくれてありがとうございます。", "そういう日もありますよね。"], context.turn)
+        + "相談のページでは、ゆっくり話を聞けます。",
+      expression: "steady",
+      calm: true,
+      actions: [],
+      offers: [
+        { label: "相談のページで話す", icon: DESTINATIONS.chat.icon, action: { kind: "handoff", text: said.raw } },
+        { label: "日記に書く", icon: DESTINATIONS.journal.icon, action: { kind: "navigate", href: DESTINATIONS.journal.href } },
+      ],
+    }),
+  },
+  {
+    id: "greeting",
+    chat: true,
+    words: ["こんにちは", "こんにちわ", "こんばんは", "こんばんわ", "おはよう", "はじめまして", "やあ", "hello", "よろしく"],
+    reply: (context, said) => ({
+      say: said.text.includes("はじめまして")
+        ? "はじめまして。blescの案内役です。ページの移動と、見え方の調整を手伝います。"
+        : greetingFor(said.text) + pick(["今日はどうしますか。", "行きたいページや、見えにくいところがあれば言ってください。"], context.turn),
+      expression: "happy",
+      actions: [],
+      offers: [
+        ...(context.pathname === DESTINATIONS.journal.href
+          ? []
+          : [{ label: "日記を書く", icon: DESTINATIONS.journal.icon, action: { kind: "navigate", href: DESTINATIONS.journal.href } } as const]),
+        { label: "できることを見る", icon: "lightbulb", action: { kind: "help" } },
+      ],
+    }),
+  },
+  {
+    id: "how-are-you",
+    chat: true,
+    words: ["元気", "げんき", "調子どう", "調子は", "最近どう", "how are you"],
+    reply: (context, said) => ({
+      say: /元気(だ|です|よ)/.test(said.text)
+        ? "よかったです。"
+        : pick(["小石なので、だいたいいつも元気です。", "元気です。今日も画面の隅にいます。"], context.turn),
+      expression: "happy",
+      actions: [],
+      offers: [],
+    }),
+  },
+  {
+    id: "bye",
+    chat: true,
+    words: ["またね", "さようなら", "さよなら", "バイバイ", "おやすみ", "じゃあね", "また明日", "bye"],
+    reply: (context, said) => ({
+      say: said.text.includes("おやすみ") ? "おやすみなさい。" : pick(["またね。", "またいつでもどうぞ。"], context.turn),
+      expression: "happy",
+      actions: [],
+      offers: [],
+    }),
+  },
+  {
+    id: "sorry",
+    chat: true,
+    words: ["ごめん", "すみません", "すいません"],
+    reply: () => ({ say: "気にしないでください。", expression: "happy", actions: [], offers: [] }),
+  },
+  {
+    id: "praise",
+    chat: true,
+    words: ["かわいい", "可愛い", "すごい", "いいね", "えらい"],
+    reply: (context) => ({
+      say: pick(["ありがとうございます。うれしいです。", "そう言ってもらえると、うれしいです。"], context.turn),
+      expression: "happy",
+      actions: [],
+      offers: [],
+    }),
+  },
+  {
+    id: "filler",
+    chat: true,
+    words: [],
+    exact: ["はい", "うん", "ok", "おk", "おけ", "了解", "りょうかい", "わかった", "なるほど", "そっか", "へー", "ふーん"],
+    reply: (context) => ({
+      say: pick(["はい。ほかにも何かあれば言ってください。", "わかりました。"], context.turn),
+      expression: "rest",
+      actions: [],
+      offers: [],
+    }),
+  },
   {
     id: "thanks",
+    chat: true,
     words: ["ありがとう", "ありがと", "thanks", "助かった"],
     reply: () => ({ say: "どういたしまして。", expression: "happy", actions: [], offers: [] }),
   },
@@ -337,10 +451,11 @@ const INTENTS: readonly Intent[] = [
 const MATCHERS = INTENTS.map((intent) => ({
   intent,
   words: intent.words.map(normalize),
+  exact: (intent.exact ?? []).map(normalize),
 }));
 
 /** 表に載っている言葉すべて。どれも実際に反応するかを試験で確かめている。 */
-export const INTENT_WORDS: readonly string[] = INTENTS.flatMap((intent) => intent.words);
+export const INTENT_WORDS: readonly string[] = INTENTS.flatMap((intent) => [...intent.words, ...(intent.exact ?? [])]);
 
 /** 一致の強さ。いちばん長く一致した言葉の文字数で測る。 */
 function score(text: string, words: readonly string[]): number {
@@ -349,6 +464,21 @@ function score(text: string, words: readonly string[]): number {
     if (word.length > best && text.includes(word)) best = word.length;
   }
   return best;
+}
+
+/** 操作（chat = false）か雑談（chat = true）のうち、いちばん強く一致したもの。 */
+function strongest(text: string, chat: boolean): Intent | null {
+  let matched: Intent | null = null;
+  let top = 0;
+  for (const matcher of MATCHERS) {
+    if (Boolean(matcher.intent.chat) !== chat) continue;
+    const value = matcher.exact.includes(text) ? Number.POSITIVE_INFINITY : score(text, matcher.words);
+    if (value > top) {
+      top = value;
+      matched = matcher.intent;
+    }
+  }
+  return top >= MATCH_FLOOR ? matched : null;
 }
 
 /** 2 文字は「日記」「設定」のような最短の語。1 文字では拾わない。 */
@@ -378,17 +508,16 @@ export function routeIntent(raw: string, context: AssistantContext): AssistantRe
     };
   }
 
-  let matched: Intent | null = null;
-  let best = 0;
-  for (const { intent, words } of MATCHERS) {
-    const value = score(text, words);
-    if (value > best) {
-      best = value;
-      matched = intent;
-    }
-  }
+  const said = { text, raw };
+  const task = strongest(text, false);
+  const chat = strongest(text, true);
 
-  if (matched && best >= MATCH_FLOOR) return matched.reply(context);
+  if (task) {
+    const reply = task.reply(context, said);
+    // 「こんにちは、日記を書きたい」には、あいさつを返してから動く。
+    return chat?.id === "greeting" ? { ...reply, say: greetingFor(text) + reply.say } : reply;
+  }
+  if (chat) return chat.reply(context, said);
 
   // 表で拾えなかったとき。作り話で埋めずに、相談へ渡す道を出す。
   return {

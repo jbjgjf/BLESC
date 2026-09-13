@@ -28,6 +28,10 @@
   transition: transform var(--bl-t-release) var(--bl-pop);
 }
 
+.launcher:hover {
+  transform: translateY(-2px);
+}
+
 .launcher:active {
   transform: scale(0.92);
   transition-duration: var(--bl-t-press);
@@ -66,6 +70,18 @@
 @keyframes panel-in {
   from { opacity: 0; transform: translateY(10px) scale(0.92); }
   to   { opacity: 1; transform: none; }
+}
+
+/* 閉じるときは小石へ吸い込まれるように縮む。開くときより短く、弾ませない
+   — 出ていくものが跳ねると、まだ何か起きるように見える。 */
+.panel[data-closing] {
+  pointer-events: none;
+  animation: panel-out 0.18s var(--bl-ease) both;
+}
+
+@keyframes panel-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(8px) scale(0.9); }
 }
 
 .head {
@@ -161,7 +177,9 @@
   font-size: 0.9rem;
   line-height: 1.65;
   overflow-wrap: anywhere;
-  animation: bubble-in 0.3s var(--bl-pop) both;
+  /* 話した側から出てくる。小石の返事は左下から、自分の言葉は右下から。 */
+  transform-origin: left bottom;
+  animation: bubble-in-left 0.3s var(--bl-pop) both;
 }
 
 .turn[data-role="pebble"] .bubble {
@@ -171,18 +189,50 @@
 
 .turn[data-role="student"] .bubble {
   background: var(--bl-blue);
+  transform-origin: right bottom;
+  animation-name: bubble-in-right;
 }
 
 /* つらさに触れた返事。弾ませず、静かに出す。背景も白に落として、
    ほかの返事と同じ軽さに見えないようにする。 */
-.bubble[data-calm="true"] {
+.turn[data-role="pebble"] .bubble[data-calm="true"] {
+  /* 上の .turn[data-role="pebble"] .bubble より強い指定にしておく。弱いと
+     背景が水色のまま残り、ほかの返事と見分けがつかない。 */
   background: var(--bl-surface);
   border-color: var(--bl-line);
   animation: calm-in 0.6s var(--bl-ease) both;
 }
 
-@keyframes bubble-in {
-  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+@keyframes bubble-in-left {
+  from { opacity: 0; transform: translate(-6px, 6px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes bubble-in-right {
+  from { opacity: 0; transform: translate(6px, 6px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* 選択肢は吹き出しのあとに順に並べる。一度に出すと、読む前に押す場所を
+   探させてしまう。--i は何番目か。 */
+.offers > li,
+.suggestions > li {
+  animation: chip-in 0.32s var(--bl-pop) both;
+  animation-delay: calc(140ms + var(--i, 0) * 60ms);
+}
+
+.suggestions > li {
+  animation-delay: calc(60ms + var(--i, 0) * 50ms);
+}
+
+/* 落ち着いた返事のあとは、弾ませずゆっくり。 */
+.bubble[data-calm="true"] ~ .offers > li {
+  animation-timing-function: var(--bl-ease);
+  animation-delay: calc(420ms + var(--i, 0) * 90ms);
+}
+
+@keyframes chip-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.94); }
   to   { opacity: 1; transform: none; }
 }
 
@@ -325,10 +375,23 @@
 
 @media (prefers-reduced-motion: reduce) {
   .panel,
+  .panel[data-closing],
   .bubble,
-  .bubble[data-calm="true"] {
+  .turn .bubble[data-calm="true"],
+  .offers > li,
+  .suggestions > li {
     animation: none;
   }
+  .launcher:hover {
+    transform: none;
+  }
+}
+
+/* アプリ側の「動きを減らす」。全体の指定は長さを 0 にするだけで待ち時間
+   （animation-delay）は残るので、選択肢が遅れて現れないよう個別に止める。 */
+:global(html[data-bl-motion="reduced"]) .offers > li,
+:global(html[data-bl-motion="reduced"]) .suggestions > li {
+  animation: none;
 }
 
 @media (forced-colors: active) {
