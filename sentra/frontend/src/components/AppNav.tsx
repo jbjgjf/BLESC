@@ -42,6 +42,7 @@ const DEMO_ONLY_NAV_PATHS = new Set([
 
 /** Secondary surfaces, reachable from the account menu rather than the tab bar. */
 const MORE_LINKS: Array<{ href: string; label: string; icon: IconName }> = [
+  { href: "/legal",          label: "書類（確認用草案）", icon: "description" },
   { href: "/research",        label: "研究用の記録",   icon: "description" },
   { href: "/graph",           label: "関係グラフ",     icon: "graphic_eq" },
   { href: "/timeline",        label: "タイムライン",   icon: "timeline" },

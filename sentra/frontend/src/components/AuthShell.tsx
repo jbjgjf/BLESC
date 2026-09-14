@@ -29,7 +29,7 @@ const DEMO_ONLY_EXCEPTIONS = ["/research/world-model"];
 //: a login here would push the step back onto the student's device, which is
 //: the one place a guardian's consent cannot honestly come from. The token in
 //: the URL is what authorises the request, and the route handler checks it.
-const PUBLIC_ROUTES = ["/pilot/guardian"];
+const PUBLIC_ROUTES = ["/pilot/guardian", "/legal"];
 
 const DEMO_ONLY_ROUTES = [
   "/reflect",

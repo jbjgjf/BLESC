@@ -13,6 +13,18 @@ const testKey = Buffer.from(new Uint8Array(32).map((_, index) => index + 1)).toS
  */
 const load = () => import(modulePath);
 
+describe("research text retention policy", () => {
+  it("defaults to 90 days and prevents invalid or longer retention", async () => {
+    const { normalizeRawTextRetentionDays } = await load();
+    for (const value of [undefined, "", "0", "-1", "NaN", "Infinity", "1.5", "1e2", "junk", "91", "180", "9007199254740993"]) {
+      assert.equal(normalizeRawTextRetentionDays(value), 90, String(value));
+    }
+    assert.equal(normalizeRawTextRetentionDays("30"), 30);
+    assert.equal(normalizeRawTextRetentionDays(" 1 "), 1);
+    assert.equal(normalizeRawTextRetentionDays("90"), 90);
+  });
+});
+
 afterEach(() => {
   delete process.env.RESEARCH_RAW_TEXT_KEY;
 });

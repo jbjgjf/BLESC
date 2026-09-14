@@ -21,6 +21,7 @@
 
 import { useState } from "react";
 import { Icon } from "@/components/ui/Icon";
+import { LegalDraftNotice } from "@/components/LegalDraftNotice";
 import type { GuardianVerificationStatus } from "@/lib/guardianVerification";
 
 export type GuardianContext = {
@@ -137,6 +138,8 @@ export function GuardianConfirm({
           {context.research_code ? `・参加者ID ${context.research_code}` : null}
         </p>
       </header>
+
+      <LegalDraftNotice audience="guardian" />
 
       <section className="bl-card bl-stack">
         <h2 className="bl-h2">お願いしていること</h2>

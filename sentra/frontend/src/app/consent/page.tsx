@@ -23,6 +23,7 @@ import { useAuth } from "@/lib/auth";
 import { useDemoMode } from "@/lib/demo";
 import { CONSENT_DOCUMENT_VERSION, NO_CONSENT, researchUseAllowed, type ConsentState } from "@/lib/consent";
 import styles from "./consent.module.css";
+import { LegalDraftNotice } from "@/components/LegalDraftNotice";
 
 type GrantKey =
   | "research_analysis"
@@ -163,6 +164,7 @@ export default function ConsentPage() {
         <p className="bl-meta">説明文書 {CONSENT_DOCUMENT_VERSION}</p>
       </header>
 
+      <LegalDraftNotice />
       <section className="bl-card bl-stack">
         <h2 className="bl-h3">何のための研究か</h2>
         <p className="bl-body">

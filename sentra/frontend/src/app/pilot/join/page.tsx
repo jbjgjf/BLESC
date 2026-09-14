@@ -28,6 +28,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { LegalDraftNotice } from "@/components/LegalDraftNotice";
 import { useAuth } from "@/lib/auth";
 import { ApiClient, type GuardianStatusResponse, type PilotEnrollmentSummary } from "@/api/client";
 import { Icon } from "@/components/ui/Icon";
@@ -148,6 +149,8 @@ export default function PilotJoinPage() {
           {notice}
         </p>
       ) : null}
+
+      <LegalDraftNotice />
 
       {step === "invite" ? (
         <section className="bl-card bl-stack">

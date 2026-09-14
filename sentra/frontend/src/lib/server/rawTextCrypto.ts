@@ -104,8 +104,14 @@ export async function decryptRawText(ciphertext: string): Promise<string | null>
   }
 }
 
-/** Retention window for stored text, in days. */
-export const RAW_TEXT_RETENTION_DAYS = Number(process.env.RESEARCH_RAW_TEXT_RETENTION_DAYS ?? 180);
+/** New retained text may never outlive the 90-day policy. Overrides may shorten it. */
+export function normalizeRawTextRetentionDays(value: string | undefined): number {
+  if (!value || !/^\d+$/.test(value.trim())) return 90;
+  const days = Number(value);
+  return Number.isSafeInteger(days) && days > 0 ? Math.min(days, 90) : 90;
+}
+
+export const RAW_TEXT_RETENTION_DAYS = normalizeRawTextRetentionDays(process.env.RESEARCH_RAW_TEXT_RETENTION_DAYS);
 
 export function rawTextExpiryFrom(now: Date = new Date()): string {
   const expiry = new Date(now);

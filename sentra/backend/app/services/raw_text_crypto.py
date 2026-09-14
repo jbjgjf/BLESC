@@ -93,10 +93,15 @@ def decrypt_raw_text(ciphertext: str) -> Optional[str]:
 
 
 def retention_days() -> int:
+    value = os.getenv("RESEARCH_RAW_TEXT_RETENTION_DAYS", "90").strip()
+    if not value or not value.isascii() or not value.isdecimal():
+        return 90
+    # Match the Next.js path: an override can shorten, never extend, retention.
     try:
-        return int(os.getenv("RESEARCH_RAW_TEXT_RETENTION_DAYS", "180"))
+        days = int(value)
     except ValueError:
-        return 180
+        return 90
+    return min(days, 90) if days > 0 else 90
 
 
 def expiry_from(now: Optional[datetime] = None) -> str:

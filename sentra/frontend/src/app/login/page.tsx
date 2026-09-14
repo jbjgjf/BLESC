@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { Icon } from "@/components/ui/Icon";
@@ -84,6 +85,10 @@ export default function LoginPage() {
           </div>
         </div>
 
+        <p className="bl-meta" style={{ marginBottom: 16 }}>
+          <Link href="/legal" target="_blank" rel="noopener noreferrer">利用規約・プライバシーポリシーの確認用草案（別タブ）</Link>
+          <br />未施行の案です。登録操作をこの草案への同意として記録しません。
+        </p>
         <form onSubmit={handleSubmit} className={styles.form}>
           <div>
             <label className="bl-label" htmlFor="email">
