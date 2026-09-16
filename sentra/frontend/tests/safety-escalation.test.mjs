@@ -73,6 +73,14 @@ const ESCALATION = {
   attempts: 0,
 };
 
+/**
+ * Run with these variables set, and put the environment back afterwards.
+ *
+ * "Afterwards" has to mean after the promise settles, not after `run()`
+ * returns. `deliverEscalation` reads the channel variables on the far side of
+ * an `await`, so a helper that restored synchronously would hand it the real
+ * environment halfway through and the test would be asserting about that one.
+ */
 function withEnv(values, run) {
   const saved = {};
   for (const [key, value] of Object.entries(values)) {
@@ -80,15 +88,66 @@ function withEnv(values, run) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
-  try {
-    return run();
-  } finally {
+  const restore = () => {
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+  };
+
+  let result;
+  try {
+    result = run();
+  } catch (error) {
+    restore();
+    throw error;
   }
+  if (result && typeof result.then === "function") {
+    return result.then(
+      (value) => {
+        restore();
+        return value;
+      },
+      (error) => {
+        restore();
+        throw error;
+      },
+    );
+  }
+  restore();
+  return result;
 }
+
+/** Stand in for the network, so a delivery test never makes a real request. */
+function withFetch(impl, run) {
+  const saved = globalThis.fetch;
+  globalThis.fetch = impl;
+  const restore = () => {
+    globalThis.fetch = saved;
+  };
+  let result;
+  try {
+    result = run();
+  } catch (error) {
+    restore();
+    throw error;
+  }
+  return Promise.resolve(result).finally(restore);
+}
+
+/** Every channel unset: a deployment that has nothing to send with. */
+const NO_CHANNELS = {
+  SAFETY_ALERT_WEBHOOK_URL: undefined,
+  RESEND_API_KEY: undefined,
+  SAFETY_ALERT_EMAIL_FROM: undefined,
+};
+
+/** A school webhook, and no email provider. */
+const WEBHOOK_ONLY = {
+  SAFETY_ALERT_WEBHOOK_URL: "https://school.example/hooks/duty",
+  RESEND_API_KEY: undefined,
+  SAFETY_ALERT_EMAIL_FROM: undefined,
+};
 
 describe("which levels reach a person", () => {
   it("always escalates a crisis", () => {
@@ -208,16 +267,15 @@ describe("delivery", () => {
   it("marks an escalation nobody can receive as no_recipient, not as done", async () => {
     // The dangerous version of this bug is a deployment that reports success
     // because it had nowhere to send. `no_recipient` is a standing alarm.
+    //
+    // A channel is configured here on purpose: `no_recipient` is terminal, and
+    // it is only the right answer when the thing missing is the people.
     const client = fakeClient({ rpc: { data: [], error: null } });
     const status = await withEnv(
-      {
-        SAFETY_ALERT_WEBHOOK_URL: undefined,
-        RESEND_API_KEY: undefined,
-        SAFETY_ALERT_EMAIL_FROM: undefined,
-      },
+      { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: "re_test", SAFETY_ALERT_EMAIL_FROM: "blesc@example.jp" },
       () => deliverEscalation(client, ESCALATION, "2A-08"),
     );
-    assert.equal(await status, "no_recipient");
+    assert.equal(status, "no_recipient");
     const [update] = client.calls.updates;
     assert.equal(update.values.status, "no_recipient");
     assert.equal(update.values.delivered_at, null);
@@ -225,9 +283,7 @@ describe("delivery", () => {
 
   it("asks the database who may be told, rather than deciding itself", async () => {
     const client = fakeClient();
-    await withEnv({ SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: undefined }, () =>
-      deliverEscalation(client, ESCALATION, "2A-08"),
-    );
+    await withEnv(NO_CHANNELS, () => deliverEscalation(client, ESCALATION, "2A-08"));
     // Recomputed at send time from the oversight tables, so a consent revoked
     // an hour ago means no message tonight.
     assert.deepEqual(client.calls.rpc[0], {
@@ -238,10 +294,84 @@ describe("delivery", () => {
 
   it("counts the attempt whether or not it worked", async () => {
     const client = fakeClient();
-    await withEnv({ SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: undefined }, () =>
-      deliverEscalation(client, { ...ESCALATION, attempts: 2 }, "2A-08"),
+    await withFetch(
+      () => Promise.reject(new Error("duty webhook unreachable")),
+      () =>
+        withEnv(WEBHOOK_ONLY, () => deliverEscalation(client, { ...ESCALATION, attempts: 2 }, "2A-08")),
     );
+    assert.equal(client.calls.updates[0].values.status, "failed");
     assert.equal(client.calls.updates[0].values.attempts, 3);
+  });
+});
+
+describe("a deployment with no channel configured", () => {
+  /*
+   * The regression this covers: these escalations used to be closed as
+   * `no_recipient` the instant they were raised. That status is outside the
+   * dispatcher's queue, so configuring a channel afterwards sent none of them —
+   * every crisis from before the configuration was lost for good, on a module
+   * whose stated failure mode is "late", never "never".
+   */
+  it("does not close the row, because nothing was attempted", async () => {
+    const client = fakeClient();
+    const status = await withEnv(NO_CHANNELS, () =>
+      deliverEscalation(client, ESCALATION, "2A-08"),
+    );
+    assert.equal(status, "no_channel");
+
+    const [update] = client.calls.updates;
+    assert.equal(update.table, "safety_escalations");
+    // The row keeps whatever status it had, so it is still in the dispatcher's
+    // `status in ('pending', 'failed')` queue.
+    assert.equal(update.values.status, undefined);
+    assert.equal(update.values.delivered_at, undefined);
+    // And it records why it is still sitting there.
+    assert.equal(update.values.last_error, "no delivery channel configured");
+  });
+
+  it("does not spend one of the dispatcher's attempts", async () => {
+    // Six attempts and the dispatcher stops retrying. A configuration gap that
+    // outlasts half an hour would otherwise exhaust the row and lose it anyway.
+    const client = fakeClient();
+    await withEnv(NO_CHANNELS, () =>
+      deliverEscalation(client, { ...ESCALATION, attempts: 4 }, "2A-08"),
+    );
+    assert.equal(client.calls.updates[0].values.attempts, undefined);
+  });
+
+  it("sends the waiting escalation once a channel is configured", async () => {
+    // The whole point, end to end: raised with nothing configured, still owed,
+    // delivered on the pass after an operator sets the webhook.
+    const client = fakeClient();
+    const parked = await withEnv(NO_CHANNELS, () =>
+      deliverEscalation(client, ESCALATION, "2A-08"),
+    );
+    assert.equal(parked, "no_channel");
+
+    const posted = [];
+    const delivered = await withFetch(
+      (url, init) => {
+        posted.push({ url, body: init.body });
+        return Promise.resolve({ ok: true, status: 200 });
+      },
+      // The row the dispatcher re-reads is unchanged: same status, same count.
+      () => withEnv(WEBHOOK_ONLY, () => deliverEscalation(client, ESCALATION, "2A-08")),
+    );
+
+    assert.equal(delivered, "delivered");
+    assert.equal(posted.length, 1);
+    assert.equal(posted[0].url, "https://school.example/hooks/duty");
+    const last = client.calls.updates.at(-1);
+    assert.equal(last.values.status, "delivered");
+    assert.equal(last.values.attempts, 1);
+  });
+
+  it("is counted by the dispatcher rather than dropped from its tally", async () => {
+    const route = code("../src/app/api/safety/dispatch/route.ts");
+    assert.ok(route.includes("no_channel: 0"));
+    // The queue must keep reading `pending` and `failed` only — this fix works
+    // by leaving the row in that set, not by widening it.
+    assert.ok(route.includes('.in("status", ["pending", "failed"])'));
   });
 });
 

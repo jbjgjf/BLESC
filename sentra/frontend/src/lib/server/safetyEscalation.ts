@@ -294,26 +294,75 @@ export function channelsConfigured(): boolean {
   );
 }
 
+/** What one delivery pass concluded. Only the first three move the row. */
+export type DeliveryOutcome = "delivered" | "failed" | "no_recipient" | "no_channel";
+
+/** Left in `last_error` while a deployment has nothing to send with. */
+export const NO_CHANNEL_ERROR = "no delivery channel configured";
+
 /**
  * Try to deliver one escalation, and record what happened either way.
  *
  * The status it leaves behind is the contract with `/api/safety/dispatch`:
  *
  *   `delivered`     at least one recipient was reached
- *   `failed`        recipients exist and every send failed — retry
- *   `no_recipient`  nobody may be told, or no channel is configured
+ *   `failed`        a send was attempted and every one failed — retry
+ *   `no_recipient`  a channel exists, and nobody may be told through it
  *   `pending`       untouched; the dispatcher will pick it up
  *
  * `no_recipient` is not success and is not silence. It means a student is in
  * crisis and this deployment has nowhere to send it, which is a configuration
  * emergency — so it is logged as an error and left visible in the table.
+ *
+ * It is also terminal: the dispatcher's queue is `status in ('pending',
+ * 'failed')`, so a row that lands here is never tried again. That is the right
+ * answer for "nobody may be told" and the wrong one for "this deployment has
+ * no channel yet" — see the branch below, which is why the two are separated.
  */
 export async function deliverEscalation(
   service: SupabaseClient,
   escalation: EscalationRow,
   participantCode: string | null,
-): Promise<"delivered" | "failed" | "no_recipient"> {
+): Promise<DeliveryOutcome> {
   const recipients = await recipientsFor(service, escalation.participant_id);
+
+  /*
+   * No channel is configured, so nothing was attempted — which is a different
+   * fact from "nobody may be told", and the two must not share a status.
+   *
+   * They did. Every escalation raised before an operator set
+   * `SAFETY_ALERT_WEBHOOK_URL` was written, found nothing to send with, and was
+   * closed as `no_recipient` on the spot. `no_recipient` sits outside the
+   * dispatcher's queue, so setting the variable afterwards sent none of them:
+   * the crises from before the configuration landed were never delivered to
+   * anyone, ever. This module opens by promising that its failure mode is
+   * "late", never "never", and on a deployment without a channel that promise
+   * was false.
+   *
+   * So the row is left exactly where it is — `pending` stays `pending`,
+   * `failed` stays `failed` — and stays in the queue until a deployment can
+   * send it. `attempts` is not incremented either: an attempt that could not be
+   * made must not consume one of the six the dispatcher allows, or a
+   * configuration gap lasting half an hour would exhaust the row and lose it
+   * the same way.
+   */
+  if (!channelsConfigured()) {
+    console.error(
+      "[safety-escalation] NO DELIVERY CHANNEL CONFIGURED AND A CRISIS IS WAITING. " +
+        "Set SAFETY_ALERT_WEBHOOK_URL, or RESEND_API_KEY with SAFETY_ALERT_EMAIL_FROM. " +
+        "The escalation stays queued and is sent on the next dispatch once one of them is set.",
+      { escalation: escalation.id, recipients: recipients.length },
+    );
+    const parked = await service
+      .from("safety_escalations")
+      .update({ last_error: NO_CHANNEL_ERROR })
+      .eq("id", escalation.id);
+    if (parked.error) {
+      console.error("[safety-escalation] reason for waiting not recorded", parked.error.message);
+    }
+    return "no_channel";
+  }
+
   const text = notificationText(escalation, participantCode);
   const crisis = escalation.risk_level === "crisis";
 
@@ -372,12 +421,16 @@ export async function deliverEscalation(
   else if (anyAttempt) status = "failed";
   else status = "no_recipient";
 
+  // A channel is configured by this point, so the missing half is the people:
+  // no educator with an active roster entry, an active organisation membership
+  // and an active oversight consent — or none of them reachable on the channels
+  // this deployment has.
   if (status === "no_recipient") {
     console.error(
       "[safety-escalation] NOWHERE TO SEND A CRISIS ESCALATION. " +
-        "Set SAFETY_ALERT_WEBHOOK_URL, or RESEND_API_KEY with SAFETY_ALERT_EMAIL_FROM, " +
-        "and confirm this participant has an educator with active oversight consent.",
-      { escalation: escalation.id, recipients: recipients.length, channels: channelsConfigured() },
+        "Confirm this participant has an educator with active oversight consent, " +
+        "and that the configured channels can reach them.",
+      { escalation: escalation.id, recipients: recipients.length },
     );
   }
 
@@ -387,7 +440,7 @@ export async function deliverEscalation(
       status,
       attempts: escalation.attempts + 1,
       last_attempt_at: new Date().toISOString(),
-      last_error: status === "delivered" ? null : deliveries.find((d) => d.error)?.error ?? "no channel or recipient",
+      last_error: status === "delivered" ? null : deliveries.find((d) => d.error)?.error ?? "no reachable recipient",
       delivered_at: status === "delivered" ? new Date().toISOString() : null,
     })
     .eq("id", escalation.id);

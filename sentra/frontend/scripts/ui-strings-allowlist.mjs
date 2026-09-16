@@ -96,7 +96,8 @@ const WRITE_FAILURES = [
 const DELIVERY_FAILURES = [
   "webhook request failed",
   "email request failed",
-  "no channel or recipient",
+  "no reachable recipient",
+  "no delivery channel configured",
 ];
 
 /** A programming mistake, raised where only a developer can see it. */

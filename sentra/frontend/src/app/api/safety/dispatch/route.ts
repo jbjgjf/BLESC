@@ -34,7 +34,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
-import { deliverEscalation, type EscalationRow } from "@/lib/server/safetyEscalation";
+import {
+  deliverEscalation,
+  type DeliveryOutcome,
+  type EscalationRow,
+} from "@/lib/server/safetyEscalation";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -104,7 +108,16 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const outcomes = { delivered: 0, failed: 0, no_recipient: 0 };
+  // `no_channel` is counted, not acted on. Those rows keep their status and
+  // their attempt count, so they are still in this queue on the next pass — the
+  // point being that they are sent, late, once a channel is configured, rather
+  // than closed as undeliverable at the moment nothing was configured yet.
+  const outcomes: Record<DeliveryOutcome, number> = {
+    delivered: 0,
+    failed: 0,
+    no_recipient: 0,
+    no_channel: 0,
+  };
   for (const row of rows) {
     // Sequential, not `Promise.all`. The batch is small, the providers are rate
     // limited, and a burst that trips a rate limit turns a recoverable delay
