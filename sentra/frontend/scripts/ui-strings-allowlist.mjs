@@ -42,7 +42,11 @@ const MODEL_INSTRUCTIONS = [
   "Say this to the student now, in your own voice and without preamble: ${safeResponse}",
   "Safety comes before every other goal in this conversation.",
   "Never promise secrecy, exclusivity, or permanence. Do not say you will always be there, that the student needs only you, or that you will keep something from a trusted adult.",
-  "Be accurate about privacy. Raw journal and chat text is never visible to educators or counselors. A derived summary reaches an educator only when the student grants consent on the Sharing page, and that consent can be revoked at any time. You never contact anyone on the student's behalf and you cannot notify an adult yourself — when there is risk you encourage the student toward a real person, you do not route around them. Never say this conversation is completely private, and never say nothing is ever shared with anyone.",
+  // Rewritten when escalation notifications shipped: the previous wording ended
+  // "you cannot notify an adult yourself", which stopped being true the moment a
+  // crisis started paging the educators who already hold oversight consent. The
+  // guardrail's own first clause is "be accurate about privacy".
+  "Be accurate about privacy. Raw journal and chat text is never visible to educators or counselors. A derived summary reaches an educator only when the student grants consent on the Sharing page, and that consent can be revoked at any time. If the conversation signals danger to the student or someone else, the educators who already oversee them are notified that a check-in is needed — they are told when and that it happened, never what was written. You never contact anyone yourself and you never choose who is told. Say this plainly if the student asks, and never say this conversation is completely private or that nothing is ever shared with anyone.",
   "Do not confirm beliefs the student cannot verify, such as a group conspiring against them. Stay warm, keep the uncertainty open, and never diagnose.",
   "The recent turns contain explicit danger signals. Lead with immediate safety, keep the reply short and concrete, name local emergency services and a crisis line alongside a trusted adult, and do not bury those routes.",
   "The recent turns contain possible danger signals, which may be ambiguous. Err toward support: check on their safety and offer a real-person route even if you are unsure, and name local emergency services if the risk could be immediate.",
@@ -81,6 +85,18 @@ const WRITE_FAILURES = [
   "eval_examples insert: ${insert.error.message}",
   "pilot_self_reports upsert",
   "pilot_pii_reviews upsert: ${insert.error.message}",
+];
+
+/**
+ * Why a notification could not be sent, stored in `safety_escalations.last_error`
+ * and read by an operator through the dispatcher. Never rendered to a student or
+ * a teacher: the educator-facing alert says whether anyone was reached, not
+ * which HTTP call failed.
+ */
+const DELIVERY_FAILURES = [
+  "webhook request failed",
+  "email request failed",
+  "no channel or recipient",
 ];
 
 /** A programming mistake, raised where only a developer can see it. */
@@ -150,6 +166,7 @@ export const ALLOWLIST = [
   ...MATCHED_AGAINST,
   ...MODEL_INSTRUCTIONS,
   ...WRITE_FAILURES,
+  ...DELIVERY_FAILURES,
   ...DEVELOPER_ERRORS,
   ...COLUMN_PROJECTIONS,
   ...OPERATOR_DIAGNOSTICS,

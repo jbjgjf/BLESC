@@ -2,9 +2,7 @@ import type {
   AnalysisTheme,
   EventCategory,
   Mood,
-  RiskBand,
   SupportStatus,
-  Trend,
 } from "./types";
 import type { IconName } from "@/components/ui/Icon";
 
@@ -67,50 +65,23 @@ export const THEMES: Record<AnalysisTheme, { label: string; icon: IconName }> = 
   usage_drop:    { label: "利用頻度の低下",     icon: "trending_down" },
 };
 
-/** 5-1 / 6-1 の色分け。緑 安定・黄 要注意・赤 高リスク。 */
-export const BANDS: Record<
-  RiskBand,
-  { label: string; chip: string; dot: string; icon: IconName; color: string; bg: string; line: string; ink: string }
-> = {
-  calm: {
-    label: "安定",
-    chip: "bl-chip--calm",
-    dot: "bl-dot--calm",
-    icon: "check_circle",
-    color: "var(--bl-calm)",
-    bg: "var(--bl-calm-bg)",
-    line: "var(--bl-calm-line)",
-    ink: "var(--bl-calm-ink)",
-  },
-  watch: {
-    label: "要注意",
-    chip: "bl-chip--watch",
-    dot: "bl-dot--watch",
-    icon: "warning",
-    color: "var(--bl-watch)",
-    bg: "var(--bl-watch-bg)",
-    line: "var(--bl-watch-line)",
-    ink: "var(--bl-watch-ink)",
-  },
-  alert: {
-    label: "高リスク",
-    chip: "bl-chip--alert",
-    dot: "bl-dot--alert",
-    icon: "priority_high",
-    color: "var(--bl-alert)",
-    bg: "var(--bl-alert-bg)",
-    line: "var(--bl-alert-line)",
-    ink: "var(--bl-alert-ink)",
-  },
-};
-
-export const BAND_ORDER: RiskBand[] = ["alert", "watch", "calm"];
-
-export const TRENDS: Record<Trend, { label: string; icon: IconName; color: string }> = {
-  rising:  { label: "悪化傾向", icon: "trending_up",   color: "var(--bl-alert)" },
-  falling: { label: "改善傾向", icon: "trending_down", color: "var(--bl-calm)" },
-  flat:    { label: "横ばい",   icon: "trending_flat", color: "var(--bl-ink-3)" },
-};
+/*
+ * `BANDS`, `BAND_ORDER` and `TRENDS` used to live here (#175).
+ *
+ * They rendered a per-student risk classification — 安定 / 要注意 / 高リスク with
+ * colours, and 悪化傾向 / 改善傾向 — which `docs/educator_display_policy.md` rule 1
+ * forbids: a band may be computed and stored, never shown, counted in a tile, or
+ * used to order a list.
+ *
+ * They are gone rather than hidden behind a flag. The arithmetic in that policy
+ * does not improve with the model: at 5% prevalence with 80% sensitivity and 90%
+ * specificity, seven in ten students shown 「要注意」 are not cases. A constant
+ * that only needs one `import` to come back is not a decision, it is a pause.
+ *
+ * What replaces them on the class screen is the observation itself — what was
+ * matched, when, on which surface — which is the same thing the real-data
+ * educator screens show (`components/educator/StatusChips.tsx`).
+ */
 
 export const STATUSES: Record<SupportStatus, { label: string; icon: IconName }> = {
   none:              { label: "未対応",     icon: "more_horiz" },

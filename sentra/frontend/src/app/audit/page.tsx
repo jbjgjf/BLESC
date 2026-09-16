@@ -6,6 +6,7 @@ import type { AiAuditEvent, ReflectionAuditTrail } from "@/api/models";
 import { useAuth } from "@/lib/auth";
 import { Icon } from "@/components/ui/Icon";
 import styles from "./audit.module.css";
+import { SafetyNoticeLog } from "@/components/SafetyNoticeLog";
 import { t } from "@/lib/i18n";
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
@@ -232,6 +233,12 @@ export default function AuditPage() {
           </form>
         </div>
       </section>
+
+      {/*
+        * Above the access log, because it is the more consequential thing to
+        * find here: the log says an adult looked, this says an adult was told.
+        */}
+      <SafetyNoticeLog />
 
       {error && (
         <div className="bl-notice bl-notice--alert" role="alert">

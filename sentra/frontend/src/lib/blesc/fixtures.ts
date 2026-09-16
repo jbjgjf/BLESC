@@ -241,15 +241,24 @@ const ROSTER_NAMES = [
   "森 陽太",   "山口 詩織", "吉田 桜",
 ];
 
-const BAND_PLAN: Array<StudentSummary["band"]> = [
-  "calm", "calm", "watch", "calm", "calm",
-  "calm", "calm", "alert", "calm", "calm",
-  "watch", "calm", "calm", "alert", "calm",
-  "calm", "calm", "calm", "watch", "calm",
-  "calm", "calm", "watch", "calm", "calm",
-  "calm", "calm", "calm", "calm", "calm",
-  "calm", "calm", "calm",
-];
+/*
+ * `BAND_PLAN` stood here and assigned every student a risk band, which then
+ * decided their trend, their follow-up, their support status and the colour of
+ * their cell on the class screen. #175 removed it.
+ *
+ * What is left is the school's own record of where its response stands
+ * (`STATUS_PLAN`), which is a fact about the adults, not a judgement about the
+ * student. Nothing derives from a classification any more, because there is no
+ * longer one to derive from.
+ */
+const STATUS_PLAN: Record<number, StudentSummary["status"]> = {
+  2: "watching",
+  7: "meeting_done",
+  10: "watching",
+  13: "meeting_scheduled",
+  18: "watching",
+  22: "watching",
+};
 
 const THEME_PLAN: StudentSummary["topThemes"][] = [
   ["academic"], ["relationships"], ["academic", "sleep"], [], ["academic"],
@@ -273,28 +282,19 @@ const MISSED_PLAN: Record<number, number> = {
 };
 
 function makeStudent(index: number): StudentSummary {
-  const name = ROSTER_NAMES[index];
-  const band = BAND_PLAN[index] ?? "calm";
   const themes = THEME_PLAN[index] ?? [];
   const missed = MISSED_PLAN[index] ?? 0;
   return {
     id: `s-${String(index + 1).padStart(2, "0")}`,
-    name,
+    name: ROSTER_NAMES[index],
     grade: "2年",
     className: "A組",
-    band,
-    trend: band === "alert" ? "rising" : band === "watch" ? (index % 2 ? "rising" : "flat") : "flat",
     lastEntry: missed > 0 ? addDays(TODAY, -missed) : addDays(TODAY, -1),
     missedDays: missed,
-    hasFollowUp: band !== "calm" || index % 7 === 0,
-    status:
-      band === "alert"
-        ? index % 2 === 0
-          ? "meeting_done"
-          : "meeting_scheduled"
-        : band === "watch"
-          ? "watching"
-          : "none",
+    // A follow-up exists because the student answered one, not because a band
+    // said they needed one.
+    hasFollowUp: themes.length > 0,
+    status: STATUS_PLAN[index] ?? "none",
     teacher: "山本 直樹",
     topThemes: themes,
   };
@@ -310,8 +310,6 @@ if (focusIndex >= 0) {
   CLASS_ROSTER[focusIndex] = {
     ...CLASS_ROSTER[focusIndex],
     name: "小野 陽菜",
-    band: "alert",
-    trend: "falling",
     status: "sharing",
     missedDays: 0,
     lastEntry: addDays(TODAY, -1),
@@ -330,20 +328,25 @@ if (focusIndex >= 0) {
   };
 }
 
+/*
+ * 観測の時系列。「リスクが上昇」「やや改善」といった状態の判断を含んでいたが、
+ * #175 で、何が書かれていたかという記述に置き換えた。読み手が意味を取るのは
+ * 同じでも、それを行ったのが教員なのかプロダクトなのかが違う。
+ */
 const FOCUS_TIMELINE: TimelineItem[] = [
-  { date: "2026-07-12", text: "友人関係に関するネガティブな記述が初めて出現", direction: "worse", source: "diary" },
-  { date: "2026-07-18", text: "睡眠不足に関する発言が増加", direction: "worse", source: "followup" },
-  { date: "2026-07-25", text: "自己否定的な表現が急増し、リスクが上昇", direction: "worse", source: "diary" },
-  { date: "2026-07-29", text: "部活動について前向きな記述が増え、リスクがやや改善", direction: "better", source: "diary" },
-  { date: "2026-08-04", text: "感情の選択が「ふつう」に戻る日が増加", direction: "better", source: "diary" },
+  { date: "2026-07-12", text: "友人関係について、否定的な記述が初めて確認されました", source: "diary" },
+  { date: "2026-07-18", text: "睡眠時間に関する記述が、この週に3回ありました", source: "followup" },
+  { date: "2026-07-25", text: "自己を否定する表現が、この週に5回ありました", source: "diary" },
+  { date: "2026-07-29", text: "部活動について、肯定的な記述が確認されました", source: "diary" },
+  { date: "2026-08-04", text: "感情の選択が「ふつう」の日が、この週に4日ありました", source: "diary" },
 ];
 
 const FOCUS_ACTIONS: SupportAction[] = [
-  { id: "a1", date: "2026-07-25", kind: "ai_detect", text: "AIが高リスク傾向を検知", actor: "blesc" },
+  { id: "a1", date: "2026-07-25", kind: "observation", text: "自己を否定する表現が続けて確認され、担任に表示されました", actor: "blesc" },
   { id: "a2", date: "2026-07-26", kind: "meeting", text: "担任が面談を実施", actor: "山本 直樹" },
   { id: "a3", date: "2026-07-27", kind: "guardian", text: "保護者へ連絡", actor: "山本 直樹" },
   { id: "a4", date: "2026-08-02", kind: "counselor", text: "スクールカウンセラーが面談を実施", actor: "西村 かおり" },
-  { id: "a5", date: "2026-08-06", kind: "improvement", text: "日記内容と感情に改善傾向を確認", actor: "blesc" },
+  { id: "a5", date: "2026-08-06", kind: "observation", text: "この2週間、該当する記述は確認されていません", actor: "blesc" },
 ];
 
 const FOCUS_MEETINGS: MeetingRecord[] = [
@@ -461,119 +464,31 @@ export const FOCUS_DETAIL: StudentDetail = {
   ],
 };
 
-/**
- * 生徒詳細の取得。重点生徒は作り込んだデータを返し、それ以外は一覧の
- * 情報から妥当な詳細を組み立てる。バックエンド接続時はこの関数が
- * API 呼び出しに置き換わる。
+/*
+ * `getStudentDetail` stood here and was deleted with #175.
+ *
+ * Nothing imported it — the demo student view goes through
+ * `demoApi.demoStudentOverview` — so it was unreachable code, but it was also
+ * the densest piece of band reasoning in the repository: it mapped a band onto
+ * a seven-point mood series (alert → 「hard, hard, low」), scaled category counts
+ * by whether the band was `calm`, and labelled every timeline entry but the last
+ * one `direction: "worse"`. An unused function still shows the next person what
+ * the shape of this data is supposed to be, and this one taught the wrong shape.
+ *
+ * `FOCUS_DETAIL` above is the remaining example, and it is written out by hand
+ * from observations rather than derived from a classification.
  */
-export function getStudentDetail(id: string): StudentDetail | null {
-  if (id === FOCUS_ID) return FOCUS_DETAIL;
 
-  const student = CLASS_ROSTER.find((row) => row.id === id);
-  if (!student) return null;
+/*
+ * `CATEGORY_ORDER`, `THEME_TEXT` と `SUGGESTION_LIBRARY` はここにあり、
+ * `getStudentDetail` だけが使っていたので一緒に消した（#175）。
+ *
+ * `SUGGESTION_LIBRARY` は観点ごとの支援アクション案（企画書 7-3）で、
+ * それ自体は分類ではない。ただ、呼び出し元がバンドから観点を組み立てていた
+ * ので、入口のない引き出しとして残っていた。必要になったら企画書から
+ * 書き直すほうが、消えた導出をなぞるより早い。
+ */
 
-  const moodByBand: Record<StudentSummary["band"], Array<StudentDetail["moodSeries"][number]["mood"]>> = {
-    alert: ["neutral", "low", "low", "hard", "hard", "low", "low"],
-    watch: ["good", "neutral", "neutral", "low", "neutral", "low", "neutral"],
-    calm:  ["good", "good", "neutral", "good", "very_good", "good", "neutral"],
-  };
-
-  const moods = moodByBand[student.band];
-  const moodSeries = moods.map((mood, index) => ({
-    date: addDays(TODAY, -(moods.length - index) * 2),
-    mood,
-  }));
-
-  const categoryCounts = CATEGORY_ORDER.map((category, index) => ({
-    category,
-    count: Math.max(0, 6 - index - (student.band === "calm" ? 2 : 0)),
-  }));
-
-  return {
-    ...student,
-    moodSeries,
-    categoryCounts,
-    timeline: student.topThemes.map((theme, index) => ({
-      date: addDays(TODAY, -(student.topThemes.length - index) * 6),
-      text: `${THEME_TEXT[theme]}に関する記述が確認されています`,
-      direction: index === student.topThemes.length - 1 ? "neutral" : "worse",
-      source: "diary" as const,
-    })),
-    meetings: ALL_MEETINGS.filter((meeting) => meeting.studentId === id),
-    actions: [],
-    suggestions: student.topThemes
-      .map((theme) => SUGGESTION_LIBRARY[theme])
-      .filter((entry): entry is SuggestedAction => Boolean(entry)),
-    recentEntries: [],
-    followUpSummaries: student.hasFollowUp
-      ? [{ date: addDays(TODAY, -4), summary: "日記の記述について確認。話せる範囲での回答が得られています。" }]
-      : [],
-  };
-}
-
-const CATEGORY_ORDER = ["study", "friends", "club", "health", "family", "future", "other"] as const;
-
-const THEME_TEXT: Record<string, string> = {
-  academic: "学業",
-  relationships: "友人関係",
-  family: "家庭",
-  sleep: "睡眠",
-  self_worth: "自己否定的な表現",
-  mood_swing: "感情の変化",
-  missing: "日記の未提出",
-  usage_drop: "利用頻度の低下",
-};
-
-/** 7-3 支援アクション提案のひな型 */
-const SUGGESTION_LIBRARY: Partial<Record<string, SuggestedAction>> = {
-  academic: {
-    theme: "academic",
-    actions: [
-      "宿題量や課題の負担について確認",
-      "担任との面談",
-      "学習支援の紹介",
-      "学習計画や進路不安についての相談",
-    ],
-  },
-  relationships: {
-    theme: "relationships",
-    actions: [
-      "クラスでの様子を確認",
-      "グループ活動時の観察",
-      "担任による声掛け",
-      "スクールカウンセラーへの相談",
-    ],
-  },
-  sleep: {
-    theme: "sleep",
-    actions: [
-      "保健室で生活習慣を確認",
-      "体調や睡眠についての面談",
-      "家庭との情報共有",
-      "継続的な経過観察",
-    ],
-  },
-  family: {
-    theme: "family",
-    actions: ["家庭の状況について慎重に確認", "スクールソーシャルワーカーへの相談", "継続的な経過観察"],
-  },
-  self_worth: {
-    theme: "self_worth",
-    actions: ["担任による面談", "スクールカウンセラーへの相談", "保護者との情報共有", "継続的な経過観察"],
-  },
-  mood_swing: {
-    theme: "mood_swing",
-    actions: ["日々の様子を継続的に確認", "担任による声掛け", "スクールカウンセラーへの相談"],
-  },
-  missing: {
-    theme: "missing",
-    actions: ["自然な形での声掛け", "登校状況の確認", "家庭への状況確認"],
-  },
-  usage_drop: {
-    theme: "usage_drop",
-    actions: ["利用状況の確認", "本人への声掛け", "継続的な経過観察"],
-  },
-};
 
 /* ── 6-2 クラス全体分析 ─────────────────────────────────────── */
 

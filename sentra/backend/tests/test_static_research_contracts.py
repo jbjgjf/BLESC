@@ -272,6 +272,36 @@ SIGNAL_BEARING_SCREENS = (
 )
 
 
+# Which top-level key in `ja.ts` holds a screen's words. The demo educator
+# screens are nested under `educatorDemo`, the rest are named after the route.
+_CATALOGUE_KEY = {
+    "educator/class/page.tsx": "educatorDemo",
+}
+
+
+def _catalogue_section(catalogue: str, screen: str) -> str:
+    """The catalogue entries belonging to one screen.
+
+    Sliced by brace depth from the screen's own key, so a disclaimer written for
+    a *different* screen cannot satisfy the assertion — which is the whole point
+    of checking per screen rather than across the whole file.
+    """
+    key = _CATALOGUE_KEY.get(screen, screen.split("/")[0])
+    marker = f"{key}: {{"
+    start = catalogue.find(marker)
+    if start == -1:
+        return ""
+    depth = 0
+    for index in range(start + len(marker) - 1, len(catalogue)):
+        if catalogue[index] == "{":
+            depth += 1
+        elif catalogue[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return catalogue[start : index + 1]
+    return catalogue[start:]
+
+
 def test_frontend_uses_non_diagnostic_reflection_signal_language():
     # Screen copy lives in the message catalogue (#116) and the shared notice in
     # a component, so the sweep covers all three rather than routes alone —
@@ -300,11 +330,19 @@ def test_frontend_uses_non_diagnostic_reflection_signal_language():
         f"expected one of {NON_DIAGNOSTIC_NOTICES}"
     )
 
+    # The notice has to be on the screen the number is on, not merely somewhere
+    # in the product. But since #116 the screen's words live in the catalogue
+    # and the file holds `t.insights.disclaimer`, so a screen is read as its
+    # source *plus its own section of the catalogue* — that pair is what a
+    # person actually sees. Reading the file alone failed every screen but
+    # `graph`, which had kept one literal, while all six were in fact compliant.
+    catalogue = (ROOT / "frontend/src/lib/i18n/ja.ts").read_text(encoding="utf-8")
+
     for screen in SIGNAL_BEARING_SCREENS:
         path = app_root / screen
         assert path.is_file(), f"expected signal-bearing screen is missing: {screen}"
-        source = path.read_text(encoding="utf-8")
-        assert any(notice in source for notice in NON_DIAGNOSTIC_NOTICES), (
+        rendered = path.read_text(encoding="utf-8") + "\n" + _catalogue_section(catalogue, screen)
+        assert any(notice in rendered for notice in NON_DIAGNOSTIC_NOTICES), (
             f"{screen} renders a signal without a non-diagnostic notice"
         )
 

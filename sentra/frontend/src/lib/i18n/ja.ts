@@ -265,6 +265,14 @@ export const ja = {
    * その一文は、実装の約束そのものなので弱めない。
    */
   audit: {
+    safetyNoticeTitle: "先生に届いた連絡",
+    safetyNoticeIntro:
+      "危ないかもしれない、と読み取れる記述があったときに、あなたの見守りに同意している先生へ自動で送られた連絡の記録です。送られたのは時刻と「確認が必要」ということだけで、あなたが書いた文章は含まれていません。",
+    safetyNoticeSurface: { chat: "相談", journal: "日記" } as Record<string, string>,
+    safetyNoticeDelivered: (n: number) => `${n}件の連絡先に届きました`,
+    safetyNoticeNotDelivered: "まだ届いていません（学校の設定を確認中です）",
+    safetyNoticeFooter:
+      "この連絡は、研究への協力に同意しているかどうかとは関係なく、安全のために行われます。内容について気になることがあれば、先生かスクールカウンセラーに伝えてください。",
     title: "AI処理の記録",
     intro: "AIがどう応答を作ったかを、あとから確認できます。",
     scopeTitle: "処理の内訳をたどれます",
@@ -899,10 +907,14 @@ export const ja = {
    * `/school`）。企画書の各機能を通しで見せるための固定データ画面で、通常の
    * ナビゲーションには出ない（`AppNav` の `DEMO_ONLY_NAV_PATHS`）。
    *
-   * この4画面は生徒ごとのリスクバンド（`blesc/labels.ts` の `BANDS`）を描画して
-   * おり、`docs/educator_display_policy.md` の規則1に反している。文言をここへ
-   * 移したのは #116 のカタログ移行のためで、バンドの是非とは別。画面を作り
-   * 直すときは、この節も一緒に書き直すことになる。
+   * #175 で、この4画面から生徒ごとのリスクバンド（安定 / 要注意 / 高リスク）と
+   * 傾向判定（悪化傾向 / 改善傾向）を削除した。`docs/educator_display_policy.md`
+   * の規則1により、バンドは描画しない・タイルで数えない・並び替えに使わない。
+   *
+   * 代わりに出すのは観測そのもの——何が、いつ、どこで確認されたか——で、
+   * 実データ側の教員画面（`components/educator/StatusChips.tsx`）と同じ形。
+   * デモの説明文（`demo.steps[2].watchFor`）が「リスクの判定は表示しません」と
+   * 言っているので、画面の側をその説明に合わせた。
    */
   educatorDemo: {
     alerts: {
@@ -941,10 +953,19 @@ export const ja = {
     class: {
       title: "クラス全体",
       subtitle: (className: string, count: number) => `${className} ・ ${count}名`,
-      heatmapTitle: "クラス全体ヒートマップ",
-      /** バンドの色を説明する注記。バンドごと消えるときに一緒に消える。 */
-      heatmapNote: "色は日記と対話の内容からAIが算出した傾向です。診断ではありません。",
-      cellTitle: (name: string, band: string) => `${name} ・ ${band}`,
+      rosterTitle: "クラスの一覧",
+      /** 並び順そのものが情報を持つので、何順かを画面に書く。 */
+      rosterOrder: "新しい観測がある生徒から順に並べています。",
+      observedChip: "観測あり",
+      observedCount: (n: number) => `観測あり ${n}名`,
+      noObservation: "観測なし",
+      lastEntry: (date: string) => `最終提出 ${date}`,
+      neverSubmitted: "提出なし",
+      observationPrefix: "観測：",
+      surface: { diary: "日記", followup: "追加質問" },
+      rosterNote:
+        "確認のきっかけになった記述と、その時刻・入力元だけを表示しています。生徒の状態を分類・採点することはありません。",
+      cellTitle: (name: string, detail: string) => `${name} ・ ${detail}`,
       missedDays: (days: number) => `${days}日未提出`,
       submittedYesterday: "昨日までに日記を提出",
       withFollowUp: "対話型AIによる補足あり",
@@ -952,14 +973,15 @@ export const ja = {
       personUnit: "名",
       breakdownTitle: "クラス全体の傾向",
       breakdownIntro:
-        "日記と対話の内容から、いま何についての記述が多いかを集計しています。",
-      deltaNote: "右端の数値は先週との差（ポイント）です。",
+        "日記と対話の内容から、いま何についての記述が多いかを集計しています。クラス全体の話題の集計で、特定の生徒の状態を表すものではありません。",
+      deltaNote:
+        "右端の数値は、その話題の記述が全体に占める割合の先週との差（ポイント）です。良し悪しを表すものではありません。",
       noChange: "±0",
       hintsTitle: "学級運営のヒント",
       hints: [
         "学業ストレスに関する記述が先週より5ポイント増えています。課題量の偏りを確認してみてください。",
-        "睡眠に関する記述が増加傾向です。保健だよりや朝の声掛けと合わせて確認できます。",
-        "人間関係に関する記述はやや減少しています。",
+        "睡眠に関する記述が増えています。保健だよりや朝の声掛けと合わせて確認できます。",
+        "人間関係に関する記述はやや減っています。",
       ],
     },
     meetings: {
@@ -1216,8 +1238,12 @@ export const ja = {
   alert: {
     safetyCrisis: "直近の記録に、すぐに確認したい表現があります。",
     safetyElevated: "直近の記録に、確認したほうがよい表現があります。",
-    anomalySpike: (score: string, threshold: string) =>
-      `変化の大きさが ${score} で、確認の目安（${threshold}）を超えています。`,
+    /*
+     * `anomalySpike` の文言はここにあった。「変化の大きさが 3.40 で、確認の
+     * 目安（2.0）を超えています。」——生徒ひとりに数値を付ける文で、#175 で
+     * アラートごと削除した。文言だけ残すと、次に必要になった人が同じ形の
+     * アラートを組み立ててしまう。
+     */
     noEntriesYet: "まだ記録がありません。",
     noEntriesLast7Days: "この7日間、記録がありません。",
   },

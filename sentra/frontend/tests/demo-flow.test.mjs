@@ -129,9 +129,16 @@ describe("the wiring", () => {
       "createChat",
     ];
     for (const method of needed) {
-      const body = client.slice(client.indexOf(`static async ${method}(`));
+      const start = client.indexOf(`static async ${method}(`);
+      assert.notEqual(start, -1, `${method} is gone from the client`);
+      // To the next method, not a fixed number of characters. The window used
+      // to be `slice(0, 600)`, which made this test fail when a doc comment was
+      // added to a method's return type: the demo branch had not moved, the
+      // window had stopped reaching it.
+      const next = client.indexOf("\n  static ", start + 10);
+      const body = client.slice(start, next === -1 ? undefined : next);
       assert.ok(
-        body.slice(0, 600).includes("readDemoFlag()"),
+        body.includes("readDemoFlag()"),
         `${method} has no demo branch, so the demo stops at this screen`,
       );
     }

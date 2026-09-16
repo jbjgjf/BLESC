@@ -942,7 +942,11 @@ export default function Home() {
                     className="text-xs mb-1"
                     style={{ ...displayFont, color: "var(--ink-faint)", letterSpacing: "0.08em" }}
                   >
-                    {new Date(entry.created_at).toLocaleDateString(undefined, {
+                    {/* `undefined` here meant the viewer's locale, so this one
+                        line rendered "Sep 16, 10:24" on an English-configured
+                        browser in the middle of a Japanese screen (#116). It was
+                        the last locale-dependent date left in the product. */}
+                    {new Date(entry.created_at).toLocaleDateString("ja-JP", {
                       month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
                     })}
                   </div>

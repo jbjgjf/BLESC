@@ -62,11 +62,18 @@ export interface SubmissionStats {
 
 /* ── 教員側 ─────────────────────────────────────────────────── */
 
-/** 5-1 生徒の状態。緑 安定 / 黄 要注意 / 赤 高リスク */
-export type RiskBand = "calm" | "watch" | "alert";
-
-/** リスク傾向 */
-export type Trend = "rising" | "falling" | "flat";
+/*
+ * `RiskBand` ("calm" | "watch" | "alert") and `Trend` ("rising" | "falling" |
+ * "flat") were removed in #175. They typed a per-student risk classification
+ * and a judgement about which direction a minor's state was moving, both
+ * forbidden by `docs/educator_display_policy.md` rule 1.
+ *
+ * A student is described here by what was observed — `urgent`, which carries
+ * the matched text, its timestamp, its surface and its reasons — and by facts
+ * about their use of the product: when they last submitted, how many days they
+ * have missed, whether a follow-up exists, where the school's response stands.
+ * None of those is an inference about how they are.
+ */
 
 /** 対応ステータス */
 export type SupportStatus =
@@ -84,8 +91,6 @@ export interface StudentSummary {
   /** 例: 2年A組 */
   grade: string;
   className: string;
-  band: RiskBand;
-  trend: Trend;
   /** 最終日記提出日 YYYY-MM-DD */
   lastEntry: string | null;
   /** 未提出日数 */
@@ -117,9 +122,14 @@ export interface TimelineItem {
   /** YYYY-MM-DD */
   date: string;
   text: string;
-  /** その時点のリスク方向 */
-  direction: "worse" | "better" | "neutral";
-  /** 根拠となった日記／対話の出典 */
+  /**
+   * 根拠となった日記／対話の出典。
+   *
+   * `direction: "worse" | "better"` がここにあったが #175 で消した。
+   * 「その時点のリスク方向」は、記述の要約ではなく、生徒の状態が良くなって
+   * いる／悪くなっているという判断で、`docs/educator_display_policy.md` が
+   * 禁じているもの。日付と、何が書かれていたかと、どこで書かれたかだけを残す。
+   */
   source: "diary" | "followup" | "submission";
 }
 
@@ -147,7 +157,13 @@ export interface SupportAction {
   id: string;
   /** YYYY-MM-DD */
   date: string;
-  kind: "ai_detect" | "meeting" | "guardian" | "counselor" | "observation" | "improvement";
+  /**
+   * 何が起きたか。`ai_detect`（AIが検知）と `improvement`（改善を確認）は
+   * #175 で削除した。前者は分類を「検知」として時系列に残し、後者は生徒が
+   * 良くなったという判断だった。AI由来の行は `observation` に一本化してある
+   * ——何が観測されたかは書けるが、それが良い兆候か悪い兆候かは書けない。
+   */
+  kind: "meeting" | "guardian" | "counselor" | "observation";
   text: string;
   actor: string;
 }

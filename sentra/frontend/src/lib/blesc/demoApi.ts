@@ -591,9 +591,6 @@ export function demoCohortRoster(): EducatorStudentStatus[] {
       code: `2A-${student.id.replace("s-", "")}`,
       display_name: student.name,
       last_active_day: student.lastEntry,
-      // Internal only; never rendered. Present because the shape has it.
-      latest_score: null,
-      state_band: "unknown" as const,
       safety_level: observation ? observation.level : null,
       safety_at: observation ? `${shiftDay(TODAY_DEMO, observation.dayOffset)}T22:10:00` : null,
       safety_reasons: observation ? observation.reasons : [],
@@ -615,8 +612,6 @@ export function demoCohortRoster(): EducatorStudentStatus[] {
       code: DEMO_PARTICIPANT_CODE,
       display_name: `${CURRENT_STUDENT.name}`,
       last_active_day: DAYS[DAYS.length - 1].date,
-      latest_score: null,
-      state_band: "unknown" as const,
       safety_level: strained ? "elevated" : null,
       safety_reasons: strained ? ["distress_without_explicit_danger"] : [],
       safety_at: strained ? strained.submittedAt : null,
@@ -646,7 +641,9 @@ export function demoStudentOverview(participantId: string) {
 
   return {
     student,
-    signals: [...timeline].reverse().map((row) => ({ day: row.day, score: row.anomaly_score })),
+    // Days only, no score — the demo has to show the same thing production
+    // shows, or the demo is of a product nobody ships (#175).
+    signals: [...timeline].reverse().map((row) => ({ day: row.day })),
     themes: [...themeCounts.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .slice(0, 5)
