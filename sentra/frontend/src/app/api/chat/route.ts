@@ -5,6 +5,7 @@ import { routesToRealPerson } from "@/lib/safety-assessment";
 import { assessConversation, recordSafetyAudit, RISK_DIRECTIVES, SAFETY_GUARDRAILS } from "@/lib/server/safety";
 import { fetchWithTimeout, isMissingTable, jsonError, JsonValue, openAIKey, providerError, requireUser, sha256 } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
+import { escalate, notifiableLevel } from "@/lib/server/safetyEscalation";
 import {
   COLLECTION_ONLY_MESSAGE,
   COLLECTION_ONLY_PROVIDER,
@@ -343,6 +344,42 @@ export async function POST(request: NextRequest) {
     pipelineVersion: PIPELINE_VERSION,
     safety,
   });
+
+  /*
+   * The audit row above records that a judgement was made. It does not reach
+   * anyone, and until this call nothing did: the educator alert was computed in
+   * the educator's browser when they opened the dashboard, so a crisis at 02:00
+   * waited for a teacher to open a tab.
+   *
+   * Recording is awaited — losing the row is the one unrecoverable failure
+   * here. Sending is not: `escalate` starts the delivery and returns, because a
+   * student in crisis must not be held behind a school's mail server, and an
+   * undelivered row is retried by `/api/safety/dispatch`.
+   *
+   * Under the service-role client because the recipients are other people's
+   * rows; the student's own session cannot read its own educators' addresses,
+   * and should not be able to.
+   */
+  const notifiable = notifiableLevel(safety.risk_level);
+  if (notifiable) {
+    const service = serviceRoleClient();
+    if (service) {
+      await escalate(service, {
+        ownerUserId: auth.user.id,
+        participantId: participant.id,
+        participantCode: participant.code,
+        riskLevel: notifiable,
+        reasons: safety.reasons,
+        surface: "chat",
+        sourceArtifactId: chatSession.data.id,
+      });
+    } else {
+      console.error(
+        "[safety-escalation] a crisis was assessed and Supabase is not configured; nobody will be told",
+        { participant: participant.id },
+      );
+    }
+  }
 
   const userHash = await sha256(message);
   const assistantHash = await sha256(answer);

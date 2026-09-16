@@ -15,6 +15,7 @@ import {
 } from "@/lib/server/collectionMode";
 import { normalizeSelfReport } from "@/lib/pilotSelfReport";
 import { recordSubmissionFailure } from "@/lib/server/submissionFailures";
+import { escalate, notifiableLevel } from "@/lib/server/safetyEscalation";
 import { gateForUser, pilotGateEnforced } from "@/lib/server/pilotGate";
 import { loadEnrollmentsForUser } from "@/lib/server/pilotStore";
 import { jsonError, requireUser } from "@/lib/server/api";
@@ -306,12 +307,12 @@ export async function POST(request: NextRequest) {
 
   const participantResult = await auth.client
     .from("participants")
-    .select("id")
+    .select("id, code")
     .eq("code", userId)
     .limit(1)
     .maybeSingle();
   if (participantResult.error) return jsonError(participantResult.error.message, 502);
-  const participant = participantResult.data as { id: string } | null;
+  const participant = participantResult.data as { id: string; code: string } | null;
   if (!participant) return jsonError("Participant was not found.", 404);
 
   // May this account be collected from at all (#164)? The journal layout asks
@@ -569,6 +570,37 @@ export async function POST(request: NextRequest) {
       { ...body, detail: "日記を保存できませんでした。" },
       { status: 502 },
     );
+  }
+
+  /*
+   * The journal is the other surface a crisis arrives on, and it had the same
+   * gap as the chat: `assessSafety` ran, the result shaped the response cards,
+   * and nobody was told.
+   *
+   * Placed after the write succeeded on purpose. Escalating on a submission
+   * that then failed to store would send an educator to a record that does not
+   * exist — and the failure path above already tells the student their entry
+   * was not saved, so there is something for them to retry.
+   */
+  const notifiable = notifiableLevel(safetyAssessment.risk_level);
+  if (notifiable) {
+    const service = serviceRoleClient();
+    if (service) {
+      await escalate(service, {
+        ownerUserId: auth.user.id,
+        participantId: participant.id,
+        participantCode: participant.code,
+        riskLevel: notifiable,
+        reasons: safetyAssessment.reasons ?? [],
+        surface: "journal",
+        sourceArtifactId: supabaseSync.entry_id ?? null,
+      });
+    } else {
+      console.error(
+        "[safety-escalation] a crisis was assessed and Supabase is not configured; nobody will be told",
+        { participant: participant.id },
+      );
+    }
   }
 
   // The core rows landed and a research mirror did not. The entry is safe, so
