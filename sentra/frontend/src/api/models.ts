@@ -116,8 +116,14 @@ export interface EducatorStudentStatus {
    *  state, and at school-level prevalence its positive predictive value is
    *  poor regardless of how good the model gets. See
    *  docs/educator_display_policy.md. */
-  latest_score: number | null;
-  state_band: "settled" | "watch" | "review" | "unknown";
+  /*
+   * `latest_score` and `state_band` were fields here until #175.
+   *
+   * They are still computed and stored in `insights` — the policy allows that
+   * — but nothing the educator surfaces receive carries them any more. Keeping
+   * them on this type meant every screen was one property access away from
+   * rendering a classification, and two of them eventually did.
+   */
   /** Observed, not inferred: a deterministic lexicon match in safety.py. */
   safety_level: string | null;
   safety_at: string | null;
@@ -133,6 +139,18 @@ export interface EducatorStudentStatus {
   baseline_type: string | null;
 }
 
+/** A row of `safety_escalations` as the alert list reads it. */
+export interface EscalationAlertRow {
+  id: string;
+  participant_id: string;
+  risk_level: "elevated" | "crisis";
+  surface: string;
+  detected_at: string;
+  status: "pending" | "delivered" | "failed" | "no_recipient";
+  delivered_at: string | null;
+  acknowledged_at: string | null;
+}
+
 export interface CohortAlert {
   alert_key: string;
   type: "safety_crisis" | "safety_elevated" | "anomaly_spike" | "inactivity";
@@ -145,6 +163,15 @@ export interface CohortAlert {
   detail: string;
   policy_refs: string[];
   acknowledged: boolean;
+  /**
+   * Present only on a pushed escalation.
+   *
+   * An educator reading an alert needs to know whether anyone was actually
+   * reached — `no_recipient` means the crisis had nowhere to go, and finding
+   * that out from the dashboard is the difference between a configuration
+   * problem and a silent one.
+   */
+  delivery_status?: "pending" | "delivered" | "failed" | "no_recipient";
 }
 
 export interface StudentAccessRecord {

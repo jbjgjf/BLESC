@@ -93,12 +93,28 @@ export default function EducatorStudentPage() {
           <header className="px-6 py-4" style={{ borderBottom: "1px solid var(--limestone)" }}>
             <div className="inscription">{t.educator.student.recentSignals}</div>
           </header>
+          {/*
+            * The day a student wrote, and nothing beside it.
+            *
+            * This column used to render `signal.score.toFixed(2)` — the anomaly
+            * score, per day, next to a named student's name. That is
+            * `latest_score`, which `docs/educator_display_policy.md` rule 1 says
+            * is computed and stored but never shown (#175).
+            *
+            * It survived the 2026-08-06 policy change because that change was
+            * applied to the roster and the class list, and this screen was not
+            * read. `PERSIST_ANOMALY_SCORE` has been false since, so new rows
+            * carry 0 — but rows written before it still hold real scores, and a
+            * column of `0.00` for every day is not better: it presents a number
+            * as a finding where there is no finding.
+            *
+            * The dates stay. "They wrote on these days" is an observation.
+            */}
           {signals.length ? (
             <ul>
               {signals.slice(0, 10).map((signal) => (
-                <li key={signal.day} className="flex items-center justify-between px-6 py-2.5 text-sm" style={{ borderBottom: "1px solid var(--limestone)", color: "var(--ink-mid)" }}>
-                  <span>{new Date(signal.day).toLocaleDateString("ja-JP")}</span>
-                  <span className="font-mono">{Number.isFinite(signal.score) ? signal.score!.toFixed(2) : "—"}</span>
+                <li key={signal.day} className="px-6 py-2.5 text-sm" style={{ borderBottom: "1px solid var(--limestone)", color: "var(--ink-mid)" }}>
+                  {new Date(signal.day).toLocaleDateString("ja-JP")}
                 </li>
               ))}
             </ul>

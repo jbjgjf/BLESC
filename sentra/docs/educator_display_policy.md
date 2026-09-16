@@ -84,7 +84,39 @@ implementations is not enforced. This one was written as a decision about the
 product and applied to the codebase that happened to be in front of the person
 applying it.
 
-`state_band` is derived client-side from `anomaly_score` and was never stored.
+**It happened twice more, and the lesson above predicted both.** #175 found them
+on 2026-09-16, forty-one days after this policy was decided:
+
+- `/educator/class` — the demo class screen painted every student's cell by
+  risk band, counted students per band in a legend, and put 「名前 ・ 高リスク」 in
+  the cell's `title`. The rule had been applied to `src/app/educator/` (real
+  data) and not to `src/lib/blesc/` (the planning-document demo). The demo is
+  what schools are shown.
+- `/educator/student/[participantId]` — the **real-data** screen rendered
+  `anomaly_score.toFixed(2)` beside each day, for a named student. This one was
+  not a demo. It survived because the 2026-08-06 change was applied to the
+  roster and the class list, and this screen was not read.
+
+Both are removed. Two things changed beyond the deletions, because deleting the
+render is what was done in August and it did not hold:
+
+- The score no longer reaches the browser. `getStudentOverviewForEducator` stops
+  selecting `anomaly_score`, and `latest_score` / `state_band` are off
+  `EducatorStudentStatus` entirely. A value a screen can reach is a value the
+  next edit to that screen can render.
+- `frontend/tests/educator-display-policy.test.mjs` sweeps the educator sources
+  for the band and score identifiers and for the labels 高リスク / 要注意 /
+  悪化傾向 / 改善傾向. It matches names, not meaning — a band renamed would pass
+  — so it is a tripwire on the known shape of this mistake, not a proof.
+
+Also removed in the same pass: the `anomaly_spike` alert in `getCohortAlerts`,
+which built the sentence 「変化の大きさが 3.40 で、確認の目安（2.0）を超えています」
+from `state_band === "review"`. No screen rendered it, which is exactly why it
+was still there — a classification nothing renders *yet* is one the next screen
+renders by accident.
+
+`state_band` was derived client-side from `anomaly_score` and never stored. It
+no longer exists.
 
 ## Relationship to the landing page
 

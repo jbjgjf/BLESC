@@ -16,6 +16,7 @@ import {
   JsonValue,
   RecordId,
   CohortAlert,
+  EscalationAlertRow,
   EducatorStudentStatus,
   OrgCounselor,
   OversightRequest,
@@ -1096,12 +1097,18 @@ export class ApiClient {
   // consented students are ever returned, and raw text is unreachable.
   // ------------------------------------------------------------------
 
-  private static stateBand(score: number | null): EducatorStudentStatus["state_band"] {
-    if (score === null || !Number.isFinite(score)) return "unknown";
-    if (score >= 2) return "review";
-    if (score >= 1.2) return "watch";
-    return "settled";
-  }
+  /*
+   * `stateBand(score)` stood here: it bucketed the anomaly score into
+   * settled / watch / review, and `state_band === "review"` raised an
+   * `anomaly_spike` alert reading 「変化の大きさが 3.40 で、確認の目安（2.0）を
+   * 超えています」 — a number about a named minor, which is exactly what
+   * `docs/educator_display_policy.md` rule 1 withholds (#175).
+   *
+   * Removed rather than left unrendered. This alert had no screen wired to it
+   * today, which is precisely how it survived the 2026-08-06 policy change: a
+   * classification nothing renders *yet* is a classification the next screen
+   * renders by accident.
+   */
 
   static async getCohortRoster(): Promise<EducatorStudentStatus[]> {
     if (readDemoFlag()) return demo.demoCohortRoster();
@@ -1152,15 +1159,6 @@ export class ApiClient {
     return roster.map((row) => {
       const insight = latestInsight.get(row.participant_id);
       const safety = latestSafety.get(row.participant_id);
-      // Same positive-only gate as `hasSettledBaseline`. Without it, a student
-      // inside the ramp — and every row written before the baseline reached
-      // production — feeds `state_band`, and `state_band === "review"` raises
-      // an `anomaly_spike` alert to an educator reading
-      // "Reflection signal 3.40 is above the review threshold (2.0)".
-      // That sentence needs the 3.40 to have measured something.
-      const score = insight?.baseline_deviation_json?.baseline_available === true
-        ? insight.anomaly_score ?? null
-        : null;
       const provenance = insight?.baseline_deviation_json?.baseline_provenance;
       const config = safety?.retrieval_config_json ?? null;
       const reasons = Array.isArray(config?.reasons)
@@ -1173,8 +1171,6 @@ export class ApiClient {
         code: row.code,
         display_name: row.display_name,
         last_active_day: insight?.day ?? null,
-        latest_score: score,
-        state_band: this.stateBand(score),
         safety_level: typeof safety?.retrieval_config_json?.risk_level === "string"
           ? String(safety.retrieval_config_json.risk_level)
           : null,
@@ -1190,6 +1186,25 @@ export class ApiClient {
     });
   }
 
+  /**
+   * What an educator is owed right now.
+   *
+   * Two sources, and the difference between them is the point.
+   *
+   * `safety_escalations` is **pushed**: the row is written by the server the
+   * moment a crisis is assessed, and a notification is sent from it. Reading it
+   * here is how the dashboard and the message that woke someone at 02:00 agree
+   * about what happened — and how `delivered` vs `no_recipient` becomes visible
+   * to the person who needs to know whether anyone was actually reached.
+   *
+   * Everything else is still **derived** from the roster on read, which is
+   * correct for what it covers: "this student has not written in eight days" is
+   * a fact about the absence of rows, and there is no event to push.
+   *
+   * The safety alerts used to be derived too. That is the gap this replaces: an
+   * alert computed when a browser opens is not a notification, and a crisis at
+   * 02:00 waited for the morning.
+   */
   static async getCohortAlerts(): Promise<CohortAlert[]> {
     const roster = await this.getCohortRoster();
     if (!roster.length) return [];
@@ -1209,7 +1224,61 @@ export class ApiClient {
         .filter(Boolean),
     );
 
-    return this.alertsFromRoster(roster, acked);
+    const derived = this.alertsFromRoster(roster, acked);
+
+    // Escalations are RLS-scoped to participants this educator oversees, so no
+    // filtering is needed here; the database has already done it.
+    const escalationResult = await supabase
+      .from("safety_escalations")
+      .select("id, participant_id, risk_level, surface, detected_at, status, delivered_at, acknowledged_at")
+      .order("detected_at", { ascending: false })
+      .limit(200);
+    if (escalationResult.error) {
+      // A read failure must not blank the alert list: the derived alerts are
+      // still true, and an empty dashboard is the most dangerous thing this
+      // screen can show.
+      console.warn("[alerts] escalations unavailable; showing derived alerts only", escalationResult.error.message);
+      return derived;
+    }
+
+    const byParticipant = new Map(roster.map((student) => [student.participant_id, student]));
+    const escalated: CohortAlert[] = [];
+    for (const row of (escalationResult.data ?? []) as EscalationAlertRow[]) {
+      const student = byParticipant.get(row.participant_id);
+      if (!student) continue;
+      escalated.push({
+        participant_id: row.participant_id,
+        org_id: student.org_id,
+        owner_user_id: student.owner_user_id,
+        code: student.code,
+        alert_key: `escalation:${row.id}`,
+        type: row.risk_level === "crisis" ? "safety_crisis" : "safety_elevated",
+        severity: row.risk_level === "crisis" ? 3 : 2,
+        occurred_at: row.detected_at,
+        detail: row.risk_level === "crisis" ? t.alert.safetyCrisis : t.alert.safetyElevated,
+        policy_refs: [],
+        // The escalation's own column, not the access log: an educator who
+        // acknowledged the notification has acknowledged this alert.
+        acknowledged: row.acknowledged_at !== null,
+        delivery_status: row.status,
+      });
+    }
+
+    // A pushed escalation supersedes the roster-derived alert for the same
+    // participant: they describe the same observation, and showing both would
+    // double-count a single night.
+    const pushedParticipants = new Set(escalated.map((alert) => alert.participant_id));
+    const remaining = derived.filter(
+      (alert) =>
+        !(
+          (alert.type === "safety_crisis" || alert.type === "safety_elevated") &&
+          pushedParticipants.has(alert.participant_id)
+        ),
+    );
+
+    return [...escalated, ...remaining].sort(
+      (a, b) => b.severity - a.severity || b.occurred_at.localeCompare(a.occurred_at),
+    );
   }
 
   /**
@@ -1241,19 +1310,10 @@ export class ApiClient {
           acknowledged: acked.has(key),
         });
       }
-      if (student.state_band === "review" && student.last_active_day) {
-        const key = `anomaly_spike:${student.participant_id}:${student.last_active_day}`;
-        alerts.push({
-          ...base,
-          alert_key: key,
-          type: "anomaly_spike",
-          severity: 2,
-          occurred_at: student.last_active_day,
-          detail: t.alert.anomalySpike(student.latest_score?.toFixed(2) ?? "—", "2.0"),
-          policy_refs: [],
-          acknowledged: acked.has(key),
-        });
-      }
+      // An `anomaly_spike` alert was raised here from `state_band === "review"`,
+      // carrying the score in its text. Both are gone with #175. What remains
+      // below are alerts an educator can act on and explain: a safety rule that
+      // matched something the student wrote, and an absence of entries.
       const lastActive = student.last_active_day ? new Date(student.last_active_day).getTime() : null;
       if (lastActive === null || now - lastActive > 7 * 24 * 60 * 60 * 1000) {
         const key = `inactivity:${student.participant_id}:${student.last_active_day ?? "never"}`;
@@ -1320,7 +1380,17 @@ export class ApiClient {
   /** Minimized per-student view for educators (issue #36). */
   static async getStudentOverviewForEducator(participantId: string): Promise<{
     student: EducatorStudentStatus;
-    signals: Array<{ day: string; score: number | null }>;
+    /**
+     * The days this student wrote on. No score.
+     *
+     * `anomaly_score` used to be selected here and rendered beside each day
+     * (#175). Removing it from the query rather than only from the JSX is the
+     * point: a value that reaches the browser can be rendered again by the next
+     * change to this screen, and `docs/educator_display_policy.md` records that
+     * this exact rule was already re-broken once by being enforced in one
+     * implementation and not the other.
+     */
+    signals: Array<{ day: string }>;
     themes: Array<{ label: string; count: number }>;
     safetyRuns: Array<{ level: string; occurred_at: string }>;
   } | null> {
@@ -1332,7 +1402,7 @@ export class ApiClient {
     const [insightsResult, safetyResult] = await Promise.all([
       supabase
         .from("insights")
-        .select("day, anomaly_score, graph_summary_json")
+        .select("day, graph_summary_json")
         .eq("participant_id", participantId)
         .order("day", { ascending: false })
         .limit(30),
@@ -1347,7 +1417,7 @@ export class ApiClient {
     if (insightsResult.error) throwSupabaseError(t.apiError.loadStudentSignals, insightsResult.error);
     if (safetyResult.error) throwSupabaseError(t.apiError.loadStudentSafety, safetyResult.error);
 
-    type InsightRowLite = { day: string; anomaly_score: number | null; graph_summary_json: Record<string, JsonValue> | null };
+    type InsightRowLite = { day: string; graph_summary_json: Record<string, JsonValue> | null };
     const rows = (insightsResult.data ?? []) as InsightRowLite[];
     const themeCounts = new Map<string, number>();
     for (const row of rows) {
@@ -1366,7 +1436,7 @@ export class ApiClient {
 
     return {
       student,
-      signals: rows.map((row) => ({ day: row.day, score: row.anomaly_score })),
+      signals: rows.map((row) => ({ day: row.day })),
       themes,
       safetyRuns: ((safetyResult.data ?? []) as Array<{ retrieval_config_json: Record<string, JsonValue> | null; created_at: string }>)
         .map((row) => ({

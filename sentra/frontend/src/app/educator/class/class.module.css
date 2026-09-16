@@ -1,13 +1,15 @@
-/* クラス全体ヒートマップ・分析 — 企画書 6-1 / 6-2 */
+/* クラス一覧・分析 — 企画書 6-1 / 6-2 */
 
-.legend {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-}
+/*
+ * #175 以前、ここには生徒ごとのリスクバンドで背景色を塗るヒートマップと、
+ * バンド別の人数を並べる凡例があった。両方とも消してある。
+ *
+ * 色で段階を作らないのがこのファイルの制約。観測のある生徒は枠線の濃さだけで
+ * 区別し、観測の中身で色を変えない——赤と黄で塗り分けた時点で、名前が変わった
+ * だけのバンドになる。
+ */
 
-/* ── 6-1 ヒートマップ ───────────────────────────────── */
-.heatmap {
+.roster {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 8px;
@@ -16,16 +18,22 @@
 .cell {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   padding: 12px 13px;
   border-radius: var(--bl-radius-sm);
   corner-shape: squircle;
-  border: 1px solid;
+  border: 1px solid var(--bl-line);
+  background: var(--bl-surface);
   text-decoration: none;
   font-size: 0.85rem;
-  font-weight: 600;
   transition: transform 0.14s var(--bl-ease), box-shadow 0.14s var(--bl-ease);
+}
+
+/* 観測のある行は枠線を締める。段階ではなく、有無だけ。 */
+.cell[data-observed="true"] {
+  border-color: var(--bl-ink-3);
 }
 
 .cell:hover {
@@ -36,22 +44,48 @@
 .cell:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; }
 
 .cellName {
-  flex: 1;
+  width: 100%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 600;
+  color: var(--bl-ink);
+}
+
+.observedChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border: 1px solid var(--bl-ink-3);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--bl-ink-2);
+}
+
+.cellDetail {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--bl-ink-2);
+}
+
+.cellMeta {
+  font-size: 0.72rem;
+  color: var(--bl-ink-3);
 }
 
 .cellBadge {
   display: inline-flex;
-  flex-shrink: 0;
-  opacity: 0.75;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.72rem;
+  color: var(--bl-ink-3);
 }
 
 @media (max-width: 560px) {
-  .heatmap { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
-  .cell { padding: 10px; font-size: 0.78rem; gap: 6px; }
+  .roster { grid-template-columns: 1fr; }
+  .cell { padding: 10px; font-size: 0.78rem; }
 }
 
 .unit {
@@ -95,9 +129,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-.delta[data-dir="up"]   { color: var(--bl-watch-ink); }
-.delta[data-dir="down"] { color: var(--bl-calm-ink); }
-.delta[data-dir="flat"] { color: var(--bl-ink-3); }
+/* 増減で色を変えない。増加を警戒色にした時点で、集計ではなく評価になる。 */
+.delta { color: var(--bl-ink-2); }
 
 @media (max-width: 560px) {
   .breakRow { flex-wrap: wrap; gap: 8px; }
