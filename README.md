@@ -86,7 +86,13 @@ npm run build
 
 cd ../backend
 python -m pytest tests -q
+
+cd ../eval
+npm run typecheck
+npm test
 ```
+
+The `sentra/eval` checks need no OpenAI key, Supabase project, or browser.
 
 The [Research Contracts workflow](https://github.com/jbjgjf/BLESC/actions/workflows/research-contracts.yml) runs the project checks in GitHub Actions. A production release also requires the human checks in the [release gate](sentra/docs/demo_and_release_gate.md).
 

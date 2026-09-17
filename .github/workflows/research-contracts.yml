@@ -92,3 +92,38 @@ jobs:
 
       - name: Build frontend
         run: npm run build
+
+  # The evaluation harness had tests but no job, so #181 — the refusal that
+  # keeps a synthetic run off the production Supabase project — sat red on main
+  # and nothing said so. These tests are pure: no OpenAI key, no Supabase
+  # project, no browser. Whatever needs credentials belongs in a run of the
+  # harness itself, not here.
+  eval-harness:
+    name: Evaluation harness checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sentra/eval
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sentra/eval/package-lock.json
+
+      # `npm ci` rather than `npm install`: playwright is a dependency here and
+      # an unlocked resolution would pull a browser build this job never uses.
+      - name: Install evaluation dependencies
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm ci
+
+      - name: Typecheck the evaluation harness
+        run: npm run typecheck
+
+      - name: Run evaluation harness tests
+        run: npm test
