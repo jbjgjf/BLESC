@@ -14,14 +14,30 @@ describe("synthetic account contract", () => {
     assert.equal(SYNTHETIC_ACCOUNTS.orgName, "BLESC Evaluation Lab");
   });
 
-  it("refuses to target the production Supabase project", () => {
-    const prior = process.env.EVAL_SUPABASE_URL;
-    process.env.EVAL_SUPABASE_URL = "https://kvcrkveaxlrijhzyayeg.supabase.co";
-    try {
-      assert.throws(() => loadEnv(), /production/i);
-    } finally {
-      if (prior === undefined) delete process.env.EVAL_SUPABASE_URL;
-      else process.env.EVAL_SUPABASE_URL = prior;
-    }
-  });
+  // Both cases, because the refusal used to sit at the END of loadEnv() and the
+  // missing-runner-key check threw first (#181). With no key configured —
+  // which is every CI runner and every fresh checkout — aiming the harness at
+  // production reported a missing OpenAI key and never said "production". The
+  // guard has to answer before any unrelated validation can pre-empt it, so
+  // the key-unset case is the one that pins the ordering.
+  for (const [label, runnerKey] of [
+    ["with no runner key configured", undefined],
+    ["with a runner key configured", "sk-not-a-real-key"],
+  ] as const) {
+    it(`refuses to target the production Supabase project ${label}`, () => {
+      const priorUrl = process.env.EVAL_SUPABASE_URL;
+      const priorKey = process.env.BLESC_EVAL_RUNNER_OPENAI_API_KEY;
+      process.env.EVAL_SUPABASE_URL = "https://kvcrkveaxlrijhzyayeg.supabase.co";
+      if (runnerKey === undefined) delete process.env.BLESC_EVAL_RUNNER_OPENAI_API_KEY;
+      else process.env.BLESC_EVAL_RUNNER_OPENAI_API_KEY = runnerKey;
+      try {
+        assert.throws(() => loadEnv(), /production/i);
+      } finally {
+        if (priorUrl === undefined) delete process.env.EVAL_SUPABASE_URL;
+        else process.env.EVAL_SUPABASE_URL = priorUrl;
+        if (priorKey === undefined) delete process.env.BLESC_EVAL_RUNNER_OPENAI_API_KEY;
+        else process.env.BLESC_EVAL_RUNNER_OPENAI_API_KEY = priorKey;
+      }
+    });
+  }
 });
