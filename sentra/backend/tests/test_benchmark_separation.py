@@ -7,8 +7,29 @@ where the benchmark measured nothing. Green carried no information.
 
 import pytest
 
+from app.analytics.tokenize import japanese_analysis_available
 from app.services.benchmark_retrieval import METHODS
 from app.services.hf_research_benchmark import run_hf_research_benchmark
+
+# Half the case set is Japanese, so without fugashi/unidic-lite the harness
+# segments it by whitespace and every score below is computed on a different
+# benchmark than the one these thresholds were registered against. The visible
+# symptom was `keyword` lifting 0.37 over chance and the assertion telling the
+# reader to "check whether a target now shares vocabulary with its query" —
+# an instruction to go looking for a benchmark regression that is not there.
+#
+# The same marker as test_focus_scores.py and test_tokenize_and_probe.py, kept
+# local to match how those two declare it; nothing in this suite imports across
+# test modules. It is applied per-test rather than at module level because the
+# structural assertions further down — that no condition reads the answer key,
+# that the pre-registration still states these constants — read no benchmark
+# number and hold with or without a dictionary. Those are the ones worth
+# running in a degraded environment, and skipping them would hide a real
+# regression.
+requires_dictionary = pytest.mark.skipif(
+    not japanese_analysis_available(),
+    reason="fugashi/unidic-lite not installed",
+)
 
 # ---------------------------------------------------------------------------
 # Thresholds. Set from the issue, against the reported chance level, and NOT
@@ -38,6 +59,7 @@ def summary():
     return run_hf_research_benchmark()["summary"]
 
 
+@requires_dictionary
 def test_conditions_separate(summary):
     scores = {method: summary[method]["mean_ndcg_at_k"] for method in METHODS}
     spread = max(scores.values()) - min(scores.values())
@@ -49,6 +71,7 @@ def test_conditions_separate(summary):
     )
 
 
+@requires_dictionary
 def test_lexical_baseline_stays_below_the_ceiling(summary):
     keyword = summary["keyword"]["mean_ndcg_at_k"]
     assert keyword <= BASELINE_CEILING, (
@@ -67,6 +90,7 @@ def test_the_baseline_is_reported_against_chance(summary):
         assert "lift_over_chance" in summary[method]
 
 
+@requires_dictionary
 def test_exact_lexical_matching_does_not_beat_chance_on_this_case_set(summary):
     # Narrowed on 2026-08-13 from ("keyword", "semantic_proxy") to keyword only,
     # and the reason is not that the old form went red.
@@ -91,6 +115,7 @@ def test_exact_lexical_matching_does_not_beat_chance_on_this_case_set(summary):
     )
 
 
+@requires_dictionary
 def test_no_two_conditions_produce_the_same_ranking_on_every_case():
     """An ablation with two identical conditions has fewer arms than it reports.
 
@@ -136,6 +161,7 @@ def test_no_two_conditions_produce_the_same_ranking_on_every_case():
     )
 
 
+@requires_dictionary
 def test_the_graph_conditions_are_the_ones_that_separate(summary):
     # Directional, and able to fail: if traversal stops helping, this fails
     # rather than an inequality quietly passing on ties.
