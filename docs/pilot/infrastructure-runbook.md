@@ -59,7 +59,7 @@
 | `SUPABASE_URL` | server-side書き込み先 | 書き込みをスキップする（`supabaseWriter.ts`） |
 | `SUPABASE_SERVICE_ROLE_KEY` | RLSを越える書き込み | 同上。**clientへ出してはならない** |
 | `RESEARCH_RAW_TEXT_KEY` | 本文のAES-GCM封緘 | 本文の保持を**行わない**（平文では保持しない） |
-| `RESEARCH_RAW_TEXT_RETENTION_DAYS` | 保持期限 | 既定値。protocol D5 の決定に合わせる |
+| `RESEARCH_RAW_TEXT_RETENTION_DAYS` | 保持期限 | 既定90日。**上限も90日**で、超える値は90に丸める。protocol D5 の決定は90日以内で行う |
 | `PILOT_INVITE_HMAC_KEY` | 招待コードのhash | 招待の検証ができない |
 | `PILOT_OPERATOR_USER_IDS` | 運営者の許可リスト | 運営操作が誰にもできない（安全側） |
 | `RESEARCH_EXPORT_USER_IDS` | exportの許可リスト | exportが誰にもできない（安全側） |

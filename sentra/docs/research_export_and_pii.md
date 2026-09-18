@@ -126,9 +126,17 @@
 RESEARCH_EXPORT_USER_IDS=          # データセットを取り出せる auth.users.id
 RESEARCH_IDENTITY_MAP_USER_IDS=    # 仮名を解ける auth.users.id（上とは別の人にする）
 RESEARCH_RAW_TEXT_KEY=             # 32バイト base64。未設定なら原文は保管されない
-RESEARCH_RAW_TEXT_RETENTION_DAYS=  # 既定 180
+RESEARCH_RAW_TEXT_RETENTION_DAYS=  # 既定 90。上限も 90（大きい値は 90 に丸める）
 PILOT_TIMEZONE=Asia/Tokyo          # 相対日の境界を決める
 ```
 
+`RESEARCH_RAW_TEXT_RETENTION_DAYS` は**短くはできますが長くはできません**。
+`rawTextCrypto.ts` の `normalizeRawTextRetentionDays()` が 90 日で丸めます。
+参加者に見せている説明（`legalDocuments.ts`「各記録から最長90日」）が先にあり、
+設定でそれを上回れるようにはしていません。値の正本はこの文書ではなく
+`rawTextCrypto.ts` です。
+
 `purge_expired_raw_text()` の定期実行は別途割り当てが必要です。
 EXECUTE は `service_role` のみに絞ってあるので、cron はその権限で回してください。
+**期限を設定しても、消す処理が動いていなければ期限は無い**ことに注意してください
+（#185）。
