@@ -16,10 +16,14 @@ describe("synthetic account contract", () => {
 
   it("refuses to target the production Supabase project", () => {
     const prior = process.env.EVAL_SUPABASE_URL;
+    const priorKey = process.env.BLESC_EVAL_RUNNER_OPENAI_API_KEY;
+    delete process.env.BLESC_EVAL_RUNNER_OPENAI_API_KEY;
     process.env.EVAL_SUPABASE_URL = "https://kvcrkveaxlrijhzyayeg.supabase.co";
     try {
       assert.throws(() => loadEnv(), /production/i);
     } finally {
+      if (priorKey === undefined) delete process.env.BLESC_EVAL_RUNNER_OPENAI_API_KEY;
+      else process.env.BLESC_EVAL_RUNNER_OPENAI_API_KEY = priorKey;
       if (prior === undefined) delete process.env.EVAL_SUPABASE_URL;
       else process.env.EVAL_SUPABASE_URL = prior;
     }

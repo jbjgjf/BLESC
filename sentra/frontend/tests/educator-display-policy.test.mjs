@@ -58,7 +58,7 @@ const DEMO_LIB = ["src/lib/blesc"];
  * is that a rule match can be shown to the student and explained; a band is a
  * verdict with no sentence behind it.
  */
-const BAND_IDENTIFIERS = ["RiskBand", "BAND_ORDER", "BANDS", "state_band"];
+const BAND_IDENTIFIERS = ["RiskBand", "BAND_ORDER", "BANDS", "state_band", "worsening", "improving"];
 
 const SCORE_IDENTIFIERS = ["anomaly_score", "latest_score", "latest_anomaly_score", "hybrid_score"];
 
@@ -71,6 +71,9 @@ const FORBIDDEN_LABELS = [
   "リスクスコア",
   "リスク判定",
   "危険度",
+  "感情が改善",
+  "改善が見られません",
+  "強い無力感を示す",
 ];
 
 /** `src/lib/i18n` holds the copy these screens render, so it is swept too. */

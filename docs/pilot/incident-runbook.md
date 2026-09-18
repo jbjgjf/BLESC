@@ -14,9 +14,9 @@
 
 | 役割 | 担当 | 連絡手段 | 対応時間 |
 | --- | --- | --- | --- |
-| 研究責任者 | `DECISION REQUIRED` | | |
-| データ管理責任者 | `DECISION REQUIRED` | | |
-| 運用責任者 | `DECISION REQUIRED` | | |
+| 研究責任者 | 田雨竜（2026-09-18 owner指定、担当受諾待ち） | `DECISION REQUIRED` | `DECISION REQUIRED` |
+| データ管理責任者 | 王謙蘊（同上） | `DECISION REQUIRED` | `DECISION REQUIRED` |
+| 運用責任者 | 梅澤透真（同上） | `DECISION REQUIRED` | `DECISION REQUIRED` |
 | 学校側窓口 | `DECISION REQUIRED` | | |
 | 校内の相談体制（SC/SSW等） | `DECISION REQUIRED` | | |
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { PILOT_CONTACT_EMAIL, PILOT_CONTACT_HREF, PILOT_CONTACT_PRIVACY_NOTICE } from "@/lib/pilotContact";
+
 /**
  * 研究への参加導線（#164）。
  *
@@ -291,7 +293,7 @@ export default function PilotJoinPage() {
 
           {guardian?.status === "declined" ? (
             <p className="bl-meta">
-              研究担当への連絡先は、配布された説明文書に記載されています。
+              研究担当へのご相談は、下記の研究問い合わせ先へご連絡ください。
             </p>
           ) : (
             <>
@@ -378,10 +380,16 @@ export default function PilotJoinPage() {
           <h2 className="bl-h2">参加を終了しました</h2>
           <p>これまでのご参加ありがとうございました。以降の記録は研究には使われません。</p>
           <p className="bl-meta">
-            すでに保存されたデータの削除を希望される場合は、説明文書に記載の研究担当までご連絡ください。
+            すでに保存されたデータの削除を希望される場合は、下記の研究問い合わせ先へご連絡ください。
           </p>
         </section>
       ) : null}
+
+      <section className="bl-card bl-stack" aria-label="研究問い合わせ先">
+        <h2 className="bl-h2">研究問い合わせ先</h2>
+        <a href={PILOT_CONTACT_HREF}>{PILOT_CONTACT_EMAIL}</a>
+        <p className="bl-meta">{PILOT_CONTACT_PRIVACY_NOTICE}</p>
+      </section>
 
       <p className="bl-disclaimer">
         <Icon name="medical_information" size={15} />

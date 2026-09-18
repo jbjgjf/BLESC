@@ -33,6 +33,8 @@ const subscribe = () => () => {};
 const getServerSnapshot = () => false;
 
 function getSnapshot(): boolean {
+  // A dedicated research deployment never accepts URL/session demo overrides.
+  if (process.env.NEXT_PUBLIC_PILOT_MODE === "1") return false;
   if (typeof window === "undefined") return false;
 
   const requested = new URLSearchParams(window.location.search).get("demo");

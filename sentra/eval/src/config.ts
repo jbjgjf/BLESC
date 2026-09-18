@@ -69,6 +69,10 @@ function parseEnvFile(path: string): Record<string, string> {
  * them anywhere (reports, traces, artifacts, screenshots included).
  */
 export function loadEnv() {
+  const supabaseUrl = process.env.EVAL_SUPABASE_URL ?? "http://127.0.0.1:54321";
+  if (/kvcrkveaxlrijhzyayeg/.test(supabaseUrl)) {
+    throw new Error("Refusing to run evaluation against the production Supabase project");
+  }
   const frontendEnv = parseEnvFile(resolve(HERE, "../../frontend/.env.local"));
   const evalOpenAiKey =
     process.env.BLESC_EVAL_RUNNER_OPENAI_API_KEY ?? frontendEnv.BLESC_EVAL_RUNNER_OPENAI_API_KEY;
@@ -76,7 +80,6 @@ export function loadEnv() {
 
   // Dedicated evaluation Supabase project (blesc-synthetic-eval) or the
   // local stack — never the production project.
-  const supabaseUrl = process.env.EVAL_SUPABASE_URL ?? "http://127.0.0.1:54321";
   const serviceRoleKey = process.env.EVAL_SUPABASE_SERVICE_ROLE_KEY ?? "";
   const anonKey = process.env.EVAL_SUPABASE_ANON_KEY ?? "";
   const appBaseUrl = process.env.EVAL_APP_BASE_URL ?? "http://localhost:3940";
@@ -84,9 +87,6 @@ export function loadEnv() {
   // (Settings → Deployment Protection). Optional; local runs don't need it.
   const protectionBypassSecret = process.env.EVAL_VERCEL_BYPASS_SECRET ?? "";
 
-  if (/kvcrkveaxlrijhzyayeg/.test(supabaseUrl)) {
-    throw new Error("Refusing to run evaluation against the production Supabase project");
-  }
   return { evalOpenAiKey, supabaseUrl, serviceRoleKey, anonKey, appBaseUrl, protectionBypassSecret };
 }
 
