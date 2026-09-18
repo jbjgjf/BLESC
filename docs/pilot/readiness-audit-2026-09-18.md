@@ -9,7 +9,7 @@
 以下は初回監査後の更新。下表の初回所見を履歴として残す。
 
 - ownerがC1のメール `blesc.jp@gmail.com` と担当者3名を指定。join/guardian画面と配布説明文書へ反映。受付時間・学校確認・担当受諾は未確認であり、署名済みではない。
-- 専用Vercel `blesc-pilot`（`prj_IjgTAtHZ2tKIZ0AWybYJEcPdrm27`）を作成し、保護を維持してデプロイ。URL: https://blesc-pilot.vercel.app、deployment `dpl_99BkG1pyCmSaEUG7rYoxNdknkGcA`、アプリSHA `0f8ff65`。
+- 専用Vercel `blesc-pilot`（`prj_IjgTAtHZ2tKIZ0AWybYJEcPdrm27`）を作成し、保護を維持してデプロイ。URL: https://blesc-pilot.vercel.app、最終確認READY deployment `dpl_AqH5vJpBvsUDZ54u6JHKwLRBzz2G`、アプリSHA `81a8b34`（#190 + #191）。既存本番は変更していない。
 - 専用Supabase `blesc-pilot`（`urzzfkkiewleejcthuow`、東京）を作成・確認。空DBへ既存28本の非空migrationを適用（空のtest migrationは除外）。additive → 新アプリREADY → privilege restrictionの順序を守った。追加2本の権限/search_path修正も適用。
 - study `pilot-2026-draft` は `draft`。研究募集・収集・招待発行は未開始。OpenAI鍵は設定せず、`NEXT_PUBLIC_PILOT_MODE=1` でURL/sessionのデモ上書きを禁止。運営者・export許可リストは担当アカウント未指定のため未設定。
 - 専用SupabaseでSQL検査8本が成功（各検査はrollback）。同意・enrollment・自己評定/PII・oversight・評価/storage・危機通知RLS・trigger/権限。実時間3日間のdry runではない。
@@ -17,8 +17,10 @@
 - #182のeval CIで意図的失敗を検知した証跡: https://github.com/jbjgjf/BLESC/actions/runs/35347322494/job/105606824577 。一時テストは削除済み。通常版eval/test/typecheckとfrontend lint/test/buildはGitHub上で成功。PR #190は人間review/merge待ち。
 - 新アプリのhealth応答はok、Supabase接続設定あり・OpenAI鍵なし。これは実地運用合格や外部通信0件の独立監査ではない。
 - security advisorの可変search_pathと未認証trigger RPCの指摘を修正。残る7件は認証済みRLS helperのSECURITY DEFINER警告、1件は意図的deny-allの招待表のINFO。全警告を解消したとは扱わない。
+- #116で未知の認証プロバイダエラーが英語のままUIへ流れる経路を修正。既知・未知のエラーを日本語カタログへ限定し、回帰検査を追加。全画面・全状態・生成応答の日本語受入完了とは扱わない。
+- 追加PR #191（#190にstack）でNext.js / eslint-config-nextを16.3.5へ更新し、互換範囲のtransitive dependenciesを修正。分離checkout `81a8b34` でnpm audit 0件（devを含む）、lint、466/466テスト、本番build成功。初回buildは公開Supabase設定不足で失敗したため、CI用placeholder設定を与えて再検証した。鍵・実参加者データは使用していない。
 
-**残る開始条件**: その他の正式決定・研究倫理/学校/データ管理承認、危機連絡先と当番、担当アカウント、purge監視、backup/restore・鍵ローテーション・外部通信監査、成人スタッフの実時間3日演習、3名の最終Go署名。build中にnpm auditの11件（critical 1を含む）も報告されたため、依存関係の影響評価も必要。
+**残る開始条件**: その他の正式決定・研究倫理/学校/データ管理承認、危機連絡先と当番、担当アカウント、purge監視、backup/restore・鍵ローテーション・外部通信監査、成人スタッフの実時間3日演習、3名の最終Go署名。PR #190/#191は人間review/merge待ち。
 
 | 対象 | 確認結果 | 残る作業 |
 | --- | --- | --- |
@@ -31,7 +33,7 @@
 | #182 | Node 24のeval CIジョブ、test/typecheck、README手順を追加 | PR上でgreenと、意図的失敗でredになる証跡を取得。ローカル成功をCI実行済みと扱わない |
 | #116 | 日本語カタログ・翻訳検査は存在し、frontendテスト成功 | 公開deploymentと全状態の文脈・アクセシビリティ・生成応答レビューを完了する。ソース検査だけで全受入条件達成としない |
 
-## ローカル検証
+## 初回監査時のローカル検証（更新前の履歴）
 
 - Node v25.9.0、`sentra/eval`: `npm test` 30/30、`npm run typecheck` 成功。
 - `sentra/frontend`: `npm test` 462/462（日本語UI・教員表示の回帰検査を含む）。
@@ -40,8 +42,8 @@
 
 ## 再開に必要な人間の入力
 
-1. 14件の決定と3役割の正式承認（保持期間・保護者確認・撤回削除窓口・危機対応の当番を含む）。
-2. 専用Vercel URL / deployment SHA / Supabase ref、所有者、課金主体、運営担当。秘密値は共有記録へ貼らない。
+1. C1のメール決定以外の13件、およびC1の受付時間・受諾・学校確認と3役割の正式承認（保持期間・保護者確認・撤回削除窓口・危機対応の当番を含む）。
+2. 上記の専用環境に対する運営担当の受諾と担当アカウント・連絡系統。秘密値は共有記録へ貼らない。
 3. 成人スタッフの実施者と3日間の日程、7種の運用演習、研究・データ・運用責任者の判定署名。
 
 これらが揃うまで `pilot_studies.status` を `recruiting` に変更しない。
