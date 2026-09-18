@@ -268,17 +268,31 @@ describe("the wiring that makes this reach anyone", () => {
   });
 
   it("has a retry path, so a failed send is late rather than lost", () => {
-    const dispatch = read("../src/app/api/safety/dispatch/route.ts");
+    // The retry moved out of the route module and into `safetyDispatch.ts` so
+    // a second entry point could reach it (#179). Both halves still have to be
+    // there: the queue query that finds what is owed, and a route that runs it.
+    const dispatch = read("../src/lib/server/safetyDispatch.ts");
     assert.ok(dispatch.includes('.in("status", ["pending", "failed"])'));
     assert.ok(dispatch.includes("deliverEscalation"));
+    const route = read("../src/app/api/safety/dispatch/route.ts");
+    assert.ok(route.includes("runSafetyDispatch"));
   });
 
   it("refuses the dispatcher when no shared secret is set", () => {
-    const dispatch = read("../src/app/api/safety/dispatch/route.ts");
+    const dispatch = read("../src/lib/server/safetyDispatch.ts");
     // An open retry endpoint is a way to make this deployment send mail on
     // command.
-    assert.ok(dispatch.includes("if (!expected) return false"));
+    assert.ok(dispatch.includes("if (expected.length === 0) return false"));
     assert.ok(dispatch.includes("timingSafeEqual"));
+  });
+
+  it("is reachable by a scheduler that can only issue GET", () => {
+    // A Vercel cron issues GET. Before #179 the only path that retried was a
+    // POST, so the documented cron configuration hit the health probe and
+    // reported success while nothing was ever retried.
+    const run = read("../src/app/api/safety/dispatch/run/route.ts");
+    assert.ok(run.includes("export async function GET("));
+    assert.ok(run.includes("runSafetyDispatch"));
   });
 });
 

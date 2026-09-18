@@ -60,8 +60,11 @@ blesc は緊急対応を行いません。危険が差し迫っていると判�
           └ deliverEscalation() ← await しない（生徒をSMTPの後ろで待たせない）
                 ├ webhook  SAFETY_ALERT_WEBHOOK_URL
                 └ email    RESEND_API_KEY + SAFETY_ALERT_EMAIL_FROM
-/api/safety/dispatch (cron)
+/api/safety/dispatch/run (cron)  ← Vercel cron は GET しか送らないのでこちら
   └ status が pending / failed の行を拾い直す
+/api/safety/dispatch
+  ├ POST  同じ再送（Bearer を送れるスケジューラ向け）
+  └ GET   死活確認のみ。件数を返すだけで再送しない
 ```
 
 **書いてから送る**順序が肝です。送信は失敗しても再送できますが、行が書かれなければ
@@ -89,10 +92,16 @@ blesc は緊急対応を行いません。危険が差し迫っていると判�
 SAFETY_ALERT_WEBHOOK_URL=     # 学校側の受け口（Slack/Teams/当直ゲートウェイ）
 RESEND_API_KEY=               # メール経路。FROM とセットで有効
 SAFETY_ALERT_EMAIL_FROM=
-SAFETY_DISPATCH_TOKEN=        # 再送 cron の共有シークレット。未設定なら全拒否
+SAFETY_DISPATCH_TOKEN=        # 再送 cron の共有シークレット
+CRON_SECRET=                  # Vercel cron が付ける Bearer。どちらか一方でよい
 SAFETY_ALERT_ON_ELEVATED=     # 1 で elevated も通知。既定は crisis のみ
 NEXT_PUBLIC_SITE_URL=         # 通知に載せるリンクの組み立てに使う
 ```
+
+`SAFETY_DISPATCH_TOKEN` と `CRON_SECRET` は**どちらも未設定なら再送は全拒否**です。
+Vercel の cron を使うなら `CRON_SECRET` だけで足ります（Vercel がこの名前の値を
+`Authorization: Bearer` で付けるため）。外部のスケジューラから叩くなら
+`SAFETY_DISPATCH_TOKEN` を設定し、同じ値を Bearer で送ってください。
 
 **webhook を先に設定してください。** 個人宛てのメールと違い、
 「今夜は誰が当番か」を知っているのは学校側の仕組みだけです。
@@ -100,13 +109,33 @@ NEXT_PUBLIC_SITE_URL=         # 通知に載せるリンクの組み立てに使
 
 ### cron
 
+`sentra/frontend/vercel.json` に入っています（#179）。
+
 ```json
-{ "crons": [{ "path": "/api/safety/dispatch", "schedule": "*/5 * * * *" }] }
+{ "crons": [{ "path": "/api/safety/dispatch/run", "schedule": "*/5 * * * *" }] }
 ```
+
+**この3点はどれも「間違えても緑に見える」種類の罠なので、変更するときは注意してください。**
+
+1. **パスは `/api/safety/dispatch/run` です。** `/api/safety/dispatch` ではありません。
+   Vercel の cron は GET しか送らず、`/api/safety/dispatch` の GET は件数を返すだけの
+   死活確認です。そちらに向けると、cron ダッシュボードは5分ごとに成功し続け、
+   再送は一度も走りません。`/run` は GET と POST の両方で再送します。
+2. **ファイルの場所は `sentra/frontend/vercel.json` です。** Vercel は Root Directory
+   （`sentra/frontend`）配下の `vercel.json` を読みます。リポジトリ直下の
+   `vercel.json` は読まれないので、そちらに `crons` を書いても何も起きません。
+3. **`CRON_SECRET` を設定してください。** 未設定だと Vercel は `Authorization` を
+   付けず、エンドポイントは 403 を返します。403 は `console.error` に
+   「何も再送されていない」と出ますが、cron 側からは失敗として見えるだけです。
+
+`tests/safety-dispatch.test.mjs` が 1 と 2 を固定しています。
 
 5分は出発点であって、根拠のある推奨値ではありません。これは**再送**の遅れの上限で、
 初回送信は即時です。もっと短い上限が要る学校があれば、それはその学校の当直体制が
-決めることなので、この値を合わせてください。
+決めることなので、この値を合わせてください。ただし **Vercel の Hobby プランの cron は
+1日1回** に制限されます。5分間隔は Pro 以降が前提です。Hobby のまま運用するなら、
+再送の上限は「1日」になります。それを許容できないなら、プランを上げるか、
+外部のスケジューラから `POST /api/safety/dispatch` を叩いてください。
 
 ## 通知が増えすぎないように
 

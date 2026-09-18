@@ -14,6 +14,12 @@ Vercel のプロジェクト作成画面で以下のように設定してくだ�
 > [!TIP]
 > Vercel のインポート画面でディレクトリを選択する際、`sentra` フォルダの中の `frontend` を選んで「Edit」ボタンを押すか、設定画面の "Root Directory" に `sentra/frontend` と入力してください。
 
+> [!IMPORTANT]
+> Root Directory を `sentra/frontend` にすると、Vercel が読む `vercel.json` も
+> **`sentra/frontend/vercel.json`** になります。リポジトリ直下の `vercel.json` は
+> 読まれません。`crons` や `headers` をそこに書いても何も起きないので、
+> 設定はすべて `sentra/frontend/vercel.json` に入れてください。
+
 ### 2. Framework Preset
 - **Framework Preset**: `Next.js` (自動で認識されるはずです)
 
@@ -22,6 +28,22 @@ Vercel のプロジェクト作成画面で以下のように設定してくだ�
 
 - **`NEXT_PUBLIC_API_URL`**: バックエンドの URL（例: `https://sentra-backend.example.com`）
   - デフォルトでは `http://localhost:8000` を見に行くようになっている場合があります。
+- **`CRON_SECRET`**: 危機エスカレーションの再送 cron を認証する共有シークレット。
+  **未設定だと再送が一度も走りません。** 設定すると Vercel が cron のリクエストに
+  `Authorization: Bearer <この値>` を付けます。詳細は
+  [`crisis_escalation.md`](./crisis_escalation.md) を参照してください。
+
+### 4. Cron Jobs
+
+`sentra/frontend/vercel.json` が `/api/safety/dispatch/run` を5分ごとに呼ぶよう
+宣言しています。届かなかった危機エスカレーションを再送する処理で、これが動いて
+いなければ「一度失敗した通知は誰にも届かない」状態になります。
+
+- **Hobby プランの cron は1日1回に制限されます。** 5分間隔は Pro 以降が前提です。
+  Hobby のまま進めるなら、再送の遅れの上限が「1日」になることを運用側が承知して
+  いる必要があります。
+- デプロイ後、Vercel の Cron Jobs タブで**実行が 200 を返しているか**を確認して
+  ください。403 が並んでいる場合は `CRON_SECRET` が未設定です。
 
 ---
 
