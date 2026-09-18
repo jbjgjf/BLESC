@@ -56,6 +56,16 @@ for path in out.rglob("*"):
     if new != text:
         path.write_text(new, errors="surrogateescape")
 print(f"asset paths prefixed: {prefixed}; pages marked noindex: {noindex}")
+
+# 画面遷移のとき、ルーターは RSC: 1 を付けて <ページ>.txt を取りに来る。Vercel は
+# RSC: 1 の要求を「パス + .rsc」に書き換えてから探す（/a.txt → /a.txt.rsc。
+# 先読みの .segments/… が無いときも同じ所に落ちる）ので、同じ中身を .rsc でも
+# 置く。無いと 404 になり、遷移のたびにページ全体を読み直してしまう。
+twins = 0
+for path in out.rglob("*.txt"):
+    path.with_name(path.name + ".rsc").write_bytes(path.read_bytes())
+    twins += 1
+print(f"RSC twins written: {twins}")
 PY
 
 rm -rf "$OUT_DIR"
