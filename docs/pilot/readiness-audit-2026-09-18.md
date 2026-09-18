@@ -4,6 +4,22 @@
 成人スタッフの合成データ検証と、実在の生徒の募集を区別する。
 担当者の署名・決定・演習結果を代理で記入しない。
 
+## 追加対応（同日）
+
+以下は初回監査後の更新。下表の初回所見を履歴として残す。
+
+- ownerがC1のメール `blesc.jp@gmail.com` と担当者3名を指定。join/guardian画面と配布説明文書へ反映。受付時間・学校確認・担当受諾は未確認であり、署名済みではない。
+- 専用Vercel `blesc-pilot`（`prj_IjgTAtHZ2tKIZ0AWybYJEcPdrm27`）を作成し、保護を維持してデプロイ。URL: https://blesc-pilot.vercel.app、deployment `dpl_99BkG1pyCmSaEUG7rYoxNdknkGcA`、アプリSHA `0f8ff65`。
+- 専用Supabase `blesc-pilot`（`urzzfkkiewleejcthuow`、東京）を作成・確認。空DBへ既存28本の非空migrationを適用（空のtest migrationは除外）。additive → 新アプリREADY → privilege restrictionの順序を守った。追加2本の権限/search_path修正も適用。
+- study `pilot-2026-draft` は `draft`。研究募集・収集・招待発行は未開始。OpenAI鍵は設定せず、`NEXT_PUBLIC_PILOT_MODE=1` でURL/sessionのデモ上書きを禁止。運営者・export許可リストは担当アカウント未指定のため未設定。
+- 専用SupabaseでSQL検査8本が成功（各検査はrollback）。同意・enrollment・自己評定/PII・oversight・評価/storage・危機通知RLS・trigger/権限。実時間3日間のdry runではない。
+- #175の画面実見で、既存テストが見逃した `improving/worsening` によるフォロー選別と状態改善の文言を発見・削除。4画面×390/1440pxの描画・文言検査を再実施。分類名・状態方向の文言の不在を確認。
+- #182のeval CIで意図的失敗を検知した証跡: https://github.com/jbjgjf/BLESC/actions/runs/35347322494/job/105606824577 。一時テストは削除済み。通常版eval/test/typecheckとfrontend lint/test/buildはGitHub上で成功。PR #190は人間review/merge待ち。
+- 新アプリのhealth応答はok、Supabase接続設定あり・OpenAI鍵なし。これは実地運用合格や外部通信0件の独立監査ではない。
+- security advisorの可変search_pathと未認証trigger RPCの指摘を修正。残る7件は認証済みRLS helperのSECURITY DEFINER警告、1件は意図的deny-allの招待表のINFO。全警告を解消したとは扱わない。
+
+**残る開始条件**: その他の正式決定・研究倫理/学校/データ管理承認、危機連絡先と当番、担当アカウント、purge監視、backup/restore・鍵ローテーション・外部通信監査、成人スタッフの実時間3日演習、3名の最終Go署名。build中にnpm auditの11件（critical 1を含む）も報告されたため、依存関係の影響評価も必要。
+
 | 対象 | 確認結果 | 残る作業 |
 | --- | --- | --- |
 | 承認 | D1–D7・C1–C6・I1は未決定、3役割の承認欄は空欄 | 各決定者が決定内容・根拠・日付を記録し、その後に両版を承認 |
