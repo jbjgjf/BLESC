@@ -14,6 +14,19 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async headers() {
+    return [
+      {
+        // The demo's client navigations fetch <page>.txt with an `RSC: 1`
+        // header, which Vercel answers from <page>.txt.rsc (twins the build
+        // script writes). A plain static file carries no flight content type,
+        // and the router falls back to a full page load without one.
+        source: "/demo-view/:path*",
+        has: [{ type: "header", key: "rsc" }],
+        headers: [{ key: "Content-Type", value: "text/x-component" }],
+      },
+    ];
+  },
   async rewrites() {
     return [
       // /demo-view is a static export of the chat-ui-redesign branch, built by
