@@ -7,6 +7,7 @@ import { TransitionLink } from "@/components/ui/Transition";
 import { contextForPath } from "@/lib/blesc/context";
 import { DisplaySettings } from "@/components/a11y/DisplaySettings";
 import { useAuth } from "@/lib/auth";
+import { useDemoMode } from "@/lib/demo";
 import { Icon, type IconName } from "@/components/ui/Icon";
 
 type NavItem = { href: string; label: string; icon: IconName; exact?: boolean };
@@ -48,6 +49,7 @@ function isActive(pathname: string, item: NavItem) {
 export function AppNav() {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
+  const demo = useDemoMode();
   const menuRef = useRef<HTMLDivElement>(null);
   const [scrolled, setScrolled] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -132,10 +134,10 @@ export function AppNav() {
 
             {menuOpen && (
               <div className="bl-menu bl-pop" role="menu">
-                {user?.email && (
+                {(user?.email || demo) && (
                   <div className="bl-menu__identity">
                     <Icon name="person" size={18} />
-                    <span className="bl-menu__email">{user.email}</span>
+                    <span className="bl-menu__email">{user?.email ?? "デモアカウント（固定のデモデータ）"}</span>
                   </div>
                 )}
 

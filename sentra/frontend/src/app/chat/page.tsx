@@ -8,6 +8,8 @@ import { useAuth } from "@/lib/auth";
 import { Send } from "lucide-react";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
 import { clearHandoff, readHandoff } from "@/lib/assistant/handoff";
+import { useDemoMode } from "@/lib/demo";
+import { assessSafety } from "@/lib/safety-assessment";
 import styles from "./chat.module.css";
 
 type Message = {
@@ -30,8 +32,20 @@ const WAVE_PATHS = [
   "M0,128 C180,104 360,152 540,128 C720,104 900,152 1080,128 C1260,104 1440,152 1440,128 L1440,200 L0,200 Z",
 ];
 
+/**
+ * デモ表示の返事。デモでは相談の内容をどこにも送らない（デモページが
+ * 「デモデータの表示中はサーバーに何も送られません」と約束している）ので、
+ * 例文を順に返す。診断めいたことは言わず、聞き返すだけにしてある。
+ */
+const DEMO_REPLIES = [
+  "話してくれてありがとうございます。そのとき、どんな気持ちでしたか。",
+  "そうだったんですね。いちばん気になっているのは、どの部分ですか。",
+  "少しずつ整理できてきましたね。ほかにも話したいことがあれば、そのままどうぞ。",
+];
+
 export default function ChatPage() {
   const { userId } = useAuth();
+  const demo = useDemoMode();
   const [messages, setMessages] = useState<Message[]>([]);
   // 案内役から渡された言葉があれば、下書きとして置いておく。送るかどうかは
   // 本人が決める。このページは AuthShell がハイドレーション後にしか描かない
@@ -88,6 +102,23 @@ export default function ChatPage() {
         userMessage,
       ]);
       setIsThinking(true);
+
+      if (demo) {
+        // つらさが混じった言葉には、本番と同じ監査済みの文を返す。
+        const safety = assessSafety(text);
+        const turn = messagesRef.current.filter((m) => m.role === "user" && !m.error).length;
+        const reply =
+          safety.risk_level === "crisis" || safety.risk_level === "elevated"
+            ? safety.safe_response
+            : DEMO_REPLIES[turn % DEMO_REPLIES.length];
+        window.setTimeout(() => {
+          setMessages((current) => [...current, { id: `a-${Date.now()}`, role: "ai", text: reply }]);
+          setIsThinking(false);
+          textareaRef.current?.focus();
+        }, 1400);
+        return;
+      }
+
       try {
         const context = [...messagesRef.current.filter((m) => !m.error), userMessage]
           .slice(-12)
@@ -116,7 +147,7 @@ export default function ChatPage() {
         textareaRef.current?.focus();
       }
     },
-    [isThinking, userId],
+    [isThinking, userId, demo],
   );
 
   const sendFromInput = () => {
@@ -155,6 +186,11 @@ export default function ChatPage() {
           <Image src="/flower.png" alt="blesc" width={34} height={34} className={styles.headerFlower} />
           <span className={styles.headerTitle}>blesc</span>
         </Link>
+        {demo && (
+          <span className="bl-chip bl-chip--watch" style={{ marginLeft: 10 }}>
+            デモ・返事は例文です
+          </span>
+        )}
       </header>
 
       <div ref={scrollRef} className={styles.scroll} onScroll={handleScroll}>
@@ -237,9 +273,12 @@ export default function ChatPage() {
             }}
             onKeyDown={onKeyDown}
           />
-          <div className={styles.voiceSlot}>
-            <VoiceInputButton disabled={isThinking} onTranscript={insertTranscript} />
-          </div>
+          {/* 声の入力は文字起こしのサーバーに音声を送るので、デモでは出さない。 */}
+          {!demo && (
+            <div className={styles.voiceSlot}>
+              <VoiceInputButton disabled={isThinking} onTranscript={insertTranscript} />
+            </div>
+          )}
           <button
             type="button"
             className={styles.send}
