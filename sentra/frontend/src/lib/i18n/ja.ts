@@ -921,8 +921,8 @@ export const ja = {
       title: "アラート",
       intro: "確認のきっかけとして使ってください。アラートだけで状態を判断しないでください。",
       count: (n: number) => `${n}件`,
-      urgentTitle: "優先度の高いアラート",
-      urgentEmpty: "優先度の高いアラートはありません。",
+      urgentTitle: "確認された記述",
+      urgentEmpty: "該当する記述は確認されていません。",
       attention: "要確認",
       flowTitle: "対応の流れ",
       flow: [

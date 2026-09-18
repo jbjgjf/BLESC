@@ -24,7 +24,7 @@ export default function AlertsPage() {
 
   const urgent = CLASS_ROSTER.filter((student) => student.urgent);
   const overdueFollowUps = FOLLOW_UPS.filter(
-    (item) => item.state === "worsening" || item.nextMeeting === null,
+    (item) => item.nextMeeting === null,
   );
 
   const toggleAck = (id: string) =>

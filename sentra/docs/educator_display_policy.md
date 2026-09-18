@@ -100,6 +100,15 @@ on 2026-09-16, forty-one days after this policy was decided:
 Both are removed. Two things changed beyond the deletions, because deleting the
 render is what was done in August and it did not hold:
 
+2026-09-18 visual audit found a remaining classification under a different
+name: demo `FollowUpItem.state` used `improving`/`worsening`, and the alerts
+screen included students based on `worsening`. Its copy also claimed emotional
+improvement or lack of improvement. The state field and state-based inclusion
+are removed; follow-up reminders now depend only on an unregistered next
+meeting. The demo observation detail no longer infers helplessness. Regression
+checks include these identifiers and phrases. The earlier tests passed while
+this remained, so their success alone was not proof of compliance.
+
 - The score no longer reaches the browser. `getStudentOverviewForEducator` stops
   selecting `anomaly_score`, and `latest_score` / `state_band` are off
   `EducatorStudentStatus` entirely. A value a screen can reach is a value the

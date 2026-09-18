@@ -217,8 +217,7 @@ export interface FollowUpItem {
   daysSince: number;
   /** 次回面談日 YYYY-MM-DD */
   nextMeeting: string | null;
-  state: "improving" | "unchanged" | "worsening";
-  /** AIの所見 */
+  /** 面談予定の登録状況。生徒の状態を推測しない。 */
   note: string;
 }
 
