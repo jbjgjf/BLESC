@@ -100,6 +100,8 @@ NEXT_PUBLIC_SITE_URL=         # 通知に載せるリンクの組み立てに使
 
 ### cron
 
+Vercel では `sentra/frontend/vercel.json`（プロジェクトの Root Directory 直下）に書いてください。リポジトリ直下に置いても読まれません。
+
 ```json
 { "crons": [{ "path": "/api/safety/dispatch", "schedule": "*/5 * * * *" }] }
 ```

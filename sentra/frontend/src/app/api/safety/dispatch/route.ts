@@ -14,7 +14,9 @@
  *
  * ## Running it
  *
- * Any scheduler that can make an authenticated POST. On Vercel, `vercel.json`:
+ * Any scheduler that can make an authenticated POST. On Vercel, a `vercel.json`
+ * in the project's Root Directory (sentra/frontend; one at the repo root is
+ * never read):
  *
  *     { "crons": [{ "path": "/api/safety/dispatch", "schedule": "*\/5 * * * *" }] }
  *

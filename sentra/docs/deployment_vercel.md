@@ -14,6 +14,9 @@ Vercel のプロジェクト作成画面で以下のように設定してくだ�
 > [!TIP]
 > Vercel のインポート画面でディレクトリを選択する際、`sentra` フォルダの中の `frontend` を選んで「Edit」ボタンを押すか、設定画面の "Root Directory" に `sentra/frontend` と入力してください。
 
+> [!NOTE]
+> Vercel は `vercel.json` を Root Directory から読みます。置く場合は `sentra/frontend/vercel.json` にしてください。リポジトリ直下のものは読まれません（[#197](https://github.com/jbjgjf/BLESC/issues/197)）。
+
 ### 2. Framework Preset
 - **Framework Preset**: `Next.js` (自動で認識されるはずです)
 
