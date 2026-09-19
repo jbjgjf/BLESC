@@ -19,11 +19,12 @@
  *
  * ## It is the backstop, not the main schedule
  *
- * The Vercel account is on Hobby, where cron jobs run **at most once a day** —
- * `*/5 * * * *` does not merely get downgraded, it fails the deployment. So the
- * five-minute retry lives in `.github/workflows/safety-dispatch.yml`, which
- * calls `/api/safety/dispatch`, and this route is scheduled daily so the queue
- * is still drained if that workflow is disabled or the repository is archived.
+ * The Vercel account is on Hobby, where cron jobs run **at most once a day**. A
+ * five-minute expression does not merely get downgraded there — it fails the
+ * deployment. So the five-minute retry lives in
+ * `.github/workflows/safety-dispatch.yml`, which calls `/api/safety/dispatch`,
+ * and this route is scheduled daily so the queue is still drained if that
+ * workflow is disabled or the repository is archived.
  *
  * Moving the schedule back here is the right end state, and it needs a Pro
  * account rather than a code change.
