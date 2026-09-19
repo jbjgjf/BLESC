@@ -2,10 +2,11 @@
 # blesc.online/demo-view に置く、静的なデモ表示を書き出す。
 #
 #   scripts/build-demo-view.sh <出力先>
-#   例: scripts/build-demo-view.sh ../../main-checkout/sentra/frontend/public/demo-view
+#   例: scripts/build-demo-view.sh ../../main-checkout/sentra/frontend/demo-view-export
 #
 # 本番の画面（main）とは別物。このブランチの画面を、固定のデモデータだけで
-# 動く静的なファイルにして、main の public/demo-view に置く。
+# 動く静的なファイルにして、main の demo-view-export/ に置く。main の
+# `npm run build` がそれを public/demo-view に写す（パイロットのビルドでは写さない）。
 #  - デモモードを常に有効にする（ログイン不要。表示するのは fixtures だけ）
 #  - API は含めない（POST を持つ Route Handler は静的に書き出せないうえ、
 #    デモでは使わない）。Supabase の宛先は解決できない .invalid にして、
