@@ -344,6 +344,26 @@ describe("the wiring that makes this reach anyone", () => {
     assert.ok(read("../src/app/api/safety/dispatch/route.ts").includes("dispatchPendingEscalations"));
   });
 
+  it("keeps the five-minute retry on a schedule that can express it", () => {
+    // Vercel Hobby caps cron at once per day, and a five-minute expression
+    // fails the deployment rather than being downgraded — which is what turned
+    // the Vercel check red the first time this manifest was actually read. The
+    // minute-scale retry therefore lives in a GitHub workflow, and `vercel.json`
+    // keeps a daily backstop.
+    const workflow = readFileSync(resolve(HERE, "../../../.github/workflows/safety-dispatch.yml"), "utf8");
+    assert.ok(workflow.includes('cron: "*/5 * * * *"'));
+    assert.ok(workflow.includes("/api/safety/dispatch"));
+
+    const manifest = JSON.parse(read("../vercel.json"));
+    for (const entry of manifest.crons) {
+      const [minute, hour] = entry.schedule.split(" ");
+      assert.ok(
+        !minute.includes("*") && !hour.includes("*"),
+        `${entry.path} is scheduled "${entry.schedule}", which a Hobby account refuses at deploy time`,
+      );
+    }
+  });
+
   it("is actually scheduled, from the directory Vercel reads", () => {
     /*
      * The manifest used to sit at the repository root while the Vercel project's

@@ -106,25 +106,42 @@ NEXT_PUBLIC_SITE_URL=         # 通知に載せるリンクの組み立てに使
 「今夜は誰が当番か」を知っているのは学校側の仕組みだけです。
 このプロダクトは当直表を持っていません。
 
-### cron
+### 定期実行
 
-`sentra/frontend/vercel.json` に入っています（**リポジトリ直下ではありません**——
-Vercel のプロジェクト root が `sentra/frontend` なので、直下に置いたものは読まれません）。
+**再送は GitHub Actions が5分ごとに叩きます**（`.github/workflows/safety-dispatch.yml`）。
+Vercel に置いていないのは、**Hobby プランの cron が1日1回までだから**です。
+`*/5 * * * *` はデプロイ自体が失敗します（"Hobby accounts are limited to daily cron jobs"）。
+
+必要な GitHub secrets:
+
+| secret | 中身 |
+| :--- | :--- |
+| `PILOT_BASE_URL` | パイロットデプロイのURL（例 `https://pilot.example.jp`） |
+| `SAFETY_DISPATCH_TOKEN` | `POST /api/safety/dispatch` の共有シークレット |
+
+どちらか欠けているとワークフローは**赤にせずスキップ**し、「再送は走っていない」とログに出します。
+5分ごとに赤いジョブが並ぶと、誰もこのワークフローを見なくなるためです。
+
+**GitHub のスケジューラはベストエフォートです。** 混雑時は遅延・実行されないことがあります。
+5分は目標であって保証ではありません。保証が要るなら Vercel を Pro にして
+`vercel.json` に戻すのが正解です。
+
+`sentra/frontend/vercel.json` には**保険として1日1回**の同じ呼び出しを残しています
+（リポジトリ直下ではありません——Vercel のプロジェクト root が `sentra/frontend` なので、
+直下に置いたものは読まれません）。
 
 ```json
 { "crons": [
-  { "path": "/api/cron/safety-dispatch", "schedule": "*/5 * * * *" },
-  { "path": "/api/cron/retention-purge", "schedule": "17 3 * * *" }
+  { "path": "/api/cron/retention-purge", "schedule": "17 3 * * *" },
+  { "path": "/api/cron/safety-dispatch", "schedule": "47 4 * * *" }
 ] }
 ```
+
+保持期限の purge は元から1日1回でよいので、こちらは Vercel の cron だけで足ります。
 
 Vercel Cron は `GET` と `Authorization: Bearer $CRON_SECRET` しか送れないため、
 `POST` + 独自トークンの `/api/safety/dispatch` とは別に `/api/cron/*` を置いています。
 中身は両方とも `lib/server/safetyDispatch.ts` を呼ぶだけです。
-
-5分は出発点であって、根拠のある推奨値ではありません。これは**再送**の遅れの上限で、
-初回送信は即時です。もっと短い上限が要る学校があれば、それはその学校の当直体制が
-決めることなので、この値を合わせてください。
 
 ## 通知が増えすぎないように
 

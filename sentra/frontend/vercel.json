@@ -5,12 +5,12 @@
   "buildCommand": "npm run build",
   "crons": [
     {
-      "path": "/api/cron/safety-dispatch",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/cron/retention-purge",
       "schedule": "17 3 * * *"
+    },
+    {
+      "path": "/api/cron/safety-dispatch",
+      "schedule": "47 4 * * *"
     }
   ]
 }
