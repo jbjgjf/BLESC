@@ -16,6 +16,8 @@
 # next.js
 /.next/
 /out/
+# staged from demo-view-export/ by scripts/stage-demo-view.mjs
+/public/demo-view/
 
 # production
 /build

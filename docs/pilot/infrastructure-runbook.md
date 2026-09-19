@@ -45,6 +45,7 @@
 | storageが別 | 同上 |
 | authが別 | 本番のアカウントでパイロットURLにログインできない |
 | demoが無効 | `NEXT_PUBLIC_DEMO_MODE` を設定しない。`?demo=1` でも研究画面が固定データにならないこと |
+| `/demo-view` が無い | `/demo-view` 以下が404。`/%64emo-view/index.html` のようにエンコードした形も404であること。本番（blesc.online）にだけ置く営業用の静的デモで、パイロットのビルドでは `scripts/stage-demo-view.mjs` がファイル自体を置かない（[#193](https://github.com/jbjgjf/BLESC/issues/193)） |
 | 公開signupが無効 | `/pilot/join` の招待コード以外から研究参加者になれない |
 | service-role keyがclientに出ない | ビルド成果物を検索して `SUPABASE_SERVICE_ROLE_KEY` の値が出ないこと（§5.3） |
 

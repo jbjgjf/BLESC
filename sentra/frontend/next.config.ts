@@ -30,10 +30,11 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       // /demo-view is a static export of the chat-ui-redesign branch, built by
-      // sentra/frontend/scripts/build-demo-view.sh on that branch into
-      // public/demo-view. It is not part of this app: fixtures only, demo mode
-      // forced on, no API, noindex. Static files are served before rewrites, so
-      // these only map clean page URLs onto the exported .html files.
+      // scripts/build-demo-view.sh on that branch into demo-view-export/ and
+      // copied into public/ by scripts/stage-demo-view.mjs, except in a pilot
+      // build. It is not part of this app: fixtures only, demo mode forced on,
+      // no API, noindex. Static files are served before rewrites, so these
+      // only map clean page URLs onto the exported .html files.
       { source: "/demo-view", destination: "/demo-view/index.html" },
       { source: "/demo-view/:path+", destination: "/demo-view/:path+.html" },
     ];

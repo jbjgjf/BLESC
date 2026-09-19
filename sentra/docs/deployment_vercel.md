@@ -44,6 +44,6 @@ Vercel はフロントエンド（Next.js）のデプロイには最適ですが
 | **Project Name** | `sentra-frontend` |
 | **Framework Preset** | `Next.js` |
 | **Root Directory** | `sentra/frontend` |
-| **Build Command** | `npm run build` |
+| **Build Command** | `npm run build`（`/demo-view` の静的デモを public/ に置く段を含む。`next build` に変えると本番から `/demo-view` が消える。パイロットでは置かない） |
 | **Output Directory** | `.next` |
 | **Install Command** | `npm install` |
