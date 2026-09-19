@@ -34,14 +34,20 @@ const MATRIX_PATH = fileURLToPath(
   new URL("../../../docs/pilot/dry-run/scenario-matrix.json", import.meta.url),
 );
 
-/** The transitions a participant may request, mirroring the API route. */
-const PARTICIPANT_TRANSITIONS = [
-  "information_read",
-  "participant_assented",
-  "enrolled",
-  "collecting",
-  "withdrawn",
-];
+/**
+ * Who may request which transition.
+ *
+ * Imported, not restated. This file used to carry its own copy that listed
+ * `collecting` as a participant transition -- the comment even said it mirrored
+ * the API route, which it did not -- so `--plan` reported a runnable plan whose
+ * day-0 step the API answers with 403. The copies are gone; there is one list,
+ * in the module the route imports too, and
+ * tests/pilot-operator-enrollment.test.mjs fails if a state has no owner.
+ */
+import {
+  OPERATOR_TRANSITIONS,
+  PARTICIPANT_TRANSITIONS,
+} from "../src/lib/pilotEnrollment.ts";
 
 /** Every state the enrollment table's CHECK constraint allows. */
 const STATES = [
@@ -83,7 +89,8 @@ function stepsFor(account) {
   if (account.is_minor) steps.push({ kind: "guardian_verify" });
   steps.push({ kind: "consent" });
   steps.push({ kind: "transition", to: "enrolled" });
-  steps.push({ kind: "transition", to: "collecting" });
+  // The operator opens the window for the cohort; the participant cannot.
+  steps.push({ kind: "transition", to: "collecting", actor: "operator" });
 
   for (const day of account.days.filter((day) => day > 0)) {
     steps.push({ kind: "submit", day });
@@ -121,8 +128,13 @@ function validate(matrix) {
       }
     }
     for (const step of stepsFor(account)) {
-      if (step.kind === "transition" && !PARTICIPANT_TRANSITIONS.includes(step.to)) {
-        problems.push(`#${account.id}: participants cannot request ${step.to}`);
+      if (step.kind === "transition") {
+        const actor = step.actor ?? "participant";
+        const allowed =
+          actor === "operator" ? OPERATOR_TRANSITIONS : PARTICIPANT_TRANSITIONS;
+        if (!allowed.includes(step.to)) {
+          problems.push(`#${account.id}: ${actor} cannot request ${step.to}`);
+        }
       }
     }
     if (!account.must_verify?.length) problems.push(`#${account.id}: nothing to verify`);
@@ -143,7 +155,11 @@ function printPlan(matrix) {
     console.log(`  expected terminal state: ${account.expected_terminal_state ?? "(no enrollment)"}`);
     for (const step of stepsFor(account)) {
       const detail = step.to ?? step.day ?? step.code ?? "";
-      console.log(`  - ${step.kind}${detail ? ` ${detail}` : ""}`);
+      // The actor is printed because it decides which route the human calls:
+      // an operator step goes to /api/pilot/admin/enrollment with an operator
+      // token, and running it as the participant is a 403 on day 0.
+      const actor = step.actor ? `  [${step.actor}]` : "";
+      console.log(`  - ${step.kind}${detail ? ` ${detail}` : ""}${actor}`);
     }
     console.log(`  must be zero: ${account.must_be_zero.join(", ")}`);
   }

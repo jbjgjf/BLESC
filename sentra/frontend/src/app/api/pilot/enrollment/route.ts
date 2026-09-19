@@ -16,23 +16,32 @@
  *   - `collecting`. The collection window opens for a cohort, on a date the
  *     protocol fixes. A participant who could open their own window could
  *     start collecting before the baseline period the analysis assumes.
+ *
+ * Both are reachable, and where is the point: `guardian_verified` through
+ * `/api/pilot/guardian/confirm`, and `collecting` (with `completed`) through
+ * `/api/pilot/admin/enrollment`, which is allowlisted on
+ * `PILOT_OPERATOR_USER_IDS` and works a cohort at a time. That second route did
+ * not exist until #B1, so this comment described a handoff to nobody and an
+ * enrolled participant's journal stayed locked forever.
+ *
+ * The list below is imported from `@/lib/pilotEnrollment`, where the matching
+ * operator and guardian lists live. Restating it here is what let the dry-run
+ * runner's copy drift into claiming a participant could open their own window.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { advanceEnrollment, loadEnrollmentsForUser, loadStudyBySlug } from "@/lib/server/pilotStore";
-import { canTransition, enrollmentProgress, pendingRequirement, type PilotState } from "@/lib/pilotEnrollment";
+import {
+  PARTICIPANT_TRANSITIONS,
+  canTransition,
+  enrollmentProgress,
+  pendingRequirement,
+  type PilotState,
+} from "@/lib/pilotEnrollment";
 
 export const runtime = "nodejs";
-
-/** What a participant may ask for themselves. See the header for the two that are missing. */
-const PARTICIPANT_TRANSITIONS: readonly PilotState[] = [
-  "information_read",
-  "participant_assented",
-  "enrolled",
-  "withdrawn",
-];
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser(request);

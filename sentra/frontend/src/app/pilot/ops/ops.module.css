@@ -1,0 +1,57 @@
+/* Same table treatment as the school console, scoped to this page rather than
+   promoted into blesc.css: three tables is not yet a design-system decision. */
+
+.tableScroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.table thead th {
+  padding: 10px 12px;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--bl-ink-3);
+  background: var(--bl-mist);
+  border-bottom: 1px solid var(--bl-line);
+}
+
+.table tbody tr {
+  border-bottom: 1px solid var(--bl-line-soft);
+}
+
+.table tbody tr:last-child {
+  border-bottom: 0;
+}
+
+.table td {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 400;
+  vertical-align: middle;
+}
+
+/* The codes and the guardian link are the two things on this page that exist
+   nowhere else once it is closed. They get a monospace block that wraps rather
+   than a line that scrolls off the right edge of a projector. */
+.secret {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+  background: var(--bl-mist);
+  border-radius: 8px;
+}
+
+.code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}

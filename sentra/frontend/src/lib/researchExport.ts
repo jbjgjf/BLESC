@@ -51,6 +51,14 @@ export type ExportEnrollmentRow = {
   participant_id: string;
   research_code: string;
   cohort: string;
+  /**
+   * Which study's window this enrollment belongs to.
+   *
+   * Needed because `study_phase` is measured against that study's own
+   * `baseline_days`, and one person may be enrolled in more than one study —
+   * so the phase cannot come from a single deployment-wide constant.
+   */
+  study_id: string;
   state: string;
   collection_started_at: string | null;
   /** The close of this participant's window, when the study has set one. */
@@ -77,6 +85,17 @@ export type ResearchRow = {
   cohort: string;
   /** 1 on the first day of this participant's window. Never a wall-clock date. */
   day_index: number;
+  /**
+   * Which half of the protocol this day falls in, or null past the end.
+   *
+   * Derived from the study's own `baseline_days`, not from the 14/21 in the
+   * data dictionary: those are the column defaults, and a study that configures
+   * a different split would otherwise be exported under someone else's phase
+   * boundary. A day beyond `baseline_days + observation_days` is `null` rather
+   * than `observation` — an entry past the end of the protocol is not a late
+   * observation day, it is a day the protocol does not describe.
+   */
+  study_phase: StudyPhase | null;
   observation_type: string | null;
   /** Counts only — how much structure the extraction found, not what it said. */
   measures: {
@@ -137,6 +156,29 @@ const NO_EXCLUSIONS: Record<ExclusionReason, number> = {
  * and therefore on the same day — which is exactly the boundary a nightly
  * journal sits on.
  */
+export type StudyPhase = "baseline" | "observation";
+
+/** How long each half of a study runs. Defaults match the column defaults. */
+export type PhaseConfig = { baselineDays: number; observationDays: number };
+
+export const DEFAULT_PHASES: PhaseConfig = { baselineDays: 14, observationDays: 7 };
+
+/**
+ * The phase a study day falls in.
+ *
+ * Boundaries are inclusive and 1-based, matching `day_index`: with the default
+ * 14/7, days 1-14 are `baseline` and 15-21 are `observation`. Day 0 cannot
+ * occur — `buildResearchDataset` excludes anything below 1 as outside the
+ * window — and is treated as outside the protocol here too rather than
+ * silently counted as baseline.
+ */
+export function studyPhase(day: number, phases: PhaseConfig): StudyPhase | null {
+  if (!Number.isFinite(day) || day < 1) return null;
+  if (day <= phases.baselineDays) return "baseline";
+  if (day <= phases.baselineDays + phases.observationDays) return "observation";
+  return null;
+}
+
 export function dayIndex(createdAt: string, startedAt: string, timeZone: string): number | null {
   const entryDay = localDayKey(createdAt, timeZone);
   const startDay = localDayKey(startedAt, timeZone);
@@ -194,9 +236,16 @@ export function buildResearchDataset(input: {
   timeZone: string;
   /** Text by entry id. An entry absent from the map exports no text. */
   decryptedText?: Map<string, string | null>;
+  /**
+   * Phase boundaries by study id. A study missing from the map falls back to
+   * the column defaults rather than exporting a null phase for every row,
+   * because the common deployment has exactly one study on the defaults.
+   */
+  phasesByStudy?: Map<string, PhaseConfig>;
 }): DatasetResult {
   const { entries, enrollments, consentByParticipant, timeZone } = input;
   const decrypted = input.decryptedText ?? new Map<string, string | null>();
+  const phasesByStudy = input.phasesByStudy ?? new Map<string, PhaseConfig>();
 
   const enrollmentByParticipant = new Map<string, ExportEnrollmentRow>();
   for (const enrollment of enrollments) {
@@ -273,6 +322,7 @@ export function buildResearchDataset(input: {
       research_code: enrollment.research_code,
       cohort: enrollment.cohort,
       day_index: index,
+      study_phase: studyPhase(index, phasesByStudy.get(enrollment.study_id) ?? DEFAULT_PHASES),
       observation_type: entry.observation_type,
       measures: {
         node_count: nodes.length,
@@ -322,7 +372,17 @@ export function buildResearchDataset(input: {
  * journal content whatsoever — someone who obtains it learns who a code is,
  * not what they wrote.
  */
-export function buildIdentityMap(enrollments: ExportEnrollmentRow[]): Array<{
+/**
+ * The columns the identity map actually reads.
+ *
+ * Narrower than `ExportEnrollmentRow` on purpose: that type gained `study_id`
+ * for `study_phase`, and the identity-map route does not select it. Reusing the
+ * wider type would have left a cast that says the column is there when the
+ * query never asked for it.
+ */
+export type IdentityMapRow = Omit<ExportEnrollmentRow, "study_id" | "collection_ends_at">;
+
+export function buildIdentityMap(enrollments: IdentityMapRow[]): Array<{
   research_code: string;
   participant_id: string;
   cohort: string;

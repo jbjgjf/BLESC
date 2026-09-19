@@ -12,11 +12,24 @@
  * deployment was rolled while a row was in flight — in each case the row is
  * still there, still owed, and this endpoint still owes it.
  *
+ * `no_recipient` is picked up too (#178). It means the crisis had nowhere to
+ * go — no channel configured, or no educator with active oversight consent —
+ * and both are conditions that get fixed later. Excluding it made "the alert
+ * channel was set up an hour after go-live" into "that hour is lost forever",
+ * which is the ordinary order of events when standing up a new environment.
+ * Rows in this state do not consume `attempts`, so they wait rather than
+ * expire; see `deliverEscalation`.
+ *
  * ## Running it
  *
- * Any scheduler that can make an authenticated POST. On Vercel, `vercel.json`:
+ * Any scheduler that can make an authenticated POST to this path with
+ * `SAFETY_DISPATCH_TOKEN`.
  *
- *     { "crons": [{ "path": "/api/safety/dispatch", "schedule": "*\/5 * * * *" }] }
+ * **Not Vercel cron.** Vercel cron sends GET and nothing else, and this route's
+ * GET is the read-only health check below — a `vercel.json` entry pointing
+ * here would return 200 on schedule and deliver nothing. The scheduled entry
+ * point is `/api/cron/safety-dispatch`, which is a GET, is gated on
+ * `CRON_SECRET`, and runs the same `runSafetyDispatch`.
  *
  * Five minutes is a starting point, not a recommendation from evidence. It is
  * the ceiling on how late a *retried* escalation can be; the first attempt is
@@ -32,104 +45,33 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { timingSafeEqual } from "node:crypto";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
-import { deliverEscalation, type EscalationRow } from "@/lib/server/safetyEscalation";
+import { bearerAuthorized } from "@/lib/server/cronAuth";
+import { runSafetyDispatch } from "@/lib/server/scheduledJobs";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-/** How many to attempt per run. Bounded so one bad night cannot time out. */
-const BATCH = 20;
-
-/**
- * Give up paging after this many tries, and say so loudly.
- *
- * Not because the escalation stops mattering — it does not — but because a row
- * retried forever is a row nobody investigates. At this point the delivery has
- * failed for something like half an hour and the problem is the configuration,
- * not the network.
- */
-const MAX_ATTEMPTS = 6;
-
-function authorized(request: NextRequest): boolean {
-  const expected = process.env.SAFETY_DISPATCH_TOKEN;
-  if (!expected) return false;
-
-  const header = request.headers.get("authorization") ?? "";
-  const presented = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  if (!presented) return false;
-
-  const a = Buffer.from(presented);
-  const b = Buffer.from(expected);
-  // `timingSafeEqual` throws on a length mismatch, which is itself a leak of
-  // the length, so the lengths are compared first and the result is fixed.
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
 export async function POST(request: NextRequest) {
-  if (!authorized(request)) {
+  if (!bearerAuthorized(request, "SAFETY_DISPATCH_TOKEN")) {
     return NextResponse.json({ detail: "forbidden" }, { status: 403 });
   }
 
   const service = serviceRoleClient();
   if (!service) return NextResponse.json({ detail: "supabase_not_configured" }, { status: 503 });
 
-  const pending = await service
-    .from("safety_escalations")
-    .select("id, owner_user_id, participant_id, risk_level, reasons, surface, detected_at, status, attempts")
-    .in("status", ["pending", "failed"])
-    .lt("attempts", MAX_ATTEMPTS)
-    .order("detected_at", { ascending: true })
-    .limit(BATCH);
+  const result = await runSafetyDispatch(service);
+  if (!result.ok) return NextResponse.json({ detail: result.detail }, { status: 502 });
 
-  if (pending.error) {
-    console.error("[safety-dispatch] could not read the queue", pending.error.message);
-    return NextResponse.json({ detail: pending.error.message }, { status: 502 });
-  }
-
-  const rows = (pending.data ?? []) as EscalationRow[];
-
-  // The participant code is what the message names, and it is not on the
-  // escalation row — one lookup for the batch rather than one per row.
-  const codes = new Map<string, string | null>();
-  if (rows.length > 0) {
-    const participants = await service
-      .from("participants")
-      .select("id, code")
-      .in("id", Array.from(new Set(rows.map((row) => row.participant_id))));
-    for (const row of (participants.data ?? []) as Array<{ id: string; code: string | null }>) {
-      codes.set(row.id, row.code);
-    }
-  }
-
-  const outcomes = { delivered: 0, failed: 0, no_recipient: 0 };
-  for (const row of rows) {
-    // Sequential, not `Promise.all`. The batch is small, the providers are rate
-    // limited, and a burst that trips a rate limit turns a recoverable delay
-    // into a wall of failures.
-    const outcome = await deliverEscalation(service, row, codes.get(row.participant_id) ?? null);
-    outcomes[outcome] += 1;
-  }
-
-  // Anything that has run out of attempts is a standing failure. Reported on
-  // every run so it shows up in whatever watches this endpoint, rather than
-  // waiting for someone to query the table.
-  const exhausted = await service
-    .from("safety_escalations")
-    .select("id", { count: "exact", head: true })
-    .in("status", ["pending", "failed"])
-    .gte("attempts", MAX_ATTEMPTS);
-  const stuck = exhausted.count ?? 0;
-  if (stuck > 0) {
-    console.error(
-      `[safety-dispatch] ${stuck} escalation(s) have exhausted their attempts and nobody has been told. ` +
-        "Check SAFETY_ALERT_WEBHOOK_URL / RESEND_API_KEY and the oversight consent for those participants.",
-    );
-  }
-
-  return NextResponse.json({ attempted: rows.length, ...outcomes, stuck });
+  // Named rather than spread: `ok` is the runner's discriminant, not part of
+  // this endpoint's response contract.
+  return NextResponse.json({
+    attempted: result.attempted,
+    delivered: result.delivered,
+    failed: result.failed,
+    no_recipient: result.no_recipient,
+    stuck: result.stuck,
+  });
 }
 
 /**
@@ -140,7 +82,7 @@ export async function POST(request: NextRequest) {
  * crisis has nowhere to go, and that is worth alerting on by itself.
  */
 export async function GET(request: NextRequest) {
-  if (!authorized(request)) {
+  if (!bearerAuthorized(request, "SAFETY_DISPATCH_TOKEN")) {
     return NextResponse.json({ detail: "forbidden" }, { status: 403 });
   }
   const service = serviceRoleClient();

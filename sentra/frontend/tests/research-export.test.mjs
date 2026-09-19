@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  DEFAULT_PHASES,
   buildIdentityMap,
   buildResearchDataset,
   dayIndex,
   identityLeakIn,
+  studyPhase,
 } from "../src/lib/researchExport.ts";
 
 const TZ = "Asia/Tokyo";
@@ -35,6 +37,7 @@ const enrollment = (over = {}) => ({
   participant_id: "participant-1",
   research_code: "P-0001",
   cohort: "default",
+  study_id: "study-1",
   state: "collecting",
   collection_started_at: "2026-09-05T23:00:00Z", // 08:00 JST on the 6th
   withdrawn_at: null,
@@ -318,5 +321,66 @@ describe("buildIdentityMap", () => {
     const rows = buildIdentityMap([enrollment({ state: "withdrawn", withdrawn_at: "2026-09-09T00:00:00Z" })]);
     assert.equal(rows.length, 1);
     assert.equal(rows[0].state, "withdrawn");
+  });
+});
+
+
+describe("studyPhase", () => {
+  it("splits the protocol at the study's own baseline boundary", () => {
+    const phases = { baselineDays: 14, observationDays: 7 };
+    assert.equal(studyPhase(1, phases), "baseline");
+    assert.equal(studyPhase(14, phases), "baseline");
+    assert.equal(studyPhase(15, phases), "observation");
+    assert.equal(studyPhase(21, phases), "observation");
+  });
+
+  it("reads the boundary from the study, not from the 14/21 in the dictionary", () => {
+    // Those numbers are the column defaults. A study configured differently
+    // must not be exported under someone else's phase boundary.
+    const short = { baselineDays: 3, observationDays: 2 };
+    assert.equal(studyPhase(3, short), "baseline");
+    assert.equal(studyPhase(4, short), "observation");
+    assert.equal(studyPhase(5, short), "observation");
+    assert.equal(studyPhase(6, short), null);
+  });
+
+  it("returns null past the end of the protocol rather than a late observation day", () => {
+    assert.equal(studyPhase(22, DEFAULT_PHASES), null);
+    assert.equal(studyPhase(999, DEFAULT_PHASES), null);
+  });
+
+  it("has no day 0 and no negative days", () => {
+    // `buildResearchDataset` excludes anything below 1 as outside the window;
+    // counting it as baseline here would disagree with that.
+    assert.equal(studyPhase(0, DEFAULT_PHASES), null);
+    assert.equal(studyPhase(-1, DEFAULT_PHASES), null);
+  });
+});
+
+describe("buildResearchDataset — study_phase", () => {
+  it("stamps the phase alongside the day index", () => {
+    const { rows } = build();
+    assert.equal(rows[0].day_index, 3);
+    assert.equal(rows[0].study_phase, "baseline");
+  });
+
+  it("uses the configured split for that study", () => {
+    const { rows } = build({
+      phasesByStudy: new Map([["study-1", { baselineDays: 2, observationDays: 5 }]]),
+    });
+    assert.equal(rows[0].day_index, 3);
+    assert.equal(rows[0].study_phase, "observation");
+  });
+
+  it("falls back to the column defaults for a study it was not told about", () => {
+    // The common deployment has one study on the defaults; exporting a null
+    // phase for every row there would be worse than assuming them.
+    const { rows } = build({ phasesByStudy: new Map() });
+    assert.equal(rows[0].study_phase, "baseline");
+  });
+
+  it("is not an identity field", () => {
+    const { rows } = build();
+    assert.equal(identityLeakIn(rows), null);
   });
 });

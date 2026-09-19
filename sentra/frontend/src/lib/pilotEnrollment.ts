@@ -169,3 +169,55 @@ export function joinStep(enrollment: PilotEnrollment | null): JoinStep {
       return "done";
   }
 }
+
+/**
+ * Who may request which transition (#B1).
+ *
+ * The state machine above says which edges exist. This says who is allowed to
+ * walk them, and it lives here — beside the edges, in a module both the API
+ * route and the dry-run runner import — because the two used to keep private
+ * copies of the answer and the copies disagreed. The runner's copy listed
+ * `collecting` as something a participant could request; the route's did not,
+ * and nothing compared them. The dry run planned a step the API refuses.
+ *
+ * Every non-initial state belongs to exactly one of these lists. That is
+ * asserted in `tests/pilot-operator-enrollment.test.mjs`, so a state added to
+ * `PILOT_STATES` without an owner fails the build rather than becoming a
+ * transition nobody can perform — which is precisely how `collecting` came to
+ * be unreachable.
+ */
+
+/**
+ * What a participant may ask for themselves.
+ *
+ * `guardian_verified` is absent: a guardian confirming through the
+ * participant's own session is not a guardian confirmation, it is the
+ * participant clicking a button. It is reached by `/api/pilot/guardian/confirm`
+ * with `actor: "guardian"`.
+ *
+ * `collecting` and `completed` are absent: the collection window opens and
+ * closes for a cohort on dates the protocol fixes, not per participant on
+ * demand.
+ */
+export const PARTICIPANT_TRANSITIONS: readonly PilotState[] = [
+  "information_read",
+  "participant_assented",
+  "enrolled",
+  "withdrawn",
+];
+
+/**
+ * What only a study coordinator may request, through
+ * `/api/pilot/admin/enrollment`.
+ *
+ * `withdrawn` is deliberately NOT here. Withdrawal is the participant's own
+ * decision and the one edge that must never be exercised on their behalf; an
+ * operator who needs a participant out of the study takes it up with them.
+ */
+export const OPERATOR_TRANSITIONS: readonly PilotState[] = [
+  "collecting",
+  "completed",
+];
+
+/** Reached only by the guardian's own confirmation link. */
+export const GUARDIAN_TRANSITIONS: readonly PilotState[] = ["guardian_verified"];

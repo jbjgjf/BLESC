@@ -15,7 +15,7 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [mode, setMode] = useState<"signin" | "signup" | "reset">("signin");
   const [message, setMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -25,6 +25,36 @@ export default function LoginPage() {
     setMessage(null);
 
     const authRedirectUrl = `${window.location.origin}/login`;
+
+    if (mode === "reset") {
+      /*
+       * The outcome is not reported.
+       *
+       * Supabase already answers the same way for a registered and an
+       * unregistered address, and this keeps that true on our side: the message
+       * below is set whether the call succeeded or failed. Telling someone
+       * "there is no account for this address" is a way to test addresses one
+       * at a time against a roster of minors.
+       *
+       * The one thing worth surfacing is a rate limit, because the student can
+       * act on it — waiting is the fix, and silence would have them retyping
+       * their address believing they got it wrong.
+       */
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      setIsSubmitting(false);
+      if (error && /rate limit|too many/i.test(error.message)) {
+        setMessage(localizeAuthError(error.message));
+        return;
+      }
+      if (error) {
+        console.warn("[login] password reset request failed", error.message);
+      }
+      setMessage(t.login.resetSent);
+      return;
+    }
+
     const result =
       mode === "signin"
         ? await supabase.auth.signInWithPassword({ email, password })
@@ -57,7 +87,11 @@ export default function LoginPage() {
           <div>
             <h1 className="bl-h2">blesc</h1>
             <p className="bl-meta">
-              {mode === "signin" ? t.login.signinLead : t.login.signupLead}
+              {mode === "reset"
+                ? t.login.resetLead
+                : mode === "signin"
+                  ? t.login.signinLead
+                  : t.login.signupLead}
             </p>
           </div>
         </div>
@@ -85,24 +119,28 @@ export default function LoginPage() {
             />
           </div>
 
-          <div>
-            <label className="bl-label" htmlFor="password">
-              <Icon name="lock" size={19} />
-              {t.login.password}
-            </label>
+          {mode === "reset" ? (
+            <p className="bl-body">{t.login.resetIntro}</p>
+          ) : (
+            <div>
+              <label className="bl-label" htmlFor="password">
+                <Icon name="lock" size={19} />
+                {t.login.password}
+              </label>
               <input
                 id="password"
                 data-testid="login-password"
-              type="password"
-              autoComplete={mode === "signin" ? "current-password" : "new-password"}
-              required
-              minLength={6}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="bl-input"
-              placeholder={mode === "signup" ? t.login.passwordHint : ""}
-            />
-          </div>
+                type="password"
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                required
+                minLength={6}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="bl-input"
+                placeholder={mode === "signup" ? t.login.passwordHint : ""}
+              />
+            </div>
+          )}
 
           {message && (
             <div className="bl-notice bl-notice--watch" role="alert">
@@ -113,9 +151,34 @@ export default function LoginPage() {
 
           <button type="submit" data-testid="login-submit" disabled={isSubmitting} className="bl-btn bl-btn--primary bl-btn--block bl-btn--lg">
             {isSubmitting && <span className={styles.spinner} aria-hidden="true" />}
-            {mode === "signin" ? t.login.signin : t.login.signup}
+            {mode === "reset"
+              ? t.login.sendResetLink
+              : mode === "signin"
+                ? t.login.signin
+                : t.login.signup}
           </button>
         </form>
+
+        {/*
+          * Only on the sign-in form. Offering "forgot your password" beside a
+          * sign-up form is an invitation to reset an account that does not
+          * exist yet, and the neutral reply would leave them waiting for a mail
+          * that never comes.
+          */}
+        {mode === "signin" && (
+          <button
+            type="button"
+            data-testid="login-forgot"
+            onClick={() => {
+              setMode("reset");
+              setMessage(null);
+            }}
+            className="bl-btn bl-btn--ghost bl-btn--block"
+            style={{ marginTop: 10 }}
+          >
+            {t.login.forgotPassword}
+          </button>
+        )}
 
         <button
           type="button"
@@ -126,8 +189,27 @@ export default function LoginPage() {
           className="bl-btn bl-btn--ghost bl-btn--block"
           style={{ marginTop: 10 }}
         >
-          {mode === "signin" ? t.login.toSignup : t.login.toSignin}
+          {mode === "reset"
+            ? t.login.backToSignin
+            : mode === "signin"
+              ? t.login.toSignup
+              : t.login.toSignin}
         </button>
+
+        {/*
+          * The way out when the mail never arrives.
+          *
+          * Not a footnote: no production SMTP is configured for this project, so
+          * the built-in sender is rate limited and a fifty-student pilot will
+          * have students for whom self-service simply does not work. The
+          * operator path (`/api/pilot/admin/password-reset`) is the answer, and
+          * a student cannot use it without being told it exists.
+          */}
+        {mode === "reset" && (
+          <p className="bl-micro" style={{ marginTop: 12 }}>
+            {t.login.resetHelpdesk}
+          </p>
+        )}
 
         <p className="bl-disclaimer" style={{ marginTop: 18, justifyContent: "center" }}>
           <Icon name="shield" size={15} />

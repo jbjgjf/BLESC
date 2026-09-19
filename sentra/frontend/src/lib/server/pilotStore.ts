@@ -197,6 +197,41 @@ export async function loadEnrollmentsForUser(
 }
 
 /**
+ * Every enrollment in a study, optionally narrowed to one cohort (#B1).
+ *
+ * Carries `owner_user_id`, which `loadEnrollmentsForUser` has no need for and
+ * therefore does not select: the operator route advances rows it does not own,
+ * and `advanceEnrollment` re-checks ownership against the id it is handed.
+ * Reading the owner from the row rather than accepting it from the request is
+ * what keeps that check meaningful.
+ *
+ * Service-role only. There is no RLS policy that would let an educator or a
+ * participant read the whole study, and none should be added for this: the
+ * cohort-wide view is an operator's, and the operator gate is an allowlist in
+ * the environment rather than a row in a table.
+ */
+export async function loadEnrollmentsForStudy(
+  client: SupabaseClient,
+  studyId: string,
+  cohort?: string,
+): Promise<Array<PilotEnrollmentRow & { owner_user_id: string }>> {
+  let query = client
+    .from("pilot_enrollments")
+    .select(`owner_user_id, ${ENROLLMENT_COLUMNS}`)
+    .eq("study_id", studyId);
+
+  if (cohort) query = query.eq("cohort", cohort);
+
+  const result = await query.order("research_code", { ascending: true });
+
+  if (result.error) {
+    console.warn("[pilot] study enrollment list failed", result.error.message);
+    return [];
+  }
+  return (result.data as unknown as Array<PilotEnrollmentRow & { owner_user_id: string }>) ?? [];
+}
+
+/**
  * Redeem a typed code.
  *
  * The retry loop is for `research_code` collisions only — six base32 symbols

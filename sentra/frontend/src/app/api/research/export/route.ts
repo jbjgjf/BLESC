@@ -35,6 +35,7 @@ import {
   type ExportConsentState,
   type ExportEnrollmentRow,
   type ExportEntryRow,
+  type PhaseConfig,
 } from "@/lib/researchExport";
 
 export const runtime = "nodejs";
@@ -97,7 +98,9 @@ export async function GET(request: NextRequest) {
   // `research_code` is resolved here and never has to name a participant id.
   let enrollmentQuery = service
     .from("pilot_enrollments")
-    .select("participant_id, research_code, cohort, state, collection_started_at, collection_ends_at, withdrawn_at");
+    .select(
+      "participant_id, research_code, cohort, study_id, state, collection_started_at, collection_ends_at, withdrawn_at",
+    );
   if (researchCode) enrollmentQuery = enrollmentQuery.eq("research_code", researchCode);
 
   const enrollmentResult = await enrollmentQuery;
@@ -199,12 +202,35 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // `study_phase` is measured against each study's own baseline/observation
+  // split, so the studies in scope are read here rather than assuming the
+  // column defaults. One query for the whole export, not one per enrollment.
+  const phasesByStudy = new Map<string, PhaseConfig>();
+  const studyIds = Array.from(new Set(enrollments.map((row) => row.study_id).filter(Boolean)));
+  if (studyIds.length > 0) {
+    const studies = await service
+      .from("pilot_studies")
+      .select("id, baseline_days, observation_days")
+      .in("id", studyIds);
+    for (const row of (studies.data ?? []) as Array<{
+      id: string;
+      baseline_days: number;
+      observation_days: number;
+    }>) {
+      phasesByStudy.set(row.id, {
+        baselineDays: row.baseline_days,
+        observationDays: row.observation_days,
+      });
+    }
+  }
+
   const dataset = buildResearchDataset({
     entries,
     enrollments,
     consentByParticipant,
     timeZone: studyTimezone(),
     decryptedText,
+    phasesByStudy,
   });
 
   // The rows are assembled from database output, so a column added to `entries`

@@ -29,7 +29,12 @@ const DEMO_ONLY_EXCEPTIONS = ["/research/world-model"];
 //: a login here would push the step back onto the student's device, which is
 //: the one place a guardian's consent cannot honestly come from. The token in
 //: the URL is what authorises the request, and the route handler checks it.
-const PUBLIC_ROUTES = ["/pilot/guardian", "/legal"];
+//: `/reset-password` is here for a related reason and a sharper one. The person
+//: opening it is by definition someone who cannot sign in — that is what they
+//: came to fix. Sending them to `/login` is a loop with no exit, and it is the
+//: exact loop this route was added to break. The recovery token in the URL is
+//: the authorisation, and Supabase validates it before any password is set.
+const PUBLIC_ROUTES = ["/pilot/guardian", "/legal", "/reset-password"];
 
 const DEMO_ONLY_ROUTES = [
   "/reflect",

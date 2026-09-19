@@ -73,6 +73,31 @@ const ESCALATION = {
   attempts: 0,
 };
 
+/**
+ * `withEnv` for a run that has to observe the variables *while* it awaits.
+ *
+ * `withEnv` restores in a synchronous `finally`, so an async `run` sees the
+ * original environment from its first await onwards. That is fine for the tests
+ * that unset a variable and check the resulting refusal, and wrong for any test
+ * that sets one and expects the code under test to read it.
+ */
+async function withEnvAsync(values, run) {
+  const saved = {};
+  for (const [key, value] of Object.entries(values)) {
+    saved[key] = process.env[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    return await run();
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 function withEnv(values, run) {
   const saved = {};
   for (const [key, value] of Object.entries(values)) {
@@ -236,12 +261,70 @@ describe("delivery", () => {
     });
   });
 
-  it("counts the attempt whether or not it worked", async () => {
+  it("counts the attempt when a channel was actually called", async () => {
+    // A configured webhook that rejects is a real try: a provider was reached,
+    // it said no, and retrying that forever is what MAX_ATTEMPTS is for.
     const client = fakeClient();
-    await withEnv({ SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: undefined }, () =>
-      deliverEscalation(client, { ...ESCALATION, attempts: 2 }, "2A-08"),
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("nope", { status: 500 });
+    try {
+      const status = await withEnvAsync(
+        {
+          SAFETY_ALERT_WEBHOOK_URL: "https://school.example/hook",
+          RESEND_API_KEY: undefined,
+          SAFETY_ALERT_EMAIL_FROM: undefined,
+        },
+        () => deliverEscalation(client, { ...ESCALATION, attempts: 2 }, "2A-08"),
+      );
+      assert.equal(status, "failed");
+      assert.equal(client.calls.updates[0].values.attempts, 3);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it("does not spend a retry when there was nothing to try (#178)", async () => {
+    // No channel and no recipient means no provider was contacted. Counting it
+    // would let MAX_ATTEMPTS expire the row while it waits for the very
+    // configuration that would let it be delivered — the fix turning back into
+    // the bug, just more slowly.
+    const client = fakeClient({ rpc: { data: [], error: null } });
+    const status = await withEnvAsync(
+      {
+        SAFETY_ALERT_WEBHOOK_URL: undefined,
+        RESEND_API_KEY: undefined,
+        SAFETY_ALERT_EMAIL_FROM: undefined,
+      },
+      () => deliverEscalation(client, { ...ESCALATION, attempts: 2 }, "2A-08"),
     );
-    assert.equal(client.calls.updates[0].values.attempts, 3);
+    assert.equal(status, "no_recipient");
+    assert.equal(
+      client.calls.updates[0].values.attempts,
+      2,
+      "a run with nothing to call must not consume an attempt",
+    );
+  });
+});
+
+describe("no_recipient is not where a crisis stops (#178)", () => {
+  const jobs = code("../src/lib/server/scheduledJobs.ts");
+
+  it("is picked up again by the dispatcher", () => {
+    assert.match(
+      jobs,
+      /\.in\("status", \["pending", "failed", "no_recipient"\]\)/,
+      "a crisis raised before the alert channel existed must be delivered once it does",
+    );
+  });
+
+  it("does not leave a no_recipient row out of the exhausted sweep", () => {
+    // Both the pickup and the "nobody has been told" sweep have to agree about
+    // which statuses are still owed, or a stuck row stops being counted.
+    const matches = jobs.match(/\["pending", "failed", "no_recipient"\]/g) ?? [];
+    assert.ok(
+      matches.length >= 2,
+      `expected the pickup and the sweep to use the same status list, found ${matches.length}`,
+    );
   });
 });
 
@@ -268,17 +351,41 @@ describe("the wiring that makes this reach anyone", () => {
   });
 
   it("has a retry path, so a failed send is late rather than lost", () => {
-    const dispatch = read("../src/app/api/safety/dispatch/route.ts");
-    assert.ok(dispatch.includes('.in("status", ["pending", "failed"])'));
-    assert.ok(dispatch.includes("deliverEscalation"));
+    // The queue loop moved to `scheduledJobs.ts` when the Vercel-cron entry
+    // point was added (#B3): cron sends GET, the route's action is POST, and
+    // both now call the same runner rather than each carrying a copy.
+    const jobs = code("../src/lib/server/scheduledJobs.ts");
+    assert.ok(jobs.includes("deliverEscalation"));
+    assert.ok(jobs.includes("export async function runSafetyDispatch"));
+
+    const dispatch = code("../src/app/api/safety/dispatch/route.ts");
+    assert.ok(
+      dispatch.includes("runSafetyDispatch(service)"),
+      "the route must delegate to the shared runner",
+    );
+  });
+
+  it("is actually scheduled, not just schedulable", () => {
+    // A retry path nothing calls is a comment. `vercel.json` is what makes the
+    // difference, and it had no `crons` key at all until #B3.
+    const vercel = JSON.parse(read("../../../vercel.json"));
+    assert.ok(Array.isArray(vercel.crons));
+    assert.ok(
+      vercel.crons.some((cron) => cron.path === "/api/cron/safety-dispatch"),
+      "nothing was calling the dispatcher",
+    );
   });
 
   it("refuses the dispatcher when no shared secret is set", () => {
-    const dispatch = read("../src/app/api/safety/dispatch/route.ts");
     // An open retry endpoint is a way to make this deployment send mail on
-    // command.
-    assert.ok(dispatch.includes("if (!expected) return false"));
-    assert.ok(dispatch.includes("timingSafeEqual"));
+    // command. The comparison moved to `cronAuth.ts` so the retention purge
+    // could share it rather than grow a second copy.
+    const auth = code("../src/lib/server/cronAuth.ts");
+    assert.ok(auth.includes("if (!expected) return false"));
+    assert.ok(auth.includes("timingSafeEqual"));
+
+    const dispatch = code("../src/app/api/safety/dispatch/route.ts");
+    assert.ok(dispatch.includes('bearerAuthorized(request, "SAFETY_DISPATCH_TOKEN")'));
   });
 });
 

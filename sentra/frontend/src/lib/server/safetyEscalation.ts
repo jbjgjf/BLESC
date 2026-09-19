@@ -301,12 +301,25 @@ export function channelsConfigured(): boolean {
  *
  *   `delivered`     at least one recipient was reached
  *   `failed`        recipients exist and every send failed — retry
- *   `no_recipient`  nobody may be told, or no channel is configured
+ *   `no_recipient`  nobody may be told, or no channel is configured — retry
  *   `pending`       untouched; the dispatcher will pick it up
  *
  * `no_recipient` is not success and is not silence. It means a student is in
  * crisis and this deployment has nowhere to send it, which is a configuration
  * emergency — so it is logged as an error and left visible in the table.
+ *
+ * **It is also not terminal (#178).** It used to be, in effect: the dispatcher
+ * only picked up `pending` and `failed`, so a crisis raised before anyone set
+ * `SAFETY_ALERT_WEBHOOK_URL` was never delivered even after the channel was
+ * configured. Standing up a new environment (#166) does exactly that — the
+ * deployment goes live, a crisis lands, the channel arrives an hour later, and
+ * the first hour is silently lost. `no_recipient` is now retried.
+ *
+ * Which is why `attempts` is only incremented when something was actually
+ * attempted. A run that had no channel to call and no recipient to mail did not
+ * use a try, and counting it would have `MAX_ATTEMPTS` expire the row before
+ * the configuration it is waiting for ever arrives — turning the fix back into
+ * the bug, more slowly.
  */
 export async function deliverEscalation(
   service: SupabaseClient,
@@ -385,7 +398,13 @@ export async function deliverEscalation(
     .from("safety_escalations")
     .update({
       status,
-      attempts: escalation.attempts + 1,
+      // Only a real attempt counts. `anyAttempt` is false exactly when no
+      // provider was contacted — no channel configured, or no educator with
+      // active oversight consent — and burning a retry on a round trip that
+      // never happened is what made `no_recipient` terminal by exhaustion.
+      attempts: anyAttempt ? escalation.attempts + 1 : escalation.attempts,
+      // Still stamped: an operator looking at a stuck row needs to see that it
+      // is being re-evaluated, not that it was forgotten in the queue.
       last_attempt_at: new Date().toISOString(),
       last_error: status === "delivered" ? null : deliveries.find((d) => d.error)?.error ?? "no channel or recipient",
       delivered_at: status === "delivered" ? new Date().toISOString() : null,

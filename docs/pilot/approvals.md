@@ -41,8 +41,43 @@
 
 承認とは別に、次はコードが未実装である（[field-mapping.md](field-mapping.md) と [data-dictionary.json](data-dictionary.json) の `implementation` を参照）。
 
-- 日次固定自己評定の5項目（`mood` / `stress` / `sleep_quality` / `sleep_hours` / `event_intensity`）
-- 相対日と study phase のexport変換
-- 学習利用の別opt-in（`model_training_use`）
+- `support_contact`（誰かに相談できたか）。**これは「作っていない」ではなく「採用するか決めていない」。**
+  質問すること自体が相談を促す介入になりうるため、採用の可否が先。決定者は研究倫理責任者。
+- `compose_duration_ms`（書くのにかかった時間）。**この名前のものはコードに存在しない。**
+  近いのは `total_duration_ms`（画面を開いてから提出までの経過）だが、これは入力時間ではなく
+  「開いたまま放置した時間」を含む。同じものとして扱うか別に測るかが先。
+- `field_order`（入力した順番）。収集面（生徒の `/journal`）では出していない。
+  研究コンソールだけが出しており、パイロットが集めるのは前者。収集面にも要るかが先。
 
 **未実装のまま募集を開始しない。** 承認済みのprotocolと、実装されている収集項目が食い違っている状態は、同意した内容と実際に集めるものが違うということである。
+
+### 解消済み（2026-09-18 に実装を確認）
+
+この節は以前、次の3件を未実装として挙げていた。いずれも実際には実装済みで、
+**承認者が読む文書のほうが現状より遅れていた。** 最後のものは、
+「どの参加者のデータも学習に使えない」と書いていた点で危険な向きに誤っていた。
+
+| 項目 | 実体 |
+| --- | --- |
+| 日次固定自己評定の5項目 | 実装済み。`public.pilot_self_reports`（migration `20260909020000`）と `src/lib/pilotSelfReport.ts`。尺度のCHECK制約もDB側にある |
+| 相対日のexport変換 | 実装済み。export上の名前は `day_index`。**ただし定義がずれていた** — 辞書は「登録日を0とした相対日」としていたが、実装は収集期間の初日を1とする1起点。辞書側を実装に合わせた |
+| study phase のexport変換 | **今回実装した。** `ResearchRow.study_phase`。境界は `pilot_studies.baseline_days` / `observation_days` から導出する |
+| 学習利用の別opt-in | 実装済み。ただし**DBの列名は `future_fine_tuning`** で、辞書の `model_training_use` と一致していない（下記） |
+
+### DECISION REQUIRED: 学習利用フラグの名前
+
+同じものが2つの名前を持っている。
+
+- DB・UI・export: `future_fine_tuning`（`public.consent_records.future_fine_tuning`、17ファイル）
+- データ辞書: `model_training_use`（この文書と `data-dictionary.json` のみ）
+
+**同意画面が生徒に見せている文言は「将来のモデルの学習に使うことに同意します」**であり、
+fine-tuning という特定の手法には一言も触れていない。つまり `future_fine_tuning` は
+**実際に取った同意より狭い名前**で、列名を同意の範囲だと読んだ人は範囲を取り違える。
+名前としては `model_training_use` が正しい。
+
+一方で改名は `consent_records`（＝人が下した決定の記録）の列名変更と、
+`pilot_guardian_verifications.requested_grants` に入っているJSONのキー書き換えを伴う。
+**募集開始後にやると、同意記録を書き換えることになる。やるなら募集前。**
+
+**決定者: 研究倫理責任者。**
