@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
@@ -9,6 +9,7 @@ import {
   deliverEscalation,
   notifiableLevel,
   notificationText,
+  recipientHashKey,
   recordEscalation,
 } from "../src/lib/server/safetyEscalation.ts";
 
@@ -73,7 +74,16 @@ const ESCALATION = {
   attempts: 0,
 };
 
-function withEnv(values, run) {
+/**
+ * Run `run()` with these environment variables, then put the environment back.
+ *
+ * `await run()`, not `return run()`. The synchronous version restored the
+ * environment the moment the callback returned a promise, so anything read
+ * after the first `await` — which is everything in `deliverEscalation` — saw
+ * the original values. Tests that asserted "unset" passed anyway, which is how
+ * it went unnoticed until a test needed a variable to be *set*.
+ */
+async function withEnv(values, run) {
   const saved = {};
   for (const [key, value] of Object.entries(values)) {
     saved[key] = process.env[key];
@@ -81,7 +91,7 @@ function withEnv(values, run) {
     else process.env[key] = value;
   }
   try {
-    return run();
+    return await run();
   } finally {
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[key];
@@ -102,11 +112,11 @@ describe("which levels reach a person", () => {
     assert.equal(notifiableLevel("low"), null);
   });
 
-  it("escalates on elevated only when the deployment opted in", () => {
-    withEnv({ SAFETY_ALERT_ON_ELEVATED: undefined }, () => {
+  it("escalates on elevated only when the deployment opted in", async () => {
+    await withEnv({ SAFETY_ALERT_ON_ELEVATED: undefined }, () => {
       assert.equal(notifiableLevel("elevated"), null);
     });
-    withEnv({ SAFETY_ALERT_ON_ELEVATED: "1" }, () => {
+    await withEnv({ SAFETY_ALERT_ON_ELEVATED: "1" }, () => {
       assert.equal(notifiableLevel("elevated"), "elevated");
     });
   });
@@ -205,10 +215,15 @@ describe("recording", () => {
 });
 
 describe("delivery", () => {
-  it("marks an escalation nobody can receive as no_recipient, not as done", async () => {
-    // The dangerous version of this bug is a deployment that reports success
-    // because it had nowhere to send. `no_recipient` is a standing alarm.
-    const client = fakeClient({ rpc: { data: [], error: null } });
+  it("leaves an escalation queued when the deployment has no channel", async () => {
+    /*
+     * The bug this replaces (#178): an unconfigured deployment finalised the row
+     * as `no_recipient`, and the dispatcher only ever queries
+     * `["pending", "failed"]`. Every crisis that happened before somebody
+     * finished setting the alert variables was therefore lost for good, while
+     * the module promised its failure mode was "late, never never".
+     */
+    const client = fakeClient({ rpc: { data: [{ educator_user_id: "e1", email: "t@example.test" }], error: null } });
     const status = await withEnv(
       {
         SAFETY_ALERT_WEBHOOK_URL: undefined,
@@ -217,10 +232,51 @@ describe("delivery", () => {
       },
       () => deliverEscalation(client, ESCALATION, "2A-08"),
     );
-    assert.equal(await status, "no_recipient");
+    assert.equal(await status, "pending");
     const [update] = client.calls.updates;
-    assert.equal(update.values.status, "no_recipient");
+    assert.equal(update.values.status, "pending");
     assert.equal(update.values.delivered_at, null);
+    // Nothing was attempted, so an idle unconfigured night must not eat into the
+    // retry budget that exists for transport failures.
+    assert.equal(update.values.attempts, ESCALATION.attempts);
+  });
+
+  it("still finalises as no_recipient when a channel exists but nobody may be told", async () => {
+    // This one is genuinely terminal: consent is not going to appear because we
+    // asked again.
+    const client = fakeClient({ rpc: { data: [], error: null } });
+    const status = await withEnv(
+      { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: "k", SAFETY_ALERT_EMAIL_FROM: "a@b.test" },
+      () => deliverEscalation(client, ESCALATION, "2A-08"),
+    );
+    assert.equal(await status, "no_recipient");
+    assert.equal(client.calls.updates[0].values.status, "no_recipient");
+  });
+
+  it("sends the queued escalation once a channel is configured", async () => {
+    // The ordering the issue asks for, end to end: recorded with nothing set,
+    // then configured, then delivered.
+    const recipients = { data: [{ educator_user_id: "e1", email: "t@example.test" }], error: null };
+
+    const unconfigured = fakeClient({ rpc: recipients });
+    const first = await withEnv(
+      { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: undefined, SAFETY_ALERT_EMAIL_FROM: undefined },
+      () => deliverEscalation(unconfigured, ESCALATION, "2A-08"),
+    );
+    assert.equal(await first, "pending", "must stay in the dispatcher's queue");
+
+    const configured = fakeClient({ rpc: recipients });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("ok", { status: 200 });
+    try {
+      const second = await withEnv(
+        { SAFETY_ALERT_WEBHOOK_URL: "https://hook.example.test/alert" },
+        () => deliverEscalation(configured, ESCALATION, "2A-08"),
+      );
+      assert.equal(await second, "delivered");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("asks the database who may be told, rather than deciding itself", async () => {
@@ -236,11 +292,22 @@ describe("delivery", () => {
     });
   });
 
-  it("counts the attempt whether or not it worked", async () => {
-    const client = fakeClient();
-    await withEnv({ SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: undefined }, () =>
-      deliverEscalation(client, { ...ESCALATION, attempts: 2 }, "2A-08"),
-    );
+  it("counts an attempt that was actually made and failed", async () => {
+    // Only when something was tried. An unconfigured deployment attempts
+    // nothing, and the case above asserts its `attempts` does not move.
+    const client = fakeClient({
+      rpc: { data: [{ educator_user_id: "e1", email: "t@example.test" }], error: null },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("nope", { status: 500 });
+    try {
+      const status = await withEnv({ SAFETY_ALERT_WEBHOOK_URL: "https://hook.example.test/alert" }, () =>
+        deliverEscalation(client, { ...ESCALATION, attempts: 2 }, "2A-08"),
+      );
+      assert.equal(status, "failed");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
     assert.equal(client.calls.updates[0].values.attempts, 3);
   });
 });
@@ -268,9 +335,31 @@ describe("the wiring that makes this reach anyone", () => {
   });
 
   it("has a retry path, so a failed send is late rather than lost", () => {
-    const dispatch = read("../src/app/api/safety/dispatch/route.ts");
+    // The loop moved to `lib/server/safetyDispatch.ts` when the Vercel cron
+    // entry needed it too (#179): Vercel Cron issues a bare GET, and the
+    // dispatch route is a POST behind its own token.
+    const dispatch = read("../src/lib/server/safetyDispatch.ts");
     assert.ok(dispatch.includes('.in("status", ["pending", "failed"])'));
     assert.ok(dispatch.includes("deliverEscalation"));
+    assert.ok(read("../src/app/api/safety/dispatch/route.ts").includes("dispatchPendingEscalations"));
+  });
+
+  it("is actually scheduled, from the directory Vercel reads", () => {
+    /*
+     * The manifest used to sit at the repository root while the Vercel project's
+     * root directory is `sentra/frontend`, so nothing read it — and the two
+     * paths in it did not exist either (#179, #185).
+     */
+    const manifest = JSON.parse(read("../vercel.json"));
+    const paths = manifest.crons.map((entry) => entry.path);
+    assert.ok(paths.includes("/api/cron/safety-dispatch"));
+    assert.ok(paths.includes("/api/cron/retention-purge"));
+    for (const path of paths) {
+      assert.ok(
+        existsSync(resolve(HERE, `../src/app${path}/route.ts`)),
+        `${path} is scheduled but has no route`,
+      );
+    }
   });
 
   it("refuses the dispatcher when no shared secret is set", () => {
@@ -337,5 +426,54 @@ describe("the database contract this relies on", () => {
         "revoke execute on function public.safety_escalation_recipients(uuid) from public, anon, authenticated",
       ),
     );
+  });
+});
+
+describe("the recipient hash", () => {
+  /** 32 bytes, base64, as `guardianHmacKey()` and `inviteHmacKey()` expect. */
+  const KEY_A = Buffer.alloc(32, 3).toString("base64");
+  const KEY_B = Buffer.alloc(32, 9).toString("base64");
+
+  const hashUnder = async (key) => {
+    const client = fakeClient({
+      rpc: { data: [{ educator_user_id: "e1", email: "Teacher@Example.test" }], error: null },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("ok", { status: 200 });
+    try {
+      await withEnv(
+        {
+          SAFETY_ALERT_WEBHOOK_URL: undefined,
+          RESEND_API_KEY: "test-key",
+          SAFETY_ALERT_EMAIL_FROM: "alerts@example.test",
+          SAFETY_RECIPIENT_HASH_KEY: key,
+        },
+        () => deliverEscalation(client, ESCALATION, "2A-08"),
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    const written = client.calls.inserts.find((i) => i.table === "safety_escalation_deliveries");
+    return written.rows.find((row) => row.channel === "email")?.recipient_hash ?? null;
+  };
+
+  it("is stable for the same address", async () => {
+    assert.equal(await hashUnder(KEY_A), await hashUnder(KEY_A));
+  });
+
+  it("differs under a different key", async () => {
+    // The property an unkeyed SHA-256 did not have: without the key, a holder of
+    // the staff list cannot hash the candidates and match the digest.
+    assert.notEqual(await hashUnder(KEY_A), await hashUnder(KEY_B));
+  });
+
+  it("is null when no key is configured, and delivery still happens", async () => {
+    assert.equal(await hashUnder(undefined), null);
+  });
+
+  it("rejects a key that is too short rather than using it", async () => {
+    await withEnv({ SAFETY_RECIPIENT_HASH_KEY: Buffer.alloc(8, 1).toString("base64") }, () => {
+      assert.equal(recipientHashKey(), null);
+    });
   });
 });
