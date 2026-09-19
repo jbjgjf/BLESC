@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Minified static export of another branch, served as-is (see next.config.ts).
+    "public/demo-view/**",
   ]),
 ]);
 
