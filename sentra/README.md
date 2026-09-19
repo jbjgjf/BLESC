@@ -59,4 +59,3 @@ npm run dev
 
 ## 開発ツール
 - **APIドキュメント**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **テストスクリプト**: `backend/reproduce_issue.py` を実行して API の動作確認ができます。
