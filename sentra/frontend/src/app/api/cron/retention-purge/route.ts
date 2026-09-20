@@ -30,6 +30,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { authorizedCron } from "@/lib/server/cronAuth";
+import { purgeExpiredRawText } from "@/lib/server/retentionPurge";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 
 export const runtime = "nodejs";
@@ -40,25 +41,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ detail: "forbidden" }, { status: 403 });
   }
 
-  // `purge_expired_raw_text()` is SECURITY INVOKER with EXECUTE granted only to
-  // `service_role`, so it has to be called with the service key — and being
-  // invoker rather than definer is what keeps it from ignoring RLS for anyone
-  // else who reaches it.
   const service = serviceRoleClient();
   if (!service) {
     console.error("[cron:retention] Supabase is not configured; retained text is not being purged");
     return NextResponse.json({ detail: "supabase_not_configured" }, { status: 503 });
   }
 
-  const { data, error } = await service.rpc("purge_expired_raw_text");
-  if (error) {
-    // Loud, because a purge that silently fails leaves text the participant was
-    // told would be gone.
-    console.error("[cron:retention] purge failed; retained text is past its expiry", error.message);
-    return NextResponse.json({ detail: error.message }, { status: 502 });
-  }
-
-  const purged = typeof data === "number" ? data : 0;
-  if (purged > 0) console.info(`[cron:retention] purged ${purged} expired raw-text row(s)`);
-  return NextResponse.json({ purged });
+  // The call itself lives in `lib/server/retentionPurge.ts` so it can be
+  // exercised without a Next runtime (#204).
+  const result = await purgeExpiredRawText(service);
+  if ("error" in result) return NextResponse.json({ detail: result.error }, { status: 502 });
+  return NextResponse.json(result);
 }

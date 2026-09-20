@@ -102,6 +102,17 @@ const DELIVERY_FAILURES = [
   "no recipient with active oversight consent",
 ];
 
+/**
+ * Why a scheduled job stopped, returned in the 502 body of an `/api/cron/*`
+ * route (#204).
+ *
+ * The only caller is the scheduler, and the only reader is an operator next to
+ * a deployment console. No student or teacher surface reaches these routes:
+ * without the scheduler's bearer token they answer 403 to everything, before
+ * they touch Supabase.
+ */
+const SCHEDULED_JOB_FAILURES = ["purge_expired_raw_text returned no count"];
+
 /** A programming mistake, raised where only a developer can see it. */
 const DEVELOPER_ERRORS = ["useAuth must be used inside AuthProvider"];
 
@@ -170,6 +181,7 @@ export const ALLOWLIST = [
   ...MODEL_INSTRUCTIONS,
   ...WRITE_FAILURES,
   ...DELIVERY_FAILURES,
+  ...SCHEDULED_JOB_FAILURES,
   ...DEVELOPER_ERRORS,
   ...COLUMN_PROJECTIONS,
   ...OPERATOR_DIAGNOSTICS,
