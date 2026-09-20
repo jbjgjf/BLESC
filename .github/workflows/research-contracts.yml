@@ -8,6 +8,23 @@ on:
       - "codex/**"
 
 jobs:
+  eval-contracts:
+    name: Synthetic evaluation contracts
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sentra/eval
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sentra/eval/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+
   backend-research:
     name: Backend research contracts
     runs-on: ubuntu-latest
@@ -23,8 +40,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      # The lock file, not `requirements.txt` (#184). Installing the loose file
+      # resolved whatever was newest on the day, so a green run could go red
+      # with nothing in this repository changing, and no past run could be
+      # rebuilt. `requirements.txt` stays the readable statement of intent;
+      # this is the set that actually ran.
       - name: Install backend dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements.lock.txt
 
       - name: Run backend research tests
         run: PYTHONDONTWRITEBYTECODE=1 python -m pytest tests -q
@@ -92,3 +114,107 @@ jobs:
 
       - name: Build frontend
         run: npm run build
+
+  supabase-rls:
+    name: Supabase RLS contracts
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sentra
+    steps:
+      # The row-level security tests are the only executable statement of who
+      # may read a minor's data — consent gating, escalation visibility, the
+      # research reader's scope — and until now nothing ran them (#186). They
+      # were written, they passed on one laptop, and any migration could have
+      # quietly undone them.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up the Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start the local stack
+        run: supabase start
+
+      # `db reset` applies every migration from scratch, so this also catches a
+      # migration that no longer applies to an empty database — which the
+      # frontend tests, running against nothing, cannot see.
+      - name: Apply all migrations
+        run: supabase db reset --no-seed
+
+      - name: Run the RLS tests
+        run: |
+          set -euo pipefail
+          status=0
+          for file in supabase/tests/*.test.sql; do
+            echo "--- ${file}"
+            # Each script wraps itself in a transaction and rolls back, so they
+            # are independent and leave no rows behind. `ON_ERROR_STOP` is what
+            # turns a raised assertion into a non-zero exit.
+            if ! psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+                 -v ON_ERROR_STOP=1 -q -f "${file}"; then
+              echo "FAILED: ${file}"
+              status=1
+            fi
+          done
+          exit "${status}"
+
+  pilot-e2e:
+    name: Pilot enrollment gate (E2E)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sentra/frontend
+    steps:
+      # #164 built the gate that keeps an unenrolled or withdrawn student out of
+      # the collection screen, and wrote the Playwright suite that proves it.
+      # Nothing ran it (#195), so the guarantee the pilot rests on was resting
+      # on a suite last executed by hand.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sentra/frontend/package-lock.json
+
+      - name: Set up the Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start the local stack
+        working-directory: sentra
+        run: supabase start
+
+      - name: Apply all migrations
+        working-directory: sentra
+        run: supabase db reset --no-seed
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # Chromium only. The gate is server-side — a layout redirect and a route
+      # handler — so a second engine would re-test the same decision at three
+      # times the minutes.
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      # The suite builds and serves the app itself (`webServer` in
+      # playwright.config.ts) because demo mode is on by default under
+      # `next dev`, and demo mode plus a pilot deployment is a combination the
+      # collection gate refuses outright.
+      - name: Run the enrollment-gate E2E suite
+        run: npm run test:e2e
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: sentra/frontend/playwright-report
+          if-no-files-found: ignore

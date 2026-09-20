@@ -1,5 +1,7 @@
 "use client";
 
+import { PILOT_CONTACT_EMAIL, PILOT_CONTACT_HREF, PILOT_CONTACT_PRIVACY_NOTICE } from "@/lib/pilotContact";
+
 /**
  * 保護者の方が実際に答える画面（#164）。
  *
@@ -94,8 +96,9 @@ export function GuardianConfirm({
         <p className="bl-notice">{error ?? "この確認用リンクは使用できません。"}</p>
         <p className="bl-meta">
           お手数ですが、お子さまに新しいリンクの発行をお伝えください。ご不明な点は、学校から配布された
-          説明文書に記載の研究担当までご連絡ください。
+          研究問い合わせ先 <a href={PILOT_CONTACT_HREF}>{PILOT_CONTACT_EMAIL}</a> へご連絡ください。
         </p>
+        <p className="bl-meta">{PILOT_CONTACT_PRIVACY_NOTICE}</p>
       </main>
     );
   }
@@ -178,8 +181,9 @@ export function GuardianConfirm({
         <h2 className="bl-h2">ご回答</h2>
         <p className="bl-meta">
           どちらを選ばれても、学校での活動や成績に影響することはありません。判断に迷われる場合は、
-          回答せずに研究担当へご連絡ください。
+          回答せずに研究問い合わせ先 <a href={PILOT_CONTACT_HREF}>{PILOT_CONTACT_EMAIL}</a> へご連絡ください。
         </p>
+        <p className="bl-meta">{PILOT_CONTACT_PRIVACY_NOTICE}</p>
         <div className="bl-row" style={{ gap: 10, flexWrap: "wrap" }}>
           <button type="button" className="bl-btn bl-btn--primary" disabled={busy} onClick={() => answer("confirmed")}>
             参加に同意します

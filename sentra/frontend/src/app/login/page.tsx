@@ -7,31 +7,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { Icon } from "@/components/ui/Icon";
 import { t } from "@/lib/i18n";
+import { localizeAuthError } from "@/lib/i18n/authError";
 import styles from "./login.module.css";
-
-/** Supabase の英語メッセージを、生徒にも読める日本語に置き換える。 */
-function localizeAuthError(message: string): string {
-  const lower = message.toLowerCase();
-  if (lower.includes("invalid login credentials")) {
-    return t.login.error.invalidCredentials;
-  }
-  if (lower.includes("email not confirmed")) {
-    return t.login.error.emailNotConfirmed;
-  }
-  if (lower.includes("user already registered")) {
-    return t.login.error.alreadyRegistered;
-  }
-  if (lower.includes("password should be at least")) {
-    return t.login.error.passwordTooShort;
-  }
-  if (lower.includes("rate limit") || lower.includes("too many")) {
-    return t.login.error.rateLimited;
-  }
-  if (lower.includes("fetch") || lower.includes("network")) {
-    return t.login.error.network;
-  }
-  return message;
-}
 
 export default function LoginPage() {
   const router = useRouter();

@@ -1,33 +1,56 @@
-fastapi
-uvicorn
-sqlmodel
-pydantic
-sqlalchemy
-aiosqlite
-numpy
-pandas
-scikit-learn
-umap-learn
-hdbscan
-plotly
-sentence-transformers
-httpx
-openai
-python-dotenv
-python-multipart
+# Direct dependencies, pinned (#184).
+#
+# Every version here is `==`. Before this, all but two were bare names, so
+# `pip install -r requirements.txt` resolved whatever was newest on the day CI
+# ran — which meant a green run could go red with nothing in this repository
+# changing, and a past run could not be reproduced at all.
+#
+# That is not a style point for this repository in particular. The research
+# contracts workflow runs the engine smoke and uploads artifacts whose reports
+# record the environment ("numpy 2.4.6, python 3.11.15"). Handing someone a
+# number and no way to rebuild the dependency graph that produced it is not a
+# reproducible result, and `scikit-learn`, `umap-learn`, `hdbscan` and
+# `sentence-transformers` all change numerical behaviour across minor releases.
+#
+# `requirements.lock.txt` beside this file pins the transitive set as well, and
+# is what CI installs. This file stays readable: it says what this project
+# actually asks for, at a version somebody chose.
+#
+# To move a version: change it here, re-resolve, and regenerate the lock with
+#   python -m pip install -r requirements.txt --dry-run --ignore-installed \
+#     --report - | python scripts/write_lockfile.py
+# Resolved on 2026-09-19 against Python 3.12, which is what the workflow uses.
+
+fastapi==0.141.1
+uvicorn==0.53.0
+sqlmodel==0.0.42
+pydantic==2.13.5
+sqlalchemy==2.0.54
+aiosqlite==0.22.1
+numpy==2.5.3
+pandas==3.0.6
+scikit-learn==1.9.1
+umap-learn==0.5.12
+hdbscan==0.8.44
+plotly==7.1.0
+sentence-transformers==6.1.0
+httpx==0.28.1
+openai==3.16.2
+python-dotenv==1.2.3
+python-multipart==0.0.32
 # Server-side Supabase writes (app/services/supabase_writer.py). Optional at
 # runtime: without it, and without SUPABASE_URL, submissions stay in SQLite.
-supabase>=2.0.0
+supabase==2.31.0
 # AES-GCM for retained journal text (app/services/raw_text_crypto.py). Optional
 # at runtime: without it, and without RESEARCH_RAW_TEXT_KEY, the raw-text
 # columns stay null — retention is skipped, never done in the clear.
-cryptography>=42.0.0
-pyyaml
-pyarrow
-pytest
+cryptography==50.0.1
+pyyaml==6.0.3
+pyarrow==25.0.1
+pytest==9.1.1
 # Japanese morphological analysis for app/analytics/tokenize.py. Without
 # these, Japanese falls back to whitespace splitting and every lexicon metric
 # under-counts; the probe reports japanese_analysis_available=false so the
 # degradation is visible rather than silent.
-fugashi
-unidic-lite
+fugashi==1.5.2
+unidic-lite==1.0.8
