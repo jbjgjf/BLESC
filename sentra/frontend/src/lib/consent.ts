@@ -136,6 +136,25 @@ export function rawTextRetentionAllowed(state: ConsentState): boolean {
   return researchUseAllowed(state) && state.raw_text_retention;
 }
 
+/**
+ * Whether this participant's data may be used to train a model.
+ *
+ * Built on `researchUseAllowed` for the same reason retention is: training use
+ * is a *further* permission on top of research use, never an alternative route
+ * to the same data. A revoked consent, a missing assent or a missing guardian
+ * confirmation all close it, and the extra opt-in has to be present on top.
+ *
+ * The state field is `future_fine_tuning`, which is what the column is called.
+ * The name this function carries is the data dictionary's, and it is the one
+ * the consent screen's wording supports: the student agrees to
+ * 「将来のモデルの学習に使うこと」, which names no particular technique. Reading
+ * the column name as the scope of the permission is how a record ends up
+ * describing something narrower than what was actually agreed to.
+ */
+export function modelTrainingUseAllowed(state: ConsentState): boolean {
+  return researchUseAllowed(state) && state.future_fine_tuning;
+}
+
 /** Whether behavioural input telemetry may be stored (#135). */
 export function telemetryAllowed(state: ConsentState): boolean {
   return researchUseAllowed(state);

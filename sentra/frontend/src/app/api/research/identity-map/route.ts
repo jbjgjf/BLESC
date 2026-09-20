@@ -33,7 +33,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
-import { buildIdentityMap, type ExportEnrollmentRow } from "@/lib/researchExport";
+import { buildIdentityMap, type IdentityMapRow } from "@/lib/researchExport";
 
 export const runtime = "nodejs";
 
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
     return jsonError(result.error.message, 502);
   }
 
-  const rows = buildIdentityMap((result.data ?? []) as ExportEnrollmentRow[]);
+  const rows = buildIdentityMap((result.data ?? []) as IdentityMapRow[]);
   await audit("completed", rows.length);
   return NextResponse.json({ rows, count: rows.length });
 }

@@ -19,10 +19,11 @@
     },
     "relative_day": {
       "type": "integer",
-      "description": "登録日を0とした相対日。暦日はexportしない。",
+      "description": "参加者ごとの収集期間の初日を1とした相対日。暦日はexportしない。**0起点ではなく1起点**で、起点は登録日ではなく collection_started_at（＝運営が窓を開けた日）。export上の名前は day_index。",
       "in_export": true,
-      "implementation": "not_implemented",
-      "code_ref": "derived at export time from pilot_enrollments.collection_started_at"
+      "implementation": "implemented",
+      "code_ref": "ResearchRow.day_index / dayIndex() (src/lib/researchExport.ts)",
+      "export_field": "day_index"
     },
     "study_phase": {
       "type": "enum",
@@ -30,9 +31,12 @@
         "baseline",
         "observation"
       ],
-      "description": "相対日1-14がbaseline、15-21がobservation。",
+      "description": "相対日1..baseline_days が baseline、その後 observation_days 日ぶんが observation。境界は pilot_studies.baseline_days / observation_days から導出する（既定は14/7＝1-14と15-21）。プロトコルの終端を超えた日は null。",
       "in_export": true,
-      "implementation": "not_implemented"
+      "implementation": "implemented",
+      "code_ref": "ResearchRow.study_phase / studyPhase() (src/lib/researchExport.ts)",
+      "export_field": "study_phase",
+      "nullable": true
     }
   },
   "daily_self_report": {
@@ -51,7 +55,8 @@
         "required": false,
         "order": 1,
         "in_export": true,
-        "implementation": "not_implemented"
+        "implementation": "implemented",
+        "code_ref": "public.pilot_self_reports.mood -> ResearchRow.self_report.mood"
       },
       {
         "id": "stress",
@@ -65,7 +70,8 @@
         "required": false,
         "order": 2,
         "in_export": true,
-        "implementation": "not_implemented"
+        "implementation": "implemented",
+        "code_ref": "public.pilot_self_reports.stress -> ResearchRow.self_report.stress"
       },
       {
         "id": "sleep_quality",
@@ -79,7 +85,8 @@
         "required": false,
         "order": 3,
         "in_export": true,
-        "implementation": "not_implemented"
+        "implementation": "implemented",
+        "code_ref": "public.pilot_self_reports.sleep_quality -> ResearchRow.self_report.sleep_quality"
       },
       {
         "id": "sleep_hours",
@@ -93,7 +100,8 @@
         "required": false,
         "order": 4,
         "in_export": true,
-        "implementation": "not_implemented"
+        "implementation": "implemented",
+        "code_ref": "public.pilot_self_reports.sleep_hours -> ResearchRow.self_report.sleep_hours"
       },
       {
         "id": "event_intensity",
@@ -107,7 +115,8 @@
         "required": false,
         "order": 5,
         "in_export": true,
-        "implementation": "not_implemented"
+        "implementation": "implemented",
+        "code_ref": "public.pilot_self_reports.event_intensity -> ResearchRow.self_report.event_intensity"
       },
       {
         "id": "support_contact",
@@ -122,7 +131,7 @@
         "order": 6,
         "in_export": true,
         "implementation": "not_implemented",
-        "description": "DECISION REQUIRED: 採用するかどうか未決定。質問すること自体が相談を促す介入になりうる。決定者は研究倫理責任者。",
+        "description": "DECISION REQUIRED: 採用するかどうか未決定。質問すること自体が相談を促す介入になりうる。決定者は研究倫理責任者。**未実装は意図的** — 20260909020000 のmigrationで列を置かないことを明示している。他の5項目とは違い『まだ作っていない』ではなく『決めていない』。",
         "scale": "enum(yes, no, prefer_not_to_say)"
       }
     ]
@@ -146,7 +155,8 @@
       "type": "timestamptz",
       "description": "exportでは相対日へ変換する。",
       "in_export": "as_relative_day",
-      "implementation": "implemented"
+      "implementation": "implemented",
+      "code_ref": "public.entries.created_at -> ResearchRow.day_index (src/lib/researchExport.ts)"
     }
   },
   "process_telemetry": {
@@ -156,28 +166,56 @@
         "id": "compose_duration_ms",
         "type": "integer",
         "in_export": true,
-        "implementation": "implemented"
+        "implementation": "not_implemented",
+        "description": "この名前のフィールドはコードに存在しない。最も近いのは EntryTelemetryCollector が出す aggregate_metrics.total_duration_ms（画面を開いてから提出までの経過で、放置していた時間を含む＝入力時間ではない）。同じものとして扱うか別に測るかは DECISION REQUIRED。"
       },
       {
         "id": "pause_count",
         "type": "integer",
         "in_export": true,
-        "implementation": "implemented"
+        "implementation": "implemented",
+        "code_ref": "FieldMetrics.pause_count (src/lib/telemetry.ts)",
+        "description": "フィールドごと。2500ms を超える入力の間隙を1回と数える。"
       },
       {
         "id": "revision_count",
         "type": "integer",
         "in_export": true,
-        "implementation": "implemented"
+        "implementation": "implemented",
+        "code_ref": "FieldMetrics.revision_count (src/lib/telemetry.ts)",
+        "description": "フィールドごと。"
       },
       {
         "id": "field_order",
         "type": "array",
         "in_export": true,
-        "implementation": "implemented"
+        "implementation": "not_implemented",
+        "description": "収集面（生徒の /journal → EntryTelemetryCollector）では出していない。aggregate_metrics に入れているのは研究コンソール (src/app/research/page.tsx) だけで、パイロットが集めるのは前者。収集面にも必要かどうかは DECISION REQUIRED。"
       }
     ],
-    "code_ref": "sentra/frontend/src/lib/telemetry.ts"
+    "code_ref": "sentra/frontend/src/lib/telemetry.ts",
+    "actually_collected": {
+      "aggregate_metrics": [
+        "total_duration_ms",
+        "event_count",
+        "dropped_event_count",
+        "fields_touched",
+        "fields_skipped"
+      ],
+      "field_metrics": [
+        "focus_count",
+        "blur_count",
+        "input_count",
+        "deletion_count",
+        "paste_count",
+        "revision_count",
+        "pause_count",
+        "max_pause_ms",
+        "active_typing_ms",
+        "skipped"
+      ],
+      "code_ref": "EntryTelemetryCollector (src/lib/telemetry.ts)"
+    }
   },
   "consent": {
     "app_use": {
@@ -213,8 +251,11 @@
     "model_training_use": {
       "type": "boolean",
       "default": false,
-      "implementation": "not_implemented",
-      "description": "二次利用・fine-tuningへの別opt-in。本文提出への同意とは別に取る。未実装のため、現状はどの参加者のデータも学習に使えない。"
+      "implementation": "implemented",
+      "description": "二次利用（将来のモデル学習）への別opt-in。本文提出への同意とは別に取る。**DBの列名は future_fine_tuning で、この辞書とexportの名前と一致していない。**同意画面が生徒に見せている文言は「将来のモデルの学習に使うことに同意します」であり、fine-tuning という特定の手法には言及していない。したがって同意の範囲を正しく表すのは model_training_use の側で、列名は同意より狭い。名寄せは DECISION REQUIRED。exportでは行ごとに載る（撤回・未成年同意欠如でも false）。",
+      "code_ref": "public.consent_records.future_fine_tuning -> ResearchRow.model_training_use",
+      "column_name_differs": true,
+      "in_export": true
     },
     "document_version": {
       "type": "string",

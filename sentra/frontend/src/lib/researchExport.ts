@@ -51,6 +51,14 @@ export type ExportEnrollmentRow = {
   participant_id: string;
   research_code: string;
   cohort: string;
+  /**
+   * Which study's window this enrollment belongs to.
+   *
+   * `study_phase` is measured against that study's own `baseline_days`, and one
+   * person may be enrolled in more than one study — so the phase cannot come
+   * from a single deployment-wide constant.
+   */
+  study_id: string;
   state: string;
   collection_started_at: string | null;
   /** The close of this participant's window, when the study has set one. */
@@ -61,8 +69,41 @@ export type ExportEnrollmentRow = {
 export type ExportConsentState = {
   research: boolean;
   retention: boolean;
+  /**
+   * The separate opt-in for using this data to train a model.
+   *
+   * Stored in `public.consent_records.future_fine_tuning`; the data dictionary
+   * calls the same thing `model_training_use`, which is the name the consent
+   * screen's own wording supports — the student agrees to
+   * 「将来のモデルの学習に使うこと」, which names no particular technique. The
+   * export uses the dictionary's name because the export is what an analyst
+   * reads, and an analyst filtering this column is deciding whether they may
+   * train on a row.
+   *
+   * It has to be in the row rather than looked up later: a dataset that does
+   * not say who allowed training is a dataset where the safe default (exclude
+   * everyone) is indistinguishable from the unsafe one (assume everyone).
+   */
+  model_training_use: boolean;
   consent_version: string | null;
   document_version: string | null;
+};
+
+/**
+ * One participant's fixed daily self-report, as stored (#165).
+ *
+ * Keyed to the entry rather than to the day: the acceptance criterion is that
+ * the numbers and the text they were given alongside sit on the same
+ * submission, and `entry_id` is that tie.
+ */
+export type ExportSelfReportRow = {
+  entry_id: string;
+  schema_version: string;
+  mood: number | null;
+  stress: number | null;
+  sleep_quality: number | null;
+  sleep_hours: number | null;
+  event_intensity: number | null;
 };
 
 export type ExclusionReason =
@@ -77,7 +118,45 @@ export type ResearchRow = {
   cohort: string;
   /** 1 on the first day of this participant's window. Never a wall-clock date. */
   day_index: number;
+  /**
+   * Which half of the protocol this day falls in, or null past the end.
+   *
+   * Derived from the study's own `baseline_days`, not from the 14/21 in the
+   * data dictionary: those are the column defaults, and a study configured with
+   * a different split would otherwise be exported under someone else's phase
+   * boundary. A day beyond `baseline_days + observation_days` is `null` rather
+   * than `observation` — an entry past the end of the protocol is not a late
+   * observation day, it is a day the protocol does not describe.
+   */
+  study_phase: StudyPhase | null;
   observation_type: string | null;
+  /**
+   * The five settled self-report items for this submission, or null when the
+   * participant submitted none.
+   *
+   * Null and zero are different answers and the difference matters: every item
+   * is optional, so an unanswered `mood` is `null`, never 0 and never the
+   * midpoint. `answered_at` is deliberately absent — it is a wall-clock
+   * timestamp within minutes of the submission, which is the calendar date this
+   * module exists to withhold, arriving through a second door.
+   */
+  self_report: {
+    schema_version: string;
+    mood: number | null;
+    stress: number | null;
+    sleep_quality: number | null;
+    sleep_hours: number | null;
+    event_intensity: number | null;
+  } | null;
+  /**
+   * Whether this participant allowed their data to be used for model training.
+   *
+   * On every row, not once per participant, because a row is what gets filtered
+   * and a row that travels without its permission is a row someone will train
+   * on. False when they declined and false when no consent record was found:
+   * absence of a grant is not a grant.
+   */
+  model_training_use: boolean;
   /** Counts only — how much structure the extraction found, not what it said. */
   measures: {
     node_count: number;
@@ -137,6 +216,29 @@ const NO_EXCLUSIONS: Record<ExclusionReason, number> = {
  * and therefore on the same day — which is exactly the boundary a nightly
  * journal sits on.
  */
+export type StudyPhase = "baseline" | "observation";
+
+/** How long each half of a study runs. Defaults match the column defaults. */
+export type PhaseConfig = { baselineDays: number; observationDays: number };
+
+export const DEFAULT_PHASES: PhaseConfig = { baselineDays: 14, observationDays: 7 };
+
+/**
+ * The phase a study day falls in.
+ *
+ * Boundaries are inclusive and 1-based, matching `day_index`: with the default
+ * 14/7, days 1-14 are `baseline` and 15-21 are `observation`. Day 0 cannot
+ * occur — `buildResearchDataset` excludes anything below 1 as outside the
+ * window — and is treated as outside the protocol here too rather than silently
+ * counted as baseline.
+ */
+export function studyPhase(day: number, phases: PhaseConfig): StudyPhase | null {
+  if (!Number.isFinite(day) || day < 1) return null;
+  if (day <= phases.baselineDays) return "baseline";
+  if (day <= phases.baselineDays + phases.observationDays) return "observation";
+  return null;
+}
+
 export function dayIndex(createdAt: string, startedAt: string, timeZone: string): number | null {
   const entryDay = localDayKey(createdAt, timeZone);
   const startDay = localDayKey(startedAt, timeZone);
@@ -194,9 +296,19 @@ export function buildResearchDataset(input: {
   timeZone: string;
   /** Text by entry id. An entry absent from the map exports no text. */
   decryptedText?: Map<string, string | null>;
+  /**
+   * Phase boundaries by study id. A study missing from the map falls back to
+   * the column defaults rather than exporting a null phase for every row,
+   * because the common deployment has exactly one study on the defaults.
+   */
+  phasesByStudy?: Map<string, PhaseConfig>;
+  /** Self-report by entry id. An entry with no reading exports `null`. */
+  selfReportByEntry?: Map<string, ExportSelfReportRow>;
 }): DatasetResult {
   const { entries, enrollments, consentByParticipant, timeZone } = input;
   const decrypted = input.decryptedText ?? new Map<string, string | null>();
+  const phasesByStudy = input.phasesByStudy ?? new Map<string, PhaseConfig>();
+  const selfReportByEntry = input.selfReportByEntry ?? new Map<string, ExportSelfReportRow>();
 
   const enrollmentByParticipant = new Map<string, ExportEnrollmentRow>();
   for (const enrollment of enrollments) {
@@ -269,11 +381,29 @@ export function buildResearchDataset(input: {
     const text = decrypted.get(entry.id) ?? null;
     const textIncluded = typeof text === "string" && text.length > 0;
 
+    const reading = selfReportByEntry.get(entry.id) ?? null;
+
     const row: ResearchRow = {
       research_code: enrollment.research_code,
       cohort: enrollment.cohort,
       day_index: index,
+      study_phase: studyPhase(index, phasesByStudy.get(enrollment.study_id) ?? DEFAULT_PHASES),
       observation_type: entry.observation_type,
+      // Rebuilt field by field rather than spread. A spread would carry
+      // `entry_id` and anything a later column adds to the table straight into
+      // the row, which is the leak `identityLeakIn` has to catch afterwards
+      // instead of it never happening.
+      self_report: reading
+        ? {
+            schema_version: reading.schema_version,
+            mood: reading.mood,
+            stress: reading.stress,
+            sleep_quality: reading.sleep_quality,
+            sleep_hours: reading.sleep_hours,
+            event_intensity: reading.event_intensity,
+          }
+        : null,
+      model_training_use: consent.model_training_use === true,
       measures: {
         node_count: nodes.length,
         relation_count: relations.length,
@@ -322,7 +452,16 @@ export function buildResearchDataset(input: {
  * journal content whatsoever — someone who obtains it learns who a code is,
  * not what they wrote.
  */
-export function buildIdentityMap(enrollments: ExportEnrollmentRow[]): Array<{
+/**
+ * The columns the identity map actually reads.
+ *
+ * Narrower than `ExportEnrollmentRow` on purpose: that type gained `study_id`
+ * for `study_phase`, and the identity-map route does not select it. Reusing the
+ * wider type would leave a cast asserting a column the query never asked for.
+ */
+export type IdentityMapRow = Omit<ExportEnrollmentRow, "study_id" | "collection_ends_at">;
+
+export function buildIdentityMap(enrollments: IdentityMapRow[]): Array<{
   research_code: string;
   participant_id: string;
   cohort: string;

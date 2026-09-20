@@ -28,13 +28,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { decryptRawText } from "@/lib/server/rawTextCrypto";
-import { normalizeConsent, rawTextRetentionAllowed, researchUseAllowed } from "@/lib/consent";
+import {
+  modelTrainingUseAllowed,
+  normalizeConsent,
+  rawTextRetentionAllowed,
+  researchUseAllowed,
+} from "@/lib/consent";
 import {
   buildResearchDataset,
   identityLeakIn,
   type ExportConsentState,
   type ExportEnrollmentRow,
   type ExportEntryRow,
+  type ExportSelfReportRow,
+  type PhaseConfig,
 } from "@/lib/researchExport";
 
 export const runtime = "nodejs";
@@ -97,7 +104,9 @@ export async function GET(request: NextRequest) {
   // `research_code` is resolved here and never has to name a participant id.
   let enrollmentQuery = service
     .from("pilot_enrollments")
-    .select("participant_id, research_code, cohort, state, collection_started_at, collection_ends_at, withdrawn_at");
+    .select(
+      "participant_id, research_code, cohort, study_id, state, collection_started_at, collection_ends_at, withdrawn_at",
+    );
   if (researchCode) enrollmentQuery = enrollmentQuery.eq("research_code", researchCode);
 
   const enrollmentResult = await enrollmentQuery;
@@ -180,6 +189,7 @@ export async function GET(request: NextRequest) {
       consentByParticipant.set(key, {
         research: researchUseAllowed(state),
         retention: rawTextRetentionAllowed(state),
+        model_training_use: modelTrainingUseAllowed(state),
         consent_version: state.consent_version,
         document_version: state.document_version,
       });
@@ -199,12 +209,64 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // `study_phase` is measured against each study's own baseline/observation
+  // split, so the studies in scope are read rather than assuming the column
+  // defaults. One query for the whole export, not one per enrollment.
+  const phasesByStudy = new Map<string, PhaseConfig>();
+  const studyIds = Array.from(new Set(enrollments.map((row) => row.study_id).filter(Boolean)));
+  if (studyIds.length > 0) {
+    const studies = await service
+      .from("pilot_studies")
+      .select("id, baseline_days, observation_days")
+      .in("id", studyIds);
+    if (studies.error) {
+      await audit("failed", 0, studies.error.message);
+      return jsonError(studies.error.message, 502);
+    }
+    for (const row of (studies.data ?? []) as Array<{
+      id: string;
+      baseline_days: number;
+      observation_days: number;
+    }>) {
+      phasesByStudy.set(row.id, {
+        baselineDays: row.baseline_days,
+        observationDays: row.observation_days,
+      });
+    }
+  }
+
+  // The fixed daily self-report, keyed to the entry it was submitted with.
+  //
+  // Scoped by `entry_id` and not by participant: an entry excluded above — a
+  // day outside the window, a withdrawn participant — must not pull its
+  // readings into the export through a second query that does not know about
+  // the exclusion. Only the columns the data dictionary promises are selected,
+  // so `answered_at` cannot ride along; it is the submission instant, which is
+  // the calendar date this module withholds.
+  const selfReportByEntry = new Map<string, ExportSelfReportRow>();
+  const entryIds = entries.map((row) => row.id);
+  if (entryIds.length > 0) {
+    const readings = await service
+      .from("pilot_self_reports")
+      .select("entry_id, schema_version, mood, stress, sleep_quality, sleep_hours, event_intensity")
+      .in("entry_id", entryIds);
+    if (readings.error) {
+      await audit("failed", 0, readings.error.message);
+      return jsonError(readings.error.message, 502);
+    }
+    for (const row of (readings.data ?? []) as ExportSelfReportRow[]) {
+      selfReportByEntry.set(row.entry_id, row);
+    }
+  }
+
   const dataset = buildResearchDataset({
     entries,
     enrollments,
     consentByParticipant,
     timeZone: studyTimezone(),
     decryptedText,
+    phasesByStudy,
+    selfReportByEntry,
   });
 
   // The rows are assembled from database output, so a column added to `entries`
