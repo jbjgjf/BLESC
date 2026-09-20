@@ -24,7 +24,7 @@
  *   CRON_SECRET=... \
  *   node scripts/pilot/check-ops-config.mjs
  *
- *   node scripts/pilot/check-ops-config.mjs --new-secrets   # 値を生成して手順を出す
+ *   node scripts/pilot/check-ops-config.mjs --new-secrets   # 値を生成してファイルへ書く
  *
  * 終了コード: 0=blocking無し / 1=blockingあり / 2=確認できなかった。
  * 2 を 0 として扱わないこと。「聞けなかった」は「問題なし」ではない。
@@ -32,6 +32,9 @@
 
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const REPO = "jbjgjf/BLESC";
 
@@ -60,34 +63,63 @@ function heading(text) {
 }
 
 /**
- * 新しい秘密値と、それを入れる手順を出す。
+ * 新しい秘密値と、それを入れる手順を生成する。**stdoutには出さない。**
  *
- * 出力はこの端末限り。Issue・PR・chatへ貼らない。貼ったら生成し直す。
+ * 初版はstdoutへ印字し、「端末の外へ出すな」と注意書きを添えていた。
+ * これは実際に破られた: このリポジトリの作業はCLIエージェント越しに行われ、
+ * その端末のstdoutは会話の記録にそのまま入る。つまり注意書きが想定していた
+ * 「端末の中」が、もう閉じた場所ではなかった。生成した3つの値は破棄して
+ * 作り直すことになった（未投入だったので実害は無い）。
+ *
+ * なので既定では0600のファイルへ書き、pathだけを印字する。ファイルは
+ * repositoryの外（TMPDIR）に置く。repository内だと、いつか誰かがcommitする。
+ * `--stdout` は残してあるが、それは明示的に選ばれた時だけ通る道である。
+ *
  * SAFETY_DISPATCH_TOKEN が2箇所に出るのは誤りではない：Vercelが検証する側、
  * GitHubが提示する側で、**同じ値**でなければ403になる。
  */
-function newSecrets() {
+function newSecrets({ toStdout }) {
   const cron = randomBytes(32).toString("base64");
   const dispatch = randomBytes(32).toString("base64");
   const hash = randomBytes(32).toString("base64");
 
-  console.log(`${YELLOW}生成した値をこの端末の外へ出さないこと。Issue/PR/chatに貼らない。${RESET}`);
-  console.log(`${DIM}貼ってしまった場合はもう一度これを実行して入れ直す。${RESET}\n`);
+  // `printf | vercel env add` にしてあるのは、対話入力だと値を画面へ打ち込む
+  // ことになるため。dashboardに貼る場合は # の右の値を使う。
+  const body = [
+    "# BLESC パイロット運用設定 — 投入したらこのファイルを消す。",
+    "# repositoryの外に置いてある。commitしないこと。",
+    "",
+    "# Vercel（専用プロジェクト blesc-pilot / Production）",
+    `printf '%s' '${cron}' | vercel env add CRON_SECRET production`,
+    `printf '%s' '${dispatch}' | vercel env add SAFETY_DISPATCH_TOKEN production`,
+    `printf '%s' '${hash}' | vercel env add SAFETY_RECIPIENT_HASH_KEY production`,
+    `printf '%s' '1' | vercel env add NEXT_PUBLIC_PILOT_MODE production`,
+    "",
+    "# GitHub（SAFETY_DISPATCH_TOKEN はVercel側と同じ値でなければ403）",
+    `gh secret set PILOT_BASE_URL --repo ${REPO} --body 'https://blesc-pilot.vercel.app'`,
+    `gh secret set SAFETY_DISPATCH_TOKEN --repo ${REPO} --body '${dispatch}'`,
+    "",
+    "# NEXT_PUBLIC_PILOT_MODE はビルド時に焼き込まれる。投入後に再デプロイすること。",
+    "# 確認: PILOT_BASE_URL=... CRON_SECRET=... node scripts/pilot/check-ops-config.mjs",
+    "",
+  ].join("\n");
 
-  console.log("# Vercel（専用プロジェクト blesc-pilot / Production）");
-  console.log(`vercel env add CRON_SECRET production               # ${cron}`);
-  console.log(`vercel env add SAFETY_DISPATCH_TOKEN production     # ${dispatch}`);
-  console.log(`vercel env add SAFETY_RECIPIENT_HASH_KEY production # ${hash}`);
-  console.log(`vercel env add NEXT_PUBLIC_PILOT_MODE production    # 1`);
+  if (toStdout) {
+    console.log(`${YELLOW}--stdout が指定された。この出力が残る場所を確認すること。${RESET}`);
+    console.log(`${DIM}エージェント越しの端末なら、この時点で値は会話の記録に入っている。${RESET}\n`);
+    console.log(body);
+    return;
+  }
+
+  const path = join(tmpdir(), `blesc-pilot-secrets-${Date.now()}.sh`);
+  writeFileSync(path, body, { mode: 0o600 });
+
+  console.log(`秘密値と投入コマンドを書き出した:\n\n  ${path}\n`);
+  console.log(`${DIM}0600、repositoryの外。${RESET}`);
+  console.log(`${YELLOW}投入したら消すこと:${RESET} rm ${path}`);
   console.log("");
-  console.log("# GitHub（SAFETY_DISPATCH_TOKEN はVercel側と同じ値）");
-  console.log(`gh secret set PILOT_BASE_URL --repo ${REPO} --body 'https://blesc-pilot.vercel.app'`);
-  console.log(`gh secret set SAFETY_DISPATCH_TOKEN --repo ${REPO} --body '${dispatch}'`);
-  console.log("");
-  console.log(`${YELLOW}NEXT_PUBLIC_PILOT_MODE はビルド時に焼き込まれる。`);
-  console.log(`設定しただけでは効かない — 設定後に再デプロイすること。${RESET}`);
-  console.log("");
-  console.log("確認: PILOT_BASE_URL=... CRON_SECRET=... node scripts/pilot/check-ops-config.mjs");
+  console.log("順序: Vercel 4件 → 再デプロイ → GitHub 2件 → 確認。");
+  console.log(`${DIM}NEXT_PUBLIC_PILOT_MODE はビルド時に焼き込まれるので、再デプロイまで効かない。${RESET}`);
 }
 
 function githubSecrets() {
@@ -225,7 +257,7 @@ async function demoViewClosed(baseUrl) {
 
 async function main() {
   if (process.argv.includes("--new-secrets")) {
-    newSecrets();
+    newSecrets({ toStdout: process.argv.includes("--stdout") });
     return 0;
   }
 
