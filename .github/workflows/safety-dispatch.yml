@@ -1,0 +1,78 @@
+name: Crisis notification retries
+
+# Why a workflow and not a Vercel cron.
+#
+# The retry ceiling that makes the escalation design honest is minutes: an
+# undelivered crisis notification is supposed to be *late*, not next-morning.
+# Vercel Hobby accounts cannot express that — cron jobs there run at most once a
+# day, and `*/5 * * * *` fails the deployment outright with "Hobby accounts are
+# limited to daily cron jobs". That limit is why the first push of this manifest
+# turned the Vercel check red.
+#
+# So the schedule lives here, where five minutes is expressible, and
+# `sentra/frontend/vercel.json` keeps a daily run of the same endpoint as a
+# backstop for the case where this workflow is disabled or the repository is
+# archived.
+#
+# **GitHub's scheduler is best-effort.** Runs are queued, and under load they
+# are delayed or dropped entirely — five minutes is a target, not a guarantee.
+# Upgrading the Vercel account to Pro and moving the schedule back into
+# `vercel.json` is the way to make it one. Until then this is the honest
+# arrangement, and `GET /api/safety/dispatch` reports how much is still owed so
+# a gap is visible rather than assumed away.
+
+on:
+  schedule:
+    # Every five minutes — GitHub's documented minimum.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+# A queued run is worthless once a newer one exists: they do the same work
+# against the same queue.
+concurrency:
+  group: safety-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Retry undelivered escalations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the dispatcher
+        env:
+          BASE_URL: ${{ secrets.PILOT_BASE_URL }}
+          TOKEN: ${{ secrets.SAFETY_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Skip rather than fail when the deployment has not been wired up yet.
+          # A scheduled job that goes red every five minutes teaches everyone to
+          # ignore this workflow, which is the opposite of what it is for.
+          if [ -z "${BASE_URL}" ] || [ -z "${TOKEN}" ]; then
+            echo "PILOT_BASE_URL or SAFETY_DISPATCH_TOKEN is not set; nothing to call."
+            echo "Crisis-notification retries are NOT running until both secrets exist."
+            exit 0
+          fi
+
+          # `-sS` keeps the body but still reports transport errors; the status
+          # code is checked separately so a 403 from a rotated token is loud.
+          response="$(mktemp)"
+          code="$(curl -sS -o "${response}" -w '%{http_code}' \
+            -X POST "${BASE_URL%/}/api/safety/dispatch" \
+            -H "authorization: Bearer ${TOKEN}")"
+
+          echo "HTTP ${code}"
+          cat "${response}"
+          echo
+
+          if [ "${code}" != "200" ]; then
+            echo "::error::The dispatcher answered ${code}. Undelivered crisis escalations are not being retried."
+            exit 1
+          fi
+
+          # `stuck` counts escalations that have exhausted their attempts and
+          # reached nobody. It is not a failure of this run, but it is the number
+          # somebody has to act on, so it is raised where run summaries are read.
+          if [ "$(python3 -c "import json;print(json.load(open('${response}')).get('stuck',0))")" != "0" ]; then
+            echo "::warning::Some escalations have exhausted their retries and nobody was told. Check the alert channel configuration."
+          fi
