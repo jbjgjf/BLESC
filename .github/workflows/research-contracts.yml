@@ -115,6 +115,14 @@ jobs:
       - name: Run frontend lint
         run: npm run lint
 
+      # `next build` only typechecks what is in its build graph, so e2e/ (the
+      # #164 enrollment-gate suite), playwright.config.ts and scripts/ were
+      # never checked by anything. tsconfig.json already includes them; this
+      # runs the check. Placed before the tests so a type error stops the job
+      # without waiting on the build. `sentra/eval` gates the same way.
+      - name: Typecheck frontend
+        run: npm run typecheck
+
       # Includes the Japanese-UI guard (#116): it fails on English text added to
       # a screen without a recorded reason. The suite ran only on developer
       # machines before, so nothing enforced it on a pull request.

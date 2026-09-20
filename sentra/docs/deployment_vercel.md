@@ -23,6 +23,21 @@ Vercel のプロジェクト作成画面で以下のように設定してくだ�
 - **`NEXT_PUBLIC_API_URL`**: バックエンドの URL（例: `https://sentra-backend.example.com`）
   - デフォルトでは `http://localhost:8000` を見に行くようになっている場合があります。
 
+### 4. `/demo-view` について
+
+`sentra/frontend/public/demo-view/` は `chat-ui-redesign` を静的に書き出した
+成果物で、`public/` に置いてあるだけです。ビルドは通りますが、**このアプリの
+ビルドが作っているものではありません**（#198）。
+
+- Vercel は `public/` の中身をそのまま配信します。`next.config.ts` の rewrite が
+  `/demo-view/foo` を `/demo-view/foo.html` に対応づけているだけで、
+  サーバー側の処理は入りません。
+- `NEXT_PUBLIC_PILOT_MODE=1` を設定したデプロイでは 404 になります（#193）。
+  専用パイロット環境にデモ導線を出さないための設定なので、外さないでください。
+- 中身を更新するには `scripts/build-demo-view.sh` をソースブランチ上で実行します。
+  デプロイ設定を変えても更新されません。出所は
+  `public/demo-view/BUILD_INFO.json` にあります。
+
 ---
 
 ## バックエンド (FastAPI) について

@@ -75,6 +75,11 @@ const nextConfig: NextConfig = {
       // public/demo-view. It is not part of this app: fixtures only, demo mode
       // forced on, no API, noindex. Static files are served before rewrites, so
       // these only map clean page URLs onto the exported .html files.
+      //
+      // The script is checked in here too, so the procedure survives the source
+      // branch (#194) — it refuses to run outside it, because the export needs
+      // a `DEMO_VIEW_EXPORT` branch this config does not have. What is actually
+      // committed came from the commit named in public/demo-view/BUILD_INFO.json.
       { source: "/demo-view", destination: "/demo-view/index.html" },
       { source: "/demo-view/:path+", destination: "/demo-view/:path+.html" },
     ];
