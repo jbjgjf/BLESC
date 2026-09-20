@@ -66,7 +66,10 @@
 | `RESEARCH_API_TOKEN` | 研究APIの資格情報 | 研究APIが503を返す（安全側） |
 | `RESEARCH_API_BASE_URL` | 研究APIの転送先 | 既定 `http://127.0.0.1:8000` |
 | `RESEARCH_UI_ALLOWED_USER_IDS` | 研究画面の許可リスト | 誰も研究画面から実行できない（安全側） |
+| `CRON_SECRET` | Vercel Cron が `/api/cron/*` を叩くときの資格情報 | **すべての定期実行が403で拒否される。** 保持期限のpurgeも危機通知の再送も走らない（#179 #185） |
 | `OPENAI_API_KEY` | 外部AI | **収集専用モードでは使わない。** 未設定が望ましい |
+
+> この表は完全な目録ではない。`sentra/frontend/.env.example` が正典で、危機通知（`SAFETY_*`）と保護者確認（`PILOT_GUARDIAN_HMAC_KEY`）の変数はそちらにだけ説明がある。設定時は `.env.example` を上から順に読むこと。
 
 ### 3.2 Vercel（client へ出る）
 
@@ -151,6 +154,25 @@ client bundleにservice-role keyの実値が含まれていないことを、**�
 
 `sentra/eval` の browser driver（playwright）で、招待→登録→説明→assent→（未成年なら保護者確認）→提出→撤回 を通す。preview保護は `x-vercel-protection-bypass` で越える（`sentra/eval/src/browser.ts` が対応済み）。
 
+### 5.5 定期実行が動ける状態か（デプロイ直後・参加者を入れる前）
+
+保持期限のpurgeと危機通知の再送は、`CRON_SECRET` が無ければ**全件403で拒否される**（`src/lib/server/cronAuth.ts`）。拒否はVercelの関数ログにしか出ないので、デプロイ直後に運用ダッシュボードで確認する。
+
+```bash
+curl -s -H "authorization: Bearer <研究者のアクセストークン>" \
+  "https://<pilot-host>/api/research/pilot-dashboard?study=<slug>" \
+  | python3 -c "import json,sys;print(json.load(sys.stdin)['scheduled_jobs'])"
+```
+
+期待する値:
+
+| キー | 期待 | falseのとき起きること |
+| --- | --- | --- |
+| `cron_secret_configured` | `True` | 保持期限のpurgeも危機通知の再送も一度も走らない |
+| `safety_alert_channel_configured` | `True` | 危機通知の送り先が無く、エスカレーションはキューに残り続ける（#178） |
+
+**参加者ゼロの研究でも読める。** これが `retention.overdue` と別に必要な理由でもある。`overdue` はpurgeが走った証拠にはなるが、保持中の本文がまだ期限に達していない初日は、`CRON_SECRET` 未設定のデプロイも健全なデプロイも同じ `0` を返す。
+
 ## 6. 監視とアラート
 
 | 見るもの | 閾値 | 通知先 |
@@ -164,7 +186,7 @@ client bundleにservice-role keyの実値が含まれていないことを、**�
 
 `DECISION REQUIRED`: 通知の手段（メール／Slack／その他）と当番。**決定者: 運用責任者。**
 
-`purge_expired_raw_text()` の定期実行は `DECISION REQUIRED`（Supabase cron / 外部scheduler）。**決定者: データ管理責任者。** 保持期限を設定しても、消す処理が動いていなければ保持期限は無い。
+`purge_expired_raw_text()` の定期実行は**決定済み**（#185）。`sentra/frontend/vercel.json` の cron が `/api/cron/retention-purge` を毎日叩く。保持期限を設定しても消す処理が動いていなければ保持期限は無い、という理由は変わっていないので、**動いていることを確認する責任は残る** — 5.5 の `cron_secret_configured` と、この表の `purge_expired_raw_text()` の実行結果の両方を見る。
 
 ## 7. 鍵のローテーション
 

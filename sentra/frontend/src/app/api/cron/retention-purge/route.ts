@@ -16,8 +16,16 @@
  *
  * Rows written before this shipped are already past their expiry. The first run
  * will purge all of them at once, which is correct and also means the first run
- * is the one to watch. `/api/pilot/admin/ops` reports `overdue`, and it should
- * read zero the morning after this is scheduled.
+ * is the one to watch. `/api/research/pilot-dashboard` reports
+ * `retention.overdue`, and it should read zero the morning after this is
+ * scheduled. (An earlier version of this comment named `/api/pilot/admin/ops`,
+ * which does not exist.)
+ *
+ * `overdue` proves the purge ran; it cannot prove it is scheduled. Before any
+ * retained text has reached its expiry — day 1 of a dry run, say — a deployment
+ * with no `CRON_SECRET` reports the same zero as a healthy one. The boolean that
+ * separates them is `scheduled_jobs.cron_secret_configured` on the same
+ * response (#205).
  */
 
 import { NextRequest, NextResponse } from "next/server";
