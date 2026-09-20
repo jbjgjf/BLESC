@@ -234,8 +234,36 @@ function hashAddress(address: string): string | null {
   return createHmac("sha256", key).update(address.trim().toLowerCase(), "utf8").digest("hex").slice(0, 32);
 }
 
-function consoleUrl(): string {
-  const base = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "";
+/**
+ * Where the educator goes, or null when this deployment cannot say (#202).
+ *
+ * `guardianVerificationUrl()` falls back to a bare path on purpose: the
+ * guardian link is handed over on the participant's own device, where a path
+ * still resolves, and it "fails visibly" when it is not. A crisis notification
+ * has neither property. It is read in Slack, in a duty-phone gateway, in a mail
+ * client — somewhere with no origin to resolve a path against — so a bare
+ * `/educator/roster` is not a degraded link, it is a line of text that looks
+ * like one. Worse, the send still succeeds, the row still finalises as
+ * `delivered`, and nothing on any dashboard says the recipient had nowhere to
+ * click.
+ *
+ * So: a link when there is one, and no line at all when there is not. The
+ * sentence above it already tells the educator to sign in, which is the action
+ * either way.
+ *
+ * Logged loudly because `NEXT_PUBLIC_SITE_URL` is inlined at build time. Setting
+ * it on a running deployment changes nothing until the next build, and that is
+ * the kind of fix somebody applies, sees no error, and assumes worked.
+ */
+function consoleUrl(): string | null {
+  const base = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
+  if (!base) {
+    console.error(
+      "[safety-escalation] NEXT_PUBLIC_SITE_URL is not set, so crisis notifications go out with no link. " +
+        "The value is inlined at build time: set it and redeploy, not just set it.",
+    );
+    return null;
+  }
   return `${base}/educator/roster`;
 }
 
@@ -256,11 +284,13 @@ export function notificationText(escalation: {
   const urgency = escalation.risk_level === "crisis"
     ? "すぐに確認してください。"
     : "確認をお願いします。";
+  const url = consoleUrl();
   return [
     `【blesc】${who} の記録に、確認が必要な表現がありました。${urgency}`,
     `検知時刻：${when}`,
     "内容は本人の画面にのみ保存されています。詳細はログインして確認してください。",
-    consoleUrl(),
+    // Omitted rather than degraded to a path: see `consoleUrl`.
+    ...(url ? [url] : []),
     "",
     "blesc は緊急対応を行いません。危険が差し迫っていると判断される場合は、学校の緊急対応手順に従ってください。",
   ].join("\n");

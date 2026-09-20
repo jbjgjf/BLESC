@@ -178,6 +178,44 @@ describe("what goes over the wire", () => {
     assert.ok(anonymous.length > 0);
     assert.ok(!anonymous.includes("null"));
   });
+
+  it("carries an absolute link when the site URL is configured", async () => {
+    await withEnv({ NEXT_PUBLIC_SITE_URL: "https://pilot.example.jp" }, () => {
+      const configured = notificationText(ESCALATION, "2A-08");
+      assert.ok(configured.includes("https://pilot.example.jp/educator/roster"));
+    });
+  });
+
+  it("drops the trailing slash rather than doubling it", async () => {
+    await withEnv({ NEXT_PUBLIC_SITE_URL: "https://pilot.example.jp/" }, () => {
+      const configured = notificationText(ESCALATION, "2A-08");
+      assert.ok(configured.includes("https://pilot.example.jp/educator/roster"));
+      assert.ok(!configured.includes("//educator/roster"));
+    });
+  });
+
+  it("omits the link entirely when the site URL is unset, rather than sending a bare path", async () => {
+    /*
+     * #202. `consoleUrl()` used to fall back to `""`, so the body carried a
+     * line reading `/educator/roster` — which resolves against nothing in
+     * Slack, in a duty-phone gateway or in a mail client. The send still
+     * succeeded and the row still finalised as `delivered`, so a notification
+     * with no usable call to action looked identical to a working one.
+     */
+    await withEnv({ NEXT_PUBLIC_SITE_URL: undefined }, () => {
+      const unconfigured = notificationText(ESCALATION, "2A-08");
+      for (const line of unconfigured.split("\n")) {
+        assert.ok(
+          line.trim() !== "/educator/roster",
+          "a bare path is not a link; omit the line instead",
+        );
+      }
+      // The instruction that makes the message actionable without a link has
+      // to survive, or omitting the line is just a smaller failure.
+      assert.ok(unconfigured.includes("ログインして確認してください"));
+      assert.ok(unconfigured.includes("緊急対応"));
+    });
+  });
 });
 
 describe("recording", () => {
