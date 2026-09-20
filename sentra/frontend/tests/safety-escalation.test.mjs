@@ -322,6 +322,35 @@ describe("delivery", () => {
     assert.equal(update.values.attempts, ESCALATION.attempts);
     // And nothing was logged as a delivery, because nothing was attempted.
     assert.equal(client.calls.inserts.length, 0);
+    /*
+     * The stored reason has to name the actual repair. `last_error` is what an
+     * operator reads to find out what to fix, and this branch used to store
+     * "no recipient with active oversight consent" — which sends them to check
+     * consent, a different team and a different fix, while the crisis sits in
+     * the queue.
+     */
+    assert.equal(update.values.last_error, "no reachable address for any consented recipient");
+  });
+
+  it("names the right repair in last_error for each way of reaching nobody", async () => {
+    const noChannel = fakeClient({
+      rpc: { data: [{ educator_user_id: "e1", email: "t@example.test" }], error: null },
+    });
+    await withEnv(
+      { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: undefined, SAFETY_ALERT_EMAIL_FROM: undefined },
+      () => deliverEscalation(noChannel, ESCALATION, "2A-08"),
+    );
+    assert.equal(noChannel.calls.updates[0].values.last_error, "no delivery channel configured");
+
+    const noConsent = fakeClient({ rpc: { data: [], error: null } });
+    await withEnv(
+      { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: "k", SAFETY_ALERT_EMAIL_FROM: "a@b.test" },
+      () => deliverEscalation(noConsent, ESCALATION, "2A-08"),
+    );
+    assert.equal(
+      noConsent.calls.updates[0].values.last_error,
+      "no recipient with active oversight consent",
+    );
   });
 
   it("sends it once the missing address is filled in", async () => {

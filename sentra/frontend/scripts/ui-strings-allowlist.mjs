@@ -100,6 +100,11 @@ const DELIVERY_FAILURES = [
   // a retry fixes) from "nobody may be told" (a consent fact that it does not).
   "no delivery channel configured",
   "no recipient with active oversight consent",
+  // And in three when #203 found the case between them: consent is held, but
+  // no consented educator has an address the configured channels can reach.
+  // The repair is an address, not a consent — a different team from the one
+  // the line above sends you to.
+  "no reachable address for any consented recipient",
 ];
 
 /**

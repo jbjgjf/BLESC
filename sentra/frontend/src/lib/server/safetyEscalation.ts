@@ -536,11 +536,20 @@ export async function deliverEscalation(
       // deployment does not burn through MAX_ATTEMPTS while idle.
       attempts: status === "pending" ? escalation.attempts : escalation.attempts + 1,
       last_attempt_at: new Date().toISOString(),
+      // Three reasons, three strings. An operator reading this column is
+      // reading it to find out what to repair, and "no recipient with active
+      // oversight consent" sends them to check consent when what is actually
+      // missing is an address — a different team, a different fix, and a
+      // crisis sitting in the queue while they look in the wrong place.
       last_error:
         status === "delivered"
           ? null
           : deliveries.find((d) => d.error)?.error ??
-            (noChannel ? "no delivery channel configured" : "no recipient with active oversight consent"),
+            (noChannel
+              ? "no delivery channel configured"
+              : noReachableAddress
+                ? "no reachable address for any consented recipient"
+                : "no recipient with active oversight consent"),
       delivered_at: status === "delivered" ? new Date().toISOString() : null,
     })
     .eq("id", escalation.id);

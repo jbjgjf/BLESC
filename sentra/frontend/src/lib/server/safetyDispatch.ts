@@ -9,7 +9,12 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { deliverEscalation, type EscalationRow } from "@/lib/server/safetyEscalation";
+// Relative, with the extension, for the reason `pilotOps.ts` gives: the unit
+// tests load these files directly under node, which does not resolve the `@/`
+// alias for anything that is not a type-only import. This module was lifted
+// out of the route so the loop could be exercised without a Next runtime, and
+// an aliased value import is what kept it from actually being exercised.
+import { deliverEscalation, type EscalationRow } from "./safetyEscalation.ts";
 
 /** How many to attempt per run. Bounded so one bad night cannot time out. */
 export const BATCH = 20;
@@ -44,11 +49,34 @@ export type DispatchResult = {
 export async function dispatchPendingEscalations(
   service: SupabaseClient,
 ): Promise<DispatchResult | { error: string }> {
+  /*
+   * Least-recently-attempted first, and only then oldest-first (#203).
+   *
+   * `detected_at` alone was safe while every queued row was eventually either
+   * delivered or exhausted: `attempts` climbed, and `.lt("attempts", …)` took
+   * the row out of this query. Rows that reach nobody *without attempting
+   * anything* do not climb — deliberately, so an idle misconfiguration does
+   * not burn a retry budget meant for transport failures — and once there are
+   * `BATCH` of them they are permanently the oldest `BATCH` rows in the queue.
+   * Every run would then select the same twenty, attempt nothing, and never
+   * reach a newer crisis whose educator does have an address.
+   *
+   * That could not happen while the only such rows came from `noChannel`,
+   * because then nothing was deliverable anyway and there was nothing to
+   * starve. Recipients with no address (#203) are the case where blocked and
+   * deliverable rows coexist, so the queue has to rotate.
+   *
+   * `last_attempt_at` is stamped on every pass through `deliverEscalation`,
+   * including the passes that send nothing, so this rotates the batch. Nulls
+   * first keeps the ordering the thing it was: a row nobody has looked at yet
+   * — a crisis recorded a minute ago — sorts ahead of anything already tried.
+   */
   const pending = await service
     .from("safety_escalations")
     .select("id, owner_user_id, participant_id, risk_level, reasons, surface, detected_at, status, attempts")
     .in("status", ["pending", "failed"])
     .lt("attempts", MAX_ATTEMPTS)
+    .order("last_attempt_at", { ascending: true, nullsFirst: true })
     .order("detected_at", { ascending: true })
     .limit(BATCH);
 

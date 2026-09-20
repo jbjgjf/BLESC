@@ -84,3 +84,14 @@ jobs:
           if [ "$(python3 -c "import json;print(json.load(open('${response}')).get('stuck',0))")" != "0" ]; then
             echo "::warning::Some escalations have exhausted their retries and nobody was told. Check the alert channel configuration."
           fi
+
+          # `pending` counts rows this run reached nobody for *without
+          # attempting anything* — no channel configured, or consent held by
+          # educators with no address (#203). They never reach `stuck`, because
+          # `stuck` counts exhausted attempts and these deliberately do not
+          # consume one. Without this line a queue of undelivered crises reports
+          # `stuck: 0` forever, which is the assumed-away gap this workflow's
+          # own header says it exists to prevent.
+          if [ "$(python3 -c "import json;print(json.load(open('${response}')).get('pending',0))")" != "0" ]; then
+            echo "::warning::Some escalations reached nobody and stayed queued. Check SAFETY_ALERT_WEBHOOK_URL / RESEND_API_KEY, and that the educators on the roster have an email address."
+          fi
