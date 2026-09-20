@@ -21,6 +21,32 @@ npm run dev
 - デプロイ先でデモを見せたいときだけ `NEXT_PUBLIC_DEMO_MODE=1` を設定します。
 - 1つのタブだけデモにしたいときは URL に `?demo=1`、戻すときは `?demo=0`。
 
+## もうひとつのデモ: `/demo-view`
+
+外に見せられる画面は2つあります。見た目が近いので、**どちらを出しているのかを
+言えるようにしてから**出してください（#198）。
+
+| | `/demo` | `/demo-view` |
+| :--- | :--- | :--- |
+| 実体 | このアプリのデモモード | `chat-ui-redesign` を静的に書き出したもの |
+| 中身 | `main` の画面。この文書の5分の導線が通る | 書き出した時点の chat-ui-redesign の画面 |
+| 更新 | main を直せば直る | `scripts/build-demo-view.sh` で作り直して置き換える |
+| 置き場所 | アプリのルート | `public/demo-view/`（1035ファイル・12MB のビルド成果物） |
+| デモモード | `?demo=1` / `NEXT_PUBLIC_DEMO_MODE=1` で切り替わる | 常に有効。焼き込まれていて切り替えられない |
+| パイロット | `NEXT_PUBLIC_PILOT_MODE=1` で無効になる | 同じ設定で 404 になる（#193） |
+| 検索エンジン | 通常の扱い | 全ページ `noindex, nofollow` |
+
+`/demo-view` について言えないこと:
+
+- **いつの画面かは、見ただけでは分かりません。** `public/demo-view/BUILD_INFO.json`
+  の `source_commit` がその答えです。main の画面とは別物で、main を直しても
+  `/demo-view` は変わりません。
+- **作り直せるのはソースブランチの上だけです。** 静的な書き出しは
+  `chat-ui-redesign` の `next.config.ts` にしかない分岐に依存します。main で
+  `scripts/build-demo-view.sh` を実行すると、その旨を告げて終了します（#194）。
+- 上の「このデモで見えないこと」は `/demo-view` にもそのまま当てはまります。
+  API を含まないぶん、むしろ動く範囲は狭くなります。
+
 ## 5分の導線
 
 `/demo` に同じものが画面上に出ます。読み上げ用に、ここでは意図も併記します。
@@ -91,6 +117,8 @@ python -m pytest tests -q
 - [ ] 教員側の画面に、根拠のない観測が出ていない
 - [ ] 教員側の画面に、リスクの帯（3段階の分類）が復活していない
 - [ ] スクリーンショットに実在しそうな個人情報が写っていない
+- [ ] `/demo-view` を見せるなら、`public/demo-view/BUILD_INFO.json` の
+      `source_commit` を確認し、いつの画面かを言える状態にする
 - [ ] 安全に関する導線（`/chat` の危機表現、`/educator/alerts` の手順）が
       モデル接続なしで動く
 - [ ] 日本語として不自然な箇所がない（`docs/localization/style_guide.md`）

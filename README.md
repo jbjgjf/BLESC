@@ -46,6 +46,8 @@ npm run dev
 
 Open [http://localhost:3000/demo](http://localhost:3000/demo). It uses fixed data and does not prove that login, diary persistence, AI responses, or research data collection work. See the [demo and release gate](sentra/docs/demo_and_release_gate.md) before presenting it.
 
+There is a second demo surface, `/demo-view`, which is a static export of the `chat-ui-redesign` branch checked into `sentra/frontend/public/demo-view`. It is not this app and does not change when `main` does — the commit it was built from is recorded in `public/demo-view/BUILD_INFO.json`. The [demo and release gate](sentra/docs/demo_and_release_gate.md) sets out which of the two to present and what neither of them shows.
+
 ### Development with real data
 
 Use separate Supabase and OpenAI projects for development or evaluation. Do not use real participant data in the demo environment.
