@@ -48,9 +48,32 @@ jobs:
           # Skip rather than fail when the deployment has not been wired up yet.
           # A scheduled job that goes red every five minutes teaches everyone to
           # ignore this workflow, which is the opposite of what it is for.
+          #
+          # But a skip that only echoes is a skip nobody sees: the run is green,
+          # the list of runs is green, and the sentence explaining that crisis
+          # notifications are not being retried is one click down inside each of
+          # 288 identical green runs a day. So it is also written as an
+          # annotation and to the run summary, which are what the Actions page
+          # actually shows.
           if [ -z "${BASE_URL}" ] || [ -z "${TOKEN}" ]; then
-            echo "PILOT_BASE_URL or SAFETY_DISPATCH_TOKEN is not set; nothing to call."
-            echo "Crisis-notification retries are NOT running until both secrets exist."
+            # `if`, not `[ … ] && …`: under `set -e` a false test at the head of
+            # an AND-list is a non-zero command, and the job this block exists
+            # to keep green would go red on the branch where only one secret is
+            # missing.
+            missing=""
+            if [ -z "${BASE_URL}" ]; then missing="PILOT_BASE_URL"; fi
+            if [ -z "${TOKEN}" ]; then missing="${missing:+${missing}, }SAFETY_DISPATCH_TOKEN"; fi
+
+            echo "::warning title=Crisis-notification retries are not running::Repository secret(s) missing: ${missing}. Escalations whose first delivery failed stay undelivered."
+            {
+              echo "### 危機通知の再送は走っていません"
+              echo
+              echo "未設定の repository secret: \`${missing}\`"
+              echo
+              echo "初回送信に失敗した escalation は、誰にも届かないまま残ります。"
+              echo "設定手順と確認方法: \`docs/pilot/infrastructure-runbook.md\` §3.4 /"
+              echo "\`node scripts/pilot/check-ops-config.mjs --new-secrets\`"
+            } >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
 

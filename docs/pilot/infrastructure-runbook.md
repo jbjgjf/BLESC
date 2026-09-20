@@ -86,7 +86,35 @@
 | `RESEARCH_RUN_ROOT` | 研究runの成果物置き場 |
 | `USE_MOCK_LLM` | 収集専用モードの検証時は `true` |
 
-### 3.4 秘密値の扱い
+### 3.4 定期実行と危機通知（#194）
+
+**この4件は全て「未設定なら黙って動かない」。** エラーにならず、画面にも出ず、logに1行出るだけで、
+「purgeすべき行が無かった日」と区別がつかない。2026-09-18の監査が4件を未確認のまま残したのはそのためである。
+
+| 置き場所 | 名前 | 無いとどうなるか |
+| --- | --- | --- |
+| Vercel | `CRON_SECRET` | Vercel cron が全て403。purge も日次の再送backstopも走らない |
+| Vercel | `SAFETY_DISPATCH_TOKEN` | 5分ごとの再送が403。初回送信に失敗した危機通知が誰にも届かない |
+| Vercel | `SAFETY_ALERT_WEBHOOK_URL` または `RESEND_API_KEY` + `SAFETY_ALERT_EMAIL_FROM` | 危機通知の**宛先が無い**。記録だけ残り、誰にも届かない |
+| Vercel | `SAFETY_RECIPIENT_HASH_KEY` | 通知logの recipient hash が null（通知自体は届く）。base64で32バイト以上 |
+| Vercel | `NEXT_PUBLIC_PILOT_MODE=1` | 専用デプロイで `/demo-view` とデモ上書きが生きたまま（#193）。**ビルド時に焼き込まれる** |
+| GitHub secrets | `PILOT_BASE_URL` | 5分ごとの再送workflowがskip（redにはせず、warningとrun summaryに出す） |
+| GitHub secrets | `SAFETY_DISPATCH_TOKEN` | 同上。**Vercel側と同じ値**でなければ403 |
+
+`NEXT_PUBLIC_PILOT_MODE` だけ性質が違う。Next.js がビルド時に bundle へ埋め込むので、
+**後から変数を足しても再デプロイするまで効かない。** 変数は `1` なのに `/demo-view` は生きている、
+という状態が普通に起こる。だから §5.5 では変数ではなく配信物（404であること）を見る。
+
+値の生成と投入手順:
+
+```bash
+node scripts/pilot/check-ops-config.mjs --new-secrets
+```
+
+出力にはこの4件の値が含まれる。**端末の外へ出さない**（§3.5）。`SAFETY_DISPATCH_TOKEN` が
+VercelとGitHubの2箇所に出るのは誤記ではなく、検証する側と提示する側で同じ値が要るためである。
+
+### 3.5 秘密値の扱い
 
 - GitHubのIssue・PR・commit・ログ・エラーレポートに値を書かない。
 - `.env.local` をコミットしない（`.gitignore` 済み）。
@@ -151,6 +179,34 @@ client bundleにservice-role keyの実値が含まれていないことを、**�
 
 `sentra/eval` の browser driver（playwright）で、招待→登録→説明→assent→（未成年なら保護者確認）→提出→撤回 を通す。preview保護は `x-vercel-protection-bypass` で越える（`sentra/eval/src/browser.ts` が対応済み）。
 
+### 5.5 設定と定期実行の確認（#194）
+
+```bash
+PILOT_BASE_URL=https://blesc-pilot.vercel.app CRON_SECRET=... \
+  node scripts/pilot/check-ops-config.mjs
+```
+
+3方向から見る。**申告と結果が食い違ったときは結果を信じる。**
+
+| 見るもの | 何の証拠になるか |
+| --- | --- |
+| `GET /api/pilot/admin/ops` に到達できる | `CRON_SECRET` がこのdeploymentの値と一致している（＝cronが403にならない） |
+| `config.checks` | Vercel側の各変数の有無と、鍵の形（base64・32バイト） |
+| `observed.safety_dispatch.stale` | 未送信の危機通知が30分以上滞留していないか。trueなら**再送が走っていない** |
+| `observed.retention_purge.overdue` | 保持期限を過ぎた本文が残っていないか。0以外なら**purgeが走っていない** |
+| `/demo-view` が404 | `NEXT_PUBLIC_PILOT_MODE` が**このビルドに**効いている |
+| `gh secret list` | GitHub側2件の有無（値は取得できない） |
+
+終了コードは 0=blocking無し / 1=blockingあり / 2=確認できなかった。
+**2 を 0 として記録しない。** 「聞けなかった」は「問題なし」ではない。
+
+`observed` の2つは設定の有無より強い証拠である。`CRON_SECRET` があっても
+`overdue` が0でなければ、値が違うか、`vercel.json` を読んでいないprojectか、
+manifestを取り込んでいないdeploymentである。設定確認だけならこれを健全と呼んでしまう。
+
+`ops` は運営者（`PILOT_OPERATOR_USER_IDS`）のセッション、または `CRON_SECRET` のbearerで開く。
+後者は外形監視から叩くためで、`ready: false` はそのまま当番への通知条件にしてよい。
+
 ## 6. 監視とアラート
 
 | 見るもの | 閾値 | 通知先 |
@@ -164,7 +220,9 @@ client bundleにservice-role keyの実値が含まれていないことを、**�
 
 `DECISION REQUIRED`: 通知の手段（メール／Slack／その他）と当番。**決定者: 運用責任者。**
 
-`purge_expired_raw_text()` の定期実行は `DECISION REQUIRED`（Supabase cron / 外部scheduler）。**決定者: データ管理責任者。** 保持期限を設定しても、消す処理が動いていなければ保持期限は無い。
+`purge_expired_raw_text()` の定期実行は `sentra/frontend/vercel.json` の cron（`/api/cron/retention-purge`、毎日03:17 UTC）が担う。**ただし `CRON_SECRET` が無ければ403で、走らないことは画面にも出ない。** 保持期限を設定しても、消す処理が動いていなければ保持期限は無い。走っている証拠は §5.5 の `observed.retention_purge.overdue`（0であること）であり、cronの設定が存在することではない。
+
+危機通知の再送は `.github/workflows/safety-dispatch.yml`（5分ごと）＋ Vercel cron の日次backstop。GitHubのschedulerはbest-effortなので、5分は目標であって保証ではない。滞留は §5.5 の `observed.safety_dispatch.stale` で見る。
 
 ## 7. 鍵のローテーション
 
@@ -196,6 +254,6 @@ client bundleにservice-role keyの実値が含まれていないことを、**�
 | # | 事項 | 決定者 |
 | --- | --- | --- |
 | E1 | 通知の手段と当番 | 運用責任者 |
-| E2 | `purge_expired_raw_text()` の定期実行方法 | データ管理責任者 |
+| E2 | ~~`purge_expired_raw_text()` の定期実行方法~~ → Vercel cron で実装済み（§6）。残るのは `CRON_SECRET` の投入と、初回実行翌朝の `overdue: 0` の確認 | データ管理責任者 |
 | E3 | Supabase projectのregionと課金主体 | 学校責任者・研究責任者 |
 | E4 | 保持期間の実値（protocol D5と同じ） | データ管理責任者 |
