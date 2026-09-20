@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select, func
 
 from .analytics.graph_features import build_graph_summary, build_temporal_graph_diff, summarize_temporal_diff
+from .clock import utcnow
 from .database import create_db_and_tables, get_session
 from .seed import seed_data
 from .ontology.repair import get_fallback_extraction
@@ -297,7 +298,7 @@ async def transcribe_audio(file: UploadFile = File(...)):
 
 
 def _clear_expired_raw_text(session: Session) -> None:
-    now = datetime.utcnow()
+    now = utcnow()
     query = select(Entry).where(Entry.raw_text.is_not(None), Entry.expires_at.is_not(None), Entry.expires_at <= now)
     expired = session.exec(query).all()
     for entry in expired:

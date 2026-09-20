@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
+from ..clock import utcnow
+
 MEMORY_OBJECT_VERSION = "conversation-memory-object-v1"
 
 # ── thresholds ───────────────────────────────────────────────────────────────
@@ -95,7 +97,7 @@ class PriorMemoryObject:
     topic_tokens: Set[str] = field(default_factory=set)
     embedding: List[float] = field(default_factory=list)
     dominant_tone: str = "neutral"
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utcnow)
 
 
 # ── text helpers ──────────────────────────────────────────────────────────────

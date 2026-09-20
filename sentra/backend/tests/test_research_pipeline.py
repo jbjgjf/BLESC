@@ -7,6 +7,7 @@ os.environ["USE_MOCK_LLM"] = "true"
 os.environ["DATABASE_URL"] = "sqlite:///./test_research_pipeline.db"
 os.environ["SENTRA_EXPORT_DIR"] = "./test_exports"
 
+from app.clock import utcnow
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
@@ -380,7 +381,7 @@ def _seed_multiday_history(user_id: str):
     ]
     with Session(engine) as session:
         for days_ago, protective, score in plan:
-            day_dt = datetime.utcnow() - timedelta(days=days_ago)
+            day_dt = utcnow() - timedelta(days=days_ago)
             entry = Entry(user_id=user_id, created_at=day_dt, observation_type="daily")
             session.add(entry)
             session.commit()
