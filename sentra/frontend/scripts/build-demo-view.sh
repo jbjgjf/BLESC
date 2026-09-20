@@ -21,6 +21,16 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+# 何を元にしたかを成果物に書き残す（BUILD_INFO.json）。書き出しの id もこの
+# コミットから決まるので、同じコミットから同じ手順で作れば同じものになる。
+SOURCE_REF="$(git -C "$HERE" rev-parse --abbrev-ref HEAD)"
+SOURCE_COMMIT="$(git -C "$HERE" rev-parse HEAD)"
+if [ -n "$(git -C "$HERE" status --porcelain -- "$HERE")" ]; then
+  SOURCE_COMMIT="$SOURCE_COMMIT-dirty"
+  echo "警告: 作業ツリーに未コミットの変更があります。BUILD_INFO には -dirty と記録します。" >&2
+fi
+BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 # .next と .env* は持ち込まない。node_modules は APFS の複製で手早く写す。
 find "$HERE" -mindepth 1 -maxdepth 1 ! -name .next ! -name out ! -name '.env*' -exec cp -cR {} "$WORK/" \; 2>/dev/null \
   || find "$HERE" -mindepth 1 -maxdepth 1 ! -name .next ! -name out ! -name '.env*' -exec cp -R {} "$WORK/" \;
@@ -29,6 +39,7 @@ rm -rf "$WORK/src/app/api"
 (
   cd "$WORK"
   DEMO_VIEW_EXPORT=1 \
+  DEMO_VIEW_SOURCE_COMMIT="$SOURCE_COMMIT" \
   NEXT_PUBLIC_DEMO_MODE=1 \
   NEXT_PUBLIC_SUPABASE_URL=https://demo.invalid \
   NEXT_PUBLIC_SUPABASE_ANON_KEY=demo-view \
@@ -72,4 +83,16 @@ PY
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 cp -R "$WORK/out/." "$OUT_DIR/"
+
+# 出所の記録。これが無いと、置いてあるファイルがどのコミットから出たものか
+# コミットメッセージの散文にしか残らない（jbjgjf/BLESC#194）。
+cat > "$OUT_DIR/BUILD_INFO.json" <<JSON
+{
+  "source_ref": "$SOURCE_REF",
+  "source_commit": "$SOURCE_COMMIT",
+  "built_at": "$BUILT_AT",
+  "command": "sentra/frontend/scripts/build-demo-view.sh <出力先>",
+  "note": "source_commit を checkout して同じコマンドを実行すると、BUILD_INFO.json の built_at 以外は同じ内容になる。"
+}
+JSON
 echo "demo view written to $OUT_DIR ($(find "$OUT_DIR" -name '*.html' | wc -l | tr -d ' ') pages, $(du -sh "$OUT_DIR" | cut -f1))"
