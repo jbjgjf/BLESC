@@ -27,6 +27,14 @@ on:
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
+# Nothing here touches the repository: no checkout, one `curl` to a deployment.
+# So the job is given no repository access at all (#208). It matters more here
+# than in the other workflow because this one runs every five minutes with
+# `PILOT_BASE_URL` and `SAFETY_DISPATCH_TOKEN` in its environment — the pair
+# that can drive the crisis dispatcher — and a job holding secrets should not
+# also be holding permissions it has no use for.
+permissions: {}
+
 # A queued run is worthless once a newer one exists: they do the same work
 # against the same queue.
 concurrency:
