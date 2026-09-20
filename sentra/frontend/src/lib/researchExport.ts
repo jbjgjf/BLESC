@@ -72,7 +72,7 @@ export type ExportConsentState = {
   /**
    * The separate opt-in for using this data to train a model.
    *
-   * Stored in `public.consent_records.future_fine_tuning`; the data dictionary
+   * Stored in `public.consent_records.model_training_use`; the data dictionary
    * calls the same thing `model_training_use`, which is the name the consent
    * screen's own wording supports — the student agrees to
    * 「将来のモデルの学習に使うこと」, which names no particular technique. The

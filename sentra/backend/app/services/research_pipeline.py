@@ -315,7 +315,7 @@ def _consent_snapshot(consent: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "app_use": bool(consent.get("app_use", False)),
         "research_analysis": bool(consent.get("research_analysis", False)),
         "anonymized_export": bool(consent.get("anonymized_export", False)),
-        "future_fine_tuning": bool(consent.get("future_fine_tuning", False)),
+        "model_training_use": bool(consent.get("model_training_use", False)),
         "consent_version": str(consent.get("consent_version", DEFAULT_CONSENT_VERSION)),
     }
 
@@ -333,7 +333,7 @@ def record_consent(
         app_use=snapshot["app_use"],
         research_analysis=snapshot["research_analysis"],
         anonymized_export=snapshot["anonymized_export"],
-        future_fine_tuning=snapshot["future_fine_tuning"],
+        model_training_use=snapshot["model_training_use"],
         consent_version=snapshot["consent_version"],
     )
     session.add(record)
@@ -1129,13 +1129,13 @@ def get_personalization_profile(
         or os.getenv("SENTRA_PERSONAL_EXTRACTION_MODEL")
     )
     reviewed_count = status_counts.get("reviewed", 0)
-    consent_allows = bool(latest_consent.future_fine_tuning) if latest_consent else False
+    consent_allows = bool(latest_consent.model_training_use) if latest_consent else False
     return {
         "personalization_version": PERSONALIZATION_VERSION,
         "reviewed_examples": reviewed_count,
         "minimum_reviewed_examples": MIN_REVIEWED_EXAMPLES_FOR_PERSONALIZATION,
         "status_counts": status_counts,
-        "consent_allows_future_fine_tuning": consent_allows,
+        "consent_allows_model_training": consent_allows,
         "ready_for_personal_adapter": consent_allows and reviewed_count >= MIN_REVIEWED_EXAMPLES_FOR_PERSONALIZATION,
         "adapter_model": configured_model,
         "latest_fine_tuning_run_id": latest_fine_tune.id if latest_fine_tune else None,
@@ -2554,7 +2554,7 @@ def create_fine_tuning_dataset_export(
         export_format="fine_tuning_jsonl",
         status="running",
         consent_filter_json={
-            "requires_future_fine_tuning": True,
+            "requires_model_training_use": True,
             "consent_record_id": latest_consent.id if latest_consent else None,
         },
     )
@@ -2562,7 +2562,7 @@ def create_fine_tuning_dataset_export(
     session.commit()
     session.refresh(job)
 
-    if not latest_consent or not latest_consent.future_fine_tuning:
+    if not latest_consent or not latest_consent.model_training_use:
         job.status = "blocked"
         job.error_message = "Consent scope does not allow future fine-tuning dataset inclusion."
         session.add(job)

@@ -40,7 +40,7 @@ export type GuardianContext = {
 const OPTIONAL_LABELS: Record<string, string> = {
   raw_text_retention: "日記の本文を、暗号化したうえで一定期間保管する",
   anonymized_export: "個人が特定できない形にしたデータを、研究チーム外と共有する",
-  future_fine_tuning: "将来のモデル学習に利用する",
+  model_training_use: "AIモデルの学習に利用する",
 };
 
 export function GuardianConfirm({

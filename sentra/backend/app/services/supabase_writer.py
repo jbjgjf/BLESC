@@ -451,7 +451,7 @@ _NO_CONSENT: Dict[str, Any] = {
     "research_analysis": False,
     "anonymized_export": False,
     "raw_text_retention": False,
-    "future_fine_tuning": False,
+    "model_training_use": False,
     "minor_assent": False,
     "guardian_consent": False,
     "consent_version": "research-consent-v2",
@@ -462,7 +462,7 @@ _NO_CONSENT: Dict[str, Any] = {
 }
 
 _CONSENT_COLUMNS = (
-    "app_use, research_analysis, anonymized_export, raw_text_retention, future_fine_tuning, "
+    "app_use, research_analysis, anonymized_export, raw_text_retention, model_training_use, "
     "minor_assent, guardian_consent, consent_version, document_version, status, granted_at, "
     "revoked_at, created_at"
 )
@@ -478,7 +478,7 @@ def _normalize_consent(record: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "research_analysis",
         "anonymized_export",
         "raw_text_retention",
-        "future_fine_tuning",
+        "model_training_use",
         "minor_assent",
         "guardian_consent",
     ):

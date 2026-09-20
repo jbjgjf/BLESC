@@ -471,7 +471,7 @@ describe("modelTrainingUseAllowed", () => {
     research_analysis: true,
     minor_assent: true,
     guardian_consent: true,
-    future_fine_tuning: true,
+    model_training_use: true,
     status: "active",
     ...over,
   });
@@ -479,7 +479,7 @@ describe("modelTrainingUseAllowed", () => {
   it("needs the extra opt-in on top of research use", () => {
     assert.equal(modelTrainingUseAllowed(normalizeConsent(record())), true);
     assert.equal(
-      modelTrainingUseAllowed(normalizeConsent(record({ future_fine_tuning: false }))),
+      modelTrainingUseAllowed(normalizeConsent(record({ model_training_use: false }))),
       false,
     );
   });

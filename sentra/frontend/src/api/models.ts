@@ -410,7 +410,7 @@ export interface ConsentSnapshot {
   app_use: boolean;
   research_analysis: boolean;
   anonymized_export: boolean;
-  future_fine_tuning: boolean;
+  model_training_use: boolean;
   consent_version: string;
 }
 

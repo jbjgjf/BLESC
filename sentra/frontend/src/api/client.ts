@@ -598,7 +598,7 @@ export class ApiClient {
       const { data, error } = await supabase
         .from("consent_records")
         .select(
-          "app_use, research_analysis, anonymized_export, raw_text_retention, future_fine_tuning, minor_assent, guardian_consent, consent_version, document_version, status, granted_at, revoked_at, created_at",
+          "app_use, research_analysis, anonymized_export, raw_text_retention, model_training_use, minor_assent, guardian_consent, consent_version, document_version, status, granted_at, revoked_at, created_at",
         )
         .eq("owner_user_id", ownerUserId)
         .eq("participant_id", participant.id)
@@ -630,7 +630,7 @@ export class ApiClient {
       research_analysis: boolean;
       anonymized_export: boolean;
       raw_text_retention: boolean;
-      future_fine_tuning: boolean;
+      model_training_use: boolean;
       minor_assent: boolean;
       document_version?: string;
     },

@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
     service
       .from("consent_records")
       .select(
-        "participant_id, app_use, research_analysis, anonymized_export, raw_text_retention, future_fine_tuning, minor_assent, guardian_consent, consent_version, document_version, status, granted_at, revoked_at, created_at",
+        "participant_id, app_use, research_analysis, anonymized_export, raw_text_retention, model_training_use, minor_assent, guardian_consent, consent_version, document_version, status, granted_at, revoked_at, created_at",
       )
       .in("participant_id", participantIds)
       .order("granted_at", { ascending: false }),

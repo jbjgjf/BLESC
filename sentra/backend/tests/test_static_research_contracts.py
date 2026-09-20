@@ -350,7 +350,7 @@ def test_frontend_uses_non_diagnostic_reflection_signal_language():
 def test_fine_tuning_export_is_consent_and_review_gated():
     pipeline = _read(BACKEND / "app/services/research_pipeline.py")
 
-    assert "future_fine_tuning" in pipeline
+    assert "model_training_use" in pipeline
     assert 'review_status == "reviewed"' in pipeline
     assert "Consent scope does not allow future fine-tuning dataset inclusion." in pipeline
     assert "client.fine_tuning.jobs.create" in pipeline

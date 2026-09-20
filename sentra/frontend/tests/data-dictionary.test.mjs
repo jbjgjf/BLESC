@@ -162,9 +162,23 @@ describe("the training-use flag", () => {
     assert.match(exportSource, /model_training_use: consent\.model_training_use === true/);
   });
 
-  it("says out loud that the column is called something else", () => {
-    assert.equal(entry.code_ref, "public.consent_records.future_fine_tuning -> ResearchRow.model_training_use");
-    assert.equal(entry.column_name_differs, true);
+  it("is called the same thing everywhere", () => {
+    /*
+     * This assertion used to be its opposite. The dictionary recorded that the
+     * column was `future_fine_tuning` while the export field was
+     * `model_training_use`, and marked the mismatch DECISION REQUIRED — a
+     * consent item whose storage and whose dataset disagree about its name is
+     * one an auditor has to be told about in prose.
+     *
+     * 20260920000000 renamed the column, so the decision is made and the
+     * divergence is gone. Kept as a test rather than deleted: the next person
+     * to add a consent field should find out here if they let the two drift
+     * again.
+     */
+    assert.equal(entry.code_ref, "public.consent_records.model_training_use -> ResearchRow.model_training_use");
+    assert.equal(entry.column_name_differs, false);
+    assert.match(read("../../supabase/migrations/20260920000000_rename_future_fine_tuning.sql"),
+      /rename column future_fine_tuning to model_training_use/);
   });
 
   it("no longer claims nobody's data can be used for training", () => {

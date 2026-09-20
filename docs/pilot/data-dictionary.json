@@ -252,9 +252,9 @@
       "type": "boolean",
       "default": false,
       "implementation": "implemented",
-      "description": "二次利用（将来のモデル学習）への別opt-in。本文提出への同意とは別に取る。**DBの列名は future_fine_tuning で、この辞書とexportの名前と一致していない。**同意画面が生徒に見せている文言は「将来のモデルの学習に使うことに同意します」であり、fine-tuning という特定の手法には言及していない。したがって同意の範囲を正しく表すのは model_training_use の側で、列名は同意より狭い。名寄せは DECISION REQUIRED。exportでは行ごとに載る（撤回・未成年同意欠如でも false）。",
-      "code_ref": "public.consent_records.future_fine_tuning -> ResearchRow.model_training_use",
-      "column_name_differs": true,
+      "description": "二次利用（AIモデルの学習）への別opt-in。本研究への参加・本文提出とは別に取り、既定はオフ。同意しなくても研究には通常どおり参加できる（consent-pack.md 第15条）。2026-09-20に列名を future_fine_tuning から model_training_use へ改名し、DB・export・辞書・画面が一致した。旧名は「future」が『まだ使っていない』という実装当時の事実を永続的な文言として残してしまい、「fine_tuning」は第15条が問う『モデルの学習』より狭い一手法しか指していなかった。exportでは行ごとに載る（撤回・未成年同意欠如でも false）。",
+      "code_ref": "public.consent_records.model_training_use -> ResearchRow.model_training_use",
+      "column_name_differs": false,
       "in_export": true
     },
     "document_version": {

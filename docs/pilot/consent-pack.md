@@ -5,7 +5,7 @@
 | 文書版名 | `research-consent-doc-v2` |
 | 文書の種類 | 説明文書（Information Sheet）・同意文書（Consent / Assent Form）・個人情報の取扱いに関する法定告知・手続様式の一体版 |
 | 状態 | **改訂案。運用承認前。参加者へ配布しない。** |
-| 現行実装の版 | `public.consent_records.document_version` は v1（`sentra/frontend/src/lib/consent.ts` の `CONSENT_DOCUMENT_VERSION`）。画面・DB・承認記録をv2へ揃えるまで施行しない |
+| 現行実装の版 | `public.consent_records.document_version` は v1。版は `sentra/frontend/src/lib/consentDocument.ts` に一元化済みで、`NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED` を設定するまで v1 を記録する。**附則2の空欄（3か所）が埋まるまで施行しない** |
 | 対応するprotocol | [protocol.md](protocol.md)（`pilot-protocol-v2`） |
 | 方針決定記録 | [decisions-2026-09-19.md](decisions-2026-09-19.md) |
 | 承認記録 | [approvals.md](approvals.md) |
@@ -253,7 +253,7 @@
 1. 本文その他のデータを、将来のモデルの学習に用いることは、参加とは**別の任意**とする。
 2. **既定は「使わない」である。** 選ばなくても本研究には通常どおり参加できる。
 3. いつでも取り消せる。取り消し後は学習に用いない。ただし、取り消し前に学習が完了したモデルから、当該データの寄与を取り除くことはできない。**この点を、取り消せる範囲として正確に述べる。**
-4. 本項に対応するデータベース列は `consent_records.future_fine_tuning` である。本版時点で、当該同意を学習パイプラインが参照する実装は**未完成**であり、実装と検証が済むまで本項の同意を取得しない。
+4. 本項に対応するデータベース列は `consent_records.model_training_use` である。2026-09-20に `future_fine_tuning` から改名した。旧名は「future」が『まだ使っていない』という当時の実装状況を文言として固定してしまい、「fine_tuning」は本条が問う「モデルの学習」より狭い一手法しか指していなかった。**本版時点で、当該同意を学習パイプラインが参照する実装は未完成**であり、実装と検証が済むまで本項の同意を取得しない。
 
 ### 第16条（結果の公表と共有）
 
@@ -460,7 +460,7 @@ A群に同意しない場合、本研究には参加できない。アプリの�
 | --- | --- | --- | --- | --- |
 | B1 | 書いた文章そのものを保存すること | `consent_records.raw_text_retention` | オフ | 参加できる。本文は保存されず、第10条の目視確認も行えない |
 | B2 | 個人を識別できない形にしたデータを研究成果として外部に出すこと | `consent_records.anonymized_export` | オフ | 参加できる。当該参加者は外部公表用の集計から除外される |
-| B3 | 将来のモデルの学習に使うこと | `consent_records.future_fine_tuning` | オフ | 参加できる。学習に用いない |
+| B3 | AIモデルの学習に使うこと | `consent_records.model_training_use` | オフ | 参加できる。学習に用いない |
 
 ### 5.2 「ボタンは1つ」の意味と、その適法性の根拠
 
@@ -506,7 +506,7 @@ A群に同意しない場合、本研究には参加できない。アプリの�
 | 全文の表示 | 第1部〜第7部を全文表示 | 要約的な説明 | 本文書を画面へ反映する |
 | B3（学習利用） | 同意を参照する実装が必要 | 列は存在するが学習パイプラインの参照は未実装 | 実装・検証まで**B3のスイッチを表示しない** |
 | 到達ログ | 末尾到達の時刻を記録 | 未確認 | 実装する |
-| 版名 | `research-consent-doc-v2` | `legalDocuments.ts` の `RESEARCH_DRAFT_VERSION` は `research-consent-doc-v2-draft` | 施行時にいずれかへ統一する。`-draft` のまま取得した同意を、本版の同意として扱わない |
+| 版名 | `research-consent-doc-v2` | 2026-09-20に `sentra/frontend/src/lib/consentDocument.ts` へ一元化。記録される版と `/legal` の表示が同じ切り替えで動く | **解消済み。** 施行は `NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED=research-consent-doc-v2` の設定による。未設定の間は v1 を記録し、表示も `-draft` のまま。本附則2の空欄が残る間に施行しないこと（`tests/consent-document.test.mjs` が空欄の存在を検査する） |
 | アプリ内の説明文 | 本文書を正本とする | `legalDocuments.ts` に別途「研究参加者への説明・本人同意（案）」がある | 二重管理を解消し、本文書から生成するか、参照関係を明記する |
 
 ---
@@ -634,7 +634,7 @@ A群に同意しない場合、本研究には参加できない。アプリの�
 | A群（app_use / research_analysis / minor_assent） | 同意 |
 | B1 raw_text_retention | オン／オフ |
 | B2 anonymized_export | オン／オフ |
-| B3 future_fine_tuning | オン／オフ（実装完了までは表示しない） |
+| B3 model_training_use | オン／オフ（実装完了までは表示しない） |
 | actor | 本人 |
 
 ### 様式2 保護者確認書（別経路・別トークン）

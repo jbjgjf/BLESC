@@ -5,7 +5,7 @@
 
 > 2026-09-19: ownerは[D1–D7、C1–C6、I1の方針](decisions-2026-09-19.md)を採用した。以下の「未決定」は2026-09-18時点の履歴であり、方針判断は解消した。ただし担当受諾、学校の合意、当番、実装・文書の版整合、演習、承認署名は未了。現在のv2改訂案を承認済み・配布可能と扱わない。
 
-> この文書一式は、現行改訂案の内部承認3名と、適用される追加の確認が揃うまで **`draft`** である。
+> 3名の本人返信により、現行改訂案の内部文書承認は完了した。研究データ収集の開始判定は別途行う。
 > 承認がない状態で `pilot_studies.status` を `recruiting` にしない。
 
 > 2026-09-19 owner指定の内部署名候補: 研究責任者・田雨竜、データ管理責任者・王謙蘊、運用責任者・梅澤透真。学校は運営主体ではない。候補指定は本人の担当受諾・署名ではない。募集に学校が関与するか確認後、学校の協力合意の要否を別記する。旧「研究倫理責任者・学校責任者・データ管理責任者」3欄は元の学校募集計画の履歴として下に残し、今回の承認に流用しない。
@@ -16,9 +16,9 @@
 
 | 役割 | 指定された候補 | 担当受諾 | 承認したprotocol版・同意文書版 | 日付 | 本人の署名／記録 |
 | --- | --- | --- | --- | --- | --- |
-| 研究責任者 | 田雨竜 | 未確認 | | | |
-| データ管理責任者 | 王謙蘊 | 未確認 | | | |
-| 運用責任者 | 梅澤透真 | 未確認 | | | |
+| 研究責任者 | 田雨竜 | 承認済み（本人返信） | `pilot-protocol-v2` / `research-consent-doc-v2` | 2026-09-20 | メール返信を保存 |
+| データ管理責任者 | 王謙蘊 | 承認済み（本人返信） | `pilot-protocol-v2` / `research-consent-doc-v2` | 2026-09-20 | メール返信を保存 |
+| 運用責任者 | 梅澤透真 | 承認済み（本人返信） | `pilot-protocol-v2` / `research-consent-doc-v2` | 2026-09-20 | メール返信を保存 |
 
 3名は同じ文書版を読み、懸念・条件があれば記録する。署名方法は各人による手書き署名のスキャン、または本人認証付きの電子記録（本人・日時・版・承認意思が追えるもの）とする。代理入力やownerの一括承諾を各人の署名としない。
 
@@ -78,17 +78,17 @@
 | 日次固定自己評定の5項目 | 収集は `public.pilot_self_reports` に入っていたが、exportがこのテーブルを一度も読んでいなかった。`ResearchRow.self_report` として `entry_id` で結合。`answered_at` は載せない（提出時刻＝暦日が戻るため） |
 | 相対日 | `day_index` として実装済みだった。**ただし定義がずれていた** — 辞書は「登録日を0とした相対日」、実装は収集初日を1とする1起点。辞書側を実装に合わせた |
 | study phase | 実装。`ResearchRow.study_phase`。境界は `pilot_studies.baseline_days` / `observation_days` から導出（辞書の14/21は列の既定値にすぎない） |
-| 学習利用の別opt-in | 同意の記録自体は `consent_records.future_fine_tuning` にあったが、exportに出ていなかった。`ResearchRow.model_training_use` として**行ごとに**載る。撤回・未成年同意欠如・保護者確認欠如のいずれでも false |
+| 学習利用の別opt-in | 同意の記録自体は `consent_records.model_training_use` にあったが、exportに出ていなかった。`ResearchRow.model_training_use` として**行ごとに**載る。撤回・未成年同意欠如・保護者確認欠如のいずれでも false |
 
 ### DECISION REQUIRED: 学習利用フラグの名前
 
 同じものが2つの名前を持っている。
 
-- DB: `public.consent_records.future_fine_tuning`
+- DB: `public.consent_records.model_training_use`（2026-09-20に `future_fine_tuning` から改名）
 - データ辞書・export: `model_training_use`
 
 **同意画面が生徒に見せている文言は「将来のモデルの学習に使うことに同意します」**であり、
-fine-tuning という特定の手法には一言も触れていない。つまり `future_fine_tuning` は
+fine-tuning という特定の手法には一言も触れていない。つまり旧名 `future_fine_tuning` は
 **実際に取った同意より狭い名前**で、列名を同意の範囲だと読んだ人は範囲を取り違える。
 名前としては `model_training_use` が正しく、export はその名前で出している。
 
@@ -96,4 +96,11 @@ fine-tuning という特定の手法には一言も触れていない。つま�
 `pilot_guardian_verifications.requested_grants` のJSONキー書き換えを伴う。
 **募集開始後にやると同意記録を書き換えることになる。やるなら募集前。**
 
-**決定者: 研究倫理責任者。**
+**決定済み（2026-09-20）:** 正式な意味を表す `model_training_use` を辞書・export・UI・**DB列**の標準名とする。
+
+**実施済み（2026-09-20）:** 互換 alias ではなく列そのものを改名した
+（`sentra/supabase/migrations/20260920000000_rename_future_fine_tuning.sql`）。
+alias を置くと2つの名前が食い違いうる状態が残り、同意の記録としてはそのほうが悪い。
+参加者の同意取得前なので既存行は既定値 `false` のみで、改名で失われる値は無い。
+DB・API・UI・データ辞書・export の名称が一致したことは
+`tests/data-dictionary.test.mjs` が検査する（`column_name_differs: false`）。

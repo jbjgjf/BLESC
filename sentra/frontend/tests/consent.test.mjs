@@ -19,7 +19,7 @@ const fullyConsented = (overrides = {}) => ({
   research_analysis: true,
   anonymized_export: true,
   raw_text_retention: true,
-  future_fine_tuning: true,
+  model_training_use: true,
   minor_assent: true,
   guardian_consent: true,
   consent_version: CONSENT_VERSION,

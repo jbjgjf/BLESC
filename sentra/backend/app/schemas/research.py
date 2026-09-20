@@ -13,7 +13,7 @@ class ConsentRecord(SQLModel, table=True):
     app_use: bool = True
     research_analysis: bool = True
     anonymized_export: bool = False
-    future_fine_tuning: bool = False
+    model_training_use: bool = False
     consent_version: str = "research-consent-v1"
     source: str = "student_ui"
     created_at: datetime = Field(default_factory=datetime.utcnow)
