@@ -126,9 +126,10 @@
 RESEARCH_EXPORT_USER_IDS=          # データセットを取り出せる auth.users.id
 RESEARCH_IDENTITY_MAP_USER_IDS=    # 仮名を解ける auth.users.id（上とは別の人にする）
 RESEARCH_RAW_TEXT_KEY=             # 32バイト base64。未設定なら原文は保管されない
-RESEARCH_RAW_TEXT_RETENTION_DAYS=  # 既定 180
+RESEARCH_RAW_TEXT_RETENTION_DAYS=  # 既定 90。90 を超える値は 90 に切り詰められる
 PILOT_TIMEZONE=Asia/Tokyo          # 相対日の境界を決める
 ```
 
-`purge_expired_raw_text()` の定期実行は別途割り当てが必要です。
+`purge_expired_raw_text()` は Vercel Cron の `/api/cron/retention-purge` が毎日実行します
+（`sentra/frontend/vercel.json`、`CRON_SECRET` が必要）。
 EXECUTE は `service_role` のみに絞ってあるので、cron はその権限で回してください。

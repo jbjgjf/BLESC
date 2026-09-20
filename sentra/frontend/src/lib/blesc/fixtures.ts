@@ -317,7 +317,7 @@ if (focusIndex >= 0) {
     topThemes: ["relationships", "sleep", "self_worth"],
     urgent: {
       detectedAt: `${addDays(TODAY, -13)}T22:14:00`,
-      detail: "自己否定的な表現が短期間に増加し、強い無力感を示す記述が含まれていた。",
+      detail: "指定された表現を含む記述と、睡眠に関する記述、本人が選択した感情の記録が確認されました。状態の判断ではありません。",
       surface: "diary",
       reasons: [
         "「自分なんて」を含む記述が3日間で4回",
@@ -533,8 +533,7 @@ export const FOLLOW_UPS: FollowUpItem[] = [
     lastMeeting: "2026-08-02",
     daysSince: 5,
     nextMeeting: addDays(TODAY, 5),
-    state: "improving",
-    note: "今週は前回より感情が改善しています。",
+    note: "次回の面談予定が登録されています。",
   },
   {
     studentId: "s-14",
@@ -543,8 +542,7 @@ export const FOLLOW_UPS: FollowUpItem[] = [
     lastMeeting: "2026-07-20",
     daysSince: 18,
     nextMeeting: null,
-    state: "worsening",
-    note: "改善が見られません。追加面談を推奨します。",
+    note: "次回の面談予定が登録されていません。",
   },
   {
     studentId: "s-03",
@@ -553,8 +551,7 @@ export const FOLLOW_UPS: FollowUpItem[] = [
     lastMeeting: "2026-07-29",
     daysSince: 9,
     nextMeeting: addDays(TODAY, 2),
-    state: "unchanged",
-    note: "大きな変化はありません。予定どおり経過を確認してください。",
+    note: "次回の面談予定が登録されています。",
   },
 ];
 

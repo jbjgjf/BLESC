@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "smoke": "tsx src/cli.ts smoke",
     "full": "tsx src/cli.ts full",
     "provision": "tsx src/cli.ts provision",
