@@ -100,7 +100,23 @@ const DELIVERY_FAILURES = [
   // a retry fixes) from "nobody may be told" (a consent fact that it does not).
   "no delivery channel configured",
   "no recipient with active oversight consent",
+  // And in three when #203 found the case between them: consent is held, but
+  // no consented educator has an address the configured channels can reach.
+  // The repair is an address, not a consent — a different team from the one
+  // the line above sends you to.
+  "no reachable address for any consented recipient",
 ];
+
+/**
+ * Why a scheduled job stopped, returned in the 502 body of an `/api/cron/*`
+ * route (#204).
+ *
+ * The only caller is the scheduler, and the only reader is an operator next to
+ * a deployment console. No student or teacher surface reaches these routes:
+ * without the scheduler's bearer token they answer 403 to everything, before
+ * they touch Supabase.
+ */
+const SCHEDULED_JOB_FAILURES = ["purge_expired_raw_text returned no count"];
 
 /** A programming mistake, raised where only a developer can see it. */
 const DEVELOPER_ERRORS = ["useAuth must be used inside AuthProvider"];
@@ -170,6 +186,7 @@ export const ALLOWLIST = [
   ...MODEL_INSTRUCTIONS,
   ...WRITE_FAILURES,
   ...DELIVERY_FAILURES,
+  ...SCHEDULED_JOB_FAILURES,
   ...DEVELOPER_ERRORS,
   ...COLUMN_PROJECTIONS,
   ...OPERATOR_DIAGNOSTICS,

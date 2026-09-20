@@ -178,6 +178,44 @@ describe("what goes over the wire", () => {
     assert.ok(anonymous.length > 0);
     assert.ok(!anonymous.includes("null"));
   });
+
+  it("carries an absolute link when the site URL is configured", async () => {
+    await withEnv({ NEXT_PUBLIC_SITE_URL: "https://pilot.example.jp" }, () => {
+      const configured = notificationText(ESCALATION, "2A-08");
+      assert.ok(configured.includes("https://pilot.example.jp/educator/roster"));
+    });
+  });
+
+  it("drops the trailing slash rather than doubling it", async () => {
+    await withEnv({ NEXT_PUBLIC_SITE_URL: "https://pilot.example.jp/" }, () => {
+      const configured = notificationText(ESCALATION, "2A-08");
+      assert.ok(configured.includes("https://pilot.example.jp/educator/roster"));
+      assert.ok(!configured.includes("//educator/roster"));
+    });
+  });
+
+  it("omits the link entirely when the site URL is unset, rather than sending a bare path", async () => {
+    /*
+     * #202. `consoleUrl()` used to fall back to `""`, so the body carried a
+     * line reading `/educator/roster` — which resolves against nothing in
+     * Slack, in a duty-phone gateway or in a mail client. The send still
+     * succeeded and the row still finalised as `delivered`, so a notification
+     * with no usable call to action looked identical to a working one.
+     */
+    await withEnv({ NEXT_PUBLIC_SITE_URL: undefined }, () => {
+      const unconfigured = notificationText(ESCALATION, "2A-08");
+      for (const line of unconfigured.split("\n")) {
+        assert.ok(
+          line.trim() !== "/educator/roster",
+          "a bare path is not a link; omit the line instead",
+        );
+      }
+      // The instruction that makes the message actionable without a link has
+      // to survive, or omitting the line is just a smaller failure.
+      assert.ok(unconfigured.includes("ログインして確認してください"));
+      assert.ok(unconfigured.includes("緊急対応"));
+    });
+  });
 });
 
 describe("recording", () => {
@@ -243,7 +281,8 @@ describe("delivery", () => {
 
   it("still finalises as no_recipient when a channel exists but nobody may be told", async () => {
     // This one is genuinely terminal: consent is not going to appear because we
-    // asked again.
+    // asked again. Note the empty recipient set — that, and only that, is what
+    // `no_recipient` now means.
     const client = fakeClient({ rpc: { data: [], error: null } });
     const status = await withEnv(
       { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: "k", SAFETY_ALERT_EMAIL_FROM: "a@b.test" },
@@ -251,6 +290,116 @@ describe("delivery", () => {
     );
     assert.equal(await status, "no_recipient");
     assert.equal(client.calls.updates[0].values.status, "no_recipient");
+  });
+
+  it("keeps it queued when consent exists but no recipient has a reachable address", async () => {
+    /*
+     * #203, the same family as #178 and found in the branch next door.
+     *
+     * `safety_escalation_recipients` returns `auth.users.email`, which is
+     * nullable on Supabase — a phone-only account, or an educator invited but
+     * not yet confirmed. With the webhook unset, the delivery loop `continue`s
+     * past every such row, so nothing is attempted; but `channelsConfigured()`
+     * is true, so this used to fall through to `no_recipient` and never be
+     * looked at again. Consent exists here. It is an address that is missing,
+     * and an address can be filled in.
+     */
+    const client = fakeClient({
+      rpc: { data: [{ educator_user_id: "e1", email: null }], error: null },
+    });
+    const status = await withEnv(
+      { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: "k", SAFETY_ALERT_EMAIL_FROM: "a@b.test" },
+      () => deliverEscalation(client, ESCALATION, "2A-08"),
+    );
+    assert.equal(await status, "pending", "consent exists, so this is still owed");
+
+    const [update] = client.calls.updates;
+    assert.equal(update.values.status, "pending");
+    assert.equal(update.values.delivered_at, null);
+    // Nothing was sent, so this must not eat the budget that exists for
+    // transport failures — six nights of a missing address should not exhaust
+    // the retries for the night the address is finally there.
+    assert.equal(update.values.attempts, ESCALATION.attempts);
+    // And nothing was logged as a delivery, because nothing was attempted.
+    assert.equal(client.calls.inserts.length, 0);
+    /*
+     * The stored reason has to name the actual repair. `last_error` is what an
+     * operator reads to find out what to fix, and this branch used to store
+     * "no recipient with active oversight consent" — which sends them to check
+     * consent, a different team and a different fix, while the crisis sits in
+     * the queue.
+     */
+    assert.equal(update.values.last_error, "no reachable address for any consented recipient");
+  });
+
+  it("names the right repair in last_error for each way of reaching nobody", async () => {
+    const noChannel = fakeClient({
+      rpc: { data: [{ educator_user_id: "e1", email: "t@example.test" }], error: null },
+    });
+    await withEnv(
+      { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: undefined, SAFETY_ALERT_EMAIL_FROM: undefined },
+      () => deliverEscalation(noChannel, ESCALATION, "2A-08"),
+    );
+    assert.equal(noChannel.calls.updates[0].values.last_error, "no delivery channel configured");
+
+    const noConsent = fakeClient({ rpc: { data: [], error: null } });
+    await withEnv(
+      { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: "k", SAFETY_ALERT_EMAIL_FROM: "a@b.test" },
+      () => deliverEscalation(noConsent, ESCALATION, "2A-08"),
+    );
+    assert.equal(
+      noConsent.calls.updates[0].values.last_error,
+      "no recipient with active oversight consent",
+    );
+  });
+
+  it("sends it once the missing address is filled in", async () => {
+    // The ordering that makes `pending` the right answer above: the same
+    // escalation, delivered on a later pass with nothing else changed.
+    const client = fakeClient({
+      rpc: { data: [{ educator_user_id: "e1", email: "t@example.test" }], error: null },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("ok", { status: 200 });
+    try {
+      const status = await withEnv(
+        { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: "k", SAFETY_ALERT_EMAIL_FROM: "a@b.test" },
+        () => deliverEscalation(client, ESCALATION, "2A-08"),
+      );
+      assert.equal(await status, "delivered");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("keeps it queued when only some recipients are unreachable", async () => {
+    // A mixed roster attempts what it can. This asserts the guard did not turn
+    // into "any null address queues the row" — a send that reached somebody is
+    // still delivered.
+    const client = fakeClient({
+      rpc: {
+        data: [
+          { educator_user_id: "e1", email: null },
+          { educator_user_id: "e2", email: "t@example.test" },
+        ],
+        error: null,
+      },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("ok", { status: 200 });
+    try {
+      const status = await withEnv(
+        { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: "k", SAFETY_ALERT_EMAIL_FROM: "a@b.test" },
+        () => deliverEscalation(client, ESCALATION, "2A-08"),
+      );
+      assert.equal(await status, "delivered");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    // One attempt, for the one address that existed.
+    const [logged] = client.calls.inserts;
+    assert.equal(logged.rows.length, 1);
+    assert.equal(logged.rows[0].recipient_user_id, "e2");
   });
 
   it("sends the queued escalation once a channel is configured", async () => {

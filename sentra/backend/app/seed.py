@@ -1,6 +1,9 @@
 import logging
 from datetime import datetime, timedelta, date
+
 from sqlmodel import Session, select, func
+
+from .clock import utcnow
 from .database import engine
 from .schemas.entry import Entry
 from .schemas.extraction import Extraction
@@ -21,7 +24,7 @@ def seed_data():
         logger.info("Seeding database with complex default data...")
         
         user_id = "demo_user"
-        base_date = datetime.utcnow() - timedelta(days=7)
+        base_date = utcnow() - timedelta(days=7)
 
         # Day 1: Normal State
         nodes_d1 = [

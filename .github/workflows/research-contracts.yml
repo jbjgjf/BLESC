@@ -7,6 +7,15 @@ on:
       - main
       - "codex/**"
 
+# Every job here checks out, runs tests, and uploads artifacts. None of that
+# needs the token to be able to write: artifact upload authenticates against the
+# Actions runtime rather than through `GITHUB_TOKEN`. Declared rather than
+# inherited (#208), because an inherited default is whatever the repository
+# setting happens to be — including read-and-write, which would hand every job
+# in this file the ability to push code and move issues it has no use for.
+permissions:
+  contents: read
+
 jobs:
   eval-contracts:
     name: Synthetic evaluation contracts

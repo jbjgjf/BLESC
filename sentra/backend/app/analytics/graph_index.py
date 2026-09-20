@@ -27,6 +27,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from sqlmodel import Session, select
 
+from ..clock import utcnow
 from ..schemas.research import GraphEdge, GraphNode
 
 GRAPH_INDEX_VERSION = "graph-index-v1"
@@ -113,7 +114,7 @@ def upsert_graph_index(
             existing.intensity = intensity
             existing.occurrence_count += 1
             existing.last_seen_day = day
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = utcnow()
             session.add(existing)
             node_row = existing
         else:
@@ -169,7 +170,7 @@ def upsert_graph_index(
             )
             existing_edge.occurrence_count += 1
             existing_edge.last_seen_day = day
-            existing_edge.updated_at = datetime.utcnow()
+            existing_edge.updated_at = utcnow()
             session.add(existing_edge)
             edge_row = existing_edge
         else:
