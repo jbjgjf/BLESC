@@ -62,6 +62,13 @@ BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 find "$HERE" -mindepth 1 -maxdepth 1 ! -name .next ! -name out ! -name '.env*' -exec cp -cR {} "$WORK/" \; 2>/dev/null \
   || find "$HERE" -mindepth 1 -maxdepth 1 ! -name .next ! -name out ! -name '.env*' -exec cp -R {} "$WORK/" \;
 rm -rf "$WORK/src/app/api"
+# 書き出し先そのものを材料に持ち込まない。public/ の中身は out/ の直下にそのまま
+# 写るので（このリポジトリに入っている成果物の直下に flower.png や fonts/ が
+# 並んでいるのがその証拠）、ソースブランチが main を取り込んで public/demo-view
+# を持った瞬間、書き出すたびに古い成果物が out/demo-view として入れ子になり、
+# 12MB ずつ増えていく。消えるのは複製した作業ツリーの側だけで、元のチェック
+# アウトには触らない。
+rm -rf "$WORK/public/demo-view"
 
 (
   cd "$WORK"
@@ -107,6 +114,12 @@ for path in out.rglob("*.txt"):
     twins += 1
 print(f"RSC twins written: {twins}")
 PY
+
+# 上の除外が効いていることを、黙って12MB増える前に確かめる。
+if [ -e "$WORK/out/demo-view" ]; then
+  echo "エラー: 書き出しの中に demo-view/ が入れ子になっています。前回の成果物を材料に持ち込んでいます。" >&2
+  exit 1
+fi
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
