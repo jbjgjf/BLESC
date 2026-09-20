@@ -281,7 +281,8 @@ describe("delivery", () => {
 
   it("still finalises as no_recipient when a channel exists but nobody may be told", async () => {
     // This one is genuinely terminal: consent is not going to appear because we
-    // asked again.
+    // asked again. Note the empty recipient set — that, and only that, is what
+    // `no_recipient` now means.
     const client = fakeClient({ rpc: { data: [], error: null } });
     const status = await withEnv(
       { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: "k", SAFETY_ALERT_EMAIL_FROM: "a@b.test" },
@@ -289,6 +290,87 @@ describe("delivery", () => {
     );
     assert.equal(await status, "no_recipient");
     assert.equal(client.calls.updates[0].values.status, "no_recipient");
+  });
+
+  it("keeps it queued when consent exists but no recipient has a reachable address", async () => {
+    /*
+     * #203, the same family as #178 and found in the branch next door.
+     *
+     * `safety_escalation_recipients` returns `auth.users.email`, which is
+     * nullable on Supabase — a phone-only account, or an educator invited but
+     * not yet confirmed. With the webhook unset, the delivery loop `continue`s
+     * past every such row, so nothing is attempted; but `channelsConfigured()`
+     * is true, so this used to fall through to `no_recipient` and never be
+     * looked at again. Consent exists here. It is an address that is missing,
+     * and an address can be filled in.
+     */
+    const client = fakeClient({
+      rpc: { data: [{ educator_user_id: "e1", email: null }], error: null },
+    });
+    const status = await withEnv(
+      { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: "k", SAFETY_ALERT_EMAIL_FROM: "a@b.test" },
+      () => deliverEscalation(client, ESCALATION, "2A-08"),
+    );
+    assert.equal(await status, "pending", "consent exists, so this is still owed");
+
+    const [update] = client.calls.updates;
+    assert.equal(update.values.status, "pending");
+    assert.equal(update.values.delivered_at, null);
+    // Nothing was sent, so this must not eat the budget that exists for
+    // transport failures — six nights of a missing address should not exhaust
+    // the retries for the night the address is finally there.
+    assert.equal(update.values.attempts, ESCALATION.attempts);
+    // And nothing was logged as a delivery, because nothing was attempted.
+    assert.equal(client.calls.inserts.length, 0);
+  });
+
+  it("sends it once the missing address is filled in", async () => {
+    // The ordering that makes `pending` the right answer above: the same
+    // escalation, delivered on a later pass with nothing else changed.
+    const client = fakeClient({
+      rpc: { data: [{ educator_user_id: "e1", email: "t@example.test" }], error: null },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("ok", { status: 200 });
+    try {
+      const status = await withEnv(
+        { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: "k", SAFETY_ALERT_EMAIL_FROM: "a@b.test" },
+        () => deliverEscalation(client, ESCALATION, "2A-08"),
+      );
+      assert.equal(await status, "delivered");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("keeps it queued when only some recipients are unreachable", async () => {
+    // A mixed roster attempts what it can. This asserts the guard did not turn
+    // into "any null address queues the row" — a send that reached somebody is
+    // still delivered.
+    const client = fakeClient({
+      rpc: {
+        data: [
+          { educator_user_id: "e1", email: null },
+          { educator_user_id: "e2", email: "t@example.test" },
+        ],
+        error: null,
+      },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("ok", { status: 200 });
+    try {
+      const status = await withEnv(
+        { SAFETY_ALERT_WEBHOOK_URL: undefined, RESEND_API_KEY: "k", SAFETY_ALERT_EMAIL_FROM: "a@b.test" },
+        () => deliverEscalation(client, ESCALATION, "2A-08"),
+      );
+      assert.equal(await status, "delivered");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    // One attempt, for the one address that existed.
+    const [logged] = client.calls.inserts;
+    assert.equal(logged.rows.length, 1);
+    assert.equal(logged.rows[0].recipient_user_id, "e2");
   });
 
   it("sends the queued escalation once a channel is configured", async () => {

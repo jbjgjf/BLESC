@@ -382,13 +382,19 @@ export function channelsConfigured(): boolean {
  * The status it leaves behind is the contract with `/api/safety/dispatch`:
  *
  *   `delivered`     at least one recipient was reached
- *   `failed`        recipients exist and every send failed — retry
- *   `no_recipient`  nobody may be told, or no channel is configured
- *   `pending`       untouched; the dispatcher will pick it up
+ *   `failed`        a send was attempted and every one failed — retry
+ *   `no_recipient`  nobody may be told: the recipient set is empty
+ *   `pending`       nothing was attempted; the dispatcher will pick it up
  *
- * `no_recipient` is not success and is not silence. It means a student is in
- * crisis and this deployment has nowhere to send it, which is a configuration
- * emergency — so it is logged as an error and left visible in the table.
+ * `no_recipient` is the only terminal one, and it is terminal because it is a
+ * consent fact: no educator holds active oversight of this participant, and
+ * asking again will not produce one. Everything else that reached nobody — no
+ * channel configured (#178), recipients with no reachable address (#203) — is
+ * an operations gap, stays queued, and does not consume an attempt.
+ *
+ * None of them is success and none of them is silence. A student is in crisis
+ * and this deployment did not tell anyone, so every one of them is logged as an
+ * error and left visible in the table.
  */
 export async function deliverEscalation(
   service: SupabaseClient,
@@ -475,20 +481,49 @@ export async function deliverEscalation(
    */
   const noChannel = !channelsConfigured();
 
+  /*
+   * A third case, found in the same family as #178 (#203).
+   *
+   * `recipientsFor` returns rows from `safety_escalation_recipients`, whose
+   * `email` column is `auth.users.email` — and that is nullable on Supabase
+   * (a phone-only account, an invited educator who has not confirmed yet).
+   * With the webhook unset and only the mail channel configured, a batch of
+   * recipients that all have a null address attempts nothing: the loop above
+   * `continue`s past every one of them.
+   *
+   * That used to land on `no_recipient`, because `channelsConfigured()` was
+   * true and so `noChannel` was false. Terminal, never queried again, exactly
+   * the loss #178 closed one branch of. But consent *exists* here. Somebody is
+   * permitted to be told and the deployment simply has no way to reach them
+   * yet, which is an operations gap — fixed by filling in an address — and not
+   * the consent fact that `no_recipient` is now reserved for.
+   *
+   * So the rule is the one the status names: `no_recipient` means the
+   * recipient set is empty. Anything else that reached nobody stays queued.
+   */
+  const noReachableAddress = recipients.length > 0;
+
   let status: "delivered" | "failed" | "no_recipient" | "pending";
   if (anyDelivered) status = "delivered";
   else if (anyAttempt) status = "failed";
-  else if (noChannel) status = "pending";
+  else if (noChannel || noReachableAddress) status = "pending";
   else status = "no_recipient";
 
   if (status === "pending" || status === "no_recipient") {
+    // Kept inline rather than lifted to a `const`: the #116 UI-language guard
+    // exempts strings by `console.*` call, so a developer-facing message that
+    // lives outside one has to be allowlisted to say anything in English.
     console.error(
       "[safety-escalation] NOWHERE TO SEND A CRISIS ESCALATION. " +
         (noChannel
           ? "No channel is configured: set SAFETY_ALERT_WEBHOOK_URL, or RESEND_API_KEY with " +
             "SAFETY_ALERT_EMAIL_FROM. The escalation stays queued and will be sent once one is set."
-          : "No educator holds active oversight consent for this participant, so there is nobody " +
-            "this may be sent to. This will not be retried."),
+          : noReachableAddress
+            ? "Educators hold active oversight consent, but none of them has an address the " +
+              "configured channels can reach. Check the email column for the accounts on this " +
+              "roster, or set SAFETY_ALERT_WEBHOOK_URL. The escalation stays queued."
+            : "No educator holds active oversight consent for this participant, so there is nobody " +
+              "this may be sent to. This will not be retried."),
       { escalation: escalation.id, recipients: recipients.length, channels: !noChannel },
     );
   }

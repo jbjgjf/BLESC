@@ -30,10 +30,12 @@ export type DispatchResult = {
   failed: number;
   no_recipient: number;
   /**
-   * Attempted but left queued because this deployment has no channel
-   * configured (#178). Distinct from `no_recipient`, which is terminal: these
-   * rows are still owed and the next run after someone sets the variables will
-   * send them.
+   * Reached nobody and left queued, because nothing could be attempted: no
+   * channel is configured on this deployment (#178), or the educators who hold
+   * consent have no address the configured channels can reach (#203).
+   *
+   * Distinct from `no_recipient`, which is terminal: these rows are still owed,
+   * and the next run after somebody closes the gap will send them.
    */
   pending: number;
   stuck: number;
