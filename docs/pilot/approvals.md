@@ -43,12 +43,12 @@
 | D5 | データ保持期間と削除の証跡 | データ管理責任者・研究倫理責任者 | [protocol §8](protocol.md) | 未決定 |
 | D6 | 謝礼の有無と形式 | 学校責任者・研究責任者 | [protocol §9](protocol.md) | 未決定 |
 | D7 | 研究終了後の結果共有の方法 | 研究責任者 | [protocol §7.3](protocol.md) | 未決定 |
-| C1 | 問い合わせ先 | 研究責任者・学校責任者 | [consent-pack §A/§C](consent-pack.md)、2026-09-18 owner指定 | 部分決定: blesc.jp@gmail.com。担当受諾・受付時間・学校確認待ち |
-| C2 | 本文の保持期間 | データ管理責任者 | [consent-pack §A/§C](consent-pack.md) | 未決定 |
-| C3 | 保護者確認の方法 | 学校責任者 | [consent-pack §D](consent-pack.md) | 未決定 |
-| C4 | 保護者からの撤回・削除の受付経路 | 学校責任者・データ管理責任者 | [consent-pack §E/§F](consent-pack.md) | 未決定 |
-| C5 | 削除完了までの目標日数 | データ管理責任者 | [consent-pack §F](consent-pack.md) | 未決定 |
-| C6 | 謝礼を説明文へ記載するか | 学校責任者・研究責任者 | [consent-pack §A](consent-pack.md) | 未決定 |
+| C1 | 問い合わせ先 | 研究責任者・学校責任者 | [consent-pack 第18条/4.1](consent-pack.md)、2026-09-18 owner指定 | 部分決定: blesc.jp@gmail.com。担当受諾・受付時間・学校確認待ち |
+| C2 | 本文の保持期間 | データ管理責任者 | [consent-pack 第14条](consent-pack.md) | 未決定 |
+| C3 | 保護者確認の方法 | 学校責任者 | [consent-pack 第20条/5.4](consent-pack.md) | 未決定 |
+| C4 | 保護者からの撤回・削除の受付経路 | 学校責任者・データ管理責任者 | [consent-pack 6.1/6.2](consent-pack.md) | 未決定 |
+| C5 | 削除完了までの目標日数 | データ管理責任者 | [consent-pack 6.2/6.4](consent-pack.md) | 未決定 |
+| C6 | 謝礼を説明文へ記載するか | 学校責任者・研究責任者 | [consent-pack 第13条](consent-pack.md) | 未決定 |
 | I1 | 連絡体制（4役割＋校内相談体制の連絡先） | 研究責任者・学校責任者 | [incident-runbook §1](incident-runbook.md) | 未決定 |
 
 **上表は2026-09-18時点の監査履歴。** 方針は2026-09-19にownerが採用した。実在する担当受諾・学校確認・連絡先・当番・実装検証・演習が揃うまで、承認欄に署名しない。

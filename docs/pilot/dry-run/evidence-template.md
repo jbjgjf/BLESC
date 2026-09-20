@@ -73,7 +73,7 @@
 | --- | --- | --- | --- |
 | 危機的記述 → 学校側窓口への連絡（runbook §3） | | 覚知から 分 | |
 | 撤回 → 以後の書き込み・exportが0 | | | |
-| 削除依頼（consent-pack §F） | | | |
+| 削除依頼（consent-pack 6.2） | | | |
 | export と PII review | | | |
 | retention / purge の実行 | | | |
 | backup からの restore と件数一致 | | | |

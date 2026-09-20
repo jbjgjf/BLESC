@@ -128,7 +128,7 @@ dry run day 3 で次を実地に行う（[#168](https://github.com/jbjgjf/BLESC/
 
 - [ ] 危機的記述（合成本文）を1件投入し、§3の手順を通す
 - [ ] 撤回を1件実行し、以後の書き込みとexportが0であることを確認する
-- [ ] 削除依頼を1件実行し、§F（[consent-pack.md](consent-pack.md)）の手順を通す
+- [ ] 削除依頼を1件実行し、6.2（[consent-pack.md](consent-pack.md)）の手順を通す
 - [ ] backupからのrestoreを行い、件数が一致することを確認する
 - [ ] 鍵ローテーションを1回行い、旧鍵で復号できないことを確認する
 
