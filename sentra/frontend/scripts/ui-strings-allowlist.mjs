@@ -96,8 +96,10 @@ const WRITE_FAILURES = [
 const DELIVERY_FAILURES = [
   "webhook request failed",
   "email request failed",
-  "no reachable recipient",
+  // Split in two when #178 separated "nowhere to send" (an operations gap that
+  // a retry fixes) from "nobody may be told" (a consent fact that it does not).
   "no delivery channel configured",
+  "no recipient with active oversight consent",
 ];
 
 /** A programming mistake, raised where only a developer can see it. */

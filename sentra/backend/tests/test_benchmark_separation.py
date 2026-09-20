@@ -7,6 +7,7 @@ where the benchmark measured nothing. Green carried no information.
 
 import pytest
 
+from app.analytics.tokenize import japanese_analysis_available
 from app.services.benchmark_retrieval import METHODS
 from app.services.hf_research_benchmark import run_hf_research_benchmark
 
@@ -67,7 +68,29 @@ def test_the_baseline_is_reported_against_chance(summary):
         assert "lift_over_chance" in summary[method]
 
 
+@pytest.mark.skipif(
+    not japanese_analysis_available(),
+    reason="fugashi/unidic-lite not installed; keyword matching is whitespace-split",
+)
 def test_exact_lexical_matching_does_not_beat_chance_on_this_case_set(summary):
+    """Skipped without the dictionary, like every other Japanese test here (#183).
+
+    Without fugashi/unidic-lite, `tokenize.py` falls back to splitting on
+    whitespace — so Japanese text becomes a handful of very long "tokens", the
+    keyword condition stops behaving like exact lexical matching, and the lift
+    lands around 0.37. The assertion below then fired with a message telling the
+    reader to "check whether a target now shares vocabulary with its query",
+    which sends them looking for a benchmark regression that is not there.
+
+    Measured on one checkout, the only difference being the dictionary:
+    without it `1 failed, 744 passed, 27 skipped`; with it `771 passed,
+    1 skipped`.
+
+    CI installs the dictionary from `requirements.txt` and
+    `test_japanese_analysis_is_available_in_ci` fails there if it is ever
+    missing, so skipping here does not create a hole — it moves this test onto
+    the same footing as the rest of them.
+    """
     # Narrowed on 2026-08-13 from ("keyword", "semantic_proxy") to keyword only,
     # and the reason is not that the old form went red.
     #

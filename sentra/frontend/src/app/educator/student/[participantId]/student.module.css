@@ -253,18 +253,6 @@
 
 .followUp > :global(.blesc-icon) { color: var(--bl-blue); flex-shrink: 0; }
 
-.followUp[data-state="worsening"] {
-  background: var(--bl-watch-bg);
-  border-color: var(--bl-watch-line);
-}
-.followUp[data-state="worsening"] > :global(.blesc-icon) { color: var(--bl-watch); }
-
-.followUp[data-state="improving"] {
-  background: var(--bl-calm-bg);
-  border-color: var(--bl-calm-line);
-}
-.followUp[data-state="improving"] > :global(.blesc-icon) { color: var(--bl-calm); }
-
 /* ── 6-3 面談記録 ───────────────────────────────────── */
 .meeting {
   padding: 15px 17px;

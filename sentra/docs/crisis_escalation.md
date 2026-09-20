@@ -73,31 +73,17 @@ blesc は緊急対応を行いません。危険が差し迫っていると判�
 | :--- | :--- |
 | `pending` | まだ試していない。dispatch が拾う |
 | `delivered` | 少なくとも1つの宛先に届いた |
-| `failed` | 送信を試みて全部失敗した。dispatch が再試行 |
-| `no_recipient` | **伝えてよい相手が居ない。** 経路は設定済みだが、見守り同意のある教員が一人も居ない |
+| `failed` | 宛先はあるが全部失敗した。dispatch が再試行 |
+| `no_recipient` | **伝えてよい相手が居ない。** 見守り同意のある教員が居ない。終端（再送しない） |
+
+チャネルが1つも設定されていないときは `no_recipient` ではなく **`pending` のまま**にします。
+これは同意の話ではなく設定の穴で、変数を入れれば送れるようになるからです。以前は
+`no_recipient` に畳んでいたため、設定を入れる前に起きた危機は永久に届きませんでした（#178）。
+送信を試みていないので `attempts` も増やしません。
 
 `no_recipient` は成功ではありません。危機が起きたのに送り先が無いという
 **設定の緊急事態**なので、`console.error` を出し、行に残り、
 `GET /api/safety/dispatch` が件数を返します。
-
-### 経路が未設定のときは `no_recipient` ではない
-
-`no_recipient` は終端です。dispatch のキューは `status in ('pending','failed')`
-なので、ここに落ちた行は二度と試されません。「伝えてよい相手が居ない」には
-それが正しい答えですが、「このデプロイにはまだ経路が無い」には正しくありません。
-後者は運用設定の穴であり、直れば送れるからです。
-
-そのため経路が一つも設定されていない場合、`deliverEscalation` は行を動かしません。
-status はそのまま（`pending` は `pending` のまま）、`attempts` も増やさず、
-`last_error` に `no delivery channel configured` だけを記録して `no_channel` を返します。
-行はキューに残り続け、運用者が `SAFETY_ALERT_WEBHOOK_URL` などを設定した後の
-dispatch で実際に送信されます。
-
-`attempts` を増やさないのも同じ理由です。設定の穴が30分（6回）を超えて続いた場合、
-試してもいない回数で上限に達し、結局取りこぼすことになります。
-
-これは #178 の修正です。それ以前は経路未設定の危機が即座に `no_recipient` で
-確定していたため、後から経路を設定してもその前の危機は一件も届きませんでした。
 
 6回試して届かない行は `stuck` として毎回のdispatchで報告されます。
 そこまで来たら問題はネットワークではなく設定です。
@@ -108,7 +94,10 @@ dispatch で実際に送信されます。
 SAFETY_ALERT_WEBHOOK_URL=     # 学校側の受け口（Slack/Teams/当直ゲートウェイ）
 RESEND_API_KEY=               # メール経路。FROM とセットで有効
 SAFETY_ALERT_EMAIL_FROM=
-SAFETY_DISPATCH_TOKEN=        # 再送 cron の共有シークレット。未設定なら全拒否
+SAFETY_DISPATCH_TOKEN=        # POST /api/safety/dispatch の共有シークレット。未設定なら全拒否
+CRON_SECRET=                  # Vercel Cron 用。未設定ならすべての定期実行が拒否される
+SAFETY_RECIPIENT_HASH_KEY=    # 通知ログの recipient_hash 用の HMAC 鍵（base64 32バイト以上）
+                              # 未設定なら hash は null。通知自体は止めない
 SAFETY_ALERT_ON_ELEVATED=     # 1 で elevated も通知。既定は crisis のみ
 NEXT_PUBLIC_SITE_URL=         # 通知に載せるリンクの組み立てに使う
 ```
@@ -117,15 +106,42 @@ NEXT_PUBLIC_SITE_URL=         # 通知に載せるリンクの組み立てに使
 「今夜は誰が当番か」を知っているのは学校側の仕組みだけです。
 このプロダクトは当直表を持っていません。
 
-### cron
+### 定期実行
+
+**再送は GitHub Actions が5分ごとに叩きます**（`.github/workflows/safety-dispatch.yml`）。
+Vercel に置いていないのは、**Hobby プランの cron が1日1回までだから**です。
+`*/5 * * * *` はデプロイ自体が失敗します（"Hobby accounts are limited to daily cron jobs"）。
+
+必要な GitHub secrets:
+
+| secret | 中身 |
+| :--- | :--- |
+| `PILOT_BASE_URL` | パイロットデプロイのURL（例 `https://pilot.example.jp`） |
+| `SAFETY_DISPATCH_TOKEN` | `POST /api/safety/dispatch` の共有シークレット |
+
+どちらか欠けているとワークフローは**赤にせずスキップ**し、「再送は走っていない」とログに出します。
+5分ごとに赤いジョブが並ぶと、誰もこのワークフローを見なくなるためです。
+
+**GitHub のスケジューラはベストエフォートです。** 混雑時は遅延・実行されないことがあります。
+5分は目標であって保証ではありません。保証が要るなら Vercel を Pro にして
+`vercel.json` に戻すのが正解です。
+
+`sentra/frontend/vercel.json` には**保険として1日1回**の同じ呼び出しを残しています
+（リポジトリ直下ではありません——Vercel のプロジェクト root が `sentra/frontend` なので、
+直下に置いたものは読まれません）。
 
 ```json
-{ "crons": [{ "path": "/api/safety/dispatch", "schedule": "*/5 * * * *" }] }
+{ "crons": [
+  { "path": "/api/cron/retention-purge", "schedule": "17 3 * * *" },
+  { "path": "/api/cron/safety-dispatch", "schedule": "47 4 * * *" }
+] }
 ```
 
-5分は出発点であって、根拠のある推奨値ではありません。これは**再送**の遅れの上限で、
-初回送信は即時です。もっと短い上限が要る学校があれば、それはその学校の当直体制が
-決めることなので、この値を合わせてください。
+保持期限の purge は元から1日1回でよいので、こちらは Vercel の cron だけで足ります。
+
+Vercel Cron は `GET` と `Authorization: Bearer $CRON_SECRET` しか送れないため、
+`POST` + 独自トークンの `/api/safety/dispatch` とは別に `/api/cron/*` を置いています。
+中身は両方とも `lib/server/safetyDispatch.ts` を呼ぶだけです。
 
 ## 通知が増えすぎないように
 

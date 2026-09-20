@@ -68,7 +68,68 @@ function parseEnvFile(path: string): Record<string, string> {
  * Environment resolution. Values are secrets: NEVER log, persist, or echo
  * them anywhere (reports, traces, artifacts, screenshots included).
  */
+/**
+ * The only Supabase projects this harness may point at (#187).
+ *
+ * An allowlist, because the previous form was a denylist holding one entry —
+ * the production ref as it happened to be that week. This harness has
+ * `provision` and `reset`, it writes and deletes with a service-role key, and
+ * this check is the only thing deciding whether a target is safe. A denylist in
+ * that position fails open on every project that does not happen to be named:
+ *
+ *   - #166 stands up a *new* dedicated Supabase for the pilot. Its ref would not
+ *     have matched, so `reset` would have run against it.
+ *   - Any staging or second-school environment someone puts in
+ *     `EVAL_SUPABASE_URL` would have passed.
+ *
+ * The default is the local stack, so the mistake is only available to someone
+ * who sets the variable — and the moment they are most likely to set it is just
+ * after rebuilding an environment, which is also when they are most likely to
+ * paste the wrong ref.
+ */
+const ALLOWED_SUPABASE_HOSTS = [
+  // The local stack, in the two spellings it answers on.
+  "127.0.0.1",
+  "localhost",
+  // `blesc-synthetic-eval` — the dedicated evaluation project, documented in
+  // sentra/docs/synthetic_evaluation.md.
+  "vkrhcctlbdjlhtbninsd.supabase.co",
+];
+
+function assertTargetAllowed(supabaseUrl: string): void {
+  let host: string;
+  try {
+    host = new URL(supabaseUrl).hostname;
+  } catch {
+    // An unparseable URL is not a safe target; it is an unknown one.
+    throw new Error(`Refusing to run evaluation: EVAL_SUPABASE_URL is not a valid URL (${supabaseUrl})`);
+  }
+
+  // Exact host match, not `includes`. A substring test would accept
+  // `127.0.0.1.attacker.example` and `vkrhcctlbdjlhtbninsd.supabase.co.evil.test`.
+  if (ALLOWED_SUPABASE_HOSTS.includes(host)) return;
+
+  throw new Error(
+    `Refusing to run evaluation against ${host}. This harness provisions and resets with a ` +
+      "service-role key, so it runs only against the local stack or the dedicated evaluation " +
+      "project. If a new evaluation environment is intended, add its host to " +
+      "ALLOWED_SUPABASE_HOSTS in sentra/eval/src/config.ts deliberately.",
+  );
+}
+
 export function loadEnv() {
+  const supabaseUrl = process.env.EVAL_SUPABASE_URL ?? "http://127.0.0.1:54321";
+
+  /*
+   * First, before anything else can throw.
+   *
+   * This used to sit at the end of the function, after the OpenAI key check
+   * (#181). In an environment without that key, pointing the harness at
+   * production answered `BLESC_EVAL_RUNNER_OPENAI_API_KEY is not configured` —
+   * the one question that mattered went unasked, and the answer that came back
+   * was about something else.
+   */
+  assertTargetAllowed(supabaseUrl);
   const frontendEnv = parseEnvFile(resolve(HERE, "../../frontend/.env.local"));
   const evalOpenAiKey =
     process.env.BLESC_EVAL_RUNNER_OPENAI_API_KEY ?? frontendEnv.BLESC_EVAL_RUNNER_OPENAI_API_KEY;
@@ -76,7 +137,6 @@ export function loadEnv() {
 
   // Dedicated evaluation Supabase project (blesc-synthetic-eval) or the
   // local stack — never the production project.
-  const supabaseUrl = process.env.EVAL_SUPABASE_URL ?? "http://127.0.0.1:54321";
   const serviceRoleKey = process.env.EVAL_SUPABASE_SERVICE_ROLE_KEY ?? "";
   const anonKey = process.env.EVAL_SUPABASE_ANON_KEY ?? "";
   const appBaseUrl = process.env.EVAL_APP_BASE_URL ?? "http://localhost:3940";
@@ -84,9 +144,6 @@ export function loadEnv() {
   // (Settings → Deployment Protection). Optional; local runs don't need it.
   const protectionBypassSecret = process.env.EVAL_VERCEL_BYPASS_SECRET ?? "";
 
-  if (/kvcrkveaxlrijhzyayeg/.test(supabaseUrl)) {
-    throw new Error("Refusing to run evaluation against the production Supabase project");
-  }
   return { evalOpenAiKey, supabaseUrl, serviceRoleKey, anonKey, appBaseUrl, protectionBypassSecret };
 }
 

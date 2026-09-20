@@ -30,6 +30,7 @@
  * which is the whole complaint this module answers.
  */
 
+import { createHmac } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /*
@@ -174,12 +175,63 @@ export async function recipientsFor(
   return (result.data ?? []) as Recipient[];
 }
 
-async function hashAddress(address: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(address));
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("")
-    .slice(0, 32);
+/**
+ * The key that makes `recipient_hash` a pseudonym rather than a lookup (#189).
+ *
+ * Same shape as `guardianHmacKey()` and `inviteHmacKey()`: base64, at least 32
+ * bytes, read from the environment, and absent means the feature that depends
+ * on it is off rather than silently weaker.
+ */
+export function recipientHashKey(): Buffer | null {
+  const configured = process.env.SAFETY_RECIPIENT_HASH_KEY;
+  if (!configured) return null;
+
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(configured, "base64");
+  } catch {
+    console.error("[safety-escalation] SAFETY_RECIPIENT_HASH_KEY is not valid base64; recipient hashes will be null");
+    return null;
+  }
+  if (bytes.length < 32) {
+    console.error(
+      "[safety-escalation] SAFETY_RECIPIENT_HASH_KEY must decode to at least 32 bytes; recipient hashes will be null",
+    );
+    return null;
+  }
+  return bytes;
+}
+
+/**
+ * A keyed digest of a recipient's address, or null when no key is configured.
+ *
+ * This column exists to record *who was told* without keeping the address, and
+ * an unkeyed SHA-256 did not achieve that. Email addresses come from a guessable
+ * space — a school's staff list, an organisation's address convention, the set
+ * reachable through `educator_oversees` — and anyone holding the roster could
+ * hash the candidates and match the digest in seconds. The column claimed a
+ * property it did not have.
+ *
+ * **128 bits is kept.** Truncation was a problem for the unkeyed version only
+ * because the preimage space was small enough to enumerate; with a key that
+ * enumeration is not available at all, and 128 bits leaves no collision concern
+ * at this table's scale.
+ *
+ * **Null, never plaintext, when the key is missing.** A crisis notification must
+ * not depend on a hashing key being set, so delivery continues and the column is
+ * left empty — an audit row that says "we did not record which address" is
+ * honest, where one that quietly recorded a reversible digest was not.
+ *
+ * **Rows written before this are not migrated.** They hold unkeyed digests that
+ * cannot be recomputed under the key, and there is nothing to recompute them
+ * from — the addresses were never stored, which was the point. They stay as
+ * they are and are readable only as "a delivery happened", which is what they
+ * could honestly support anyway.
+ */
+function hashAddress(address: string): string | null {
+  const key = recipientHashKey();
+  if (!key) return null;
+  return createHmac("sha256", key).update(address.trim().toLowerCase(), "utf8").digest("hex").slice(0, 32);
 }
 
 function consoleUrl(): string {
@@ -294,75 +346,26 @@ export function channelsConfigured(): boolean {
   );
 }
 
-/** What one delivery pass concluded. Only the first three move the row. */
-export type DeliveryOutcome = "delivered" | "failed" | "no_recipient" | "no_channel";
-
-/** Left in `last_error` while a deployment has nothing to send with. */
-export const NO_CHANNEL_ERROR = "no delivery channel configured";
-
 /**
  * Try to deliver one escalation, and record what happened either way.
  *
  * The status it leaves behind is the contract with `/api/safety/dispatch`:
  *
  *   `delivered`     at least one recipient was reached
- *   `failed`        a send was attempted and every one failed — retry
- *   `no_recipient`  a channel exists, and nobody may be told through it
+ *   `failed`        recipients exist and every send failed — retry
+ *   `no_recipient`  nobody may be told, or no channel is configured
  *   `pending`       untouched; the dispatcher will pick it up
  *
  * `no_recipient` is not success and is not silence. It means a student is in
  * crisis and this deployment has nowhere to send it, which is a configuration
  * emergency — so it is logged as an error and left visible in the table.
- *
- * It is also terminal: the dispatcher's queue is `status in ('pending',
- * 'failed')`, so a row that lands here is never tried again. That is the right
- * answer for "nobody may be told" and the wrong one for "this deployment has
- * no channel yet" — see the branch below, which is why the two are separated.
  */
 export async function deliverEscalation(
   service: SupabaseClient,
   escalation: EscalationRow,
   participantCode: string | null,
-): Promise<DeliveryOutcome> {
+): Promise<"delivered" | "failed" | "no_recipient" | "pending"> {
   const recipients = await recipientsFor(service, escalation.participant_id);
-
-  /*
-   * No channel is configured, so nothing was attempted — which is a different
-   * fact from "nobody may be told", and the two must not share a status.
-   *
-   * They did. Every escalation raised before an operator set
-   * `SAFETY_ALERT_WEBHOOK_URL` was written, found nothing to send with, and was
-   * closed as `no_recipient` on the spot. `no_recipient` sits outside the
-   * dispatcher's queue, so setting the variable afterwards sent none of them:
-   * the crises from before the configuration landed were never delivered to
-   * anyone, ever. This module opens by promising that its failure mode is
-   * "late", never "never", and on a deployment without a channel that promise
-   * was false.
-   *
-   * So the row is left exactly where it is — `pending` stays `pending`,
-   * `failed` stays `failed` — and stays in the queue until a deployment can
-   * send it. `attempts` is not incremented either: an attempt that could not be
-   * made must not consume one of the six the dispatcher allows, or a
-   * configuration gap lasting half an hour would exhaust the row and lose it
-   * the same way.
-   */
-  if (!channelsConfigured()) {
-    console.error(
-      "[safety-escalation] NO DELIVERY CHANNEL CONFIGURED AND A CRISIS IS WAITING. " +
-        "Set SAFETY_ALERT_WEBHOOK_URL, or RESEND_API_KEY with SAFETY_ALERT_EMAIL_FROM. " +
-        "The escalation stays queued and is sent on the next dispatch once one of them is set.",
-      { escalation: escalation.id, recipients: recipients.length },
-    );
-    const parked = await service
-      .from("safety_escalations")
-      .update({ last_error: NO_CHANNEL_ERROR })
-      .eq("id", escalation.id);
-    if (parked.error) {
-      console.error("[safety-escalation] reason for waiting not recorded", parked.error.message);
-    }
-    return "no_channel";
-  }
-
   const text = notificationText(escalation, participantCode);
   const crisis = escalation.risk_level === "crisis";
 
@@ -403,7 +406,7 @@ export async function deliverEscalation(
       escalation_id: escalation.id,
       recipient_user_id: recipient.educator_user_id,
       channel: outcome.channel,
-      recipient_hash: await hashAddress(recipient.email),
+      recipient_hash: hashAddress(recipient.email),
       status: outcome.status,
       error: outcome.error ?? null,
     });
@@ -416,21 +419,47 @@ export async function deliverEscalation(
     }
   }
 
-  let status: "delivered" | "failed" | "no_recipient";
+  /*
+   * Two different things used to collapse into `no_recipient`, and only one of
+   * them is terminal (#178).
+   *
+   *   **Nobody may be told.** No educator holds active oversight consent for
+   *   this participant. Retrying changes nothing — consent is not going to
+   *   appear because we asked again — so the row is finished.
+   *
+   *   **This deployment has no channel configured.** An operations gap, not a
+   *   permissions one. It is fixed by setting an environment variable, and the
+   *   moment it is, the escalation becomes sendable.
+   *
+   * Filing the second as `no_recipient` meant the dispatcher never looked at it
+   * again: its queue is `.in("status", ["pending", "failed"])`. So every crisis
+   * that happened before someone finished configuring the deployment was lost
+   * permanently, while the module's own header promised the failure mode was
+   * "late, never never". Standing up a fresh Vercel and Supabase for the pilot
+   * makes "a crisis before the alert variables are set" an ordering to expect,
+   * not a hypothetical.
+   *
+   * With no channel configured, nothing was attempted, so `attempts` does not
+   * move either — six unconfigured nights should not exhaust the retry budget
+   * that exists for transport failures.
+   */
+  const noChannel = !channelsConfigured();
+
+  let status: "delivered" | "failed" | "no_recipient" | "pending";
   if (anyDelivered) status = "delivered";
   else if (anyAttempt) status = "failed";
+  else if (noChannel) status = "pending";
   else status = "no_recipient";
 
-  // A channel is configured by this point, so the missing half is the people:
-  // no educator with an active roster entry, an active organisation membership
-  // and an active oversight consent — or none of them reachable on the channels
-  // this deployment has.
-  if (status === "no_recipient") {
+  if (status === "pending" || status === "no_recipient") {
     console.error(
       "[safety-escalation] NOWHERE TO SEND A CRISIS ESCALATION. " +
-        "Confirm this participant has an educator with active oversight consent, " +
-        "and that the configured channels can reach them.",
-      { escalation: escalation.id, recipients: recipients.length },
+        (noChannel
+          ? "No channel is configured: set SAFETY_ALERT_WEBHOOK_URL, or RESEND_API_KEY with " +
+            "SAFETY_ALERT_EMAIL_FROM. The escalation stays queued and will be sent once one is set."
+          : "No educator holds active oversight consent for this participant, so there is nobody " +
+            "this may be sent to. This will not be retried."),
+      { escalation: escalation.id, recipients: recipients.length, channels: !noChannel },
     );
   }
 
@@ -438,9 +467,15 @@ export async function deliverEscalation(
     .from("safety_escalations")
     .update({
       status,
-      attempts: escalation.attempts + 1,
+      // Left untouched when nothing was attempted, so an unconfigured
+      // deployment does not burn through MAX_ATTEMPTS while idle.
+      attempts: status === "pending" ? escalation.attempts : escalation.attempts + 1,
       last_attempt_at: new Date().toISOString(),
-      last_error: status === "delivered" ? null : deliveries.find((d) => d.error)?.error ?? "no reachable recipient",
+      last_error:
+        status === "delivered"
+          ? null
+          : deliveries.find((d) => d.error)?.error ??
+            (noChannel ? "no delivery channel configured" : "no recipient with active oversight consent"),
       delivered_at: status === "delivered" ? new Date().toISOString() : null,
     })
     .eq("id", escalation.id);

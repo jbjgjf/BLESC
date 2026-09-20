@@ -141,8 +141,9 @@ $$;
 -- `owner_user_id` included, and that column is NOT NULL — so before the
 -- column-specific form this delete raised a not-null violation and the
 -- advertised cleanup could not run at all.
-insert into public.entry_sessions (id, owner_user_id)
-values ('00000000-0000-0000-0000-00000000ff01', '00000000-0000-0000-0000-0000000000f1');
+insert into public.entry_sessions (id, owner_user_id, participant_id, client_session_id, started_at)
+values ('00000000-0000-0000-0000-00000000ff01', '00000000-0000-0000-0000-0000000000f1',
+        '00000000-0000-0000-0000-0000000000d1', 'pilot-self-report-detach-test', now());
 
 update public.pilot_self_reports
    set entry_session_id = '00000000-0000-0000-0000-00000000ff01'
