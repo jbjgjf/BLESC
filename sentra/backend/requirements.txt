@@ -18,8 +18,13 @@
 #
 # To move a version: change it here, re-resolve, and regenerate the lock with
 #   python -m pip install -r requirements.txt --dry-run --ignore-installed \
-#     --report - | python scripts/write_lockfile.py
-# Resolved on 2026-09-19 against Python 3.12, which is what the workflow uses.
+#     --report /tmp/resolve.json
+#   python scripts/write_lockfile.py /tmp/resolve.json
+#
+# Run that on Linux, under the Python the workflow uses. The script refuses
+# anything else and says why: the resolved set differs by platform and by
+# interpreter, so a lock made elsewhere pins something CI never installs.
+# `requirements.lock.txt` records which pair it was resolved under (#206).
 
 fastapi==0.141.1
 uvicorn==0.53.0
