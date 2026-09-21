@@ -161,21 +161,21 @@ export const EXPRESSIONS = {
   rest: {
     rx: 30.94, ry: 24.94, lean: 0, lift: 0,
     gazeX: 0, gazeY: 0,
-    eyeGap: 12.19, eyeRx: 5.58,
+    eyeGap: 11.21, eyeRx: 4.85,
     upL: 6.48, downL: 6.48, upR: 6.48, downR: 6.48,
   },
   /** 聞いている。少し伸び上がって目を開く。 */
   listening: {
     rx: 30.39, ry: 26.32, lean: -2, lift: -1.4,
     gazeX: 0, gazeY: 0.6,
-    eyeGap: 12.38, eyeRx: 6.03,
+    eyeGap: 11.39, eyeRx: 5.25,
     upL: 7.65, downL: 7.65, upR: 7.65, downR: 7.65,
   },
   /** 考え中。目線を上げ、片目を細める。 */
   thinking: {
     rx: 31.49, ry: 24.42, lean: -6, lift: -0.6,
     gazeX: 2.2, gazeY: -2.6,
-    eyeGap: 11.83, eyeRx: 5.4,
+    eyeGap: 10.88, eyeRx: 4.7,
     upL: 5.85, downL: 5.85, upR: 4.32, downR: 4.32,
   },
   /**
@@ -188,14 +188,14 @@ export const EXPRESSIONS = {
   bright: {
     rx: 32.94, ry: 22.88, lean: 0, lift: -2.6,
     gazeX: 0, gazeY: -0.4,
-    eyeGap: 12.74, eyeRx: 6.39,
+    eyeGap: 11.72, eyeRx: 5.56,
     upL: 8.1, downL: 8.1, upR: 8.1, downR: 8.1,
   },
   /** うまく分からなかった。縦に縮こまって目を丸くする。 */
   oops: {
     rx: 28.76, ry: 26.83, lean: 7, lift: 0.8,
     gazeX: -1.4, gazeY: 0.8,
-    eyeGap: 11.65, eyeRx: 5.22,
+    eyeGap: 10.72, eyeRx: 4.54,
     upL: 8.64, downL: 8.64, upR: 8.64, downR: 8.64,
   },
   /**
@@ -206,7 +206,7 @@ export const EXPRESSIONS = {
   steady: {
     rx: 31.3, ry: 24.77, lean: 0, lift: 0,
     gazeX: 0, gazeY: 0.4,
-    eyeGap: 12.19, eyeRx: 5.67,
+    eyeGap: 11.21, eyeRx: 4.93,
     upL: 4.86, downL: 5.76, upR: 4.86, downR: 5.76,
   },
 } as const satisfies Record<string, PebbleParams>;
