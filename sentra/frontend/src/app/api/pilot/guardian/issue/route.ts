@@ -29,6 +29,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError } from "@/lib/server/api";
 import { requireOperator } from "@/lib/server/pilotOperator";
+import { RULES, consumeRateLimit, rateLimitHeaders, rateLimitSubject } from "@/lib/server/rateLimit";
 import { loadEnrollmentById, loadStudyBySlug } from "@/lib/server/pilotStore";
 import { issueVerification, latestVerification } from "@/lib/server/guardianStore";
 import { guardianHashingConfigured, guardianVerificationUrl } from "@/lib/server/guardianTokens";
@@ -43,6 +44,17 @@ const CHANNELS = new Set(["school", "email", "paper", "phone"]);
 export async function GET(request: NextRequest) {
   const operator = await requireOperator(request);
   if ("error" in operator) return operator.error;
+
+  // 保護者への確認リンクは、発行するたびに学校の連絡経路を1通使う（#234）。
+  // 運営者のセッション単位で数える——IPではなく、誰が発行したかで数えたい。
+  const limited = await consumeRateLimit(operator.service, RULES.guardianIssue,
+    rateLimitSubject(request, operator.userId));
+  if (!limited.allowed) {
+    return NextResponse.json(
+      { detail: "試行回数が多すぎます。しばらく待ってからもう一度お試しください。" },
+      { status: 429, headers: rateLimitHeaders(limited) },
+    );
+  }
 
   const slug = request.nextUrl.searchParams.get("study");
   if (!slug) return jsonError("study is required.", 422);

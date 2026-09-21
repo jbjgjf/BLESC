@@ -246,6 +246,31 @@ PILOT_BASE_URL=https://blesc-pilot.vercel.app CRON_SECRET=... \
 `CRON_SECRET` 未設定のデプロイも健全なデプロイも同じ `0` を返す。**
 その2つを分けるのが (a) の `cron_secret_configured` である。
 
+## 5.6 試行回数の上限（#234）
+
+`sentra/frontend/src/lib/server/rateLimit.ts`。カウンタは Supabase の
+`rate_limit_counters` に置いている。**Vercel はインスタンス間でメモリを共有しない**ので、
+プロセス内の `Map` で数えると「設定値 × 温まっているインスタンス数」が実効上限になり、
+上限の体をなさない。
+
+| 変数 | 既定 | 窓 | 何を守るか |
+| --- | --- | --- | --- |
+| `PILOT_INVITE_CHECK_LIMIT` | 20 | 1時間 | `/api/pilot/invite/check`。DBへの無料の往復 |
+| `PILOT_INVITE_REDEEM_LIMIT` | 10 | 1時間 | `/api/pilot/redeem`。成功すれば導線が終わるので低め |
+| `PILOT_GUARDIAN_ISSUE_LIMIT` | 20 | 1時間 | 保護者確認リンクの発行。1通=学校の連絡経路1回 |
+| `EXTERNAL_MODEL_LIMIT` | 60 | 1時間 | `/api/chat`・`/api/audio/transcriptions`。OpenAIの費用 |
+
+既定値は**正規の参加者が普通に使って当たらない**よう、実利用の見積もりより大きく取っている。
+上限が実利用を捕まえると、誰かが上限を切るので、それが最悪の結果になる。
+
+**カウンタが読めないときは通す（fail-open）。** `cronAuth.ts` の fail-closed とは逆で、
+これは意図的。cronが走らないのは「遅れ」だが、Supabaseの不調でlimiterが拒否すると、
+起きているとは限らない濫用を防ぐために、在籍している50名を締め出すことになる。
+**ここが認可でないから許される判断**であり、本当の関門（`requireUser`・`requireOperator`・
+収集ゲート・RLS）はすべて別の場所にあり、すべて fail-closed である。
+
+行は `purge_rate_limit_counters()` が1日より古い窓を消す。
+
 ## 6. 監視とアラート
 
 | 見るもの | 閾値 | 通知先 |

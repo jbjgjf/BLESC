@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { openAIKey, requireUser } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { COLLECTION_ONLY_MESSAGE, collectionOnlyForUser } from "@/lib/server/collectionMode";
+import { RULES, consumeRateLimit, rateLimitHeaders, rateLimitSubject } from "@/lib/server/rateLimit";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -34,6 +35,15 @@ export async function POST(request: NextRequest) {
   // OpenAI quota that chat and voice depend on.
   const auth = await requireUser(request);
   if ("error" in auth) return auth.error;
+
+  // 文字起こしも同じ予算を使う。ここは以前、認証すら無く全世界に開いていた経路。
+  const limited = await consumeRateLimit(serviceRoleClient(), RULES.externalModel, rateLimitSubject(request, auth.user.id));
+  if (!limited.allowed) {
+    return NextResponse.json(
+      { detail: "試行回数が多すぎます。しばらく待ってからもう一度お試しください。" },
+      { status: 429, headers: rateLimitHeaders(limited) },
+    );
+  }
 
   // A pilot participant's voice recording is not sent for transcription while
   // their collection window is open (#165). Checked before the body is even

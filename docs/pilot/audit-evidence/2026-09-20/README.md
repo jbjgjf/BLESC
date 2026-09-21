@@ -72,12 +72,17 @@ Go / No-Go を判断する人が、ここを読んでから判定すること。
 本演習の時点で、アプリが記録する `document_version` は **`research-consent-doc-v1`** である。
 
 `research-consent-doc-v2` は [consent-pack.md](../../consent-pack.md) として存在するが、
-附則2の空欄（実施者の所在地、各責任者の氏名・連絡先と受諾の証跡、委託先の詳細）が
-**3か所未記入**のため施行していない。実装側は
+附則2の施行前確認（実施者所在地の非公開台帳と回答演習、
+委託先の実設定・所在国・措置、期限削除と本番通し、当番表）が未完了のため施行していない。
+3名の内部責任者については、本人返信による担当受諾・文書承認と連絡先を記録済みである。実装側は
 `sentra/frontend/src/lib/consentDocument.ts` で版を一元化し、
 `NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED=research-consent-doc-v2` を設定するまで
 v1 を記録し、`/legal` の表示も `-draft` のままにしてある。
-未記入のまま v2 を記録すると、存在しない完成文書への同意を主張する行ができる。
+未完了のまま v2 を記録すると、存在しない完成文書への同意を主張する行ができる。
+
+2026-09-21時点では、`NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED=research-consent-doc-v2` は
+**設定しない**。設定は、[consent-pack.md](../../consent-pack.md) 附則2・附則3と本README第3節の
+未確認事項が解消し、判定欄がGoで揃った後に行う。
 
 ## 5. Go / No-Go
 
@@ -87,7 +92,7 @@ v1 を記録し、`/legal` の表示も `-draft` のままにしてある。
 
 - 第2節の手順書未反映（当日に人が詰まる）
 - 第3節の6項目すべて
-- consent-pack 附則2の空欄3か所
+- consent-pack 附則2の施行前確認事項。3名の担当受諾・文書承認は記録済み。実施者所在地の非公開台帳と回答演習、委託先の本番実設定・所在国・措置は未完了
 - consent-pack 附則3の施行条件のうち、本演習が満たすのは「5. 合成データによる演習」の一部のみ
 
 ### 判定欄

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 /**
  * The educator surfaces show observations, not classifications (#175).
@@ -33,7 +37,18 @@ import { describe, it } from "node:test";
 /**
  * What an educator sees. Nothing here may carry a classification or a score.
  */
-const EDUCATOR_SURFACES = ["src/app/educator", "src/app/school", "src/components/educator"];
+/*
+ * `src/app/school` は #175 で削除された。四つのデモ教員画面
+ * （/educator/alerts, /educator/class, /educator/meetings, /school）は
+ * 観測表示へ作り直したあと、最終的に削除している——実データ側に対応する画面が
+ * 既にあり、企画書由来の2つ目の実装を残すことが `educator_display_policy.md` の
+ * 記録する失敗（片方だけ直る）の温床そのものだったため。
+ *
+ * `walk` は存在しないディレクトリを黙って飛ばすので、残しておいても素通りする。
+ * 消してあるのは、掃く対象を実在するものに限っておかないと、次に誰かが
+ * `src/app/school` を作ったとき「前から対象だった」ように見えるため。
+ */
+const EDUCATOR_SURFACES = ["src/app/educator", "src/components/educator"];
 
 /**
  * The demo data library, swept under a narrower rule.
@@ -120,7 +135,7 @@ describe("educator display policy", () => {
     // A walk that silently found nothing would make every assertion below pass.
     const surfaces = await collect(EDUCATOR_SURFACES);
     const lib = await collect(DEMO_LIB);
-    assert.ok(surfaces.length > 5, `expected the educator surfaces to be swept, found ${surfaces.length} files`);
+    assert.ok(surfaces.length > 3, `expected the educator surfaces to be swept, found ${surfaces.length} files`);
     assert.ok(lib.length > 2, `expected the demo library to be swept, found ${lib.length} files`);
   });
 
@@ -169,14 +184,21 @@ describe("educator display policy", () => {
     );
   });
 
-  it("orders the class list by observation time, not by anything inferred", async () => {
-    const source = await readFile("src/app/educator/class/page.tsx", "utf8");
-    // Ordering is how a classification comes back after the colours are gone:
-    // the ranking survives the repaint.
-    assert.ok(source.includes("detectedAt"), "the class list should sort on the observation timestamp");
-    assert.ok(
-      code(source).includes("C.rosterOrder"),
-      "the class list must state what it is sorted by; an unexplained order reads as severity",
-    );
+  it("has no demo educator screens left to order", () => {
+    /*
+     * この検査は「クラス一覧が観測時刻順に並び、その旨を画面に書いている」ことを
+     * 見ていた。#175 で画面自体を削除したので、並び順の検査対象は存在しない。
+     *
+     * 消すのではなく不在の検査に置き換えている。企画書由来のデモ教員画面が
+     * 戻ってきたら、それはバンド表示が戻る最も可能性の高い経路なので、
+     * ここで気づけるようにしておく。
+     */
+    for (const path of ["../src/app/educator/class", "../src/app/educator/alerts",
+                        "../src/app/educator/meetings", "../src/app/school"]) {
+      assert.ok(
+        !existsSync(resolve(HERE, path)),
+        `${path} が復活している。復活させるなら、観測表示であることを別途検査すること`,
+      );
+    }
   });
 });

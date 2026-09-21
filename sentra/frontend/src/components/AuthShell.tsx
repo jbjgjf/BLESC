@@ -35,10 +35,6 @@ const DEMO_ONLY_ROUTES = [
   "/reflect",
   "/research",
   "/guardian",
-  "/educator/alerts",
-  "/educator/class",
-  "/educator/meetings",
-  "/school",
 ];
 
 export function AuthShell({ children }: { children: React.ReactNode }) {

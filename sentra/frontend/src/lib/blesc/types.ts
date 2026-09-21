@@ -186,15 +186,6 @@ export interface UrgentFlag {
   reasons: string[];
 }
 
-/** 6-2 クラス全体分析 */
-export interface ClassBreakdown {
-  theme: AnalysisTheme;
-  /** 0–1 */
-  share: number;
-  /** 前週との差 */
-  delta: number;
-}
-
 /** 6-5 未提出アラート */
 export interface SubmissionAlert {
   studentId: string;
@@ -250,20 +241,6 @@ export interface GuardianView {
   notices: Array<{ date: string; text: string; from: string }>;
   /** 保護者に開示される範囲の説明 */
   scopeNote: string;
-}
-
-/** 学校全体・学年全体の統計分析（個人非特定） */
-export interface SchoolStats {
-  scope: string;
-  studentCount: number;
-  submissionRate: number;
-  breakdown: ClassBreakdown[];
-  /** 学年ごとの傾向 */
-  byGrade: Array<{ grade: string; studentCount: number; submissionRate: number; top: AnalysisTheme }>;
-  /** 週ごとの推移 */
-  trendWeeks: Array<{ label: string; academic: number; relationships: number; health: number }>;
-  /** k-匿名性のしきい値 */
-  minCellSize: number;
 }
 
 /** AIによる面談サポート */
