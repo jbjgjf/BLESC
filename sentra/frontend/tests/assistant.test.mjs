@@ -25,6 +25,7 @@ import {
   SPROUT,
 } from "../src/lib/assistant/pebble.ts";
 import { PETAL_PATH } from "../src/lib/blesc/petal.ts";
+import { bubbleShift, dwellMs, hopAt, hops, MAX_HOPS, speechFor, standingSpot, travelMs } from "../src/lib/assistant/tour.ts";
 import { assessSafety } from "../src/lib/safety-assessment.ts";
 
 const settings = { text: "m", line: "normal", contrast: "normal", motion: "system", face: "default" };
@@ -624,5 +625,130 @@ describe("pebble", () => {
       return (Math.min(...xs) + Math.max(...xs)) / 2;
     };
     assert.ok(Math.abs((50 - centre(left)) - (centre(right) - 50)) < 0.01);
+  });
+});
+
+describe("案内役が画面の中を移動する", () => {
+  const view = { width: 1280, height: 800 };
+  const rect = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height });
+  const SIZE = 72;
+
+  it("示す相手の左に立ち、相手のほうを見る（読む人の視線の手前）", () => {
+    const target = rect(500, 300, 320, 120);
+    const spot = standingSpot(target, view, SIZE);
+    assert.ok(spot.x < target.left, "相手の上に乗っている");
+    assert.equal(spot.look, "right");
+    assert.equal(spot.bubble, "left", "吹き出しが相手にかぶる側へ出ている");
+  });
+
+  it("左に余白が無ければ右へ回る", () => {
+    const target = rect(8, 300, 320, 120);
+    const spot = standingSpot(target, view, SIZE);
+    assert.ok(spot.x > target.right, "相手の上に乗っている");
+    assert.equal(spot.look, "left");
+    assert.equal(spot.bubble, "right");
+  });
+
+  it("画面幅いっぱいのカードには、左上の角に腰かける", () => {
+    const target = rect(20, 400, view.width - 40, 220);
+    const spot = standingSpot(target, view, SIZE);
+    assert.equal(spot.look, "down");
+    assert.ok(spot.x < target.left + SIZE, `左上から離れすぎ (${spot.x})`);
+    assert.ok(Math.abs(spot.y - target.top) < SIZE, `上端から離れすぎ (${spot.y})`);
+    // 画面の天井に張りつかない（以前はここで上へ追い出されていた）。
+    assert.ok(spot.y > SIZE / 2 + 12, "天井に張りついている");
+  });
+
+  it("画面から食み出した相手には、見えている範囲を基準に立つ", () => {
+    const target = rect(20, -300, view.width - 40, 900);
+    const spot = standingSpot(target, view, SIZE);
+    assert.ok(spot.y >= SIZE / 2, "画面の外に立っている");
+    assert.ok(spot.y < view.height / 2, `見えている上のほうに立つはず (${spot.y})`);
+  });
+
+  it("吹き出しを出す余白が無ければ、下へ回す", () => {
+    // 狭い画面で、相手の右に立たされたとき。横に出すと画面から出る。
+    const narrow = { width: 380, height: 700 };
+    const spot = standingSpot(rect(16, 200, 200, 100), narrow, 58);
+    assert.equal(spot.look, "left", "右に立つはずの配置ではない");
+    assert.equal(spot.bubble, "below");
+  });
+
+  it("どこに立っても画面からはみ出さない", () => {
+    for (const target of [rect(0, 0, 40, 40), rect(1240, 760, 40, 40), rect(0, 0, view.width, view.height), rect(600, -200, 200, 80), rect(-500, 300, 400, 100)]) {
+      const spot = standingSpot(target, view, SIZE);
+      assert.ok(spot.x - SIZE / 2 >= 0 && spot.x + SIZE / 2 <= view.width, `x=${spot.x}`);
+      assert.ok(spot.y - SIZE / 2 >= 0 && spot.y + SIZE / 2 <= view.height, `y=${spot.y}`);
+    }
+  });
+
+  it("遠いほど跳ぶ回数が増える。ただし増え続けない", () => {
+    const from = { x: 40, y: 40 };
+    const near = hops(from, { x: 120, y: 60 });
+    const far = hops(from, { x: 1240, y: 760 });
+    assert.equal(near.length, 1);
+    assert.ok(far.length > near.length);
+    assert.ok(far.length <= MAX_HOPS, `${far.length} 回は跳ねすぎ`);
+    assert.equal(hops(from, { ...from }).length, 0, "同じ場所へ跳ばない");
+  });
+
+  it("跳躍はつながっていて、最後はちょうど着く", () => {
+    const from = { x: 1200, y: 700 };
+    const to = { x: 220, y: 180 };
+    const path = hops(from, to);
+    for (const [index, hop] of path.entries()) {
+      const head = hopAt(hop, 0);
+      assert.ok(Math.hypot(head.x - hop.from.x, head.y - hop.from.y) < 0.001, `${index}: 始点がずれている`);
+      if (index > 0) {
+        const previous = path[index - 1];
+        assert.ok(Math.hypot(previous.to.x - hop.from.x, previous.to.y - hop.from.y) < 0.001, `${index}: 前の着地とつながっていない`);
+      }
+    }
+    const last = hopAt(path[path.length - 1], 1);
+    assert.ok(Math.hypot(last.x - to.x, last.y - to.y) < 0.001, "着地点がずれている");
+  });
+
+  it("跳躍の途中は、まっすぐ結んだ線より上にある（弧を描く）", () => {
+    const [hop] = hops({ x: 100, y: 400 }, { x: 260, y: 400 });
+    const middle = hopAt(hop, 0.5);
+    assert.ok(middle.y < 400 - 10, `頂点が低い (${middle.y})`);
+    assert.ok(hopAt(hop, 0).y >= 400 - 0.001 && hopAt(hop, 1).y >= 400 - 0.001, "端が浮いている");
+  });
+
+  it("画面の端から端でも、移動は2秒を大きく超えない", () => {
+    const ms = travelMs(hops({ x: 1240, y: 760 }, { x: 40, y: 40 }));
+    assert.ok(ms > 400, `${ms}ms は速すぎる`);
+    assert.ok(ms < 2200, `${ms}ms は待たせすぎ`);
+  });
+
+  it("端に立っても、吹き出しは画面の中に収まる", () => {
+    const width = 250;
+    // 左端の近くに立ったとき、右へ寄る。
+    assert.ok(bubbleShift(40, width, 800) > 0);
+    assert.equal(40 + bubbleShift(40, width, 800) - width / 2 >= 12, true);
+    // 右端の近くでは左へ。
+    assert.ok(bubbleShift(770, width, 800) < 0);
+    assert.equal(770 + bubbleShift(770, width, 800) + width / 2 <= 788, true);
+    // 真ん中では動かさない。
+    assert.equal(bubbleShift(400, width, 800), 0);
+    // 画面より広い吹き出しは、寄せても入らないので触らない。
+    assert.equal(bubbleShift(100, 900, 800), 0);
+  });
+
+  it("その場で話すのは、最初のひと区切りだけ", () => {
+    const long =
+      "これまでに記録した日の気分を、5枚の花びらで表しています。花びらは「とても良い」「良い」「ふつう」" +
+      "「少しつらい」「つらい」にひとつずつ対応していて、その気分の日が多いほど大きくなります。" +
+      "まだ記録のない気分は、薄く小さい花びらのまま残ります。花には上下がないので、良い・悪いの順位はつけていません。";
+    const said = speechFor(long);
+    assert.ok(said.length < long.length, "縮んでいない");
+    assert.ok(said.endsWith("。") || said.endsWith("…"), `切り口が中途半端 (${said.slice(-12)})`);
+    assert.equal(speechFor("ここです。"), "ここです。", "短い言葉まで刻まない");
+  });
+
+  it("長い説明ほど長く留まる。短くても読む間は残る", () => {
+    assert.ok(dwellMs("ここです。") >= 2400);
+    assert.ok(dwellMs("あ".repeat(80)) > dwellMs("ここです。"));
+    assert.ok(dwellMs("あ".repeat(400)) <= 11000, "長すぎる説明でも、いつかは帰る");
   });
 });

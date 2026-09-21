@@ -21,6 +21,7 @@ import {
 import type { Expression } from "@/lib/assistant/pebble";
 import { HANDOFF_KEY } from "@/lib/assistant/handoff";
 import { Pebble } from "./Pebble";
+import { Guide, type Trip } from "./Guide";
 import styles from "./Assistant.module.css";
 
 /**
@@ -62,6 +63,16 @@ const SPOTLIGHT_MS = 2700;
 /** ページを開いてから見出しが描かれるまで、探し直す回数と間隔。 */
 const SHOW_ATTEMPTS = 25;
 const SHOW_RETRY_MS = 120;
+
+/** 案内役の大きさ。ランチャーと、画面を移動しているときで同じ。 */
+const PEBBLE_SIZE = 72;
+const PEBBLE_SIZE_NARROW = 58;
+
+/** スクロールが止まるのを待つ上限。scrollend が来ない環境ではこれで進む。 */
+const SCROLL_SETTLE_MS = 620;
+
+/** 押す動きを見せてから、実際に進むまで。 */
+const PRESS_MS = 260;
 
 /**
  * 目線の向き（-1〜1）。ランチャーはパネルの右下にいるので、パネルを見るとき
@@ -114,6 +125,15 @@ function locate(heading: string): Located {
 
 const isFound = (located: Located): located is Found => located !== null && "label" in located;
 
+/** 画面に出ている、その行き先のリンク。案内役が実際に押しに行く相手。 */
+function visibleLink(href: string): HTMLElement | null {
+  const links = [...document.querySelectorAll<HTMLElement>("a[href]")].filter(
+    (element) => element.getAttribute("href") === href && element.getClientRects().length > 0,
+  );
+  // タブバーやナビの中にあるものを先に。本文中の同じ行き先より、押す所として自然。
+  return links.find((element) => element.closest("nav")) ?? links[0] ?? null;
+}
+
 /** 示せなかったときの返事。隠れているのか、そもそも無いのかで言い分ける。 */
 function missing(heading: string, located: Located, arrived: boolean): AssistantReply {
   const say =
@@ -136,15 +156,42 @@ function regionOf(heading: HTMLElement): HTMLElement {
  * 画面の中の場所を示す。スクロールして枠を付け、見出しにフォーカスを移す。
  * 読み上げを使っている人には、フォーカスが移ることで「ここ」が伝わる。
  */
-function spotlight({ label, region }: Found, reduced: boolean): void {
+function spotlight({ label, region }: Found, reduced: boolean, hold = false): void {
   region.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
   region.setAttribute("data-bl-spotlight", "");
-  window.setTimeout(() => region.removeAttribute("data-bl-spotlight"), SPOTLIGHT_MS);
+  // 案内役が横に立って話しているあいだは、枠を残す。先に消えると、話し手と
+  // 話の相手がばらばらになる。消すのは、案内役が帰ったとき。
+  if (!hold) window.setTimeout(() => region.removeAttribute("data-bl-spotlight"), SPOTLIGHT_MS);
   if (!label.hasAttribute("tabindex")) {
     label.setAttribute("tabindex", "-1");
     label.addEventListener("blur", () => label.removeAttribute("tabindex"), { once: true });
   }
   label.focus({ preventScroll: true });
+}
+
+/**
+ * スクロールが止まってから続きを進める。
+ *
+ * smooth スクロールの最中に位置を測ると、まだ動いている相手に向かって
+ * 跳ぶことになり、着いたころには相手がそこにいない。scrollend を待ち、
+ * 来ない環境（Safari など）では時間で切り上げる。
+ */
+function afterScroll(run: () => void): () => void {
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    window.clearTimeout(timer);
+    window.removeEventListener("scrollend", finish);
+    run();
+  };
+  const timer = window.setTimeout(finish, SCROLL_SETTLE_MS);
+  window.addEventListener("scrollend", finish, { once: true });
+  return () => {
+    done = true;
+    window.clearTimeout(timer);
+    window.removeEventListener("scrollend", finish);
+  };
 }
 
 export function Assistant({ audience }: { audience: Audience }) {
@@ -167,7 +214,11 @@ export function Assistant({ audience }: { audience: Audience }) {
   // 閉じる動きの最中。見た目はまだ出ているが、操作の上ではもう閉じている。
   const [closing, setClosing] = useState(false);
   const [typing, setTyping] = useState(false);
+  // 画面の中を移動しているあいだの行き先。null なら隅にいる。
+  const [trip, setTrip] = useState<Trip | null>(null);
+  const [narrow, setNarrow] = useState(false);
   const expanded = open && !closing;
+  const size = narrow ? PEBBLE_SIZE_NARROW : PEBBLE_SIZE;
 
   const panelId = useId();
   const launcherRef = useRef<HTMLButtonElement>(null);
@@ -177,8 +228,20 @@ export function Assistant({ audience }: { audience: Audience }) {
   const settleTimer = useRef(0);
   const exitTimer = useRef(0);
   const typingTimer = useRef(0);
-  // ページを開いてから示す見出し。遷移が終わるまで預かる。
+  // ページを開いてから示す見出しと、そこで話すこと。遷移が終わるまで預かる。
   const pendingShow = useRef<string | null>(null);
+  const pendingNote = useRef<string | null>(null);
+  // いま枠を出している相手。案内役が帰るまで残す。
+  const lit = useRef<HTMLElement | null>(null);
+
+  // 狭い画面では小石も小さい。跳ぶ距離の計算にも使うので状態で持つ。
+  useEffect(() => {
+    const query = window.matchMedia(NARROW);
+    const sync = () => setNarrow(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
 
   const later = useCallback((run: () => void, delay: number) => {
     const id = window.setTimeout(() => {
@@ -200,7 +263,9 @@ export function Assistant({ audience }: { audience: Audience }) {
 
   useEffect(() => {
     const pending = timers.current;
+    const held = lit;
     return () => {
+      held.current?.removeAttribute("data-bl-spotlight");
       pending.forEach(window.clearTimeout);
       window.clearTimeout(settleTimer.current);
       window.clearTimeout(exitTimer.current);
@@ -258,13 +323,32 @@ export function Assistant({ audience }: { audience: Audience }) {
   }, [entries, reduced]);
 
   const run = useCallback(
-    (action: AssistantAction) => {
+    (action: AssistantAction, say?: string) => {
       switch (action.kind) {
-        case "navigate":
-          navigate(action.href);
-          // 狭い画面ではパネルが行き先を隠す。案内したら引っ込む。
-          if (window.matchMedia(NARROW).matches) close();
+        case "navigate": {
+          const link = visibleLink(action.href);
+          if (reduced || !link) {
+            navigate(action.href);
+            // 狭い画面ではパネルが行き先を隠す。案内したら引っ込む。
+            if (window.matchMedia(NARROW).matches) close();
+            break;
+          }
+          // 「ここを押します」を、言葉ではなく動きで見せる。案内役がタブまで
+          // 跳んでいって押す。どこを押せば同じことができるのかが残る。
+          close();
+          setTrip({
+            target: link,
+            text: say ?? "こちらです。",
+            onArrive: () => {
+              link.setAttribute("data-bl-press", "");
+              window.setTimeout(() => {
+                link.removeAttribute("data-bl-press");
+                navigate(action.href);
+              }, PRESS_MS);
+            },
+          });
           break;
+        }
         case "display":
           setA11y(action.patch);
           break;
@@ -286,7 +370,7 @@ export function Assistant({ audience }: { audience: Audience }) {
           break;
       }
     },
-    [navigate, close],
+    [navigate, close, reduced],
   );
 
   const respond = useCallback(
@@ -297,7 +381,7 @@ export function Assistant({ audience }: { audience: Audience }) {
       setExpression(reply.expression);
       // 落ち着けたい場面で跳ねさせない。
       if (!reply.calm) setHopKey((key) => key + 1);
-      reply.actions.forEach(run);
+      reply.actions.forEach((action) => run(action, reply.say));
       settle();
       setBusy(false);
     },
@@ -337,11 +421,42 @@ export function Assistant({ audience }: { audience: Audience }) {
     [busy, contextFor, entries, reduced, respond, later],
   );
 
+  /** ランチャーの中心。案内役はここから出て、ここへ帰る。 */
+  const homeSpot = useCallback(() => {
+    const rect = launcherRef.current?.getBoundingClientRect();
+    return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+  }, []);
+
+  /**
+   * 示す場所まで、案内役が実際に歩いていく。
+   *
+   * 枠を出すだけでも用は足りるが、隅にいたまま「ここです」と書く案内役は、
+   * 説明を出す札であって案内している誰かには見えない。行って、横に立って、
+   * そこで話す。枠とフォーカスは着いた瞬間に出す — 読み上げを使っている人
+   * には、跳ねている絵は届かないので、待たせる理由がない。
+   */
+  const travelTo = useCallback(
+    (located: Found, text: string) => {
+      spotlight(located, reduced, true);
+      lit.current = located.region;
+      afterScroll(() => setTrip({ target: located.region, text }));
+    },
+    [reduced],
+  );
+
+  /** 案内が終わった。枠を外して、席へ戻す。 */
+  const endTrip = useCallback(() => {
+    lit.current?.removeAttribute("data-bl-spotlight");
+    lit.current = null;
+    setTrip(null);
+  }, []);
+
   /** 画面の中の場所を示す。別のページにあるときは、開いてから示す。 */
   const show = useCallback(
-    (heading: string, href: string | null) => {
+    (heading: string, href: string | null, note?: string) => {
       if (href && href !== pathname) {
         pendingShow.current = heading;
+        pendingNote.current = note ?? null;
         navigate(href);
         close();
         return;
@@ -354,9 +469,9 @@ export function Assistant({ audience }: { audience: Audience }) {
       close();
       // パネルが閉じ始めてから動かす。同じフレームで始めると、まだ残っている
       // パネルの陰でスクロールが始まり、どこへ動いたのか見えにくい。
-      window.requestAnimationFrame(() => spotlight(located, reduced));
+      window.requestAnimationFrame(() => travelTo(located, note ?? `「${heading}」はここです。`));
     },
-    [pathname, navigate, close, respond, reduced],
+    [pathname, navigate, close, respond, travelTo],
   );
 
   // ページを開いたあとで、預かっていた見出しを示す。新しいページは描画に
@@ -369,8 +484,10 @@ export function Assistant({ audience }: { audience: Audience }) {
     const attempt = () => {
       const located = locate(heading);
       if (isFound(located)) {
+        const note = pendingNote.current;
         pendingShow.current = null;
-        spotlight(located, reduced);
+        pendingNote.current = null;
+        travelTo(located, note ?? `「${heading}」はここです。`);
         return;
       }
       attempts += 1;
@@ -381,15 +498,16 @@ export function Assistant({ audience }: { audience: Audience }) {
       // 見つからなかったことは黙らずに伝える。閉じたパネルに書いても
       // 誰にも届かないので、開き直す。
       pendingShow.current = null;
+      pendingNote.current = null;
       openPanel();
       respond(missing(heading, located, true));
     };
     timer = window.setTimeout(attempt, SHOW_RETRY_MS);
     return () => window.clearTimeout(timer);
-  }, [pathname, reduced, openPanel, respond]);
+  }, [pathname, reduced, openPanel, respond, travelTo]);
 
   const act = useCallback(
-    (offer: AssistantOffer) => {
+    (offer: AssistantOffer, note?: string) => {
       const { action } = offer;
       if (action.kind === "help") {
         respond(routeIntent("使い方", contextFor("", 0)));
@@ -401,7 +519,7 @@ export function Assistant({ audience }: { audience: Audience }) {
         return;
       }
       if (action.kind === "show") {
-        show(action.heading, action.href);
+        show(action.heading, action.href, note);
         return;
       }
       run(action);
@@ -427,14 +545,18 @@ export function Assistant({ audience }: { audience: Audience }) {
         aria-controls={panelId}
         aria-label={expanded ? "blescの案内役を閉じる" : "blescの案内役を開く"}
         onClick={() => (expanded ? close() : openPanel())}
+        // 出かけているあいだ、隅に同じ顔がもう一つ座っていると二匹に見える。
+        data-away={trip ? "" : undefined}
       >
         <Pebble
           expression={expanded || attending ? "listening" : expression}
-          size={54}
+          size={size}
           hopKey={hopKey}
           gaze={expanded ? (typing ? LOOK_AT_INPUT : LOOK_AT_PANEL) : null}
         />
       </button>
+
+      <Guide trip={trip} home={homeSpot} size={size} onFinished={endTrip} />
 
       <div
         id={panelId}
@@ -447,7 +569,7 @@ export function Assistant({ audience }: { audience: Audience }) {
         <div className={styles.head}>
           <Pebble
             expression={expression}
-            size={30}
+            size={34}
             hopKey={hopKey}
             gaze={typing ? LOOK_DOWN_AT_INPUT : null}
             className={styles.headPebble}
@@ -493,7 +615,7 @@ export function Assistant({ audience }: { audience: Audience }) {
                   <ul className={styles.offers}>
                     {entry.offers.map((offer, index) => (
                       <li key={offer.label} style={{ "--i": index } as React.CSSProperties}>
-                        <button type="button" className="bl-choice" onClick={() => act(offer)}>
+                        <button type="button" className="bl-choice" onClick={() => act(offer, entry.text)}>
                           <Icon name={offer.icon} size={17} />
                           {offer.label}
                         </button>

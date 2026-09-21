@@ -1148,19 +1148,19 @@ html[data-bl-motion="reduced"] *::after {
 
 /* デモ表示の札は小石の左へ避ける。 */
 .bl-app:has([data-bl-assistant]) .bl-demo-badge {
-  right: 84px;
+  right: 104px;
 }
 
 /* 最後の行まで小石の上へスクロールできるように、下に逃げ場を足す。 */
 .bl-app:has([data-bl-assistant]) .bl-app__main {
-  padding-bottom: 104px;
+  padding-bottom: 124px;
 }
 
 /* キーボードで移動したとき、ブラウザは要素を画面内に入れるだけで、
    固定表示の小石の下に隠れていても止まる（WCAG 2.4.11）。
    その分だけスクロールの到達点を持ち上げる。 */
 html:has([data-bl-assistant]) {
-  scroll-padding-bottom: 96px;
+  scroll-padding-bottom: 116px;
 }
 
 @media (max-width: 640px) {
@@ -1170,6 +1170,17 @@ html:has([data-bl-assistant]) {
   html:has([data-bl-assistant]) {
     scroll-padding-bottom: calc(150px + env(safe-area-inset-bottom));
   }
+}
+
+/* 案内役が押したところ。指が触れたのと同じだけ沈ませる。押した瞬間が
+   見えないと、案内役の横で画面が勝手に変わったように見える。 */
+[data-bl-press] {
+  transform: scale(0.94);
+  transition: transform var(--bl-t-press) var(--bl-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-bl-press] { transform: none; }
 }
 
 /* 「画面で見る」で示した場所。フォーカスリングと同じ太さ・色の枠を、

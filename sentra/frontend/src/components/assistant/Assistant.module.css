@@ -15,8 +15,8 @@
   right: 14px;
   bottom: 14px;
   z-index: 95;
-  width: 64px;
-  height: 64px;
+  width: 84px;
+  height: 84px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -30,6 +30,14 @@
 
 .launcher:hover {
   transform: translateY(-2px);
+}
+
+/* 画面の中へ出かけているあいだ。席は空けたままにして、同じ顔が2つ
+   見えないようにする。押せるままだと、いない小石を押すことになるので閉じる。 */
+.launcher[data-away] {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s var(--bl-ease);
 }
 
 .launcher:active {
@@ -360,8 +368,8 @@
   .launcher {
     right: 10px;
     bottom: calc(74px + env(safe-area-inset-bottom));
-    width: 58px;
-    height: 58px;
+    width: 68px;
+    height: 68px;
   }
 
   .panel {

@@ -1,0 +1,83 @@
+/* 画面の中を移動する案内役。位置は transform で書き換えるので、left/top は
+   置かない（毎フレーム再レイアウトさせない）。 */
+
+.shell {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 96; /* ランチャー（95）より上。パネル（100）より下。 */
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* 立った先で話す言葉。読み上げには出さない（パネルの会話が live region で、
+   同じ言葉がそちらにも残る）。 */
+.bubble {
+  position: absolute;
+  top: 50%;
+  width: max-content;
+  max-width: min(260px, 52vw);
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: var(--bl-radius-inner);
+  background: var(--bl-surface);
+  border: 1px solid var(--bl-line);
+  box-shadow: 0 10px 26px hsl(var(--bl-hue) 46% 28% / 0.16);
+  color: var(--bl-ink);
+  font-size: 0.84rem;
+  line-height: 1.6;
+  animation: guide-bubble 0.22s var(--bl-pop) both;
+}
+
+/* 相手にかぶらない側へ出す。かぶせたら、示した意味がなくなる。
+   data-side は「吹き出しをどちらへ出すか」。 */
+.bubble[data-side="right"] {
+  left: calc(100% + 10px);
+  transform: translateY(-50%);
+}
+
+.bubble[data-side="left"] {
+  right: calc(100% + 10px);
+  transform: translateY(-50%);
+}
+
+/* 上下に出すときは、画面の外へ出ないよう --shift で寄せる（Guide.tsx）。 */
+.bubble[data-side="below"] {
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(calc(-50% + var(--shift, 0px)));
+}
+
+.bubble[data-side="above"] {
+  top: auto;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(calc(-50% + var(--shift, 0px)));
+}
+
+@keyframes guide-bubble {
+  from {
+    opacity: 0;
+    scale: 0.92;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble {
+    animation: none;
+  }
+}
+
+:global(html[data-bl-motion="reduced"]) .bubble {
+  animation: none;
+}
+
+@media (forced-colors: active) {
+  .bubble {
+    border-color: CanvasText;
+  }
+}
