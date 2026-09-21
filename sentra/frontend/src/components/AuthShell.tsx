@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useDemoMode } from "@/lib/demo";
+import { isDemoOnlyRoute } from "@/lib/demoOnlyRoutes";
 import { contextForPath } from "@/lib/blesc/context";
 import { useIsHydrated } from "@/lib/hydration";
 import { Icon } from "@/components/ui/Icon";
@@ -16,12 +17,6 @@ import { RouteAnnouncer } from "@/components/a11y/RouteAnnouncer";
 //: which painted over the sticky header and took the navigation with it.
 const FULL_BLEED_ROUTES = ["/chat"];
 
-//: Routes under a demo-only prefix that are nevertheless real screens. The
-//: world-model research page (#151) reads a live run through a credentialed
-//: server route, so gating it behind demo mode would make it unreachable by
-//: the researchers it exists for.
-const DEMO_ONLY_EXCEPTIONS = ["/research/world-model"];
-
 //: Routes that must render without a session at all.
 //:
 //: The guardian confirmation screen (#164) is opened by a parent on their own
@@ -30,12 +25,6 @@ const DEMO_ONLY_EXCEPTIONS = ["/research/world-model"];
 //: the one place a guardian's consent cannot honestly come from. The token in
 //: the URL is what authorises the request, and the route handler checks it.
 const PUBLIC_ROUTES = ["/pilot/guardian", "/legal"];
-
-const DEMO_ONLY_ROUTES = [
-  "/reflect",
-  "/research",
-  "/guardian",
-];
 
 export function AuthShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -104,10 +93,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   const isFullBleed = FULL_BLEED_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`),
   );
-  const isDemoOnly =
-    !demo &&
-    !DEMO_ONLY_EXCEPTIONS.includes(pathname) &&
-    DEMO_ONLY_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+  const isDemoOnly = !demo && isDemoOnlyRoute(pathname);
 
   return (
     <div
