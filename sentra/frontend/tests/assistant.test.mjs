@@ -802,3 +802,30 @@ describe("返事までの間", () => {
     assert.ok(high / low < 1.5, "揺らぎが大きすぎて、速いときと遅いときが別物に見える");
   });
 });
+
+describe("名前", () => {
+  const ctx = (audience = "student") => ({
+    audience,
+    pathname: audience === "educator" ? "/educator" : "/",
+    settings: { text: "m", line: "normal", contrast: "normal", motion: "system", face: "default" },
+    pilot: null,
+    safety: { level: "none" },
+    turn: 0,
+  });
+
+  it("名前で呼ばれたら名乗る", () => {
+    for (const called of ["ラスクくん", "ラスク", "らすくくん", "ラスクって誰？", "名前は？"]) {
+      const reply = routeIntent(called, ctx());
+      assert.match(reply.say, /ラスク/, `「${called}」に名乗らない`);
+      assert.notEqual(reply.expression, "oops", `「${called}」が拾われない`);
+    }
+  });
+
+  it("自分には「くん」を付けない（名乗りは呼び名と違う）", () => {
+    for (const audience of ["student", "educator"]) {
+      const reply = routeIntent("あなたは誰？", ctx(audience));
+      assert.ok(!reply.say.includes("ラスクくん"), `${audience}: 自分を「くん」付けで呼んでいる`);
+      assert.match(reply.say, /ラスク/);
+    }
+  });
+});

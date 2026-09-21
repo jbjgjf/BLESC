@@ -444,17 +444,17 @@ const INTENTS: readonly Intent[] = [
   },
   {
     id: "identity",
-    words: ["だれ", "誰な", "誰で", "あなたは", "きみは", "君は", "名前", "何者"],
+    words: ["だれ", "誰な", "誰で", "あなたは", "きみは", "君は", "名前", "何者", "ラスク", "らすく"],
     reply: (context) =>
       context.audience === "educator"
         ? {
-            say: "blescの案内役です。画面の移動と、見え方の調整、画面に出ている言葉の説明を手伝います。",
+            say: "blescの案内役、ラスクです。画面の移動と、見え方の調整、画面に出ている言葉の説明を手伝います。",
             expression: "listening",
             actions: [],
             offers: [],
           }
         : {
-            say: "blescの案内役です。ページの移動と、見え方の調整、画面に出ている言葉の説明を手伝います。気持ちの話は、相談のページでちゃんと聞きます。",
+            say: "blescの案内役、ラスクです。ページの移動と、見え方の調整、画面に出ている言葉の説明を手伝います。気持ちの話は、相談のページでちゃんと聞きます。",
             expression: "listening",
             actions: [],
             offers: [{ label: "相談へ", icon: DESTINATIONS.chat.icon, action: { kind: "navigate", href: DESTINATIONS.chat.href } }],
@@ -501,7 +501,7 @@ const INTENTS: readonly Intent[] = [
         : { destination: DESTINATIONS.journal, label: "日記を書く" };
       return {
         say: said.text.includes("はじめまして")
-          ? "はじめまして。blescの案内役です。ページの移動と、見え方の調整、画面の見方の説明を手伝います。"
+          ? "はじめまして。ラスクといいます。ページの移動と、見え方の調整、画面の見方の説明を手伝います。"
           : greetingFor(said.text)
             + pick(
                 educator

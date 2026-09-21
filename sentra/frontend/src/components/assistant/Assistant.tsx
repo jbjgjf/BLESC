@@ -547,7 +547,7 @@ export function Assistant({ audience }: { audience: Audience }) {
         onBlur={() => setAttending(false)}
         aria-expanded={expanded}
         aria-controls={panelId}
-        aria-label={expanded ? "blescの案内役を閉じる" : "blescの案内役を開く"}
+        aria-label={expanded ? "案内役のラスクくんを閉じる" : "案内役のラスクくんを開く"}
         onClick={() => (expanded ? close() : openPanel())}
         // 出かけているあいだ、隅に同じ顔がもう一つ座っていると二匹に見える。
         data-away={trip ? "" : undefined}
@@ -566,7 +566,7 @@ export function Assistant({ audience }: { audience: Audience }) {
         id={panelId}
         className={styles.panel}
         role="dialog"
-        aria-label="blescの案内役"
+        aria-label="案内役のラスクくん"
         hidden={!open}
         data-closing={closing ? "" : undefined}
       >
@@ -579,7 +579,7 @@ export function Assistant({ audience }: { audience: Audience }) {
             className={styles.headPebble}
           />
           <div>
-            <p className={styles.headName}>blescの案内役</p>
+            <p className={styles.headName}>ラスクくん</p>
             <p className={styles.headRole}>ページの移動、見え方、画面の説明</p>
           </div>
           <button type="button" className={`bl-icon-btn ${styles.close}`} onClick={close} aria-label="閉じる">
@@ -665,7 +665,7 @@ export function Assistant({ audience }: { audience: Audience }) {
               typingTimer.current = window.setTimeout(() => setTyping(false), TYPING_IDLE_MS);
             }}
             placeholder={copy.placeholder}
-            aria-label="案内役に伝えたいこと"
+            aria-label="ラスクくんに伝えたいこと"
             enterKeyHint="send"
             autoComplete="off"
           />
