@@ -1,3 +1,4 @@
-:HL["/demo-view/_next/static/chunks/0jy9ah2~z0~po.css","style"]
+:HL["/demo-view/_next/static/chunks/02y0edwetncvm.css","style"]
+:HL["/demo-view/_next/static/chunks/0pk~igy3qeoq_.css","style"]
 :HL["/demo-view/_next/static/chunks/0b-fbb778uyvt.css","style"]
-0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"journal","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}},"staleTime":300,"buildId":"EWwzhThEeCN9E_lc6nynm"}
+0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"journal","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}},"staleTime":300,"buildId":"demo-view-fd30a04cd9d8acc5c62635b60faeec2101010908"}

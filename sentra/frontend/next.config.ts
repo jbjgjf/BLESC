@@ -82,6 +82,12 @@ const nextConfig: NextConfig = {
       // committed came from the commit named in public/demo-view/BUILD_INFO.json.
       { source: "/demo-view", destination: "/demo-view/index.html" },
       { source: "/demo-view/:path+", destination: "/demo-view/:path+.html" },
+
+      // 案内役（ラスクくん）の紹介ページ。中身は同じ書き出しの中にあり、
+      // ここでは短い URL を繋いでいるだけ。チームに見せるための一時的な
+      // ページなので、役目が済んだらこの1行ごと消す。パイロットでは上の
+      // beforeFiles が /demo-view を閉じているため、ここも 404 になる。
+      { source: "/meet-rusk", destination: "/demo-view/meet-rusk.html" },
     ];
   },
 };

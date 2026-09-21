@@ -1,9 +1,7 @@
 {
   "source_ref": "chat-ui-redesign",
-  "source_commit": "5371c2aa0e06b01949be48fb6365c23980661b9a",
-  "built_at": null,
+  "source_commit": "fd30a04cd9d8acc5c62635b60faeec2101010908",
+  "built_at": "2026-09-21T14:18:10Z",
   "command": "sentra/frontend/scripts/build-demo-view.sh <出力先>",
-  "imported_by": "7bd9ebcfe102052a696217e9fde6e66f80ab53db",
-  "imported_at": "2026-09-18T23:20:05+09:00",
-  "note": "この1ファイルだけは後から書いた記録で、書き出しの時点では作られていない（#194）。source_commit は 7bd9ebc のコミットメッセージが挙げている値を git で確認したもの — 実在し、chat-ui-redesign の祖先であり、DEMO_VIEW_EXPORT の分岐を追加したコミットそのもの。built_at は当時記録されていないため null。次回以降は build-demo-view.sh がこのファイルを自分で書き、built_at も入る。"
+  "note": "source_commit を checkout して同じコマンドを実行すると、BUILD_INFO.json の built_at 以外は同じ内容になる。"
 }
