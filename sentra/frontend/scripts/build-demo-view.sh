@@ -2,11 +2,17 @@
 # blesc.online/demo-view に置く、静的なデモ表示を書き出す。
 #
 #   scripts/build-demo-view.sh <出力先>
-#   例: scripts/build-demo-view.sh ../../main-checkout/sentra/frontend/demo-view-export
+#   例: scripts/build-demo-view.sh <main のチェックアウト>/sentra/frontend/public/demo-view
 #
-# 本番の画面（main）とは別物。このブランチの画面を、固定のデモデータだけで
-# 動く静的なファイルにして、main の demo-view-export/ に置く。main の
-# `npm run build` がそれを public/demo-view に写す（パイロットのビルドでは写さない）。
+# 本番の画面（main）とは別物。このスクリプトが置かれているチェックアウトの画面を、
+# 固定のデモデータだけで動く静的なファイルにして、main の public/demo-view に置く。
+#
+# **main では実行できない。** 静的な書き出しに必要な `DEMO_VIEW_EXPORT=1` の分岐は
+# ソースブランチ（chat-ui-redesign）の next.config.ts にしか無く、main の
+# next.config.ts には無いため、main で走らせても out/ が生成されない。main には
+# 「どう作られたか」の記録として置いてある（jbjgjf/BLESC#194）。下の前提条件の
+# 確認がこれを実行前に検出する。
+#
 #  - デモモードを常に有効にする（ログイン不要。表示するのは fixtures だけ）
 #  - API は含めない（POST を持つ Route Handler は静的に書き出せないうえ、
 #    デモでは使わない）。Supabase の宛先は解決できない .invalid にして、
@@ -18,6 +24,27 @@ set -euo pipefail
 
 OUT_DIR="${1:?出力先のディレクトリを指定してください}"
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
+
+# 前提条件の確認。これが無いと、main で実行した人は next build が普通に成功した
+# あとの「out/ が無い」という無関係な失敗を読むことになる。
+# 判定は `output: "export"` の有無で行う。DEMO_VIEW_EXPORT という語そのものは
+# main の next.config.ts のコメントにも出てくるので、目印にならない。
+if ! grep -q 'output: *"export"' "$HERE/next.config.ts"; then
+  cat >&2 <<'MSG'
+エラー: このチェックアウトの next.config.ts に DEMO_VIEW_EXPORT の分岐がありません。
+
+静的な書き出しは、ソースブランチ（chat-ui-redesign）の next.config.ts が持つ
+`output: "export"` / `basePath: "/demo-view"` の分岐に依存します。main には
+その分岐が無いため、ここでは書き出せません。
+
+  git switch chat-ui-redesign
+  sentra/frontend/scripts/build-demo-view.sh <main のチェックアウト>/sentra/frontend/public/demo-view
+
+現在置かれている成果物の出所は public/demo-view/BUILD_INFO.json にあります。
+MSG
+  exit 2
+fi
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -35,6 +62,13 @@ BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 find "$HERE" -mindepth 1 -maxdepth 1 ! -name .next ! -name out ! -name '.env*' -exec cp -cR {} "$WORK/" \; 2>/dev/null \
   || find "$HERE" -mindepth 1 -maxdepth 1 ! -name .next ! -name out ! -name '.env*' -exec cp -R {} "$WORK/" \;
 rm -rf "$WORK/src/app/api"
+# 書き出し先そのものを材料に持ち込まない。public/ の中身は out/ の直下にそのまま
+# 写るので（このリポジトリに入っている成果物の直下に flower.png や fonts/ が
+# 並んでいるのがその証拠）、ソースブランチが main を取り込んで public/demo-view
+# を持った瞬間、書き出すたびに古い成果物が out/demo-view として入れ子になり、
+# 12MB ずつ増えていく。消えるのは複製した作業ツリーの側だけで、元のチェック
+# アウトには触らない。
+rm -rf "$WORK/public/demo-view"
 
 (
   cd "$WORK"
@@ -73,12 +107,19 @@ print(f"asset paths prefixed: {prefixed}; pages marked noindex: {noindex}")
 # RSC: 1 の要求を「パス + .rsc」に書き換えてから探す（/a.txt → /a.txt.rsc。
 # 先読みの .segments/… が無いときも同じ所に落ちる）ので、同じ中身を .rsc でも
 # 置く。無いと 404 になり、遷移のたびにページ全体を読み直してしまう。
+# この対応は tests/demo-view-rsc-twins.test.mjs が固定している（#199）。
 twins = 0
 for path in out.rglob("*.txt"):
     path.with_name(path.name + ".rsc").write_bytes(path.read_bytes())
     twins += 1
 print(f"RSC twins written: {twins}")
 PY
+
+# 上の除外が効いていることを、黙って12MB増える前に確かめる。
+if [ -e "$WORK/out/demo-view" ]; then
+  echo "エラー: 書き出しの中に demo-view/ が入れ子になっています。前回の成果物を材料に持ち込んでいます。" >&2
+  exit 1
+fi
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
