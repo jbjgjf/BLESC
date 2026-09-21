@@ -719,14 +719,36 @@ export class ApiClient {
     });
   }
 
-  /** Withdraw consent. The server records the revocation and deletes any
-   *  retained journal text before returning (#131). */
-  static async revokeConsent(userId: string): Promise<ConsentState> {
-    const result = await this.fetch<{ consent: ConsentState }>(
-      `/consent?user_id=${encodeURIComponent(userId)}`,
-      { method: "DELETE" },
-    );
-    return normalizeConsent(result.consent);
+  /**
+   * Withdraw consent (#131, #224).
+   *
+   * `retainedData` says what happens to journal text already stored: `delete`
+   * destroys it before this resolves, `keep` leaves it to its ordinary
+   * retention window. The parameter is required rather than defaulted, so a
+   * caller cannot destroy a participant's record by not thinking about it —
+   * the server still defaults to `delete`, but that default is there for
+   * malformed requests, not for screens.
+   *
+   * `keep` does not soften the withdrawal: collection stops, the export gate
+   * stays shut and training use stays off.
+   */
+  static async revokeConsent(
+    userId: string,
+    retainedData: "delete" | "keep",
+  ): Promise<{ consent: ConsentState; purgedRawText: number | null; retainedData: "delete" | "keep" }> {
+    const result = await this.fetch<{
+      consent: ConsentState;
+      purged_raw_text: number | null;
+      retained_data: "delete" | "keep";
+    }>(`/consent?user_id=${encodeURIComponent(userId)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ retained_data: retainedData }),
+    });
+    return {
+      consent: normalizeConsent(result.consent),
+      purgedRawText: result.purged_raw_text,
+      retainedData: result.retained_data,
+    };
   }
 
   /**

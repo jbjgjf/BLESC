@@ -24,7 +24,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/server/api";
-import { loadConsentState, recordConsent, revokeConsent } from "@/lib/server/consentStore";
+import {
+  loadConsentState,
+  recordConsent,
+  revokeConsent,
+  type RetainedDataDisposition,
+} from "@/lib/server/consentStore";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { loadEnrollmentByParticipant } from "@/lib/server/pilotStore";
 import { consentSnapshot } from "@/lib/consent";
@@ -170,12 +175,47 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/**
+ * Withdraw.
+ *
+ * `retained_data` decides what happens to journal text already stored (#224).
+ * Only the exact string `"keep"` keeps it: anything else — absent, misspelled,
+ * a boolean, a value from a client that has drifted — is read as `"delete"`.
+ * The two mistakes are not symmetric. Reading a garbled request as "delete"
+ * destroys text the participant may have wanted kept, which is bad; reading it
+ * as "keep" retains text after a withdrawal that may well have meant "get rid
+ * of it", which is the failure this route was written to prevent.
+ *
+ * Withdrawal is withdrawal either way. `keep` does not resume collection, does
+ * not re-open the export gate and does not permit training use; it only means
+ * the stored text is left to its ordinary retention window.
+ */
 export async function DELETE(request: NextRequest) {
   const resolved = await resolve(request);
   if ("error" in resolved) return resolved.error;
 
+  const body = (await request.json().catch(() => ({}))) as { retained_data?: unknown };
+  const disposition: RetainedDataDisposition = body.retained_data === "keep" ? "keep" : "delete";
+
   try {
-    const consent = await revokeConsent(resolved.service, resolved.ownerUserId, resolved.participantId);
+    const consent = await revokeConsent(
+      resolved.service,
+      resolved.ownerUserId,
+      resolved.participantId,
+      "student_ui",
+      disposition,
+    );
+
+    if (disposition === "keep") {
+      // Nothing is purged, and the response says so in the same field the
+      // delete path uses, so a caller cannot mistake "kept" for "deleted zero".
+      return NextResponse.json({
+        consent,
+        retained_data: "keep",
+        purged_raw_text: 0,
+        detail: "同意を撤回しました。保存済みの本文は、保持期限が来るまで残ります。",
+      });
+    }
 
     // Purge before answering. A revocation that returns success while the text
     // is still stored is the failure this route exists to prevent, so a purge
@@ -189,6 +229,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json(
         {
           consent,
+          retained_data: "delete",
           purged_raw_text: null,
           detail: "同意は撤回しましたが、保存済みの本文の削除に失敗しました。",
         },
@@ -196,7 +237,11 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ consent, purged_raw_text: purge.data ?? 0 });
+    return NextResponse.json({
+      consent,
+      retained_data: "delete",
+      purged_raw_text: purge.data ?? 0,
+    });
   } catch (err) {
     return jsonError(err instanceof Error ? err.message : "同意を撤回できませんでした。", 502);
   }
