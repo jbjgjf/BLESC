@@ -1,18 +1,66 @@
 /* 塗りは属性ではなくここで持つ。SVG の表示属性に var() を書くと、
-   ブラウザによっては解釈されずに黒く塗られる。 */
-.body {
-  fill: var(--bl-blue);
-  stroke: var(--bl-blue-strong);
-  stroke-linejoin: round;
+   ブラウザによっては解釈されずに黒く塗られる。
+
+   線は引かない。面の明暗と影だけで立たせる。輪郭線と陰影を混ぜると、
+   どちらつかずの「描きかけ」に見える — 線を引くなら全部の線を引く、
+   引かないなら一本も引かない。ここは引かない側に倒した。高コントラスト
+   設定と Windows のハイコントラストだけは、下で線に戻す。 */
+
+.svg {
+  overflow: visible;
 }
+
+.body {
+  stroke: none;
+}
+
+/* 石の面。左上から光が当たり、右下へ落ちる。 */
+.stopTop { stop-color: var(--bl-pebble-lit); }
+.stopMid { stop-color: var(--bl-pebble); }
+.stopDeep { stop-color: var(--bl-pebble-deep); }
+
+/* 花びら。付け根が濃く、先へ行くほど薄い。 */
+.sprout {
+  stroke: none;
+}
+
+.stopPetalBase { stop-color: var(--bl-pebble-petal-deep); }
+.stopPetalTip { stop-color: var(--bl-pebble-petal); }
+
+/* 艶。輪郭を出さず、中心だけ明るく。 */
+.sheen {
+  pointer-events: none;
+}
+
+.stopSheenCore { stop-color: #ffffff; stop-opacity: 0.4; }
+.stopSheenMid { stop-color: #ffffff; stop-opacity: 0.16; }
+.stopSheenEdge { stop-color: #ffffff; stop-opacity: 0; }
+
+/* 接地の影。地の色ではなく、石と同じ色の濃いほうで落とす。
+   灰色で落とすと、白い紙に置いた切り抜きに見える。 */
+.stopShadowCore { stop-color: var(--bl-pebble-shade); stop-opacity: 0.55; }
+.stopShadowMid { stop-color: var(--bl-pebble-shade); stop-opacity: 0.26; }
+.stopShadowEdge { stop-color: var(--bl-pebble-shade); stop-opacity: 0; }
 
 .eye {
-  fill: var(--bl-surface);
+  fill: var(--bl-pebble-eye);
 }
 
-/* 高コントラスト設定では輪郭を文字色まで濃くする。 */
-:global(html[data-bl-contrast="high"]) .body {
+.glint {
+  fill: #ffffff;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+/* 高コントラスト設定では、面の明暗に頼らず輪郭を出す。 */
+:global(html[data-bl-contrast="high"]) .body,
+:global(html[data-bl-contrast="high"]) .sprout {
   stroke: var(--bl-ink);
+}
+
+:global(html[data-bl-contrast="high"]) .sheen,
+:global(html[data-bl-contrast="high"]) .glint {
+  display: none;
 }
 
 /* Windows ハイコントラスト。塗りがシステム配色に置き換わると、目と体が
@@ -21,11 +69,17 @@
   .svg {
     forced-color-adjust: none;
   }
-  .body {
+  .body,
+  .sprout {
     fill: CanvasText;
     stroke: CanvasText;
   }
   .eye {
     fill: Canvas;
+  }
+  .sheen,
+  .glint,
+  .shadow {
+    display: none;
   }
 }

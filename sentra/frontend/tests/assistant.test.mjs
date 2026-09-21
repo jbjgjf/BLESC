@@ -19,7 +19,12 @@ import {
   PEBBLE_VIEWBOX,
   PHASE_SWAY,
   shapeRoom,
+  contactShadow,
+  sproutPath,
+  BODY_CENTER,
+  SPROUT,
 } from "../src/lib/assistant/pebble.ts";
+import { PETAL_PATH } from "../src/lib/blesc/petal.ts";
 import { assessSafety } from "../src/lib/safety-assessment.ts";
 
 const settings = { text: "m", line: "normal", contrast: "normal", motion: "system", face: "default" };
@@ -435,6 +440,25 @@ describe("pebble", () => {
   const numbersIn = (path) =>
     [...path.matchAll(/(-?\d+\.?\d*) (-?\d+\.?\d*)/g)].map(([, x, y]) => [Number(x), Number(y)]);
 
+  /** 三次ベジェを刻んで、曲線そのものの通り道を返す。 */
+  const onCurve = (path) => {
+    const numbers = path.match(/-?\d+\.?\d*/g).map(Number);
+    const points = [];
+    let [x0, y0] = numbers;
+    for (let i = 2; i + 5 < numbers.length; i += 6) {
+      const [x1, y1, x2, y2, x3, y3] = numbers.slice(i, i + 6);
+      for (let step = 0; step <= 10; step += 1) {
+        const t = step / 10, u = 1 - t;
+        points.push([
+          u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3,
+          u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3,
+        ]);
+      }
+      [x0, y0] = [x3, y3];
+    }
+    return points;
+  };
+
   it("どの表情も viewBox からはみ出さない", () => {
     const [vx, vy, vw, vh] = PEBBLE_VIEWBOX.split(" ").map(Number);
     // ばねの行き過ぎと線幅のぶんを見込む
@@ -447,6 +471,73 @@ describe("pebble", () => {
         }
       }
     }
+  });
+
+  it("芽はロゴの花びらと同じ形から作る", () => {
+    // pebble.ts は写した制御点を持つ（node からブラウザ無しで読めるように）。
+    // 写し間違いと、ロゴ側だけ直したときのずれを、ここで止める。
+    const petal = PETAL_PATH.match(/-?\d+\.?\d*/g).map(Number);
+    const sprout = numbersIn(sproutPath({ ...EXPRESSIONS.rest, rx: 0, ry: 0, lean: 0, lift: 0 })).flat();
+    assert.equal(sprout.length, petal.length, "制御点の数が花びらと違う");
+
+    // 芽は付け根の向きに合わせて回してあるので、回転と位置に依らない量
+    // （点どうしの距離）で突き合わせる。大きさは SPROUT.scale で戻す。
+    const spans = (values) => {
+      const points = Array.from({ length: values.length / 2 }, (_, i) => [values[i * 2], values[i * 2 + 1]]);
+      const out = [];
+      for (let i = 0; i < points.length; i += 1)
+        for (let j = i + 1; j < points.length; j += 1)
+          out.push(Math.hypot(points[i][0] - points[j][0], points[i][1] - points[j][1]));
+      return out;
+    };
+    const wanted = spans(petal);
+    const got = spans(sprout).map((d) => d / SPROUT.scale);
+    for (const [index, expected] of wanted.entries()) {
+      assert.ok(Math.abs(got[index] - expected) < 0.5, `${index}: ${got[index].toFixed(2)} ≠ ${expected.toFixed(2)}`);
+    }
+  });
+
+  it("芽は、どの表情でも跳ねても viewBox に収まる", () => {
+    const [vx, vy, vw, vh] = PEBBLE_VIEWBOX.split(" ").map(Number);
+    // Pebble.tsx の LIFT_LIMIT と、芽の振れ幅（WAG_LIMIT）に合わせる。
+    const margin = 2.5;
+    for (const [name, params] of Object.entries(EXPRESSIONS)) {
+      for (const lift of [-4.5, -3.7, 0, 2]) {
+        for (const phase of [-PHASE_SWAY, 0, PHASE_SWAY]) {
+          for (const wag of [-9, 0, 9]) {
+            // 制御点ではなく曲線そのものを辿る。制御点は曲線の外側に出るので、
+            // そのまま見ると収まっているものまではみ出し扱いになる。
+            for (const [x, y] of onCurve(sproutPath({ ...params, lift }, phase, wag))) {
+              assert.ok(x > vx + margin && x < vx + vw - margin, `${name} lift=${lift} wag=${wag}: x=${x}`);
+              assert.ok(y > vy + margin && y < vy + vh - margin, `${name} lift=${lift} wag=${wag}: y=${y}`);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("芽は体の縁から生える（つぶれても離れない）", () => {
+    for (const [name, params] of Object.entries(EXPRESSIONS)) {
+      const [baseX, baseY] = numbersIn(sproutPath(params))[0];
+      const distance = Math.hypot(baseX - BODY_CENTER.x, baseY - (BODY_CENTER.y + params.lift));
+      // その角度での輪郭までの距離。倍音で ±7% ほど動くので幅を持たせる。
+      const edge = Math.hypot(params.rx * Math.cos(SPROUT.angle), params.ry * Math.sin(SPROUT.angle));
+      assert.ok(distance < edge * 1.02, `${name}: 付け根が体から浮いている (${distance.toFixed(1)} > ${edge.toFixed(1)})`);
+      assert.ok(
+        distance > edge * 0.93 - SPROUT.sink * 1.2,
+        `${name}: 付け根が体の奥に沈みすぎ (${distance.toFixed(1)}, 輪郭 ${edge.toFixed(1)})`,
+      );
+    }
+  });
+
+  it("影は浮くほど小さく薄くなる（置かれているものに見せる）", () => {
+    const down = contactShadow({ ...EXPRESSIONS.rest, lift: 0 });
+    const up = contactShadow({ ...EXPRESSIONS.rest, lift: -3.7 });
+    assert.ok(up.rx < down.rx, "浮いても影が縮まない");
+    assert.ok(up.alpha < down.alpha, "浮いても影が薄くならない");
+    // 体の底より下にある。
+    assert.ok(down.cy > 50 + EXPRESSIONS.rest.ry * 0.8);
   });
 
   it("輪郭は閉じた曲線になる", () => {

@@ -1,16 +1,20 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { useReducedMotion } from "@/lib/motion";
 import {
   applyBlink,
   bodyPath,
+  contactShadow,
+  eyeGlints,
   eyePaths,
+  sheenEllipse,
   EXPRESSIONS,
   PARAM_KEYS,
   PEBBLE_VIEWBOX,
   PHASE_SWAY,
   shapeRoom,
+  sproutPath,
   type Expression,
   type PebbleParams,
 } from "@/lib/assistant/pebble";
@@ -65,8 +69,12 @@ const GRAVITY = 560;
  */
 const SQUASH_Y = 1.1;
 const SQUASH_X = 0.75;
-/** viewBox からはみ出さないための上限。tests/assistant.test.mjs の余白と対。 */
-const LIFT_LIMIT = 5.5;
+/**
+ * viewBox からはみ出さないための上限。tests/assistant.test.mjs の余白と対。
+ * 芽のぶん頭が高くなったので 5.5 から下げた。跳ねて上がるのは 3.2、呼吸を
+ * 足して 3.7 なので、実際の動きはどこも削っていない。
+ */
+const LIFT_LIMIT = 4.5;
 /** この速さ（単位/秒）で最大まで伸びる。 */
 const STRETCH_SPEED = 700;
 const STRETCH_MAX = 0.09;
@@ -74,6 +82,20 @@ const STRETCH_MAX = 0.09;
 /** 目線を振れる幅（100 単位の座標系）。 */
 const GAZE_RANGE_X = 3.4;
 const GAZE_RANGE_Y = 2.4;
+
+/**
+ * 芽の遅れ（wag）。体より軽いので、跳ねるときは置いていかれ、着地では
+ * 追い越して戻る。減衰比 ≒ 0.41 — 体（0.87）よりはっきり残す。
+ */
+const WAG_STIFFNESS = 120;
+const WAG_DAMPING = 9;
+/** 跳び上がりと着地で芽に渡す勢い（度/秒）。 */
+const WAG_ON_HOP = 150;
+const WAG_ON_LAND = -190;
+/** 呼吸に合わせて芽が振れる幅（度）。 */
+const WAG_BREATH = 2.2;
+/** これ以上は葉がちぎれて見える。 */
+const WAG_LIMIT = 9;
 
 const TAU = Math.PI * 2;
 
@@ -99,6 +121,56 @@ type PebbleProps = {
   className?: string;
 };
 
+type Parts = {
+  body: SVGPathElement | null;
+  sprout: SVGPathElement | null;
+  shadow: SVGEllipseElement | null;
+  sheen: SVGEllipseElement | null;
+  left: SVGPathElement | null;
+  right: SVGPathElement | null;
+  glintL: SVGCircleElement | null;
+  glintR: SVGCircleElement | null;
+};
+
+/**
+ * いまの数値を、そのまま図形へ。
+ *
+ * 動いているときも止まっているときもここを通す。要素が 8 つあるので、
+ * 二か所に書くと必ず片方だけ直し忘れる。
+ */
+function paint(parts: Parts, params: PebbleParams, phase: number, wag: number): void {
+  const eyes = eyePaths(params);
+  parts.body?.setAttribute("d", bodyPath(params, phase));
+  parts.sprout?.setAttribute("d", sproutPath(params, phase, wag));
+  parts.left?.setAttribute("d", eyes.left);
+  parts.right?.setAttribute("d", eyes.right);
+
+  const shadow = contactShadow(params);
+  if (parts.shadow) {
+    parts.shadow.setAttribute("cx", shadow.cx.toFixed(2));
+    parts.shadow.setAttribute("cy", shadow.cy.toFixed(2));
+    parts.shadow.setAttribute("rx", shadow.rx.toFixed(2));
+    parts.shadow.setAttribute("ry", shadow.ry.toFixed(2));
+    parts.shadow.setAttribute("opacity", shadow.alpha.toFixed(3));
+  }
+
+  const sheen = sheenEllipse(params);
+  if (parts.sheen) {
+    parts.sheen.setAttribute("cx", sheen.cx.toFixed(2));
+    parts.sheen.setAttribute("cy", sheen.cy.toFixed(2));
+    parts.sheen.setAttribute("rx", sheen.rx.toFixed(2));
+    parts.sheen.setAttribute("ry", sheen.ry.toFixed(2));
+  }
+
+  const glints = eyeGlints(params);
+  for (const [dot, glint] of [[parts.glintL, glints[0]], [parts.glintR, glints[1]]] as const) {
+    if (!dot) continue;
+    dot.setAttribute("cx", glint.cx.toFixed(2));
+    dot.setAttribute("cy", glint.cy.toFixed(2));
+    dot.setAttribute("opacity", glint.opacity.toFixed(3));
+  }
+}
+
 const toParams = (values: Float64Array): PebbleParams => {
   const params = {} as Record<string, number>;
   PARAM_KEYS.forEach((key, index) => {
@@ -110,8 +182,28 @@ const toParams = (values: Float64Array): PebbleParams => {
 export function Pebble({ expression, size, hopKey = 0, gaze = null, className }: PebbleProps) {
   const reduced = useReducedMotion();
   const bodyRef = useRef<SVGPathElement>(null);
+  const sproutRef = useRef<SVGPathElement>(null);
+  const shadowRef = useRef<SVGEllipseElement>(null);
+  const sheenRef = useRef<SVGEllipseElement>(null);
   const leftRef = useRef<SVGPathElement>(null);
   const rightRef = useRef<SVGPathElement>(null);
+  const glintLRef = useRef<SVGCircleElement>(null);
+  const glintRRef = useRef<SVGCircleElement>(null);
+
+  // グラデーションの id はページで一意にする。ランチャーとパネルと教員側に
+  // 同時に出るので、同じ id だと最後に描いたものへ全部が引き寄せられる。
+  const uid = useId().replace(/:/g, "");
+
+  const parts = (): Parts => ({
+    body: bodyRef.current,
+    sprout: sproutRef.current,
+    shadow: shadowRef.current,
+    sheen: sheenRef.current,
+    left: leftRef.current,
+    right: rightRef.current,
+    glintL: glintLRef.current,
+    glintR: glintRRef.current,
+  });
 
   // ループが毎フレーム読む「目標の表情」。描画中には書かず、確定後に渡す。
   const target = useRef<Expression>(expression);
@@ -137,11 +229,7 @@ export function Pebble({ expression, size, hopKey = 0, gaze = null, className }:
   // 動きを減らす設定のときは、時間を進めずに最終形だけを描く。
   useEffect(() => {
     if (!reduced) return;
-    const params = EXPRESSIONS[expression];
-    const eyes = eyePaths(params);
-    bodyRef.current?.setAttribute("d", bodyPath(params));
-    leftRef.current?.setAttribute("d", eyes.left);
-    rightRef.current?.setAttribute("d", eyes.right);
+    paint(parts(), EXPRESSIONS[expression], 0, 0);
   }, [reduced, expression]);
 
   useEffect(() => {
@@ -165,6 +253,8 @@ export function Pebble({ expression, size, hopKey = 0, gaze = null, className }:
     let hopSpeed = 0;
     let glance = AHEAD;
     let glanceAt = previous + 4000 + Math.random() * 4000;
+    let wag = 0;
+    let wagSpeed = 0;
 
     const tick = (now: number) => {
       const elapsed = now - origin;
@@ -174,6 +264,8 @@ export function Pebble({ expression, size, hopKey = 0, gaze = null, className }:
       if (hopPending.current) {
         hopPending.current = false;
         hopSpeed = -HOP_SPEED;
+        // 体が先に上がり、芽は置いていかれて後ろへ倒れる。
+        wagSpeed += WAG_ON_HOP;
       }
 
       // 表情が変わる瞬間にまばたきを重ねる。目の形が入れ替わる途中が
@@ -214,10 +306,15 @@ export function Pebble({ expression, size, hopKey = 0, gaze = null, className }:
             // 着地。落ちてきた勢いを形のばねへ渡すと、柔らかいばねでぷるんと戻る。
             velocity[RY_INDEX] -= hopSpeed * SQUASH_Y;
             velocity[RX_INDEX] += hopSpeed * SQUASH_X;
+            // 芽は逆に、止まった体を追い越して前へ振れる。
+            wagSpeed += WAG_ON_LAND;
             hopHeight = 0;
             hopSpeed = 0;
           }
         }
+        // 芽は 0 度へ戻ろうとする。体のばねより緩く、長く残る。
+        wagSpeed += (-WAG_STIFFNESS * wag - WAG_DAMPING * wagSpeed) * step;
+        wag += wagSpeed * step;
         remaining -= step;
       }
 
@@ -256,10 +353,9 @@ export function Pebble({ expression, size, hopKey = 0, gaze = null, className }:
         }
       }
 
-      const eyes = eyePaths(params);
-      bodyRef.current?.setAttribute("d", bodyPath(params, Math.sin((elapsed / BREATH_MS) * TAU) * PHASE_SWAY));
-      leftRef.current?.setAttribute("d", eyes.left);
-      rightRef.current?.setAttribute("d", eyes.right);
+      const sway = Math.sin((elapsed / BREATH_MS) * TAU);
+      const swing = Math.max(-WAG_LIMIT, Math.min(WAG_LIMIT, wag + sway * WAG_BREATH));
+      paint(parts(), params, sway * PHASE_SWAY, swing);
 
       frame = requestAnimationFrame(tick);
     };
@@ -271,6 +367,9 @@ export function Pebble({ expression, size, hopKey = 0, gaze = null, className }:
   // サーバーと最初の描画は表情そのまま。ここが揃っていれば差異は出ない。
   const initial = EXPRESSIONS[expression];
   const initialEyes = eyePaths(initial);
+  const initialShadow = contactShadow(initial);
+  const initialSheen = sheenEllipse(initial);
+  const initialGlints = eyeGlints(initial);
 
   return (
     <svg
@@ -281,14 +380,67 @@ export function Pebble({ expression, size, hopKey = 0, gaze = null, className }:
       aria-hidden="true"
       focusable="false"
     >
+      <defs>
+        {/* 石の面。左上が明るく、右下が暗い。単色で塗ると紙に見える。 */}
+        <linearGradient id={`${uid}-stone`} x1="0.18" y1="0" x2="0.78" y2="1">
+          <stop offset="0" className={styles.stopTop} />
+          <stop offset="0.52" className={styles.stopMid} />
+          <stop offset="1" className={styles.stopDeep} />
+        </linearGradient>
+        {/* 花びら。付け根が濃く、先へ行くほど薄い。 */}
+        <linearGradient id={`${uid}-sprout`} x1="0.5" y1="1" x2="0.5" y2="0">
+          <stop offset="0" className={styles.stopPetalBase} />
+          <stop offset="1" className={styles.stopPetalTip} />
+        </linearGradient>
+        {/* 艶。輪郭のない、にじんだ光にする。 */}
+        <radialGradient id={`${uid}-sheen`}>
+          <stop offset="0" className={styles.stopSheenCore} />
+          <stop offset="0.55" className={styles.stopSheenMid} />
+          <stop offset="1" className={styles.stopSheenEdge} />
+        </radialGradient>
+        {/* 影。中心が濃く、ふちへ消える。ぼかし処理より軽い。 */}
+        <radialGradient id={`${uid}-shadow`}>
+          <stop offset="0" className={styles.stopShadowCore} />
+          <stop offset="0.6" className={styles.stopShadowMid} />
+          <stop offset="1" className={styles.stopShadowEdge} />
+        </radialGradient>
+      </defs>
+
+      {/* 置かれているものとして読ませる、接地の影。浮くと縮んで薄くなる。 */}
+      <ellipse
+        ref={shadowRef}
+        className={styles.shadow}
+        cx={initialShadow.cx}
+        cy={initialShadow.cy}
+        rx={initialShadow.rx}
+        ry={initialShadow.ry}
+        opacity={initialShadow.alpha}
+        fill={`url(#${uid}-shadow)`}
+      />
+
+      {/* 芽は体の後ろ。前に出すと、貼りつけた葉に見える。 */}
+      <path
+        ref={sproutRef}
+        d={sproutPath(initial)}
+        className={styles.sprout}
+        fill={`url(#${uid}-sprout)`}
+        strokeWidth={strokeFor(size)}
+      />
+
       <path
         ref={bodyRef}
         d={bodyPath(initial)}
         className={styles.body}
+        fill={`url(#${uid}-stone)`}
         strokeWidth={strokeFor(size)}
       />
+
+      <ellipse ref={sheenRef} className={styles.sheen} fill={`url(#${uid}-sheen)`} {...initialSheen} />
+
       <path ref={leftRef} d={initialEyes.left} className={styles.eye} />
       <path ref={rightRef} d={initialEyes.right} className={styles.eye} />
+      <circle ref={glintLRef} className={styles.glint} r="1.35" {...initialGlints[0]} />
+      <circle ref={glintRRef} className={styles.glint} r="1.35" {...initialGlints[1]} />
     </svg>
   );
 }
