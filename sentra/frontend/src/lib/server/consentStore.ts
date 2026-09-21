@@ -105,9 +105,30 @@ export async function recordConsent(
 }
 
 /**
+ * What happens to already-collected journal text when someone withdraws (#224).
+ *
+ * `delete` destroys it now. `keep` leaves it until the ordinary retention
+ * window closes and `purge_expired_raw_text()` takes it like any other row.
+ *
+ * **`keep` is not permission to keep using it.** Withdrawal is still
+ * withdrawal: research analysis and training use stop either way, and the
+ * export gate does not consult this field. It governs destruction only. The
+ * distinction matters because the obvious misreading — "they said keep, so we
+ * may carry on" — converts a decision about someone's own record into a
+ * consent nobody gave.
+ */
+export type RetainedDataDisposition = "delete" | "keep";
+
+/**
  * Revoke. A revocation row carries the grants set to false so that reading the
  * newest row is enough to know the answer — no consumer has to walk the
  * history to discover that an earlier `true` was withdrawn.
+ *
+ * `disposition` defaults to `delete`. Not because deleting is the neutral
+ * choice — it is the irreversible one — but because the alternative default is
+ * "a request that did not say anything keeps the text", and silence is not a
+ * decision to keep. A participant who wants their record preserved has to say
+ * so, and saying so is exactly what this parameter is for.
  *
  * Deleting the retained journal text is the caller's next step
  * (`purge_raw_text_for_participant`); this function only records the decision.
@@ -117,6 +138,7 @@ export async function revokeConsent(
   ownerUserId: string,
   participantId: string,
   source = "student_ui",
+  disposition: RetainedDataDisposition = "delete",
 ): Promise<ConsentState> {
   const now = new Date().toISOString();
   const result = await client
@@ -136,6 +158,7 @@ export async function revokeConsent(
       status: "revoked",
       granted_at: now,
       revoked_at: now,
+      retained_data_disposition: disposition,
       source,
     })
     .select(CONSENT_COLUMNS)

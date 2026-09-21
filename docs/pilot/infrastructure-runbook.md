@@ -59,7 +59,7 @@
 | `SUPABASE_URL` | server-side書き込み先 | 書き込みをスキップする（`supabaseWriter.ts`） |
 | `SUPABASE_SERVICE_ROLE_KEY` | RLSを越える書き込み | 同上。**clientへ出してはならない** |
 | `RESEARCH_RAW_TEXT_KEY` | 本文のAES-GCM封緘 | 本文の保持を**行わない**（平文では保持しない） |
-| `RESEARCH_RAW_TEXT_RETENTION_DAYS` | 保持期限 | 既定値。protocol D5 の決定に合わせる |
+| `RESEARCH_RAW_TEXT_RETENTION_DAYS` | 保持期限 | 既定90日。**上限も90日**で、超える値は90に丸める。protocol D5 の決定は90日以内で行う |
 | `PILOT_INVITE_HMAC_KEY` | 招待コードのhash | 招待の検証ができない |
 | `PILOT_OPERATOR_USER_IDS` | 運営者の許可リスト | 運営操作が誰にもできない（安全側） |
 | `RESEARCH_EXPORT_USER_IDS` | exportの許可リスト | exportが誰にもできない（安全側） |
@@ -270,6 +270,37 @@ PILOT_BASE_URL=https://blesc-pilot.vercel.app CRON_SECRET=... \
 収集ゲート・RLS）はすべて別の場所にあり、すべて fail-closed である。
 
 行は `purge_rate_limit_counters()` が1日より古い窓を消す。
+
+## 5.7 「誰にも届かなかった」の通知（#178）
+
+危機通知が届かなかったとき、その事実を **`SAFETY_OPS_ALERT_WEBHOOK_URL`** へ送る。
+
+**`SAFETY_ALERT_WEBHOOK_URL` とは別のURLにすること。** 報告する内容が
+「配信経路が配信できなかった」なので、同じ経路で送ると、最も必要なときに
+火元の回路につながった火災報知器になる。同じURLを入れても動くが、それは設定ミスである。
+
+| 原因 | 意味 | 対応 |
+| --- | --- | --- |
+| `no_channel` | 送信先が未設定 | 変数を設定すれば、保留中の分が次の再送で送られる |
+| `no_recipient` | 見守り同意のある教員が居ない | **再送では解決しない。** 名簿と同意の状態を確認する |
+
+運用チャンネルを見る人は、見守り同意を持つ教員とは限らない。だから通知には
+**参加者コードも research_code も、マッチした規則名も入れない。** 入るのは
+「起きたこと」「件数」「2つの原因のどちらか」で、対応にはそれで足りる。
+
+## 5.8 `anon` のテーブル権限（#166）
+
+Supabase の既定で、`public` の全テーブルが `anon` に全DML権限を持っていた。
+**40テーブル。ポリシーは1つも `anon` を通していない**ので、全て不要な権限だった。
+`20260921010000_revoke_anon_table_grants.sql` で剥がし、
+`alter default privileges` で今後作る表にも付かないようにしている。
+
+RLSが効くので行は読めていなかったが、**TRUNCATE はRLSで止まらない。**
+anon キーはブラウザのバンドルに入る公開値なので、直接のPostgres接続があれば
+`entries`・`consent_records`・`participants` を空にできた。
+
+`supabase/tests/anon_grants.test.sql` が、権限ゼロ・ポリシーゼロ・
+新規テーブルにも付かないこと・**保護者確認だけは引き続き動くこと**を検査する。
 
 ## 6. 監視とアラート
 

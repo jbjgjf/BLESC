@@ -646,3 +646,46 @@ describe("the recipient hash", () => {
     });
   });
 });
+
+describe("telling the operator that nobody was reached (#178)", () => {
+  const ops = code("../src/lib/server/opsAlert.ts");
+
+  it("uses a different URL from the delivery channel", () => {
+    /*
+     * The condition being reported is "the delivery channel did not deliver".
+     * Reporting it down that channel is a smoke alarm wired to the circuit
+     * that is on fire.
+     */
+    assert.ok(ops.includes("SAFETY_OPS_ALERT_WEBHOOK_URL"));
+    assert.ok(ops.includes("opsAlertIsSeparate"));
+  });
+
+  it("names nobody", () => {
+    // The operator channel is watched by whoever runs the deployment, which is
+    // not the set of people holding oversight consent. They need to know it
+    // happened, not who it was about.
+    assert.ok(!ops.includes("participant_code"));
+    assert.ok(!ops.includes("research_code"));
+    assert.ok(!ops.includes("reasons"));
+  });
+
+  it("distinguishes the two causes, because the fixes differ", () => {
+    assert.ok(ops.includes("no_channel"));
+    assert.ok(ops.includes("no_recipient"));
+    const source = read("../src/lib/server/opsAlert.ts");
+    assert.ok(source.includes("再送では解決しません"), "no_recipient is terminal");
+    assert.ok(source.includes("次回の再送で送られます"), "no_channel resolves once configured");
+  });
+
+  it("is fired from the delivery path, and not awaited", () => {
+    const delivery = code("../src/lib/server/safetyEscalation.ts");
+    assert.ok(delivery.includes("void reportUndeliverable("));
+  });
+
+  it("never throws", () => {
+    // A failure to report must not become a second failure in a path that is
+    // already degraded.
+    assert.ok(ops.includes("catch"));
+    assert.ok(!/throw new/.test(ops));
+  });
+});

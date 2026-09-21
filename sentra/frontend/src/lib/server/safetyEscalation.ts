@@ -32,6 +32,7 @@
 
 import { createHmac } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { reportUndeliverable } from "./opsAlert.ts";
 
 /*
  * `fetchWithTimeout` is duplicated from `lib/server/api.ts` rather than
@@ -510,6 +511,18 @@ export async function deliverEscalation(
   else status = "no_recipient";
 
   if (status === "pending" || status === "no_recipient") {
+    /*
+     * On a separate channel, because the thing being reported is that the
+     * delivery channel did not deliver (#178). A `console.error` alone is not a
+     * notification — nobody reads Vercel function logs at 02:00, which is the
+     * hour this exists for.
+     *
+     * Not awaited: a report about a failure must not become a second failure in
+     * a path that is already degraded, and the status below is written either
+     * way.
+     */
+    void reportUndeliverable(noChannel ? "no_channel" : "no_recipient", escalation.id);
+
     // Kept inline rather than lifted to a `const`: the #116 UI-language guard
     // exempts strings by `console.*` call, so a developer-facing message that
     // lives outside one has to be allowlisted to say anything in English.

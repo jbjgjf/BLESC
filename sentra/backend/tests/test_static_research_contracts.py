@@ -262,13 +262,21 @@ NON_DIAGNOSTIC_NOTICES = [
 # Each has to carry the notice itself, not merely have one somewhere else in
 # the product: a single notice on one screen satisfied the earlier version of
 # this test while the other five showed a number with nothing next to it.
+# `school/page.tsx` and `educator/class/page.tsx` were on this list until #175
+# deleted them. The four demo educator screens were rebuilt as observation
+# displays and then removed outright: the real-data educator screens already
+# cover the same ground, and keeping a second implementation that came from the
+# planning document is precisely the arrangement `educator_display_policy.md`
+# records as the way a rule gets applied to one copy and not the other.
+#
+# Their absence is asserted in `frontend/tests/educator-display-policy.test.mjs`
+# rather than here, because a returning screen is a frontend regression and that
+# is where the rest of the sweep lives.
 SIGNAL_BEARING_SCREENS = (
     "insights/page.tsx",
     "timeline/page.tsx",
     "graph/page.tsx",
-    "school/page.tsx",
     "guardian/page.tsx",
-    "educator/class/page.tsx",
 )
 
 
