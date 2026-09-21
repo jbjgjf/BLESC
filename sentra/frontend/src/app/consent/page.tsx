@@ -29,7 +29,7 @@ type GrantKey =
   | "research_analysis"
   | "raw_text_retention"
   | "anonymized_export"
-  | "future_fine_tuning";
+  | "model_training_use";
 
 const GRANTS: Array<{ key: GrantKey; label: string; detail: string }> = [
   {
@@ -50,9 +50,13 @@ const GRANTS: Array<{ key: GrantKey; label: string; detail: string }> = [
     detail: "名前・学校名など、あなたが特定できる情報を取り除いたうえで集計します。",
   },
   {
-    key: "future_fine_tuning",
-    label: "将来のモデルの学習に使うことに同意します",
-    detail: "今回の研究とは別に、今後のAIの改善に使う場合があります。ここだけ同意しないこともできます。",
+    key: "model_training_use",
+    label: "AIモデルの学習に使うことに同意します",
+    // 第15条3項をそのまま言う。「いつでも取り消せます」だけ書くと、
+    // 学習済みモデルから寄与を取り除けることまで約束したことになる。
+    detail:
+      "今回の研究の分析とは別の、任意の項目です。同意しなくても研究には通常どおり参加できます。" +
+      "いつでも取り消せますが、取り消す前に学習が終わったモデルから、そのデータの影響を取り除くことはできません。",
   },
 ];
 
@@ -65,7 +69,7 @@ export default function ConsentPage() {
     research_analysis: false,
     raw_text_retention: false,
     anonymized_export: false,
-    future_fine_tuning: false,
+    model_training_use: false,
   });
   const [assent, setAssent] = useState(false);
   const [isMinor, setIsMinor] = useState(true);
@@ -87,7 +91,7 @@ export default function ConsentPage() {
       research_analysis: current.research_analysis,
       raw_text_retention: current.raw_text_retention,
       anonymized_export: current.anonymized_export,
-      future_fine_tuning: current.future_fine_tuning,
+      model_training_use: current.model_training_use,
     });
     setAssent(current.minor_assent);
   }, [demo, userId]);
@@ -113,7 +117,7 @@ export default function ConsentPage() {
         research_analysis: checked.research_analysis,
         raw_text_retention: checked.raw_text_retention,
         anonymized_export: checked.anonymized_export,
-        future_fine_tuning: checked.future_fine_tuning,
+        model_training_use: checked.model_training_use,
         minor_assent: assent,
         document_version: CONSENT_DOCUMENT_VERSION,
       });
@@ -137,7 +141,7 @@ export default function ConsentPage() {
         research_analysis: false,
         raw_text_retention: false,
         anonymized_export: false,
-        future_fine_tuning: false,
+        model_training_use: false,
       });
       setAssent(false);
       setMessage("同意を撤回しました。保管していた日記の本文は削除されました。");

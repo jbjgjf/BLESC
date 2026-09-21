@@ -530,7 +530,7 @@ def _consented(**overrides):
         "research_analysis": True,
         "anonymized_export": True,
         "raw_text_retention": True,
-        "future_fine_tuning": True,
+        "model_training_use": True,
         "minor_assent": True,
         "guardian_consent": True,
         "consent_version": "research-consent-v2",

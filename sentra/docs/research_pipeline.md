@@ -197,7 +197,7 @@ curl -X POST http://localhost:8000/api/research/eval-examples/1/review \
   -d '{"user_id":"research_user_01","review_status":"reviewed"}'
 ```
 
-Only reviewed examples and `future_fine_tuning=true` consent can enter the
+Only reviewed examples and `model_training_use=true` consent can enter the
 fine-tuning JSONL export:
 
 ```bash
@@ -221,7 +221,7 @@ Personal adaptation is gated before use. Check readiness with:
 curl "http://localhost:8000/api/research/personalization?user_id=research_user_01"
 ```
 
-The backend requires `future_fine_tuning=true` and at least
+The backend requires `model_training_use=true` and at least
 `SENTRA_MIN_PERSONALIZATION_EXAMPLES` reviewed Eval Examples before an adapter
 model is selected for extraction. The default threshold is `100`. Once a
 participant-specific model exists, set it through

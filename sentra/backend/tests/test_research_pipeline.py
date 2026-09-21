@@ -49,7 +49,7 @@ def teardown_module():
         export_dir.rmdir()
 
 
-def _payload(session_id: str, future_fine_tuning: bool = True):
+def _payload(session_id: str, model_training_use: bool = True):
     return {
         "journal_text": "I felt anxious before class, but talking with a friend helped.",
         "recall_text": "The first thing I remember is looking at the clock.",
@@ -116,7 +116,7 @@ def _payload(session_id: str, future_fine_tuning: bool = True):
             "app_use": True,
             "research_analysis": True,
             "anonymized_export": True,
-            "future_fine_tuning": future_fine_tuning,
+            "model_training_use": model_training_use,
             "consent_version": "research-consent-v1",
         },
     }
@@ -188,7 +188,7 @@ def test_chat_and_similarity_are_logged_without_openai_key():
     with TestClient(app) as client:
         response = client.post(
             "/api/entries?user_id=test_chat_user&observation_type=daily",
-            json=_payload("pytest-session-3", future_fine_tuning=False),
+            json=_payload("pytest-session-3", model_training_use=False),
         )
         assert response.status_code == 200, response.text
 

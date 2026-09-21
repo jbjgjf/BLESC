@@ -120,7 +120,7 @@ describe("participantConsentGrant", () => {
     research_analysis: true,
     anonymized_export: true,
     raw_text_retention: true,
-    future_fine_tuning: true,
+    model_training_use: true,
     minor_assent: true,
     guardian_consent: true,
   };
@@ -142,7 +142,7 @@ describe("participantConsentGrant", () => {
     assert.equal(grant.research_analysis, false);
     assert.equal(grant.anonymized_export, false);
     assert.equal(grant.raw_text_retention, false);
-    assert.equal(grant.future_fine_tuning, false);
+    assert.equal(grant.model_training_use, false);
     // The participant's own half is recorded — it was really given.
     assert.equal(grant.minor_assent, true);
     assert.equal(grant.app_use, true);
@@ -156,7 +156,7 @@ describe("participantConsentGrant", () => {
         research_analysis: true,
         anonymized_export: true,
         raw_text_retention: true,
-        future_fine_tuning: true,
+        model_training_use: true,
       },
     });
     assert.equal(grant.research_analysis, true);
@@ -166,7 +166,7 @@ describe("participantConsentGrant", () => {
 
   it("refuses to widen what the guardian approved", () => {
     // The escalation this exists to stop: a guardian approves a request with
-    // future_fine_tuning off, and the minor ticks it afterwards on /consent.
+    // model_training_use off, and the minor ticks it afterwards on /consent.
     // The record would then say both that a guardian consented and that
     // fine-tuning was agreed to — a use nobody showed them.
     const grant = participantConsentGrant(asked, {
@@ -176,12 +176,12 @@ describe("participantConsentGrant", () => {
         research_analysis: true,
         anonymized_export: false,
         raw_text_retention: true,
-        future_fine_tuning: false,
+        model_training_use: false,
       },
     });
     assert.equal(grant.research_analysis, true);
     assert.equal(grant.raw_text_retention, true);
-    assert.equal(grant.future_fine_tuning, false);
+    assert.equal(grant.model_training_use, false);
     assert.equal(grant.anonymized_export, false);
   });
 
@@ -198,7 +198,7 @@ describe("participantConsentGrant", () => {
           research_analysis: true,
           anonymized_export: true,
           raw_text_retention: true,
-          future_fine_tuning: true,
+          model_training_use: true,
         },
       },
     );
@@ -213,7 +213,7 @@ describe("participantConsentGrant", () => {
       approvedScope: null,
     });
     assert.equal(grant.research_analysis, true);
-    assert.equal(grant.future_fine_tuning, true);
+    assert.equal(grant.model_training_use, true);
   });
 
   it("lets an adult through with no guardian at all", () => {
@@ -225,7 +225,7 @@ describe("participantConsentGrant", () => {
     const grant = participantConsentGrant({ app_use: true }, { guardianRequired: false, guardianConfirmed: false });
     assert.equal(grant.research_analysis, false);
     assert.equal(grant.minor_assent, false);
-    assert.equal(grant.future_fine_tuning, false);
+    assert.equal(grant.model_training_use, false);
   });
 
   it("only accepts a literal true", () => {
@@ -263,12 +263,12 @@ describe("guardianConsentGrant", () => {
 
   it("cannot be talked into a grant the participant did not ask for", () => {
     const grant = guardianConsentGrant(
-      normalizeRequestedGrants({ future_fine_tuning: false }, "doc-v1"),
-      { ...NO_CONSENT, minor_assent: true, future_fine_tuning: true },
+      normalizeRequestedGrants({ model_training_use: false }, "doc-v1"),
+      { ...NO_CONSENT, minor_assent: true, model_training_use: true },
     );
     // The token says what was asked. The stored record's own optional flags do
     // not leak into the guardian's answer.
-    assert.equal(grant.future_fine_tuning, false);
+    assert.equal(grant.model_training_use, false);
   });
 });
 

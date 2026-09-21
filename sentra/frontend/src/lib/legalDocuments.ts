@@ -1,6 +1,16 @@
 /** Review-only documents. Never substitute these drafts for an accepted consent version. */
+import { researchDocumentLabel } from "./consentDocument.ts";
+
 export const LEGAL_DRAFT_VERSION = "legal-review-2026-09-14-v1";
-export const RESEARCH_DRAFT_VERSION = "research-consent-doc-v2-draft";
+/**
+ * What the research and guardian documents on `/legal` call themselves.
+ *
+ * Carries the `-draft` suffix until the deployment enacts v2, at which point it
+ * drops — the same switch that changes what gets stamped onto a row, so the
+ * page a participant reads and the version recorded against their consent are
+ * never two different documents (#consent-pack 5.5).
+ */
+export const RESEARCH_DRAFT_VERSION = researchDocumentLabel();
 export const LEGAL_CONTACT = "blesc.jp@gmail.com";
 export const LEGAL_ORGANIZATION = {
   name: "Blesc株式会社",
