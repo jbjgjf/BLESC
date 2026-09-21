@@ -8,6 +8,7 @@
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test"
   },
   "dependencies": {

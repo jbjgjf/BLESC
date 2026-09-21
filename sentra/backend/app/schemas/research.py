@@ -4,6 +4,7 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from sqlmodel import Column, Field, JSON, SQLModel
+from ..clock import utcnow
 
 
 class ConsentRecord(SQLModel, table=True):
@@ -16,7 +17,7 @@ class ConsentRecord(SQLModel, table=True):
     model_training_use: bool = False
     consent_version: str = "research-consent-v1"
     source: str = "student_ui"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class EntrySession(SQLModel, table=True):
@@ -31,7 +32,7 @@ class EntrySession(SQLModel, table=True):
     user_agent: Optional[str] = None
     consent_snapshot_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     aggregate_metrics_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class EntryField(SQLModel, table=True):
@@ -44,7 +45,7 @@ class EntryField(SQLModel, table=True):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     metrics_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class InteractionEvent(SQLModel, table=True):
@@ -58,7 +59,7 @@ class InteractionEvent(SQLModel, table=True):
     selection_start: Optional[int] = None
     selection_end: Optional[int] = None
     metadata_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class WritingFeature(SQLModel, table=True):
@@ -70,7 +71,7 @@ class WritingFeature(SQLModel, table=True):
     field_name: str = Field(index=True)
     feature_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     pipeline_version: str = "writing-dynamics-v1"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class CognitiveProbeFeature(SQLModel, table=True):
@@ -84,7 +85,7 @@ class CognitiveProbeFeature(SQLModel, table=True):
     recall_text_hash: str
     feature_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     pipeline_version: str = "cognitive-probe-v1"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class ResearchEntryLink(SQLModel, table=True):
@@ -93,7 +94,7 @@ class ResearchEntryLink(SQLModel, table=True):
     entry_session_id: int = Field(foreign_key="entrysession.id", index=True)
     field_name: str = Field(index=True)
     source_hash: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class ModelRun(SQLModel, table=True):
@@ -114,7 +115,7 @@ class ModelRun(SQLModel, table=True):
     output_summary_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     status: str = "completed"
     error_message: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class GraphVersion(SQLModel, table=True):
@@ -127,7 +128,7 @@ class GraphVersion(SQLModel, table=True):
     nodes_json: List[Dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
     relations_json: List[Dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
     summary_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class GraphChangeEvent(SQLModel, table=True):
@@ -142,7 +143,7 @@ class GraphChangeEvent(SQLModel, table=True):
     current_json: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
     semantic_drift_score: float = 0.0
     trajectory_tags: List[str] = Field(default_factory=list, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class EntryEmbedding(SQLModel, table=True):
@@ -155,7 +156,7 @@ class EntryEmbedding(SQLModel, table=True):
     vector_json: List[float] = Field(default_factory=list, sa_column=Column(JSON))
     content_hash: str = Field(index=True)
     metadata_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class RetrievalEvent(SQLModel, table=True):
@@ -165,7 +166,7 @@ class RetrievalEvent(SQLModel, table=True):
     query_hash: str
     retrieval_config_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     result_refs_json: List[Dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class ChatSession(SQLModel, table=True):
@@ -173,7 +174,7 @@ class ChatSession(SQLModel, table=True):
     user_id: str = Field(index=True)
     participant_code: str = Field(index=True)
     consent_snapshot_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class ChatMessage(SQLModel, table=True):
@@ -184,7 +185,7 @@ class ChatMessage(SQLModel, table=True):
     content_redacted: Optional[str] = None
     evidence_refs_json: List[Dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
     model_run_id: Optional[int] = Field(default=None, foreign_key="modelrun.id", index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class ConversationRecallSummary(SQLModel, table=True):
@@ -199,7 +200,7 @@ class ConversationRecallSummary(SQLModel, table=True):
     memory_object_ids_json: List[int] = Field(default_factory=list, sa_column=Column(JSON))
     pipeline_version: str = "conversation-recall-30-v1"
     status: str = Field(default="completed", index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class LongitudinalFeature(SQLModel, table=True):
@@ -211,7 +212,7 @@ class LongitudinalFeature(SQLModel, table=True):
     window_end: date = Field(index=True)
     feature_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     pipeline_version: str = "longitudinal-v1"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class LongitudinalPattern(SQLModel, table=True):
@@ -230,7 +231,7 @@ class LongitudinalPattern(SQLModel, table=True):
     support_days_json: List[str] = Field(default_factory=list, sa_column=Column(JSON))
     detail_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     pipeline_version: str = "sentra-pattern-mining-v1"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class EvalExample(SQLModel, table=True):
@@ -243,7 +244,7 @@ class EvalExample(SQLModel, table=True):
     expected_output_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     consent_snapshot_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     review_status: str = "unreviewed"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class ExportJob(SQLModel, table=True):
@@ -256,7 +257,7 @@ class ExportJob(SQLModel, table=True):
     manifest_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     output_path: Optional[str] = None
     error_message: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
     completed_at: Optional[datetime] = None
 
 
@@ -282,8 +283,8 @@ class GraphNode(SQLModel, table=True):
     occurrence_count: int = 0
     first_seen_day: Optional[date] = Field(default=None, index=True)
     last_seen_day: Optional[date] = Field(default=None, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class GraphEdge(SQLModel, table=True):
@@ -308,8 +309,8 @@ class GraphEdge(SQLModel, table=True):
     occurrence_count: int = 0
     first_seen_day: Optional[date] = Field(default=None, index=True)
     last_seen_day: Optional[date] = Field(default=None, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class ConversationMemoryObject(SQLModel, table=True):
@@ -338,9 +339,9 @@ class ConversationMemoryObject(SQLModel, table=True):
     embedding_model: str = "not_generated"
     vector_json: List[float] = Field(default_factory=list, sa_column=Column(JSON))
     embedding_status: str = "pending_no_openai_key"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-    last_reinforced_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+    last_reinforced_at: datetime = Field(default_factory=utcnow)
     merged_into_id: Optional[int] = Field(default=None, foreign_key="conversationmemoryobject.id", index=True)
     merge_reason: Optional[str] = None
     superseded_by_id: Optional[int] = Field(default=None, foreign_key="conversationmemoryobject.id", index=True)

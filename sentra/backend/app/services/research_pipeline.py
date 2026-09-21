@@ -16,6 +16,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from sqlmodel import Session, func, select
 
+from ..clock import utcnow
 from ..analytics.graph_features import build_temporal_graph_diff
 from ..analytics.graph_index import (
     GRAPH_INDEX_VERSION,
@@ -150,7 +151,7 @@ def _parse_datetime(value: Any, fallback: Optional[datetime] = None) -> datetime
             return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
         except ValueError:
             pass
-    return fallback or datetime.utcnow()
+    return fallback or utcnow()
 
 
 def _word_count(text: str) -> int:
@@ -364,7 +365,7 @@ def record_entry_session(
         return existing
 
     started_at = _parse_datetime(telemetry.get("started_at"))
-    submitted_at = _parse_datetime(telemetry.get("submitted_at"), datetime.utcnow())
+    submitted_at = _parse_datetime(telemetry.get("submitted_at"), utcnow())
     aggregate_metrics = telemetry.get("aggregate_metrics") if isinstance(telemetry.get("aggregate_metrics"), dict) else {}
 
     entry_session = EntrySession(
@@ -1015,7 +1016,7 @@ def search_similar_graph_patterns(
     ).all()
 
     today = date.today()
-    now = datetime.utcnow()
+    now = utcnow()
     scored_nodes: List[Tuple[GraphNode, int, float, Dict[str, Any]]] = []
     for node_id, hop in distances.items():
         node = nodes_by_id.get(node_id)
@@ -1566,7 +1567,7 @@ def _build_memory_objects_for_window(
         if not prior.merged_into_id
     ]
 
-    now = datetime.utcnow()
+    now = utcnow()
     created_rows: List[ConversationMemoryObject] = []
     for segment in segments:
         fallback_topic = build_topic_label(segment)
@@ -1660,7 +1661,7 @@ def _build_memory_objects_for_window(
 
 
 def _memory_object_to_dict(row: ConversationMemoryObject, now: Optional[datetime] = None) -> Dict[str, Any]:
-    now = now or datetime.utcnow()
+    now = now or utcnow()
     return {
         "memory_id": row.id,
         "source_message_ids": row.source_message_ids_json,
@@ -1708,7 +1709,7 @@ def get_conversation_memory_objects(
     ).all()
     if active_only:
         rows = [row for row in rows if not row.merged_into_id and row.contradiction_status != "superseded"]
-    now = datetime.utcnow()
+    now = utcnow()
     payload = [_memory_object_to_dict(row, now) for row in rows]
     payload.sort(key=lambda item: item["effective_importance"], reverse=True)
     return payload
@@ -1756,7 +1757,7 @@ def search_relevant_memory_objects(
     ).all()
     active_rows = [row for row in rows if not row.merged_into_id and row.contradiction_status != "superseded"]
 
-    now = datetime.utcnow()
+    now = utcnow()
     scored: List[Tuple[ConversationMemoryObject, float, Dict[str, Any]]] = []
     weight_map = {
         "semantic_similarity": "semantic",
@@ -1861,7 +1862,7 @@ def analyze_conversation_recall_30(
         row.id,
         len(memory_object_ids),
     )
-    now = datetime.utcnow()
+    now = utcnow()
     return {
         "id": row.id,
         "status": row.status,
@@ -1904,7 +1905,7 @@ def get_latest_conversation_recall_30(
             if memory_object_ids
             else []
         )
-        now = datetime.utcnow()
+        now = utcnow()
         return {
             "id": row.id,
             "status": row.status,
@@ -2041,7 +2042,7 @@ def mine_longitudinal_patterns(
     persisted ``LongitudinalPattern`` rows for this window. Returns a summary
     plus the top patterns so the caller can surface or log them.
     """
-    anchor_day = datetime.utcnow().date()
+    anchor_day = utcnow().date()
     window_start = anchor_day - timedelta(days=window_days - 1)
 
     snapshots = session.exec(
@@ -2522,7 +2523,7 @@ def create_research_export(
 
         job.status = "completed"
         job.output_path = str(output_path)
-        job.completed_at = datetime.utcnow()
+        job.completed_at = utcnow()
         job.manifest_json = {
             "tables": {table_name: len(table_rows) for table_name, table_rows in rows.items()},
             "format": export_format,
@@ -2607,7 +2608,7 @@ def create_fine_tuning_dataset_export(
 
     job.status = "completed"
     job.output_path = str(output_path)
-    job.completed_at = datetime.utcnow()
+    job.completed_at = utcnow()
     job.manifest_json = {"example_count": len(examples), "format": "fine_tuning_jsonl"}
     session.add(job)
     session.commit()

@@ -33,6 +33,8 @@ import {
   type ParticipantReconciliation,
 } from "@/lib/pilotOps";
 import { authorizedExporters } from "@/lib/server/researchExportAudit";
+import { cronSecretConfigured } from "@/lib/server/cronAuth";
+import { channelsConfigured } from "@/lib/server/safetyEscalation";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -186,6 +188,8 @@ export async function GET(request: NextRequest) {
     },
     generated_at: now,
 
+    scheduled_jobs: scheduledJobs(),
+
     enrollment: {
       total: enrollments.length,
       by_state: tally(enrollments.map((row) => row.state)),
@@ -248,6 +252,38 @@ export async function GET(request: NextRequest) {
   });
 }
 
+/**
+ * Whether the scheduled work is in a position to happen at all (#205).
+ *
+ * Both jobs added in #179 and #185 fail closed: with `CRON_SECRET` unset,
+ * `/api/cron/retention-purge` and `/api/cron/safety-dispatch` answer 403 to
+ * every caller including Vercel's own scheduler. That is the right default —
+ * a purge or a mail send anyone on the internet can trigger is worse — but it
+ * is also invisible. The refusal is a line in a function log, and nobody reads
+ * function logs on a morning where nothing appeared to go wrong.
+ *
+ * `retention.overdue` below is the *evidence* the purge ran, and it is the
+ * number to trust once the study has data. It cannot be the alarm: on day 1 of
+ * a dry run no retained text has reached its expiry yet, so a deployment with
+ * no `CRON_SECRET` and a deployment with a working schedule both report zero.
+ * These booleans are what separates them, and they are readable before the
+ * first participant writes anything.
+ *
+ * Environment facts only — no counts, no identities, nothing that is not
+ * already decided by the deployment's own configuration.
+ */
+function scheduledJobs() {
+  return {
+    // Unset means every /api/cron/* route refuses: no retention purge, no
+    // crisis-notification retry. Expected true on any deployment collecting
+    // data.
+    cron_secret_configured: cronSecretConfigured(),
+    // The retry job can run and still reach nobody. Unset means a crisis
+    // escalation stays queued rather than being delivered (#178).
+    safety_alert_channel_configured: channelsConfigured(),
+  };
+}
+
 function emptyDashboard(
   study: { slug: string; status: string; protocol_version: string; baseline_days: number; observation_days: number; is_dry_run: boolean },
   now: string,
@@ -261,6 +297,10 @@ function emptyDashboard(
       protocol_days: study.baseline_days + study.observation_days,
     },
     generated_at: now,
+    // Present here too, and deliberately. A study with no participants yet is
+    // exactly when a missing CRON_SECRET is cheapest to fix and least visible
+    // in the counts.
+    scheduled_jobs: scheduledJobs(),
     enrollment: { total: 0, by_state: {}, minors: 0, withdrawn: 0 },
     submissions: totalsFor([]),
     consent: { records: 0, without_record: 0, research_use_allowed: 0, by_document_version: {}, revoked: 0 },

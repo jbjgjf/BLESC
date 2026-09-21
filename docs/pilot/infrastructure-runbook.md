@@ -66,7 +66,10 @@
 | `RESEARCH_API_TOKEN` | 研究APIの資格情報 | 研究APIが503を返す（安全側） |
 | `RESEARCH_API_BASE_URL` | 研究APIの転送先 | 既定 `http://127.0.0.1:8000` |
 | `RESEARCH_UI_ALLOWED_USER_IDS` | 研究画面の許可リスト | 誰も研究画面から実行できない（安全側） |
+| `CRON_SECRET` | Vercel Cron が `/api/cron/*` を叩くときの資格情報 | **すべての定期実行が403で拒否される。** 保持期限のpurgeも危機通知の再送も走らない（#179 #185） |
 | `OPENAI_API_KEY` | 外部AI | **収集専用モードでは使わない。** 未設定が望ましい |
+
+> この表は完全な目録ではない。`sentra/frontend/.env.example` が正典で、危機通知（`SAFETY_*`）と保護者確認（`PILOT_GUARDIAN_HMAC_KEY`）の変数はそちらにだけ説明がある。設定時は `.env.example` を上から順に読むこと。
 
 ### 3.2 Vercel（client へ出る）
 
@@ -190,7 +193,26 @@ client bundleにservice-role keyの実値が含まれていないことを、**�
 
 `sentra/eval` の browser driver（playwright）で、招待→登録→説明→assent→（未成年なら保護者確認）→提出→撤回 を通す。preview保護は `x-vercel-protection-bypass` で越える（`sentra/eval/src/browser.ts` が対応済み）。
 
-### 5.5 設定と定期実行の確認（#194）
+### 5.5 設定と定期実行の確認（#194、#205）
+
+保持期限のpurgeと危機通知の再送は、`CRON_SECRET` が無ければ**全件403で拒否される**
+（`src/lib/server/cronAuth.ts`）。拒否はVercelの関数ログにしか出ないので、
+デプロイ直後・参加者を入れる前に、**2つを両方**見る。片方では足りない理由が下にある。
+
+#### (a) 参加者ゼロでも読める設定確認 — `pilot-dashboard`
+
+```bash
+curl -s -H "authorization: Bearer <研究者のアクセストークン>" \
+  "https://<pilot-host>/api/research/pilot-dashboard?study=<slug>" \
+  | python3 -c "import json,sys;print(json.load(sys.stdin)['scheduled_jobs'])"
+```
+
+| キー | 期待 | falseのとき起きること |
+| --- | --- | --- |
+| `cron_secret_configured` | `True` | 保持期限のpurgeも危機通知の再送も一度も走らない |
+| `safety_alert_channel_configured` | `True` | 危機通知の送り先が無く、エスカレーションはキューに残り続ける（#178） |
+
+#### (b) 実際に走っているかの実測 — `check-ops-config.mjs`
 
 ```bash
 PILOT_BASE_URL=https://blesc-pilot.vercel.app CRON_SECRET=... \
@@ -211,12 +233,18 @@ PILOT_BASE_URL=https://blesc-pilot.vercel.app CRON_SECRET=... \
 終了コードは 0=blocking無し / 1=blockingあり / 2=確認できなかった。
 **2 を 0 として記録しない。** 「聞けなかった」は「問題なし」ではない。
 
-`observed` の2つは設定の有無より強い証拠である。`CRON_SECRET` があっても
-`overdue` が0でなければ、値が違うか、`vercel.json` を読んでいないprojectか、
-manifestを取り込んでいないdeploymentである。設定確認だけならこれを健全と呼んでしまう。
-
 `ops` は運営者（`PILOT_OPERATOR_USER_IDS`）のセッション、または `CRON_SECRET` のbearerで開く。
 後者は外形監視から叩くためで、`ready: false` はそのまま当番への通知条件にしてよい。
+
+#### なぜ両方要るか
+
+`observed` は設定の有無より強い証拠である。`CRON_SECRET` があっても `overdue` が0でなければ、
+値が違うか、`vercel.json` を読んでいないprojectか、manifestを取り込んでいないdeploymentである。
+設定確認だけならこれを健全と呼んでしまう。
+
+逆に `observed` だけでも足りない。**保持中の本文がまだ期限に達していない初日は、
+`CRON_SECRET` 未設定のデプロイも健全なデプロイも同じ `0` を返す。**
+その2つを分けるのが (a) の `cron_secret_configured` である。
 
 ## 6. 監視とアラート
 
@@ -231,9 +259,15 @@ manifestを取り込んでいないdeploymentである。設定確認だけな�
 
 `DECISION REQUIRED`: 通知の手段（メール／Slack／その他）と当番。**決定者: 運用責任者。**
 
-`purge_expired_raw_text()` の定期実行は `sentra/frontend/vercel.json` の cron（`/api/cron/retention-purge`、毎日03:17 UTC）が担う。**ただし `CRON_SECRET` が無ければ403で、走らないことは画面にも出ない。** 保持期限を設定しても、消す処理が動いていなければ保持期限は無い。走っている証拠は §5.5 の `observed.retention_purge.overdue`（0であること）であり、cronの設定が存在することではない。
+`purge_expired_raw_text()` の定期実行は**決定済み**（#185）。`sentra/frontend/vercel.json` の cron が
+`/api/cron/retention-purge` を毎日03:17 UTCに叩く。**ただし `CRON_SECRET` が無ければ403で、
+走らないことは画面にも出ない。** 保持期限を設定しても消す処理が動いていなければ保持期限は無いので、
+**動いていることを確認する責任は残る** — §5.5 の `cron_secret_configured`（設定）と
+`observed.retention_purge.overdue`（実測、0であること）の両方を見る。cronの設定が存在することは証拠にならない。
 
-危機通知の再送は `.github/workflows/safety-dispatch.yml`（5分ごと）＋ Vercel cron の日次backstop。GitHubのschedulerはbest-effortなので、5分は目標であって保証ではない。滞留は §5.5 の `observed.safety_dispatch.stale` で見る。
+危機通知の再送は `.github/workflows/safety-dispatch.yml`（5分ごと）＋ Vercel cron の日次backstop。
+GitHubのschedulerはbest-effortなので、5分は目標であって保証ではない。
+滞留は §5.5 の `observed.safety_dispatch.stale` で見る。
 
 ## 7. 鍵のローテーション
 

@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 from sqlmodel import Field, SQLModel, Relationship, JSON, Column
 from .entry import Entry
+from ..clock import utcnow
 
 class ExtractionNode(SQLModel):
     id: str  # local id in extraction
@@ -34,7 +35,7 @@ class Extraction(SQLModel, table=True):
     extractor_version: str = "qwen-2.5-7b-v1"
     extraction_provider: str = "unknown"
     extraction_model: str = "unknown"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     # Relationship to entries
     entry: Entry = Relationship(back_populates="extractions")

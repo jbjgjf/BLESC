@@ -11,7 +11,10 @@
  * is a way to make this deployment send mail, or to drive a purge, on command.
  * The cost of failing closed is that the schedule silently does nothing, which
  * is why every route here says so loudly in the log and why
- * `/api/pilot/admin/ops` reports whether the jobs have actually been running.
+ * `/api/research/pilot-dashboard` reports `scheduled_jobs.cron_secret_configured`
+ * (#205). An earlier version of this comment named `/api/pilot/admin/ops`, which
+ * has never existed — so for as long as it stood, the only report of a schedule
+ * refusing every call was a line in a function log.
  */
 
 import type { NextRequest } from "next/server";

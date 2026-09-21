@@ -11,7 +11,14 @@
 #     --report /tmp/resolve.json
 #   python scripts/write_lockfile.py /tmp/resolve.json
 #
-# Resolved 2026-09-19, Python 3.12.
+# A resolution is only valid for the interpreter and platform it was made on,
+# and this file records both below. `numpy==2.5.3` requires >=3.12, so these
+# pins do not install at all on 3.11; and `torch` declares its CUDA wheels as
+# dependencies on linux-x86_64 and on no other platform, so a set resolved on
+# macOS is missing twenty-one packages that CI will then install unpinned.
+# Match what `.github/workflows/research-contracts.yml` runs.
+#
+# Resolved 2026-09-20, Python 3.12, linux-x86_64.
 
 aiosqlite==0.22.1
 annotated-doc==0.0.5
@@ -22,11 +29,15 @@ cffi==2.1.1
 click==8.5.0
 cloudpickle==3.1.2
 cryptography==50.0.1
+cuda-bindings==13.4.2
+cuda-pathfinder==1.8.2
+cuda-toolkit==13.0.3.0
 deprecation==2.1.0
 fastapi==0.141.1
 filelock==4.0.1
 fsspec==2026.9.0
 fugashi==1.5.2
+greenlet==3.5.6
 h11==0.16.0
 h2==4.4.1
 hdbscan==0.8.44
@@ -53,6 +64,21 @@ narwhals==2.26.0
 networkx==3.6.1
 numba==0.67.0
 numpy==2.5.3
+nvidia-cublas==13.1.1.3
+nvidia-cuda-cupti==13.0.85
+nvidia-cuda-nvrtc==13.0.88
+nvidia-cuda-runtime==13.0.96
+nvidia-cudnn-cu13==9.24.0.43
+nvidia-cufft==12.0.0.61
+nvidia-cufile==1.15.1.6
+nvidia-curand==10.4.0.35
+nvidia-cusolver==12.0.4.66
+nvidia-cusparse==12.6.3.3
+nvidia-cusparselt-cu13==0.8.1
+nvidia-nccl-cu13==2.30.7
+nvidia-nvjitlink==13.4.92
+nvidia-nvshmem-cu13==3.4.5
+nvidia-nvtx==13.0.85
 openai==3.16.2
 packaging==26.3
 pandas==3.0.6
@@ -97,6 +123,7 @@ tokenizers==0.23.2
 torch==2.14.0
 tqdm==4.70.1
 transformers==5.17.0
+triton==3.8.0
 truststore==0.10.4
 typer==0.27.2
 typing-inspection==0.4.4

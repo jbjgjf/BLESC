@@ -27,6 +27,14 @@ on:
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
+# Nothing here touches the repository: no checkout, one `curl` to a deployment.
+# So the job is given no repository access at all (#208). It matters more here
+# than in the other workflow because this one runs every five minutes with
+# `PILOT_BASE_URL` and `SAFETY_DISPATCH_TOKEN` in its environment — the pair
+# that can drive the crisis dispatcher — and a job holding secrets should not
+# also be holding permissions it has no use for.
+permissions: {}
+
 # A queued run is worthless once a newer one exists: they do the same work
 # against the same queue.
 concurrency:
@@ -98,4 +106,15 @@ jobs:
           # somebody has to act on, so it is raised where run summaries are read.
           if [ "$(python3 -c "import json;print(json.load(open('${response}')).get('stuck',0))")" != "0" ]; then
             echo "::warning::Some escalations have exhausted their retries and nobody was told. Check the alert channel configuration."
+          fi
+
+          # `pending` counts rows this run reached nobody for *without
+          # attempting anything* — no channel configured, or consent held by
+          # educators with no address (#203). They never reach `stuck`, because
+          # `stuck` counts exhausted attempts and these deliberately do not
+          # consume one. Without this line a queue of undelivered crises reports
+          # `stuck: 0` forever, which is the assumed-away gap this workflow's
+          # own header says it exists to prevent.
+          if [ "$(python3 -c "import json;print(json.load(open('${response}')).get('pending',0))")" != "0" ]; then
+            echo "::warning::Some escalations reached nobody and stayed queued. Check SAFETY_ALERT_WEBHOOK_URL / RESEND_API_KEY, and that the educators on the roster have an email address."
           fi

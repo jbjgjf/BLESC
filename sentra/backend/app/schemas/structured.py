@@ -8,6 +8,7 @@ from sqlmodel import Column, Field, JSON, SQLModel, Relationship
 from .analytics import AnomalyResult
 from .entry import Entry
 from .extraction import Extraction
+from ..clock import utcnow
 
 
 class GraphNode(SQLModel):
@@ -76,7 +77,7 @@ class GraphSnapshot(SQLModel, table=True):
     temporal_diff_json: Dict[str, Any] = Field(sa_column=Column(JSON))
     extraction_provider: str = "unknown"
     extraction_model: str = "unknown"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     entry: Entry = Relationship(back_populates="graph_snapshots")
 
@@ -94,7 +95,7 @@ class HybridExplanation(SQLModel, table=True):
     graph_summary_json: Dict[str, Any] = Field(sa_column=Column(JSON))
     score_breakdown_json: Dict[str, Any] = Field(sa_column=Column(JSON))
     key_relations: List[Dict[str, Any]] = Field(sa_column=Column(JSON), default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class EntrySubmissionResponse(SQLModel):

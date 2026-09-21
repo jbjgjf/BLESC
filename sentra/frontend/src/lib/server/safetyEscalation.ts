@@ -234,8 +234,36 @@ function hashAddress(address: string): string | null {
   return createHmac("sha256", key).update(address.trim().toLowerCase(), "utf8").digest("hex").slice(0, 32);
 }
 
-function consoleUrl(): string {
-  const base = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "";
+/**
+ * Where the educator goes, or null when this deployment cannot say (#202).
+ *
+ * `guardianVerificationUrl()` falls back to a bare path on purpose: the
+ * guardian link is handed over on the participant's own device, where a path
+ * still resolves, and it "fails visibly" when it is not. A crisis notification
+ * has neither property. It is read in Slack, in a duty-phone gateway, in a mail
+ * client — somewhere with no origin to resolve a path against — so a bare
+ * `/educator/roster` is not a degraded link, it is a line of text that looks
+ * like one. Worse, the send still succeeds, the row still finalises as
+ * `delivered`, and nothing on any dashboard says the recipient had nowhere to
+ * click.
+ *
+ * So: a link when there is one, and no line at all when there is not. The
+ * sentence above it already tells the educator to sign in, which is the action
+ * either way.
+ *
+ * Logged loudly because `NEXT_PUBLIC_SITE_URL` is inlined at build time. Setting
+ * it on a running deployment changes nothing until the next build, and that is
+ * the kind of fix somebody applies, sees no error, and assumes worked.
+ */
+function consoleUrl(): string | null {
+  const base = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
+  if (!base) {
+    console.error(
+      "[safety-escalation] NEXT_PUBLIC_SITE_URL is not set, so crisis notifications go out with no link. " +
+        "The value is inlined at build time: set it and redeploy, not just set it.",
+    );
+    return null;
+  }
   return `${base}/educator/roster`;
 }
 
@@ -256,11 +284,13 @@ export function notificationText(escalation: {
   const urgency = escalation.risk_level === "crisis"
     ? "すぐに確認してください。"
     : "確認をお願いします。";
+  const url = consoleUrl();
   return [
     `【blesc】${who} の記録に、確認が必要な表現がありました。${urgency}`,
     `検知時刻：${when}`,
     "内容は本人の画面にのみ保存されています。詳細はログインして確認してください。",
-    consoleUrl(),
+    // Omitted rather than degraded to a path: see `consoleUrl`.
+    ...(url ? [url] : []),
     "",
     "blesc は緊急対応を行いません。危険が差し迫っていると判断される場合は、学校の緊急対応手順に従ってください。",
   ].join("\n");
@@ -352,13 +382,19 @@ export function channelsConfigured(): boolean {
  * The status it leaves behind is the contract with `/api/safety/dispatch`:
  *
  *   `delivered`     at least one recipient was reached
- *   `failed`        recipients exist and every send failed — retry
- *   `no_recipient`  nobody may be told, or no channel is configured
- *   `pending`       untouched; the dispatcher will pick it up
+ *   `failed`        a send was attempted and every one failed — retry
+ *   `no_recipient`  nobody may be told: the recipient set is empty
+ *   `pending`       nothing was attempted; the dispatcher will pick it up
  *
- * `no_recipient` is not success and is not silence. It means a student is in
- * crisis and this deployment has nowhere to send it, which is a configuration
- * emergency — so it is logged as an error and left visible in the table.
+ * `no_recipient` is the only terminal one, and it is terminal because it is a
+ * consent fact: no educator holds active oversight of this participant, and
+ * asking again will not produce one. Everything else that reached nobody — no
+ * channel configured (#178), recipients with no reachable address (#203) — is
+ * an operations gap, stays queued, and does not consume an attempt.
+ *
+ * None of them is success and none of them is silence. A student is in crisis
+ * and this deployment did not tell anyone, so every one of them is logged as an
+ * error and left visible in the table.
  */
 export async function deliverEscalation(
   service: SupabaseClient,
@@ -445,20 +481,49 @@ export async function deliverEscalation(
    */
   const noChannel = !channelsConfigured();
 
+  /*
+   * A third case, found in the same family as #178 (#203).
+   *
+   * `recipientsFor` returns rows from `safety_escalation_recipients`, whose
+   * `email` column is `auth.users.email` — and that is nullable on Supabase
+   * (a phone-only account, an invited educator who has not confirmed yet).
+   * With the webhook unset and only the mail channel configured, a batch of
+   * recipients that all have a null address attempts nothing: the loop above
+   * `continue`s past every one of them.
+   *
+   * That used to land on `no_recipient`, because `channelsConfigured()` was
+   * true and so `noChannel` was false. Terminal, never queried again, exactly
+   * the loss #178 closed one branch of. But consent *exists* here. Somebody is
+   * permitted to be told and the deployment simply has no way to reach them
+   * yet, which is an operations gap — fixed by filling in an address — and not
+   * the consent fact that `no_recipient` is now reserved for.
+   *
+   * So the rule is the one the status names: `no_recipient` means the
+   * recipient set is empty. Anything else that reached nobody stays queued.
+   */
+  const noReachableAddress = recipients.length > 0;
+
   let status: "delivered" | "failed" | "no_recipient" | "pending";
   if (anyDelivered) status = "delivered";
   else if (anyAttempt) status = "failed";
-  else if (noChannel) status = "pending";
+  else if (noChannel || noReachableAddress) status = "pending";
   else status = "no_recipient";
 
   if (status === "pending" || status === "no_recipient") {
+    // Kept inline rather than lifted to a `const`: the #116 UI-language guard
+    // exempts strings by `console.*` call, so a developer-facing message that
+    // lives outside one has to be allowlisted to say anything in English.
     console.error(
       "[safety-escalation] NOWHERE TO SEND A CRISIS ESCALATION. " +
         (noChannel
           ? "No channel is configured: set SAFETY_ALERT_WEBHOOK_URL, or RESEND_API_KEY with " +
             "SAFETY_ALERT_EMAIL_FROM. The escalation stays queued and will be sent once one is set."
-          : "No educator holds active oversight consent for this participant, so there is nobody " +
-            "this may be sent to. This will not be retried."),
+          : noReachableAddress
+            ? "Educators hold active oversight consent, but none of them has an address the " +
+              "configured channels can reach. Check the email column for the accounts on this " +
+              "roster, or set SAFETY_ALERT_WEBHOOK_URL. The escalation stays queued."
+            : "No educator holds active oversight consent for this participant, so there is nobody " +
+              "this may be sent to. This will not be retried."),
       { escalation: escalation.id, recipients: recipients.length, channels: !noChannel },
     );
   }
@@ -471,11 +536,20 @@ export async function deliverEscalation(
       // deployment does not burn through MAX_ATTEMPTS while idle.
       attempts: status === "pending" ? escalation.attempts : escalation.attempts + 1,
       last_attempt_at: new Date().toISOString(),
+      // Three reasons, three strings. An operator reading this column is
+      // reading it to find out what to repair, and "no recipient with active
+      // oversight consent" sends them to check consent when what is actually
+      // missing is an address — a different team, a different fix, and a
+      // crisis sitting in the queue while they look in the wrong place.
       last_error:
         status === "delivered"
           ? null
           : deliveries.find((d) => d.error)?.error ??
-            (noChannel ? "no delivery channel configured" : "no recipient with active oversight consent"),
+            (noChannel
+              ? "no delivery channel configured"
+              : noReachableAddress
+                ? "no reachable address for any consented recipient"
+                : "no recipient with active oversight consent"),
       delivered_at: status === "delivered" ? new Date().toISOString() : null,
     })
     .eq("id", escalation.id);

@@ -7,6 +7,15 @@ on:
       - main
       - "codex/**"
 
+# Every job here checks out, runs tests, and uploads artifacts. None of that
+# needs the token to be able to write: artifact upload authenticates against the
+# Actions runtime rather than through `GITHUB_TOKEN`. Declared rather than
+# inherited (#208), because an inherited default is whatever the repository
+# setting happens to be — including read-and-write, which would hand every job
+# in this file the ability to push code and move issues it has no use for.
+permissions:
+  contents: read
+
 jobs:
   eval-contracts:
     name: Synthetic evaluation contracts
@@ -105,6 +114,14 @@ jobs:
 
       - name: Run frontend lint
         run: npm run lint
+
+      # `next build` only typechecks what is in its build graph, so e2e/ (the
+      # #164 enrollment-gate suite), playwright.config.ts and scripts/ were
+      # never checked by anything. tsconfig.json already includes them; this
+      # runs the check. Placed before the tests so a type error stops the job
+      # without waiting on the build. `sentra/eval` gates the same way.
+      - name: Typecheck frontend
+        run: npm run typecheck
 
       # Includes the Japanese-UI guard (#116): it fails on English text added to
       # a screen without a recorded reason. The suite ran only on developer

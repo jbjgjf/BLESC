@@ -168,6 +168,8 @@ refactor: extract auth middleware
 - **Backend:** hit the endpoint locally (curl/Postman), check logs, verify DB state changed as expected
 - **AI features** (LLM calls, agents, RAG): test with at least 3 varied inputs including an adversarial/edge one; log prompt + response in the PR; watch for cost/latency, not just "did it answer"
 
+**New GitHub Actions workflow:** declare `permissions:` at the top of the file, listing only what the jobs use — `contents: read` for a workflow that just checks out and tests, `{}` for one that never touches the repository (#208). Left out, the workflow inherits the repository default, which may be read-and-write; a job that holds secrets should not also hold access it has no use for.
+
 ---
 
 ## 8. Project Structure
