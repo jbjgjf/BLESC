@@ -409,3 +409,37 @@
     border-color: CanvasText;
   }
 }
+
+/* 考えているあいだの印。文字にしないのは、読み上げに出さないものに
+   言葉を持たせると、画面と読み上げで中身がずれるため。 */
+.pondering {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding-block: 13px;
+}
+
+.pondering span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bl-ink-3);
+  opacity: 0.32;
+  animation: pondering 1.25s var(--bl-ease) infinite;
+}
+
+.pondering span:nth-child(2) { animation-delay: 0.16s; }
+.pondering span:nth-child(3) { animation-delay: 0.32s; }
+
+@keyframes pondering {
+  0%, 60%, 100% { opacity: 0.28; transform: translateY(0); }
+  30%           { opacity: 0.72; transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pondering span { animation: none; }
+}
+
+:global(html[data-bl-motion="reduced"]) .pondering span {
+  animation: none;
+}

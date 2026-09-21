@@ -20,6 +20,7 @@ import {
 } from "@/lib/assistant/intents";
 import type { Expression } from "@/lib/assistant/pebble";
 import { HANDOFF_KEY } from "@/lib/assistant/handoff";
+import { beatMs } from "@/lib/assistant/pacing";
 import { Pebble } from "./Pebble";
 import { Guide, type Trip } from "./Guide";
 import styles from "./Assistant.module.css";
@@ -42,8 +43,11 @@ import styles from "./Assistant.module.css";
 
 const PANEL_MAX = 18;
 
-/** 返事を出すまでの間。打った言葉が画面に出るのを見てから次に進むため。 */
-const BEAT_MS = 240;
+/**
+ * 返事を出すまでの間は lib/assistant/pacing.ts が決める。長さは返事による。
+ * ここが短すぎると、読まずに返したように見える（速さより、聞いてもらえた
+ * かどうかのほうが先に伝わる）。
+ */
 
 /** 表情を rest に戻すまで。 */
 const SETTLE_MS = 2400;
@@ -412,11 +416,11 @@ export function Assistant({ audience }: { audience: Audience }) {
 
       const reply = routeIntent(text, contextFor(text, entries.filter((entry) => entry.role === "user").length));
 
-      // 間を置くのは、打った言葉が画面に出て、小石が反応するのを
-      // 見てから画面が変わるようにするため。動きを減らす設定の人には
-      // ただの遅延でしかないので、そのまま返す。
+      // 間を置くのは、打った言葉が画面に出て、小石が考えるのを見てから
+      // 返事が出るようにするため。動きを減らす設定の人にとっては、動きの
+      // ない待ち時間はただの遅延なので、そのまま返す。
       if (reduced) respond(reply);
-      else later(() => respond(reply), BEAT_MS);
+      else later(() => respond(reply), beatMs(reply.say, { calm: reply.calm }));
     },
     [busy, contextFor, entries, reduced, respond, later],
   );
@@ -625,6 +629,16 @@ export function Assistant({ audience }: { audience: Audience }) {
                 )}
               </div>
             ))
+          )}
+          {busy && entries.length > 0 && (
+            // 読み上げには出さない。答えが出たときに、それだけが読まれればいい。
+            <div className={styles.turn} data-role="pebble" aria-hidden="true">
+              <p className={`${styles.bubble} ${styles.pondering}`}>
+                <span />
+                <span />
+                <span />
+              </p>
+            </div>
           )}
         </div>
 

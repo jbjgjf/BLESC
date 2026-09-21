@@ -26,6 +26,7 @@ import {
 } from "../src/lib/assistant/pebble.ts";
 import { PETAL_PATH } from "../src/lib/blesc/petal.ts";
 import { bubbleShift, dwellMs, easeInOut, glideAt, glideMs, speechFor, spinFor, standingSpot } from "../src/lib/assistant/tour.ts";
+import { beatMs } from "../src/lib/assistant/pacing.ts";
 import { assessSafety } from "../src/lib/safety-assessment.ts";
 
 const settings = { text: "m", line: "normal", contrast: "normal", motion: "system", face: "default" };
@@ -765,5 +766,39 @@ describe("案内役が画面の中を移動する", () => {
     assert.ok(dwellMs("ここです。") >= 2400);
     assert.ok(dwellMs("あ".repeat(80)) > dwellMs("ここです。"));
     assert.ok(dwellMs("あ".repeat(400)) <= 11000, "長すぎる説明でも、いつかは帰る");
+  });
+});
+
+describe("返事までの間", () => {
+  const steady = { random: () => 0.5 };
+
+  it("すぐには返さない（聞かずに答えたように見える）", () => {
+    assert.ok(beatMs("はい。", steady) >= 600, "短い返事でも、読んで答えた間は要る");
+  });
+
+  it("長い返事ほど、少しだけ長く考える", () => {
+    const short = beatMs("日記のページを開きますね。", steady);
+    const long = beatMs("あ".repeat(120), steady);
+    assert.ok(long > short);
+  });
+
+  it("待たせすぎない（揺らいでも天井を越えない）", () => {
+    for (const random of [() => 0, () => 0.5, () => 1]) {
+      assert.ok(beatMs("あ".repeat(2000), { random }) <= 1500, "長い返事で天井を越えた");
+    }
+  });
+
+  it("つらさが混じった言葉には、間を取らない", () => {
+    // 「死にたい」と打った人の前で、考えている様子を見せる必要はない。
+    const calm = beatMs("ここにいます。ひとりで抱えなくて大丈夫です。", { ...steady, calm: true });
+    assert.ok(calm < beatMs("ここにいます。ひとりで抱えなくて大丈夫です。", steady));
+    assert.ok(calm <= 400, `${calm}ms は待たせすぎ`);
+  });
+
+  it("毎回きっかり同じ長さにはしない", () => {
+    const low = beatMs("同じ返事です。", { random: () => 0 });
+    const high = beatMs("同じ返事です。", { random: () => 1 });
+    assert.ok(high > low, "揺らぎが無い");
+    assert.ok(high / low < 1.5, "揺らぎが大きすぎて、速いときと遅いときが別物に見える");
   });
 });
