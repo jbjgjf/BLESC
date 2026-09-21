@@ -75,6 +75,9 @@ export default function ConsentPage() {
   const [isMinor, setIsMinor] = useState(true);
   const [readDocument, setReadDocument] = useState(false);
   const [busy, setBusy] = useState(false);
+  // 撤回は2段階。ボタン1つで「撤回＝削除」が確定していたのが #224 で、
+  // 取り消せない選択を1クリックの裏に置かないための段階である。
+  const [withdrawing, setWithdrawing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -130,13 +133,13 @@ export default function ConsentPage() {
     }
   };
 
-  const revoke = async () => {
+  const revoke = async (retainedData: "delete" | "keep") => {
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
-      const next = await ApiClient.revokeConsent(userId);
-      setStored(next);
+      const result = await ApiClient.revokeConsent(userId, retainedData);
+      setStored(result.consent);
       setChecked({
         research_analysis: false,
         raw_text_retention: false,
@@ -144,7 +147,12 @@ export default function ConsentPage() {
         model_training_use: false,
       });
       setAssent(false);
-      setMessage("同意を撤回しました。保管していた日記の本文は削除されました。");
+      setWithdrawing(false);
+      setMessage(
+        result.retainedData === "keep"
+          ? "同意を撤回しました。保管していた日記の本文は、保存期間が終わるまで残ります。研究には使われません。"
+          : "同意を撤回しました。保管していた日記の本文は削除されました。",
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "同意を撤回できませんでした。");
     } finally {
@@ -295,12 +303,56 @@ export default function ConsentPage() {
         <button
           type="button"
           className="bl-btn bl-btn--ghost"
-          disabled={busy || stored.status === "revoked"}
-          onClick={() => void revoke()}
+          disabled={busy || stored.status === "revoked" || withdrawing}
+          onClick={() => setWithdrawing(true)}
         >
           同意を撤回する
         </button>
       </div>
+
+      {withdrawing && (
+        <section className="bl-card bl-stack" aria-live="polite">
+          <h2 className="bl-h2">保管してある日記の本文をどうしますか</h2>
+          <p className="bl-body">
+            どちらを選んでも、<strong>研究への協力はここで終わります。</strong>
+            これから書くものが研究に使われることはありませんし、残す方を選んでも、
+            すでに書いたものが研究の分析やAIの学習に使われることはありません。
+            選ぶのは「いま消すかどうか」だけです。
+          </p>
+          <div className="bl-stack" style={{ gap: 10 }}>
+            <button
+              type="button"
+              className="bl-btn bl-btn--secondary bl-btn--block"
+              disabled={busy}
+              onClick={() => void revoke("delete")}
+            >
+              いま削除する
+              <span className="bl-micro" style={{ display: "block" }}>
+                保管してある本文をすぐに消します。元に戻せません。
+              </span>
+            </button>
+            <button
+              type="button"
+              className="bl-btn bl-btn--secondary bl-btn--block"
+              disabled={busy}
+              onClick={() => void revoke("keep")}
+            >
+              残す
+              <span className="bl-micro" style={{ display: "block" }}>
+                自分の記録として、保存期間が終わるまで残します。期間が来たら自動で消えます。
+              </span>
+            </button>
+          </div>
+          <button
+            type="button"
+            className="bl-btn bl-btn--ghost bl-btn--block"
+            disabled={busy}
+            onClick={() => setWithdrawing(false)}
+          >
+            やめる（撤回しない）
+          </button>
+        </section>
+      )}
 
       <p className="bl-meta">
         現在の状態: {active ? "研究利用に同意済み" : "研究利用には同意していません"}
