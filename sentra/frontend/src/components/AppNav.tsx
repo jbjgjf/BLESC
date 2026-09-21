@@ -171,7 +171,13 @@ export function AppNav() {
                 )}
 
                 <div className="bl-menu__group">その他</div>
-                {MORE_LINKS.filter((link) => demo || link.href !== "/research").map((link) => (
+                {/* Shown in full. `/research` used to be dropped here outside
+                    demo mode, because `AuthShell` answered it with the
+                    demo-only card and the link led nowhere (#226). It renders
+                    now, and `tests/demo-only-routes.test.mjs` holds the rule
+                    this filter was standing in for: nothing in this menu may
+                    point at a demo-only route. */}
+                {MORE_LINKS.map((link) => (
                   <TransitionLink key={link.href} href={link.href} className="bl-menu__item" role="menuitem">
                     <Icon name={link.icon} size={19} />
                     {link.label}

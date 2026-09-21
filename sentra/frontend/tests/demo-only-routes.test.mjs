@@ -96,21 +96,40 @@ describe("the demo-only list against the pages themselves", () => {
 });
 
 describe("the account menu", () => {
-  // `AppNav` filters the tab bar through `DEMO_ONLY_NAV_PATHS`, but `MORE_LINKS`
-  // — the account menu — is shown to every signed-in user unfiltered. A demo-only
-  // route in there is a link that answers "この画面はデモ専用です" in production,
-  // which is how #226 stayed invisible: "研究用の記録" pointed at `/research`.
+  // `AppNav` filters the tab bar through `DEMO_ONLY_NAV_PATHS`. `MORE_LINKS` —
+  // the account menu — has no such filter, so a demo-only route listed there is
+  // a link that answers "この画面はデモ専用です" in production.
+  //
+  // That is what `/research` was, and it was papered over at the render site
+  // rather than fixed: `MORE_LINKS.filter((link) => demo || link.href !==
+  // "/research")` dropped the one link to it outside demo mode, which left the
+  // screen unreachable except by typing the URL and hid the gate bug from
+  // anyone using the app. Both halves are gone, so both are checked here — the
+  // list, and the fact that the render site still renders all of it.
   const nav = readFileSync("src/components/AppNav.tsx", "utf8");
-  const block = nav.slice(nav.indexOf("const MORE_LINKS"), nav.indexOf("function isActive"));
+  const declaration = nav.indexOf("const MORE_LINKS");
+  const block = nav.slice(declaration, nav.indexOf("function isActive"));
   const hrefs = [...block.matchAll(/href:\s*"([^"]+)"/g)].map((match) => match[1]);
 
   it("reads the links", () => {
     assert.ok(hrefs.length > 0, "MORE_LINKS could not be read from AppNav.tsx");
   });
 
-  it("points every unfiltered link at a screen that renders", () => {
+  it("lists no link to a screen that will not render", () => {
     for (const href of hrefs) {
       assert.equal(isDemoOnlyRoute(href), false, `the account menu links to the demo-only ${href}`);
     }
+  });
+
+  it("renders the whole list, with no path singled out", () => {
+    // Anything other than `.map` here is a link being hidden by hand, which is
+    // how a route stays unreachable while the list above still looks correct.
+    const calls = [...nav.slice(declaration).matchAll(/MORE_LINKS\.(\w+)\(/g)].map((m) => m[1]);
+    assert.ok(calls.length > 0, "MORE_LINKS is declared but never rendered");
+    assert.deepEqual(
+      calls.filter((call) => call !== "map"),
+      [],
+      `MORE_LINKS is narrowed before rendering (${calls.join(", ")}); hide a route by listing it in DEMO_ONLY_ROUTES instead`,
+    );
   });
 });
