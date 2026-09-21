@@ -178,3 +178,19 @@ export function bubbleShift(centre: number, width: number, viewportWidth: number
   if (width + MARGIN * 2 >= viewportWidth) return 0;
   return clamp(centre, MARGIN + half, viewportWidth - MARGIN - half) - centre;
 }
+
+/**
+ * 画面に描かれたリンクが、その行き先のものか。
+ *
+ * 書き出した版（/demo-view）では basePath が付くので、リンクの href は
+ * 「/demo-view/journal」になる。案内役が持っている行き先は「/journal」なので、
+ * そのまま比べると一致せず、押しに行く相手が見つからない — デモでだけ
+ * 案内役が動かない、という形で出る。basePath を足した形も許す。
+ *
+ * 末尾一致では見ない。「/educator/journal」まで拾ってしまい、頼んでいない
+ * ページを押しに行く。
+ */
+export function hrefMatches(attribute: string | null, href: string, basePath = ""): boolean {
+  if (!attribute) return false;
+  return attribute === href || (basePath !== "" && attribute === `${basePath}${href}`);
+}

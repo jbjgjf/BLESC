@@ -21,6 +21,7 @@ import {
 import type { Expression } from "@/lib/assistant/pebble";
 import { HANDOFF_KEY } from "@/lib/assistant/handoff";
 import { beatMs } from "@/lib/assistant/pacing";
+import { hrefMatches } from "@/lib/assistant/tour";
 import { Pebble } from "./Pebble";
 import { Guide, type Trip } from "./Guide";
 import styles from "./Assistant.module.css";
@@ -129,10 +130,16 @@ function locate(heading: string): Located {
 
 const isFound = (located: Located): located is Found => located !== null && "label" in located;
 
+/**
+ * 書き出した版（/demo-view）では、リンクに basePath が付く。
+ * 組み込み時に値が入るので、ふだんのビルドでは空文字。
+ */
+const BASE_PATH = process.env.__NEXT_ROUTER_BASEPATH ?? "";
+
 /** 画面に出ている、その行き先のリンク。案内役が実際に押しに行く相手。 */
 function visibleLink(href: string): HTMLElement | null {
   const links = [...document.querySelectorAll<HTMLElement>("a[href]")].filter(
-    (element) => element.getAttribute("href") === href && element.getClientRects().length > 0,
+    (element) => hrefMatches(element.getAttribute("href"), href, BASE_PATH) && element.getClientRects().length > 0,
   );
   // タブバーやナビの中にあるものを先に。本文中の同じ行き先より、押す所として自然。
   return links.find((element) => element.closest("nav")) ?? links[0] ?? null;

@@ -25,7 +25,7 @@ import {
   SPROUT,
 } from "../src/lib/assistant/pebble.ts";
 import { PETAL_PATH } from "../src/lib/blesc/petal.ts";
-import { bubbleShift, dwellMs, easeInOut, glideAt, glideMs, speechFor, spinFor, standingSpot } from "../src/lib/assistant/tour.ts";
+import { bubbleShift, dwellMs, easeInOut, glideAt, glideMs, hrefMatches, speechFor, spinFor, standingSpot } from "../src/lib/assistant/tour.ts";
 import { beatMs } from "../src/lib/assistant/pacing.ts";
 import { assessSafety } from "../src/lib/safety-assessment.ts";
 
@@ -827,5 +827,25 @@ describe("名前", () => {
       assert.ok(!reply.say.includes("ラスクくん"), `${audience}: 自分を「くん」付けで呼んでいる`);
       assert.match(reply.say, /ラスク/);
     }
+  });
+});
+
+describe("押しに行くリンクを見つける", () => {
+  it("ふだんのビルドでは、そのままの行き先と一致する", () => {
+    assert.equal(hrefMatches("/journal", "/journal"), true);
+    assert.equal(hrefMatches("/reflect", "/journal"), false);
+    assert.equal(hrefMatches(null, "/journal"), false);
+  });
+
+  it("書き出した版では、basePath が付いた形とも一致する", () => {
+    // これが無いと、デモ（/demo-view）でだけ案内役が押しに行かない。
+    assert.equal(hrefMatches("/demo-view/journal", "/journal", "/demo-view"), true);
+    assert.equal(hrefMatches("/journal", "/journal", "/demo-view"), true);
+  });
+
+  it("末尾が同じだけの別ページは拾わない", () => {
+    assert.equal(hrefMatches("/educator/journal", "/journal", "/demo-view"), false);
+    assert.equal(hrefMatches("/demo-view/educator/journal", "/journal", "/demo-view"), false);
+    assert.equal(hrefMatches("/journal-archive", "/journal", "/demo-view"), false);
   });
 });
