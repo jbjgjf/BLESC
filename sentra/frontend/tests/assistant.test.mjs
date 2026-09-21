@@ -25,7 +25,7 @@ import {
   SPROUT,
 } from "../src/lib/assistant/pebble.ts";
 import { PETAL_PATH } from "../src/lib/blesc/petal.ts";
-import { bubbleShift, dwellMs, hopAt, hops, MAX_HOPS, speechFor, standingSpot, travelMs } from "../src/lib/assistant/tour.ts";
+import { bubbleShift, dwellMs, easeInOut, glideAt, glideMs, speechFor, spinFor, standingSpot } from "../src/lib/assistant/tour.ts";
 import { assessSafety } from "../src/lib/safety-assessment.ts";
 
 const settings = { text: "m", line: "normal", contrast: "normal", motion: "system", face: "default" };
@@ -365,7 +365,7 @@ describe("routeIntent — 雑談", () => {
     const reply = ask("こんにちは");
     assert.match(reply.say, /^こんにちは。/);
     assert.equal(navigated(reply), null);
-    assert.equal(reply.expression, "happy");
+    assert.equal(reply.expression, "bright");
   });
 
   it("あいさつの種類に合わせる", () => {
@@ -555,9 +555,17 @@ describe("pebble", () => {
     assert.deepEqual(applyBlink(open, 0), open);
   });
 
-  it("笑うと下のふちが上へ反る（三日月になる）", () => {
-    assert.ok(EXPRESSIONS.happy.downL < 0);
-    assert.ok(EXPRESSIONS.rest.downL > 0);
+  it("どの表情も笑わない（三日月の目を作らない）", () => {
+    // 指しながらにこにこしていると、説明ではなく愛嬌になる。弾む体と
+    // 目の開きで喜びを出し、口も三日月もつくらない。
+    for (const [name, params] of Object.entries(EXPRESSIONS)) {
+      for (const edge of ["upL", "downL", "upR", "downR"]) {
+        assert.ok(params[edge] > 0, `${name}.${edge} が反っている（笑顔になっている）`);
+      }
+    }
+    // できたときは、待機より目を開いて浮く。
+    assert.ok(EXPRESSIONS.bright.upL > EXPRESSIONS.rest.upL);
+    assert.ok(EXPRESSIONS.bright.lift < EXPRESSIONS.rest.lift);
   });
 
   it("落ち着いた表情は伏し目で、跳ねる余地を持たない", () => {
@@ -682,43 +690,50 @@ describe("案内役が画面の中を移動する", () => {
     }
   });
 
-  it("遠いほど跳ぶ回数が増える。ただし増え続けない", () => {
-    const from = { x: 40, y: 40 };
-    const near = hops(from, { x: 120, y: 60 });
-    const far = hops(from, { x: 1240, y: 760 });
-    assert.equal(near.length, 1);
-    assert.ok(far.length > near.length);
-    assert.ok(far.length <= MAX_HOPS, `${far.length} 回は跳ねすぎ`);
-    assert.equal(hops(from, { ...from }).length, 0, "同じ場所へ跳ばない");
+  it("滑り出しと着きぎわは緩く、中ほどで速い", () => {
+    assert.equal(easeInOut(0), 0);
+    assert.equal(easeInOut(1), 1);
+    assert.ok(Math.abs(easeInOut(0.5) - 0.5) < 0.001, "中間で半分を通らない");
+    // 出だしの 10% で進む距離 < 中ほどの 10% で進む距離。
+    const opening = easeInOut(0.1) - easeInOut(0);
+    const middle = easeInOut(0.55) - easeInOut(0.45);
+    const closing = easeInOut(1) - easeInOut(0.9);
+    assert.ok(opening < middle, "出だしが速い");
+    assert.ok(closing < middle, "着きぎわが速い");
+    assert.ok(Math.abs(opening - closing) < 0.001, "行きと終わりの緩み方が違う");
   });
 
-  it("跳躍はつながっていて、最後はちょうど着く", () => {
+  it("移動は端から端でも1秒あまり。近くても一瞬では消えない", () => {
+    const far = glideMs({ x: 1240, y: 760 }, { x: 40, y: 40 });
+    const near = glideMs({ x: 400, y: 400 }, { x: 430, y: 410 });
+    assert.ok(far > near);
+    assert.ok(far <= 1100, `${far}ms は待たせすぎ`);
+    assert.ok(near >= 420, `${near}ms は速すぎる`);
+  });
+
+  it("道すじは、始めと終わりがちょうど合う", () => {
     const from = { x: 1200, y: 700 };
     const to = { x: 220, y: 180 };
-    const path = hops(from, to);
-    for (const [index, hop] of path.entries()) {
-      const head = hopAt(hop, 0);
-      assert.ok(Math.hypot(head.x - hop.from.x, head.y - hop.from.y) < 0.001, `${index}: 始点がずれている`);
-      if (index > 0) {
-        const previous = path[index - 1];
-        assert.ok(Math.hypot(previous.to.x - hop.from.x, previous.to.y - hop.from.y) < 0.001, `${index}: 前の着地とつながっていない`);
-      }
+    assert.deepEqual(glideAt(from, to, 0), from);
+    assert.deepEqual(glideAt(from, to, 1), to);
+    // 途中は必ず両端のあいだ（行き過ぎて戻らない）。
+    for (const t of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+      const point = glideAt(from, to, t);
+      assert.ok(point.x <= from.x && point.x >= to.x, `x=${point.x}`);
+      assert.ok(point.y <= from.y && point.y >= to.y, `y=${point.y}`);
     }
-    const last = hopAt(path[path.length - 1], 1);
-    assert.ok(Math.hypot(last.x - to.x, last.y - to.y) < 0.001, "着地点がずれている");
   });
 
-  it("跳躍の途中は、まっすぐ結んだ線より上にある（弧を描く）", () => {
-    const [hop] = hops({ x: 100, y: 400 }, { x: 260, y: 400 });
-    const middle = hopAt(hop, 0.5);
-    assert.ok(middle.y < 400 - 10, `頂点が低い (${middle.y})`);
-    assert.ok(hopAt(hop, 0).y >= 400 - 0.001 && hopAt(hop, 1).y >= 400 - 0.001, "端が浮いている");
-  });
-
-  it("画面の端から端でも、移動は2秒を大きく超えない", () => {
-    const ms = travelMs(hops({ x: 1240, y: 760 }, { x: 40, y: 40 }));
-    assert.ok(ms > 400, `${ms}ms は速すぎる`);
-    assert.ok(ms < 2200, `${ms}ms は待たせすぎ`);
+  it("進む向きに回り、着いたときは上を向いている", () => {
+    const from = { x: 100, y: 400 };
+    const right = spinFor(from, { x: 900, y: 300 });
+    const left = spinFor(from, { x: 40, y: 300 });
+    assert.ok(right > 0, "右へ行くのに逆回り");
+    assert.ok(left < 0, "左へ行くのに逆回り");
+    for (const spin of [right, left, spinFor(from, { x: 1240, y: 760 })]) {
+      assert.equal(Math.abs(spin) % 360, 0, `${spin}度 — 半端に終わると傾いたまま話し始める`);
+    }
+    assert.ok(Math.abs(spinFor(from, { x: 1240, y: 760 })) > Math.abs(right) - 1, "遠いほど回る");
   });
 
   it("端に立っても、吹き出しは画面の中に収まる", () => {

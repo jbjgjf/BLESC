@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useReducedMotion } from "@/lib/motion";
-import { bubbleShift, dwellMs, hopAt, hops, speechFor, standingSpot, type Point, type Stand } from "@/lib/assistant/tour";
+import { bubbleShift, dwellMs, easeInOut, glideAt, glideMs, speechFor, spinFor, standingSpot, type Point, type Stand } from "@/lib/assistant/tour";
 import type { Expression } from "@/lib/assistant/pebble";
 import { Pebble } from "./Pebble";
 import styles from "./Guide.module.css";
@@ -32,6 +32,9 @@ type Phase = "go" | "stay" | "back";
 
 const RETURN_EXPRESSION: Expression = "rest";
 
+/** 回転の緩急。位置と同じ曲線を使う。 */
+const easedSpin = (t: number) => easeInOut(t);
+
 export function Guide({
   trip,
   home,
@@ -47,9 +50,9 @@ export function Guide({
   const reduced = useReducedMotion();
   const shellRef = useRef<HTMLDivElement>(null);
   const bubbleRef = useRef<HTMLParagraphElement>(null);
+  const bodyRef = useRef<SVGSVGElement>(null);
   const [phase, setPhase] = useState<Phase>("go");
   const [expression, setExpression] = useState<Expression>("listening");
-  const [hopKey, setHopKey] = useState(0);
   const [look, setLook] = useState<Stand["look"]>("right");
   const [bubbleSide, setBubbleSide] = useState<Stand["bubble"]>("left");
   const [speaking, setSpeaking] = useState(false);
@@ -67,8 +70,11 @@ export function Guide({
     const shell = shellRef.current;
     if (!shell) return;
 
-    const place = (point: Point) => {
+    // 回すのは小石だけ。殻ごと回すと、吹き出しまで一緒に回る。
+    const place = (point: Point, spin = 0) => {
       shell.style.transform = `translate3d(${point.x - size / 2}px, ${point.y - size / 2}px, 0)`;
+      const body = bodyRef.current;
+      if (body) body.style.transform = spin === 0 ? "" : `rotate(${spin}deg)`;
       const bubble = bubbleRef.current;
       if (bubble) {
         bubble.style.setProperty("--shift", `${bubbleShift(point.x, bubble.offsetWidth, window.innerWidth)}px`);
@@ -102,7 +108,8 @@ export function Guide({
 
     const arrive = () => {
       setPhase("stay");
-      setExpression("happy");
+      // 笑わせない。指しながらにこにこしていると、説明ではなく愛嬌になる。
+      setExpression("listening");
       setSpeaking(true);
       trip.onArrive?.();
       // 留まっているあいだ、相手が動いても（スクロール、折り返し）横につく。
@@ -129,35 +136,29 @@ export function Guide({
         finish.current();
         return;
       }
-      run(hops(spot, back), () => finish.current());
+      run(spot, back, () => finish.current());
     };
 
-    /** 跳躍の列を順に進める。着地のたびに一度跳ねさせて、体をつぶす。 */
-    const run = (path: ReturnType<typeof hops>, done: () => void) => {
-      if (path.length === 0) {
-        done();
-        return;
-      }
-      let index = 0;
-      let began = performance.now();
+    /**
+     * 滑って移動する。進みながら回り、着く手前で緩んで、ちょうど上を向いて
+     * 止まる（回る角度は整数回転なので、最後は必ず元の向きに戻る）。
+     */
+    const run = (from: Point, to: Point, done: () => void) => {
+      const ms = glideMs(from, to);
+      const spin = spinFor(from, to);
+      const began = performance.now();
       const step = (now: number) => {
         if (stopped) return;
-        const hop = path[index];
-        const t = Math.min((now - began) / hop.ms, 1);
-        place(hopAt(hop, t));
+        const t = Math.min((now - began) / ms, 1);
+        const point = glideAt(from, to, t);
+        // 回転も同じ緩急で。位置だけ緩めると、止まってから回り続けて見える。
+        place(point, spin * (point.x - from.x === 0 && point.y - from.y === 0 ? 0 : easedSpin(t)));
         if (t < 1) {
           frame = requestAnimationFrame(step);
           return;
         }
-        // 着地。次の跳躍は同じフレームから測り始める。
-        setHopKey((key) => key + 1);
-        index += 1;
-        if (index >= path.length) {
-          done();
-          return;
-        }
-        began = now;
-        frame = requestAnimationFrame(step);
+        place(to, 0);
+        done();
       };
       frame = requestAnimationFrame(step);
     };
@@ -180,7 +181,7 @@ export function Guide({
         syncSides();
         setPhase("go");
         setExpression("listening");
-        run(hops(homeAt.current() ?? spot, spot), arrive);
+        run(homeAt.current() ?? spot, spot, arrive);
       });
     }
 
@@ -196,9 +197,9 @@ export function Guide({
   return (
     <div ref={shellRef} className={styles.shell} style={{ width: size, height: size }} aria-hidden="true">
       <Pebble
+        ref={bodyRef}
         expression={expression}
         size={size}
-        hopKey={hopKey}
         gaze={phase === "stay" ? GAZE[look] : null}
       />
       {speaking && (

@@ -180,14 +180,14 @@ const goTo = (destination: Destination, context: AssistantContext, say: string):
   if (context.pathname === destination.href) {
     return {
       say: `いま開いているのが${destination.label}のページです。`,
-      expression: "happy",
+      expression: "bright",
       actions: [],
       offers: [],
     };
   }
   return {
     say,
-    expression: "happy",
+    expression: "bright",
     actions: [{ kind: "navigate", href: destination.href }],
     offers: [],
   };
@@ -196,7 +196,7 @@ const goTo = (destination: Destination, context: AssistantContext, say: string):
 /** 表示を変えたときの返事。取り消せることを必ず添える。 */
 const changed = (say: string, patch: Partial<A11ySettings>, previous: Partial<A11ySettings>): AssistantReply => ({
   say,
-  expression: "happy",
+  expression: "bright",
   actions: [{ kind: "display", patch }],
   offers: [
     { label: "元に戻す", icon: "arrow_back", action: { kind: "display", patch: previous } },
@@ -370,7 +370,7 @@ const INTENTS: readonly Intent[] = [
     words: ["元に戻", "もとに戻", "リセット", "初期", "既定", "戻して"],
     reply: () => ({
       say: "表示の設定をすべて最初の状態に戻しました。",
-      expression: "happy",
+      expression: "bright",
       actions: [{ kind: "reset-display" }],
       offers: [{ label: "表示設定を開く", icon: "settings", action: { kind: "open-settings" } }],
     }),
@@ -380,7 +380,7 @@ const INTENTS: readonly Intent[] = [
     words: ["表示設定", "設定", "せってい"],
     reply: () => ({
       say: "表示設定を開きますね。",
-      expression: "happy",
+      expression: "bright",
       actions: [{ kind: "open-settings" }],
       offers: [],
     }),
@@ -509,7 +509,7 @@ const INTENTS: readonly Intent[] = [
                   : ["今日はどうしますか。", "行きたいページや、見えにくいところがあれば言ってください。"],
                 context.turn,
               ),
-        expression: "happy",
+        expression: "bright",
         actions: [],
         offers: [
           ...(context.pathname === next.destination.href
@@ -528,7 +528,7 @@ const INTENTS: readonly Intent[] = [
       say: /元気(だ|です|よ)/.test(said.text)
         ? "よかったです。"
         : pick(["小石なので、だいたいいつも元気です。", "元気です。今日も画面の隅にいます。"], context.turn),
-      expression: "happy",
+      expression: "bright",
       actions: [],
       offers: [],
     }),
@@ -539,7 +539,7 @@ const INTENTS: readonly Intent[] = [
     words: ["またね", "さようなら", "さよなら", "バイバイ", "おやすみ", "じゃあね", "また明日", "bye"],
     reply: (context, said) => ({
       say: said.text.includes("おやすみ") ? "おやすみなさい。" : pick(["またね。", "またいつでもどうぞ。"], context.turn),
-      expression: "happy",
+      expression: "bright",
       actions: [],
       offers: [],
     }),
@@ -548,7 +548,7 @@ const INTENTS: readonly Intent[] = [
     id: "sorry",
     chat: true,
     words: ["ごめん", "すみません", "すいません"],
-    reply: () => ({ say: "気にしないでください。", expression: "happy", actions: [], offers: [] }),
+    reply: () => ({ say: "気にしないでください。", expression: "bright", actions: [], offers: [] }),
   },
   {
     id: "praise",
@@ -556,7 +556,7 @@ const INTENTS: readonly Intent[] = [
     words: ["かわいい", "可愛い", "すごい", "いいね", "えらい"],
     reply: (context) => ({
       say: pick(["ありがとうございます。うれしいです。", "そう言ってもらえると、うれしいです。"], context.turn),
-      expression: "happy",
+      expression: "bright",
       actions: [],
       offers: [],
     }),
@@ -577,7 +577,7 @@ const INTENTS: readonly Intent[] = [
     id: "thanks",
     chat: true,
     words: ["ありがとう", "ありがと", "thanks", "助かった"],
-    reply: () => ({ say: "どういたしまして。", expression: "happy", actions: [], offers: [] }),
+    reply: () => ({ say: "どういたしまして。", expression: "bright", actions: [], offers: [] }),
   },
 ];
 

@@ -119,6 +119,8 @@ type PebbleProps = {
   /** 目線の向き（-1〜1）。なければ表情どおりで、待機中はときどきよそ見をする。 */
   gaze?: Gaze | null;
   className?: string;
+  /** 外から figure ごと動かしたいとき（案内役が転がって移動する）。 */
+  ref?: React.Ref<SVGSVGElement>;
 };
 
 type Parts = {
@@ -179,7 +181,7 @@ const toParams = (values: Float64Array): PebbleParams => {
   return params as PebbleParams;
 };
 
-export function Pebble({ expression, size, hopKey = 0, gaze = null, className }: PebbleProps) {
+export function Pebble({ expression, size, hopKey = 0, gaze = null, className, ref }: PebbleProps) {
   const reduced = useReducedMotion();
   const bodyRef = useRef<SVGPathElement>(null);
   const sproutRef = useRef<SVGPathElement>(null);
@@ -269,9 +271,9 @@ export function Pebble({ expression, size, hopKey = 0, gaze = null, className }:
       }
 
       // 表情が変わる瞬間にまばたきを重ねる。目の形が入れ替わる途中が
-      // まぶたで隠れて、切り替えが自然に見える。三日月の目は除く。
+      // まぶたで隠れて、切り替えが自然に見える。
       if (target.current !== shown) {
-        if (target.current !== "happy" && shown !== "happy") blinkFrom = now;
+        blinkFrom = now;
         shown = target.current;
       }
 
@@ -341,16 +343,13 @@ export function Pebble({ expression, size, hopKey = 0, gaze = null, className }:
       params.ry = Math.min(params.ry * (1 + stretch), room.ry);
       params.rx = Math.min(params.rx * (1 - stretch * 0.6), room.rx);
 
-      // 三日月の目をまばたきさせても、平たくなるだけで何も起きない。
-      if (target.current !== "happy") {
-        if (now >= blinkAt) {
-          blinkFrom = now;
-          blinkAt = now + BLINK_MIN_GAP + Math.random() * BLINK_EXTRA_GAP;
-        }
-        const since = now - blinkFrom;
-        if (since < BLINK_MS) {
-          Object.assign(params, applyBlink(params, Math.sin((since / BLINK_MS) * Math.PI)));
-        }
+      if (now >= blinkAt) {
+        blinkFrom = now;
+        blinkAt = now + BLINK_MIN_GAP + Math.random() * BLINK_EXTRA_GAP;
+      }
+      const since = now - blinkFrom;
+      if (since < BLINK_MS) {
+        Object.assign(params, applyBlink(params, Math.sin((since / BLINK_MS) * Math.PI)));
       }
 
       const sway = Math.sin((elapsed / BREATH_MS) * TAU);
@@ -373,6 +372,7 @@ export function Pebble({ expression, size, hopKey = 0, gaze = null, className }:
 
   return (
     <svg
+      ref={ref}
       viewBox={PEBBLE_VIEWBOX}
       width={size}
       height={size}

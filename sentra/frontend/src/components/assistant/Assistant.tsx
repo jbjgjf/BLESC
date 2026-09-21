@@ -524,7 +524,7 @@ export function Assistant({ audience }: { audience: Audience }) {
       }
       run(action);
       setHopKey((key) => key + 1);
-      setExpression("happy");
+      setExpression("bright");
       settle();
     },
     [run, respond, contextFor, ask, show, settle],

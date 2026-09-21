@@ -3,8 +3,11 @@
  *
  * 「〜はここです」と書いて枠を出すだけでも用は足りる。ただ、画面の隅から
  * 動かない案内役は、説明を読み上げる札であって、案内している誰かには
- * 見えない。跳ねていって、その前に立ち、そこで話す — 同じ内容でも、
+ * 見えない。滑っていって、その前に立ち、そこで話す — 同じ内容でも、
  * どこの話なのかが目で分かる。
+ *
+ * 転がる石なので、進みながら回る。回るのは移動のあいだだけで、着いたら
+ * ちょうど上を向いて止まる。
  *
  * ここは座標だけを扱う純粋な関数に保つ。DOM も時間も持たないので、
  * 跳ね方と立ち位置をブラウザ無しで確かめられる。座標はすべて viewport
@@ -20,19 +23,6 @@ export const MARGIN = 12;
 
 /** 立つ場所を、示す相手からどれだけ離すか（小石の大きさに対する割合）。 */
 const STANDOFF = 0.42;
-
-/** 1 回の跳躍で進む距離のめやす。これより遠ければ跳ぶ回数を増やす。 */
-const HOP_REACH = 190;
-export const MAX_HOPS = 5;
-
-/** 跳躍の高さ（距離に対する割合）と、その上限。 */
-const ARC_RATIO = 0.34;
-const ARC_MAX = 74;
-
-/** 1 回の跳躍にかける時間。遠い跳躍ほど少しだけ長い。 */
-const HOP_MS = 250;
-const HOP_MS_PER_PX = 0.42;
-const HOP_MS_MAX = 430;
 
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
 
@@ -110,50 +100,49 @@ export function standingSpot(target: Rect, viewport: Viewport, size: number): St
   };
 }
 
-export type Hop = { from: Point; to: Point; arc: number; ms: number };
+/** 移動にかける時間。近くても間が要る（消えて現れたように見せない）。 */
+const GLIDE_MS_MIN = 420;
+const GLIDE_MS_PER_PX = 0.55;
+const GLIDE_MS_MAX = 1100;
 
-/**
- * 跳ねていく道すじ。
- *
- * 一息に飛ばさず、何度かに分けて跳ぶ。着地のたびに体がつぶれて弾むので、
- * 距離があるほど「歩いていった」感じになる。跳躍の数は距離で決め、上限を
- * 置く — 画面の端から端まで 10 回跳ねると、案内ではなく余興になる。
- */
-export function hops(from: Point, to: Point): Hop[] {
-  const distance = Math.hypot(to.x - from.x, to.y - from.y);
-  if (distance < 1) return [];
-  const count = clamp(Math.round(distance / HOP_REACH), 1, MAX_HOPS);
+/** 1 回転するのにかかる距離のめやすと、回る回数の上限。 */
+const SPIN_PER_PX = 1 / 420;
+const SPIN_MAX_TURNS = 3;
 
-  return Array.from({ length: count }, (_, index) => {
-    const start = { x: from.x + ((to.x - from.x) * index) / count, y: from.y + ((to.y - from.y) * index) / count };
-    const end = { x: from.x + ((to.x - from.x) * (index + 1)) / count, y: from.y + ((to.y - from.y) * (index + 1)) / count };
-    const span = Math.hypot(end.x - start.x, end.y - start.y);
-    return {
-      from: start,
-      to: end,
-      arc: Math.min(span * ARC_RATIO, ARC_MAX),
-      ms: Math.min(HOP_MS + span * HOP_MS_PER_PX, HOP_MS_MAX),
-    };
-  });
+/** 移動にかける時間。 */
+export function glideMs(from: Point, to: Point): number {
+  return clamp(GLIDE_MS_MIN + distanceBetween(from, to) * GLIDE_MS_PER_PX, GLIDE_MS_MIN, GLIDE_MS_MAX);
 }
 
+const distanceBetween = (from: Point, to: Point) => Math.hypot(to.x - from.x, to.y - from.y);
+
 /**
- * 跳躍の途中の位置。t は 0〜1。
+ * 行きと帰りの緩急。
  *
- * 横はまっすぐ等速。縦だけ放物線にすると、上がって落ちる形になり、
- * 着地の瞬間がいちばん速い。等速の弧にすると、飛んでいるというより
- * 浮いて移動しているように見える。
+ * 等速だと、動いているのではなく運ばれているように見える。ゆっくり出て、
+ * 中ほどで速く、着く手前でまた緩める。
  */
-export function hopAt(hop: Hop, t: number): Point {
+export function easeInOut(t: number): number {
   const progress = clamp(t, 0, 1);
-  return {
-    x: hop.from.x + (hop.to.x - hop.from.x) * progress,
-    y: hop.from.y + (hop.to.y - hop.from.y) * progress - hop.arc * 4 * progress * (1 - progress),
-  };
+  return progress < 0.5 ? 4 * progress ** 3 : 1 - (-2 * progress + 2) ** 3 / 2;
 }
 
-/** 道すじ全体にかかる時間。 */
-export const travelMs = (path: readonly Hop[]): number => path.reduce((total, hop) => total + hop.ms, 0);
+/** 移動の途中の位置。t は 0〜1（緩急はここで掛ける）。 */
+export function glideAt(from: Point, to: Point, t: number): Point {
+  const eased = easeInOut(t);
+  return { x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased };
+}
+
+/**
+ * 移動のあいだに回る角度（度）。
+ *
+ * 転がる石なので、進む向きに回る — 右へ行けば時計回り、左へ行けば逆。
+ * 回る数は必ず整数にする。半端に終わると、着いた先で傾いたまま話し始める。
+ */
+export function spinFor(from: Point, to: Point): number {
+  const turns = clamp(Math.round(distanceBetween(from, to) * SPIN_PER_PX), 1, SPIN_MAX_TURNS);
+  return (to.x >= from.x ? 1 : -1) * turns * 360;
+}
 
 /**
  * 話し終わるまで留まる時間。
