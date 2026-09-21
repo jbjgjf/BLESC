@@ -54,6 +54,10 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   // The chat surface is full-bleed and brings its own header.
   if (pathname === "/chat") return <>{children}</>;
 
+  // ラスクくんの紹介ページ。ナビも案内役も置かない — 案内役そのものを
+  // 見せる場所なので、隅にもう一匹いると話がややこしい（一時的なページ）。
+  if (pathname === "/meet-rusk") return <>{children}</>;
+
   const context = contextForPath(pathname);
 
   return (
