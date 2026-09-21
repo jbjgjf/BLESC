@@ -288,7 +288,7 @@ export default function Home() {
         app_use: true,
         research_analysis: true,
         anonymized_export: false,
-        future_fine_tuning: false,
+        model_training_use: false,
         consent_version: "research-consent-v1",
       };
       const response = await ApiClient.createEntry(userId, combinedText, "daily", {

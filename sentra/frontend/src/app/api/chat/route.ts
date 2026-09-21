@@ -6,6 +6,7 @@ import { assessConversation, recordSafetyAudit, RISK_DIRECTIVES, SAFETY_GUARDRAI
 import { fetchWithTimeout, isMissingTable, jsonError, JsonValue, openAIKey, providerError, requireUser, sha256 } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { escalate, notifiableLevel } from "@/lib/server/safetyEscalation";
+import { RULES, consumeRateLimit, rateLimitHeaders, rateLimitSubject } from "@/lib/server/rateLimit";
 import {
   COLLECTION_ONLY_MESSAGE,
   COLLECTION_ONLY_PROVIDER,
@@ -284,6 +285,15 @@ function withSafetyFloor(answer: string, safety: SafetyAssessment): string {
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
   if ("error" in auth) return auth.error;
+
+  // OpenAI を呼ぶので、上限は費用と可用性の話（#234）。セッション単位で数える。
+  const limited = await consumeRateLimit(serviceRoleClient(), RULES.externalModel, rateLimitSubject(request, auth.user.id));
+  if (!limited.allowed) {
+    return NextResponse.json(
+      { detail: "試行回数が多すぎます。しばらく待ってからもう一度お試しください。" },
+      { status: 429, headers: rateLimitHeaders(limited) },
+    );
+  }
 
   const payload = await request.json().catch(() => ({})) as ChatPayload;
   const userId = (payload.participant_code || payload.user_id || "").trim();

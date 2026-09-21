@@ -26,7 +26,7 @@ export type ConsentGrants = {
    *  extraction accuracy — the retention #131 gates on. */
   raw_text_retention: boolean;
   /** Use their data to train or fine-tune a model later. */
-  future_fine_tuning: boolean;
+  model_training_use: boolean;
 };
 
 /**
@@ -38,6 +38,8 @@ export type ConsentParties = {
   minor_assent: boolean;
   guardian_consent: boolean;
 };
+
+import { currentConsentDocumentVersion } from "./consentDocument.ts";
 
 export type ConsentState = ConsentGrants &
   ConsentParties & {
@@ -51,7 +53,15 @@ export type ConsentState = ConsentGrants &
   };
 
 export const CONSENT_VERSION = "research-consent-v2";
-export const CONSENT_DOCUMENT_VERSION = "research-consent-doc-v1";
+
+/**
+ * Which document version is stamped onto a consent record.
+ *
+ * Derived from `consentDocument.ts` rather than written here, so the screen,
+ * the legal page and the stored row cannot name three different documents —
+ * which is exactly what they did until 2026-09-20.
+ */
+export const CONSENT_DOCUMENT_VERSION = currentConsentDocumentVersion();
 
 /**
  * What a participant has agreed to when nothing is known about them: nothing.
@@ -65,7 +75,7 @@ export const NO_CONSENT: ConsentState = {
   research_analysis: false,
   anonymized_export: false,
   raw_text_retention: false,
-  future_fine_tuning: false,
+  model_training_use: false,
   minor_assent: false,
   guardian_consent: false,
   consent_version: CONSENT_VERSION,
@@ -101,7 +111,7 @@ export function normalizeConsent(input: unknown): ConsentState {
     research_analysis: bool(raw.research_analysis),
     anonymized_export: bool(raw.anonymized_export),
     raw_text_retention: bool(raw.raw_text_retention),
-    future_fine_tuning: bool(raw.future_fine_tuning),
+    model_training_use: bool(raw.model_training_use),
     minor_assent: bool(raw.minor_assent),
     guardian_consent: bool(raw.guardian_consent),
     consent_version: text(raw.consent_version, CONSENT_VERSION),
@@ -136,6 +146,25 @@ export function rawTextRetentionAllowed(state: ConsentState): boolean {
   return researchUseAllowed(state) && state.raw_text_retention;
 }
 
+/**
+ * Whether this participant's data may be used to train a model.
+ *
+ * Built on `researchUseAllowed` for the same reason retention is: training use
+ * is a *further* permission on top of research use, never an alternative route
+ * to the same data. A revoked consent, a missing assent or a missing guardian
+ * confirmation all close it, and the extra opt-in has to be present on top.
+ *
+ * The state field is `model_training_use`, which is what the column is called.
+ * The name this function carries is the data dictionary's, and it is the one
+ * the consent screen's wording supports: the student agrees to
+ * 「将来のモデルの学習に使うこと」, which names no particular technique. Reading
+ * the column name as the scope of the permission is how a record ends up
+ * describing something narrower than what was actually agreed to.
+ */
+export function modelTrainingUseAllowed(state: ConsentState): boolean {
+  return researchUseAllowed(state) && state.model_training_use;
+}
+
 /** Whether behavioural input telemetry may be stored (#135). */
 export function telemetryAllowed(state: ConsentState): boolean {
   return researchUseAllowed(state);
@@ -162,7 +191,7 @@ export function consentSnapshot(state: ConsentState): Record<string, unknown> {
     research_analysis: state.research_analysis,
     anonymized_export: state.anonymized_export,
     raw_text_retention: state.raw_text_retention,
-    future_fine_tuning: state.future_fine_tuning,
+    model_training_use: state.model_training_use,
     minor_assent: state.minor_assent,
     guardian_consent: state.guardian_consent,
     consent_version: state.consent_version,

@@ -1,15 +1,11 @@
 import { TODAY, addDays } from "./labels.ts";
 import type {
-  ClassBreakdown,
   DiaryEntry,
-  FollowUpItem,
   GuardianView,
   MeetingRecord,
   MeetingSupport,
-  SchoolStats,
   StudentDetail,
   StudentSummary,
-  SubmissionAlert,
   SubmissionStats,
   SupportAction,
   SuggestedAction,
@@ -490,98 +486,11 @@ export const FOCUS_DETAIL: StudentDetail = {
  */
 
 
-/* ── 6-2 クラス全体分析 ─────────────────────────────────────── */
-
-export const CLASS_BREAKDOWN: ClassBreakdown[] = [
-  { theme: "academic",      share: 0.42, delta: +0.05 },
-  { theme: "relationships", share: 0.30, delta: -0.02 },
-  { theme: "sleep",         share: 0.16, delta: +0.04 },
-  { theme: "family",        share: 0.12, delta: -0.01 },
-];
-
-/* ── 6-5 未提出アラート ─────────────────────────────────────── */
-
-const ALERT_KINDS: Record<number, { kind: SubmissionAlert["kind"]; detail: string }> = {
-  2:  { kind: "missing_3d",     detail: "3日以上日記が提出されていません。" },
-  10: { kind: "streak_broken",  detail: "21日続いていた連続提出が中断しました。" },
-  18: { kind: "unused_1w",      detail: "1週間アプリが利用されていません。" },
-  22: { kind: "rate_drop",      detail: "提出頻度が先週比で 60% 低下しています。" },
-};
-
-/** 一覧の missedDays から導出する。日数が二重管理にならないようにしている。 */
-export const SUBMISSION_ALERTS: SubmissionAlert[] = Object.entries(ALERT_KINDS)
-  .map(([rosterIndex, meta]) => {
-    const student = CLASS_ROSTER[Number(rosterIndex)];
-    return {
-      studentId: student.id,
-      studentName: student.name,
-      className: `${student.grade}${student.className}`,
-      kind: meta.kind,
-      detail: meta.detail,
-      since: addDays(TODAY, -student.missedDays),
-    };
-  })
-  .sort((a, b) => a.since.localeCompare(b.since));
-
-/* ── 7-2 フォローアップ管理 ─────────────────────────────────── */
-
-export const FOLLOW_UPS: FollowUpItem[] = [
-  {
-    studentId: FOCUS_ID,
-    studentName: "小野 陽菜",
-    className: "2年A組",
-    lastMeeting: "2026-08-02",
-    daysSince: 5,
-    nextMeeting: addDays(TODAY, 5),
-    note: "次回の面談予定が登録されています。",
-  },
-  {
-    studentId: "s-14",
-    studentName: ROSTER_NAMES[13],
-    className: "2年A組",
-    lastMeeting: "2026-07-20",
-    daysSince: 18,
-    nextMeeting: null,
-    note: "次回の面談予定が登録されていません。",
-  },
-  {
-    studentId: "s-03",
-    studentName: ROSTER_NAMES[2],
-    className: "2年A組",
-    lastMeeting: "2026-07-29",
-    daysSince: 9,
-    nextMeeting: addDays(TODAY, 2),
-    note: "次回の面談予定が登録されています。",
-  },
-];
-
-export const ALL_MEETINGS: MeetingRecord[] = [
-  ...FOCUS_MEETINGS,
-  {
-    id: "m3",
-    studentId: "s-14",
-    studentName: ROSTER_NAMES[13],
-    heldAt: "2026-07-20T16:10:00",
-    notes: "学業の負担について。課題量が多く、家庭学習の時間が確保できていないとのこと。",
-    impression: "疲れた様子だが、受け答えははっきりしていた。",
-    nextAction: null,
-    nextActionNote: "",
-    followUpState: "overdue",
-    teacher: "山本 直樹",
-  },
-  {
-    id: "m4",
-    studentId: "s-03",
-    studentName: ROSTER_NAMES[2],
-    heldAt: "2026-07-29T15:00:00",
-    notes: "睡眠と学業の両方について確認。就寝が遅い理由は動画視聴とのこと。",
-    impression: "落ち着いていた。改善の意欲あり。",
-    nextAction: addDays(TODAY, 2),
-    nextActionNote: "2週間後に生活リズムの変化を確認。",
-    followUpState: "open",
-    teacher: "山本 直樹",
-  },
-];
+/*
+ * 企画書 6-2（クラス全体分析）と 6-5（未提出アラート）の固定データは、それを
+ * 描画していた4画面ごと #175 で削除した。未提出そのものは実データ側の
+ * `alertsFromRoster` が扱っており、そちらは行の不在という事実から導いている。
+ */
 
 /* ── 追加機能 ───────────────────────────────────────────────── */
 
@@ -611,36 +520,6 @@ export const GUARDIAN_VIEW: GuardianView = {
   ],
   scopeNote:
     "学校の運用方針により、保護者の方には日記の提出状況と、お子さま本人が共有に同意した範囲の情報のみを表示しています。日記の本文、AIとの対話内容、AIの分析結果は表示されません。",
-};
-
-export const SCHOOL_STATS: SchoolStats = {
-  scope: "広尾学園中学校・高等学校",
-  studentCount: 1284,
-  submissionRate: 0.78,
-  breakdown: [
-    { theme: "academic",      share: 0.38, delta: +0.03 },
-    { theme: "relationships", share: 0.26, delta: -0.01 },
-    { theme: "sleep",         share: 0.19, delta: +0.06 },
-    { theme: "family",        share: 0.10, delta: 0 },
-    { theme: "self_worth",    share: 0.07, delta: +0.01 },
-  ],
-  byGrade: [
-    { grade: "中学1年", studentCount: 208, submissionRate: 0.86, top: "relationships" },
-    { grade: "中学2年", studentCount: 213, submissionRate: 0.81, top: "relationships" },
-    { grade: "中学3年", studentCount: 205, submissionRate: 0.79, top: "academic" },
-    { grade: "高校1年", studentCount: 224, submissionRate: 0.77, top: "academic" },
-    { grade: "高校2年", studentCount: 219, submissionRate: 0.74, top: "academic" },
-    { grade: "高校3年", studentCount: 215, submissionRate: 0.69, top: "academic" },
-  ],
-  trendWeeks: [
-    { label: "6週前", academic: 0.31, relationships: 0.28, health: 0.12 },
-    { label: "5週前", academic: 0.33, relationships: 0.27, health: 0.13 },
-    { label: "4週前", academic: 0.34, relationships: 0.29, health: 0.15 },
-    { label: "3週前", academic: 0.36, relationships: 0.27, health: 0.16 },
-    { label: "2週前", academic: 0.35, relationships: 0.26, health: 0.18 },
-    { label: "先週",   academic: 0.38, relationships: 0.26, health: 0.19 },
-  ],
-  minCellSize: 10,
 };
 
 export const MEETING_SUPPORT: MeetingSupport = {

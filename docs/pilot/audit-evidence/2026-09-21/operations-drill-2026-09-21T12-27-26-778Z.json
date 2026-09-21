@@ -1,0 +1,116 @@
+{
+  "run_id": "2026-09-21T12-27-26-778Z",
+  "executed_at": "2026-09-21T12:27:27.595Z",
+  "target": "http://127.0.0.1:54321",
+  "synthetic_only": true,
+  "external_delivery_performed": false,
+  "steps": [
+    {
+      "drill": "準備",
+      "step": "合成データ一式",
+      "ok": true,
+      "detail": "research_code=P-DRILL-778Z",
+      "elapsed_ms": 524
+    },
+    {
+      "drill": "C 保護者確認",
+      "step": "確認前は enrolled に進めない",
+      "ok": true,
+      "detail": "outcome=illegal_transition",
+      "elapsed_ms": 16
+    },
+    {
+      "drill": "C 保護者確認",
+      "step": "確認リンクの発行（未決のまま）",
+      "ok": true,
+      "detail": "decision=null",
+      "elapsed_ms": 24
+    },
+    {
+      "drill": "C 保護者確認",
+      "step": "保護者が断る経路も通る",
+      "ok": true,
+      "detail": "decision=declined",
+      "elapsed_ms": 10
+    },
+    {
+      "drill": "C 保護者確認",
+      "step": "断られた後も enrolled に進めない",
+      "ok": true,
+      "detail": "outcome=illegal_transition",
+      "elapsed_ms": 4
+    },
+    {
+      "drill": "C 保護者確認",
+      "step": "再発行して保護者が確認",
+      "ok": true,
+      "detail": "decision=confirmed",
+      "elapsed_ms": 9
+    },
+    {
+      "drill": "C 保護者確認",
+      "step": "確認後に guardian_verified へ",
+      "ok": true,
+      "detail": "state=guardian_verified",
+      "elapsed_ms": 8
+    },
+    {
+      "drill": "D 危機連絡",
+      "step": "escalation 行の生成",
+      "ok": true,
+      "detail": "safety_escalations に記録",
+      "elapsed_ms": 4
+    },
+    {
+      "drill": "D 危機連絡",
+      "step": "宛先が見守り同意から解決される",
+      "ok": true,
+      "detail": "1名（期待1名）",
+      "elapsed_ms": 3
+    },
+    {
+      "drill": "D 危機連絡",
+      "step": "受け口へ到達（ダミー、外部送信なし）",
+      "ok": true,
+      "detail": "HTTP 200 / 受信 1 件",
+      "elapsed_ms": 6
+    },
+    {
+      "drill": "A 撤回・削除",
+      "step": "research_code から対象を特定",
+      "ok": true,
+      "detail": "participant_id を取得",
+      "elapsed_ms": 4
+    },
+    {
+      "drill": "A 撤回・削除",
+      "step": "withdrawn へ遷移し遷移ログが残る",
+      "ok": true,
+      "detail": "outcome=ok / events=3",
+      "elapsed_ms": 6
+    },
+    {
+      "drill": "A 撤回・削除",
+      "step": "保持本文の削除",
+      "ok": true,
+      "detail": "削除 1 件 / 残存 ciphertext=null",
+      "elapsed_ms": 7
+    },
+    {
+      "drill": "B 撤回後の提出",
+      "step": "収集が閉じている",
+      "ok": true,
+      "detail": "state=withdrawn / collection_open=false",
+      "elapsed_ms": 7
+    },
+    {
+      "drill": "後片付け",
+      "step": "合成データの削除",
+      "ok": true,
+      "detail": "アカウント・行を削除",
+      "elapsed_ms": 143
+    }
+  ],
+  "deviations": 0,
+  "verdict": "手順どおり"
+}

@@ -22,10 +22,6 @@ const STUDENT_NAV: NavItem[] = [
 const EDUCATOR_NAV: NavItem[] = [
   { href: "/educator",          label: "ホーム",   icon: "dashboard", exact: true },
   { href: "/educator/roster",   label: "生徒",     icon: "groups" },
-  { href: "/educator/alerts",   label: "アラート", icon: "notifications_active" },
-  { href: "/educator/class",    label: "クラス",   icon: "grid_view" },
-  { href: "/educator/meetings", label: "面談",     icon: "event_note" },
-  { href: "/school",            label: "学校全体", icon: "apartment" },
 ];
 
 const GUARDIAN_NAV: NavItem[] = [
@@ -34,10 +30,6 @@ const GUARDIAN_NAV: NavItem[] = [
 
 const DEMO_ONLY_NAV_PATHS = new Set([
   "/reflect",
-  "/educator/alerts",
-  "/educator/class",
-  "/educator/meetings",
-  "/school",
 ]);
 
 /** Secondary surfaces, reachable from the account menu rather than the tab bar. */

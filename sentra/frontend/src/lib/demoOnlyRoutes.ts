@@ -30,17 +30,14 @@
 /**
  * Prefixes whose pages render fixed data.
  *
- * `/educator/alerts`, `/educator/class` and `/educator/meetings` are listed
- * one by one rather than as `/educator`: the educator home, the roster and the
- * per-student screen next to them are real.
+ * `/educator` is deliberately absent: the educator home, the roster and the
+ * per-student screen are real. The fixed-data educator screens
+ * (`/educator/alerts`, `/educator/class`, `/educator/meetings`) and `/school`
+ * were deleted outright rather than gated.
  */
 export const DEMO_ONLY_ROUTES = [
   "/reflect",
   "/guardian",
-  "/educator/alerts",
-  "/educator/class",
-  "/educator/meetings",
-  "/school",
 ] as const;
 
 /**

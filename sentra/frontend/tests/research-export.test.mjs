@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  DEFAULT_PHASES,
   buildIdentityMap,
   buildResearchDataset,
   dayIndex,
   identityLeakIn,
+  studyPhase,
 } from "../src/lib/researchExport.ts";
+import { modelTrainingUseAllowed, normalizeConsent } from "../src/lib/consent.ts";
 
 const TZ = "Asia/Tokyo";
 
@@ -35,6 +38,7 @@ const enrollment = (over = {}) => ({
   participant_id: "participant-1",
   research_code: "P-0001",
   cohort: "default",
+  study_id: "study-1",
   state: "collecting",
   collection_started_at: "2026-09-05T23:00:00Z", // 08:00 JST on the 6th
   withdrawn_at: null,
@@ -44,6 +48,7 @@ const enrollment = (over = {}) => ({
 const consented = (over = {}) => ({
   research: true,
   retention: true,
+  model_training_use: false,
   consent_version: "research-consent-v1",
   document_version: "research-consent-doc-v1",
   ...over,
@@ -318,5 +323,177 @@ describe("buildIdentityMap", () => {
     const rows = buildIdentityMap([enrollment({ state: "withdrawn", withdrawn_at: "2026-09-09T00:00:00Z" })]);
     assert.equal(rows.length, 1);
     assert.equal(rows[0].state, "withdrawn");
+  });
+});
+
+
+const reading = (over = {}) => ({
+  entry_id: "entry-1",
+  schema_version: "pilot-selfreport-v1",
+  mood: 7,
+  stress: 3,
+  sleep_quality: 6,
+  sleep_hours: 6.5,
+  event_intensity: 2,
+  ...over,
+});
+
+describe("studyPhase", () => {
+  it("splits the protocol at the study's own baseline boundary", () => {
+    const phases = { baselineDays: 14, observationDays: 7 };
+    assert.equal(studyPhase(1, phases), "baseline");
+    assert.equal(studyPhase(14, phases), "baseline");
+    assert.equal(studyPhase(15, phases), "observation");
+    assert.equal(studyPhase(21, phases), "observation");
+  });
+
+  it("reads the boundary from the study, not from the 14/21 in the dictionary", () => {
+    // Those numbers are the column defaults. A study configured differently
+    // must not be exported under someone else's phase boundary.
+    const short = { baselineDays: 3, observationDays: 2 };
+    assert.equal(studyPhase(3, short), "baseline");
+    assert.equal(studyPhase(4, short), "observation");
+    assert.equal(studyPhase(6, short), null);
+  });
+
+  it("returns null past the end rather than a late observation day", () => {
+    assert.equal(studyPhase(22, DEFAULT_PHASES), null);
+  });
+
+  it("has no day 0 and no negative days", () => {
+    // `buildResearchDataset` excludes anything below 1 as outside the window;
+    // counting it as baseline here would disagree with that.
+    assert.equal(studyPhase(0, DEFAULT_PHASES), null);
+    assert.equal(studyPhase(-1, DEFAULT_PHASES), null);
+  });
+});
+
+describe("buildResearchDataset — study_phase", () => {
+  it("stamps the phase beside the day index", () => {
+    const { rows } = build();
+    assert.equal(rows[0].day_index, 3);
+    assert.equal(rows[0].study_phase, "baseline");
+  });
+
+  it("uses the split configured for that study", () => {
+    const { rows } = build({
+      phasesByStudy: new Map([["study-1", { baselineDays: 2, observationDays: 5 }]]),
+    });
+    assert.equal(rows[0].study_phase, "observation");
+  });
+
+  it("falls back to the column defaults for an unknown study", () => {
+    const { rows } = build({ phasesByStudy: new Map() });
+    assert.equal(rows[0].study_phase, "baseline");
+  });
+});
+
+describe("buildResearchDataset — self report", () => {
+  it("carries the five settled items", () => {
+    const { rows } = build({ selfReportByEntry: new Map([["entry-1", reading()]]) });
+    assert.deepEqual(rows[0].self_report, {
+      schema_version: "pilot-selfreport-v1",
+      mood: 7,
+      stress: 3,
+      sleep_quality: 6,
+      sleep_hours: 6.5,
+      event_intensity: 2,
+    });
+  });
+
+  it("is null when the participant answered nothing", () => {
+    const { rows } = build();
+    assert.equal(rows[0].self_report, null);
+  });
+
+  it("keeps an unanswered item as null, never 0", () => {
+    // Every item is optional. A 0 for `mood` means "とても悪い"; a null means
+    // they did not answer. Collapsing them would invent the worst reading.
+    const { rows } = build({
+      selfReportByEntry: new Map([["entry-1", reading({ mood: null, stress: 0 })]]),
+    });
+    assert.equal(rows[0].self_report.mood, null);
+    assert.equal(rows[0].self_report.stress, 0);
+  });
+
+  it("never carries answered_at or entry_id into the row", () => {
+    // `answered_at` is within minutes of the submission, so exporting it hands
+    // back the calendar date this module exists to withhold.
+    const { rows } = build({
+      selfReportByEntry: new Map([
+        ["entry-1", { ...reading(), answered_at: "2026-09-08T02:00:05Z", owner_user_id: "owner-1" }],
+      ]),
+    });
+    assert.deepEqual(Object.keys(rows[0].self_report).sort(), [
+      "event_intensity",
+      "mood",
+      "schema_version",
+      "sleep_hours",
+      "sleep_quality",
+      "stress",
+    ]);
+    assert.equal(identityLeakIn(rows), null);
+  });
+
+  it("does not attach one participant's reading to another's entry", () => {
+    const { rows } = build({
+      selfReportByEntry: new Map([["some-other-entry", reading({ entry_id: "some-other-entry" })]]),
+    });
+    assert.equal(rows[0].self_report, null);
+  });
+});
+
+describe("buildResearchDataset — model_training_use", () => {
+  it("is on every row, because a row is what gets filtered", () => {
+    const { rows } = build({
+      consentByParticipant: new Map([["participant-1", consented({ model_training_use: true })]]),
+    });
+    assert.equal(rows[0].model_training_use, true);
+  });
+
+  it("is false when the participant declined", () => {
+    const { rows } = build();
+    assert.equal(rows[0].model_training_use, false);
+  });
+
+  it("is false when the consent state says nothing at all", () => {
+    // Absence of a grant is not a grant.
+    const { research, retention, ...rest } = consented();
+    const { rows } = build({
+      consentByParticipant: new Map([["participant-1", { research, retention, ...rest }]]),
+    });
+    assert.equal(rows[0].model_training_use, false);
+  });
+});
+
+describe("modelTrainingUseAllowed", () => {
+  const record = (over = {}) => ({
+    research_analysis: true,
+    minor_assent: true,
+    guardian_consent: true,
+    model_training_use: true,
+    status: "active",
+    ...over,
+  });
+
+  it("needs the extra opt-in on top of research use", () => {
+    assert.equal(modelTrainingUseAllowed(normalizeConsent(record())), true);
+    assert.equal(
+      modelTrainingUseAllowed(normalizeConsent(record({ model_training_use: false }))),
+      false,
+    );
+  });
+
+  it("is closed by revocation", () => {
+    assert.equal(modelTrainingUseAllowed(normalizeConsent(record({ status: "revoked" }))), false);
+  });
+
+  it("is closed by a missing guardian confirmation", () => {
+    // Training use is a further permission on research use, never a second
+    // route to the same data.
+    assert.equal(
+      modelTrainingUseAllowed(normalizeConsent(record({ guardian_consent: false }))),
+      false,
+    );
   });
 });

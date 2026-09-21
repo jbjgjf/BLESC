@@ -26,14 +26,13 @@ const branchesOnDemoMode = (source) => source.includes("useDemoMode");
 
 describe("isDemoOnlyRoute", () => {
   it("matches a listed route and everything under it", () => {
-    assert.equal(isDemoOnlyRoute("/school"), true);
-    assert.equal(isDemoOnlyRoute("/educator/alerts"), true);
-    assert.equal(isDemoOnlyRoute("/educator/alerts/anything"), true);
+    assert.equal(isDemoOnlyRoute("/reflect"), true);
+    assert.equal(isDemoOnlyRoute("/guardian"), true);
+    assert.equal(isDemoOnlyRoute("/guardian/anything"), true);
   });
 
   it("does not match a sibling that merely shares a prefix", () => {
     // A raw `startsWith` would hide these by accident.
-    assert.equal(isDemoOnlyRoute("/schoolyard"), false);
     assert.equal(isDemoOnlyRoute("/reflection"), false);
     assert.equal(isDemoOnlyRoute("/guardians"), false);
   });

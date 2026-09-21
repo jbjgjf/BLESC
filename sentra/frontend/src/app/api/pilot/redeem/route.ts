@@ -26,6 +26,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
+import { RULES, consumeRateLimit, rateLimitHeaders, rateLimitSubject } from "@/lib/server/rateLimit";
 import { redeemInvitation } from "@/lib/server/pilotStore";
 import { inviteHashingConfigured } from "@/lib/server/inviteCodes";
 
@@ -53,6 +54,16 @@ type RedeemBody = {
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
   if ("error" in auth) return auth.error;
+
+  // 引き換えは成功すれば導線が終わるので、確認より低い上限でよい（#234）。
+  const limited = await consumeRateLimit(serviceRoleClient(), RULES.inviteRedeem,
+    rateLimitSubject(request, auth.user.id));
+  if (!limited.allowed) {
+    return NextResponse.json(
+      { detail: "試行回数が多すぎます。しばらく待ってからもう一度お試しください。" },
+      { status: 429, headers: rateLimitHeaders(limited) },
+    );
+  }
 
   const userId = request.nextUrl.searchParams.get("user_id");
   if (!userId) return jsonError("user_id is required.", 422);

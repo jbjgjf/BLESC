@@ -5,6 +5,11 @@ dry run（#168）の day 3 と、本調査開始前に1回、この3つを**実�
 
 記録は1演習1ファイル。dry runでは #168 のevidenceに添付する。
 
+機械で通せる部分は `scripts/pilot/run-operations-drill.mjs` が実行し、
+`docs/pilot/audit-evidence/<日付>/` に所要時間つきの証跡を書く。
+**ただしこれは演習の代わりではない。** 送付経路・受領経路・回答文面・当番の連携は
+人が動かさないと確認できず、スクリプトはそこに触れない。
+
 各演習に共通する条件:
 
 - 実在の高校生のデータを使わない。訓練された成人スタッフの合成本文だけを使う。
@@ -65,6 +70,43 @@ dry run（#168）の day 3 と、本調査開始前に1回、この3つを**実�
 4. 参加者に案内すべき連絡先が画面に出ていること: □
 
 判定: □ 期待どおり / □ 逸脱あり（___）
+
+---
+
+## 演習B-2: 保護者確認（発行 → 断る → 再発行 → 確認）
+
+想定: 未成年の参加者について、保護者に確認リンクを送る。
+
+**2026-09-20 の機械実行で分かった、手順書に無かった3点。** 手で叩くときは先に読むこと。
+
+1. **列名。** `pilot_guardian_verifications` の判定列は `decision`（`outcome` ではない）で、
+   値は `confirmed` / `declined` の2つだけ。所有者の列は `owner_user_id`（`study_id` ではない）。
+2. **発行の4列は揃っていないと挿入できない** — `token_hash` / `token_prefix` /
+   `expires_at` / `issued_at`。`pilot_guardian_verifications_issued_check` が
+   片側だけの行を拒否する。期限のないトークンは失効しないリンクなので、これは正しい。
+3. **未決の確認は同時に1件まで** — `pilot_guardian_verifications_one_pending_idx`。
+   同じ保護者に2通届いて、どちらが有効か分からなくなることを防いでいる。
+   **したがって「断られた後にもう一度送る」には、先に前の行へ `declined` を書く。**
+
+| 項目 | 記入 |
+| --- | --- |
+| 実施日時 / 担当 |  |
+| 対象 research_code |  |
+| 実際の送付経路（学校の連絡システム名） |  |
+
+手順と記録:
+
+1. 確認リンクを発行する。`decision` が null のままであること: □
+2. 未成年が `enrolled` に進めないこと: □（`advance_pilot_enrollment` が `illegal_transition`）
+3. **保護者が断る。** `decision='declined'` を書き、なお `enrolled` に進めないこと: □
+4. 再発行し、`decision='confirmed'` を書く。`guardian_verified` へ進めること: □
+5. 保護者側の端末が参加者の端末と別であることを、送付経路の側で確認する: □
+   - 所要: ___ 分 / 実行者: ___
+
+判定: □ 手順書どおり / □ 逸脱あり（___）
+
+> 機械実行で確認できるのは3までで、5は経路そのものの話なので人が確認する。
+> `scripts/pilot/run-operations-drill.mjs` が1〜4を通す。
 
 ---
 

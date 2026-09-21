@@ -31,7 +31,7 @@ export const GUARDIAN_TOKEN_TTL_HOURS = 72;
 export const GUARDIAN_REVIEWABLE_GRANTS = [
   "anonymized_export",
   "raw_text_retention",
-  "future_fine_tuning",
+  "model_training_use",
 ] as const;
 
 export type GuardianReviewableGrant = (typeof GUARDIAN_REVIEWABLE_GRANTS)[number];
@@ -160,7 +160,7 @@ export function guardianConsentGrant(
     research_analysis: true,
     anonymized_export: requested.anonymized_export === true,
     raw_text_retention: requested.raw_text_retention === true,
-    future_fine_tuning: requested.future_fine_tuning === true,
+    model_training_use: requested.model_training_use === true,
     minor_assent: participantRecord.minor_assent === true,
     guardian_consent: true,
     document_version: requested.document_version,
@@ -204,7 +204,7 @@ export function participantConsentGrant(
    * A minor may narrow what they agreed to, never widen it.
    *
    * Without this, the guardian's confirmation became a permanent yes: a parent
-   * could approve a request with `future_fine_tuning: false`, and the
+   * could approve a request with `model_training_use: false`, and the
    * participant could then tick that box on `/consent` and get a record saying
    * both that a guardian consented and that fine-tuning was agreed to — a use
    * the guardian never saw. Turning a grant back on is a new question for the
@@ -224,7 +224,7 @@ export function participantConsentGrant(
     research_analysis: wantsResearch && researchAllowed && (!options.guardianRequired || options.approvedScope?.research_analysis === true),
     anonymized_export: withinApprovedScope("anonymized_export"),
     raw_text_retention: withinApprovedScope("raw_text_retention"),
-    future_fine_tuning: withinApprovedScope("future_fine_tuning"),
+    model_training_use: withinApprovedScope("model_training_use"),
     minor_assent: requested.minor_assent === true,
     // Never from the caller. See the header.
     guardian_consent: options.guardianConfirmed,

@@ -769,6 +769,17 @@ export const ja = {
     signup: "アカウントを作成",
     toSignup: "アカウントをお持ちでない方はこちら",
     toSignin: "すでにアカウントをお持ちの方はこちら",
+
+    /* 招待制デプロイのサインアップ（#223）。 */
+    inviteRequiredLead: "招待コードを確認します",
+    inviteRequiredIntro:
+      "この研究は招待された人だけが参加できます。学校から渡された用紙のコードを入力してください。大文字・小文字、ハイフンの有無は問いません。",
+    inviteCode: "招待コード",
+    inviteCheck: "コードを確認する",
+    /* 理由を分けない。「期限切れ」はコードが実在したことを教えてしまう。 */
+    inviteInvalid: "このコードは使えません。お手元の用紙を確認するか、学校の担当者に連絡してください。",
+    inviteAccepted: "コードを確認しました。続けてアカウントを作成してください。",
+    inviteCheckFailed: "確認できませんでした。時間をおいてもう一度お試しください。",
     /** `common.notClinicalService` と同じ約束の、このカードに収まる短い形。 */
     notClinicalService: "blescは診断や緊急対応を行うものではありません。",
     confirmationSent:
@@ -903,168 +914,17 @@ export const ja = {
   },
 
 
-  /**
-   * デモ用の教員画面（`/educator/alerts`, `/educator/class`, `/educator/meetings`,
-   * `/school`）。企画書の各機能を通しで見せるための固定データ画面で、通常の
-   * ナビゲーションには出ない（`AppNav` の `DEMO_ONLY_NAV_PATHS`）。
+  /*
+   * `educatorDemo` の文言はここにあり、#175 で画面ごと削除した。
    *
-   * #175 で、この4画面から生徒ごとのリスクバンド（安定 / 要注意 / 高リスク）と
-   * 傾向判定（悪化傾向 / 改善傾向）を削除した。`docs/educator_display_policy.md`
-   * の規則1により、バンドは描画しない・タイルで数えない・並び替えに使わない。
-   *
-   * 代わりに出すのは観測そのもの——何が、いつ、どこで確認されたか——で、
-   * 実データ側の教員画面（`components/educator/StatusChips.tsx`）と同じ形。
-   * デモの説明文（`demo.steps[2].watchFor`）が「リスクの判定は表示しません」と
-   * 言っているので、画面の側をその説明に合わせた。
+   * 4画面（/educator/alerts, /educator/class, /educator/meetings, /school）は
+   * 企画書の各機能を見せるための固定データ画面で、生徒ごとのリスクバンドを
+   * 描画していた。一度は観測表示へ作り直したが、最終的に削除を選んでいる。
+   * 実データ側に対応する画面（/educator, /educator/roster,
+   * /educator/student/[id]）が既にあり、企画書由来の2つ目の実装を残すことが
+   * `docs/educator_display_policy.md` が記録している失敗（片方だけ直る）の
+   * 温床そのものだったため。
    */
-  educatorDemo: {
-    alerts: {
-      title: "アラート",
-      intro: "確認のきっかけとして使ってください。アラートだけで状態を判断しないでください。",
-      count: (n: number) => `${n}件`,
-      urgentTitle: "確認された記述",
-      urgentEmpty: "該当する記述は確認されていません。",
-      attention: "要確認",
-      flowTitle: "対応の流れ",
-      flow: [
-        "担当教員または指定された支援担当者に通知",
-        "学校の定める緊急対応フローに沿って状況を確認",
-        "必要に応じて保健室・スクールカウンセラー・管理職・保護者と連携",
-      ],
-      viewDetail: "詳細を確認",
-      acknowledge: "確認しました",
-      acknowledged: "確認済み",
-      acknowledgeShort: "確認",
-      missingTitle: "日記の未提出",
-      missingNote:
-        "未提出は体調・行事・端末の不調など様々な理由で起こります。声掛けのきっかけとしてお使いください。",
-      kind: {
-        missing_3d: "3日以上未提出",
-        unused_1w: "1週間未利用",
-        streak_broken: "連続提出が中断",
-        rate_drop: "提出頻度が低下",
-      },
-      overdueTitle: "フォロー漏れ",
-      overdueEmpty: "フォロー漏れはありません。",
-      overdueNote: (days: number, next: string) =>
-        `前回面談から${days}日、次回は${next}です。`,
-      notScheduled: "未設定",
-      scheduleMeeting: "面談を設定",
-    },
-    class: {
-      title: "クラス全体",
-      subtitle: (className: string, count: number) => `${className} ・ ${count}名`,
-      rosterTitle: "クラスの一覧",
-      /** 並び順そのものが情報を持つので、何順かを画面に書く。 */
-      rosterOrder: "新しい観測がある生徒から順に並べています。",
-      observedChip: "観測あり",
-      observedCount: (n: number) => `観測あり ${n}名`,
-      noObservation: "観測なし",
-      lastEntry: (date: string) => `最終提出 ${date}`,
-      neverSubmitted: "提出なし",
-      observationPrefix: "観測：",
-      surface: { diary: "日記", followup: "追加質問" },
-      rosterNote:
-        "確認のきっかけになった記述と、その時刻・入力元だけを表示しています。生徒の状態を分類・採点することはありません。",
-      cellTitle: (name: string, detail: string) => `${name} ・ ${detail}`,
-      missedDays: (days: number) => `${days}日未提出`,
-      submittedYesterday: "昨日までに日記を提出",
-      withFollowUp: "対話型AIによる補足あり",
-      inProgress: "対応が進行中",
-      personUnit: "名",
-      breakdownTitle: "クラス全体の傾向",
-      breakdownIntro:
-        "日記と対話の内容から、いま何についての記述が多いかを集計しています。クラス全体の話題の集計で、特定の生徒の状態を表すものではありません。",
-      deltaNote:
-        "右端の数値は、その話題の記述が全体に占める割合の先週との差（ポイント）です。良し悪しを表すものではありません。",
-      noChange: "±0",
-      hintsTitle: "学級運営のヒント",
-      hints: [
-        "学業ストレスに関する記述が先週より5ポイント増えています。課題量の偏りを確認してみてください。",
-        "睡眠に関する記述が増えています。保健だよりや朝の声掛けと合わせて確認できます。",
-        "人間関係に関する記述はやや減っています。",
-      ],
-    },
-    meetings: {
-      title: "面談",
-      intro: "面談の記録と、AIによる面談サポートをまとめています。",
-      recordTitle: "面談を記録する",
-      student: "生徒",
-      required: "必須",
-      optional: "任意",
-      selectPlaceholder: "選択してください",
-      studentOption: (name: string, grade: string, className: string) =>
-        `${name}（${grade}${className}）`,
-      supportTitle: "AIによる面談サポート",
-      supportHint: (name: string) =>
-        `${name}さんの記録から、面談で確認したい質問案を用意できます。`,
-      makeQuestions: "質問案を作る",
-      supportHeading: (name: string) => `面談サポート — ${name}`,
-      close: "閉じる",
-      loadingRecords: "記録を読み込んでいます…",
-      questionsLabel: "確認したい質問案",
-      contextLabel: "面談前に押さえておきたい背景",
-      cautionsLabel: "触れ方に注意したい点",
-      notes: "面談メモ",
-      notesPlaceholder: "話した内容を記録します",
-      impression: "生徒の様子",
-      impressionPlaceholder: "表情、話し方、沈黙の有無など",
-      nextAction: "次回対応予定",
-      nextNote: "次回の内容",
-      nextNotePlaceholder: "例：生活リズムの変化を確認",
-      summaryTitle: "面談内容の要約",
-      summarising: "作成中…",
-      summarise: "AIに要約してもらう",
-      summaryPending: "要約を作成しています",
-      /** 要約は入力から組み立てる定型文。実際のモデル出力ではない。 */
-      summaryWithNotes: "面談では、記録された内容をもとに本人の状況を確認しました。",
-      summaryWithoutNotes: "面談メモが未入力のため、要約は限定的です。",
-      summaryImpression: (impression: string) =>
-        `生徒の様子として「${impression}」が記録されています。`,
-      summaryNextAction: (date: string) => `次回対応は ${date} に予定されています。`,
-      summaryNoNextAction:
-        "次回対応は未設定です。フォロー漏れを防ぐため日程の設定をおすすめします。",
-      visibility: "面談記録は担当教員と支援担当者が閲覧できます。",
-      save: "記録を保存",
-      saved: "面談記録を保存しました。（デモのため実際には保存されません）",
-      historyTitle: "これまでの面談",
-      followUp: {
-        overdue: "フォロー未実施",
-        done: "対応済み",
-        ongoing: "フォロー中",
-      },
-      nextLine: (date: string, note: string) => `次回 ${date} ｜ ${note}`,
-    },
-    school: {
-      wholeSchool: "学校全体",
-      byGrade: "学年別",
-      suppressionNote: (minCellSize: number) =>
-        `個人を特定しない集計のみを表示しています。集計対象が${minCellSize}名未満になる区分は、個人が推定されうるため値を伏せています。個別の生徒の状態はこの画面からは確認できません。`,
-      noChange: "±0",
-      theme: {
-        academic: "学業",
-        relationships: "人間関係",
-        health: "睡眠",
-      },
-      shareTitle: (theme: string, percent: number) => `${theme} ${percent}%`,
-      title: "学校全体の傾向",
-      studentCount: "対象生徒数",
-      submissionRate: "日記の提出率（今月）",
-      gradeCount: "集計対象",
-      gradeUnit: "学年",
-      breakdownTitle: "記述されている内容の内訳",
-      trendTitle: "6週間の推移",
-      tableGrade: "学年",
-      tableSubmissionRate: "提出率",
-      tableTopTheme: "最も多い記述",
-      studentCountValue: (count: number) => `${count}名`,
-      /** 母数が小さい区分は値を伏せる。伏せた理由まで書く。 */
-      suppressed: "—（母数が小さいため非表示）",
-      suppressedShort: "—",
-      disclaimer:
-        "この集計は学校全体の傾向把握を目的としたものです。個人の状態を示すものではなく、診断でもありません。",
-    },
-  },
 
   graph: {
     /** The five ontology categories, keyed by the stored enum value. */

@@ -23,7 +23,7 @@ import {
 } from "@/lib/consent";
 
 const CONSENT_COLUMNS =
-  "app_use, research_analysis, anonymized_export, raw_text_retention, future_fine_tuning, " +
+  "app_use, research_analysis, anonymized_export, raw_text_retention, model_training_use, " +
   "minor_assent, guardian_consent, consent_version, document_version, status, granted_at, revoked_at, created_at";
 
 /**
@@ -65,7 +65,7 @@ export type ConsentGrantInput = {
   research_analysis?: boolean;
   anonymized_export?: boolean;
   raw_text_retention?: boolean;
-  future_fine_tuning?: boolean;
+  model_training_use?: boolean;
   minor_assent?: boolean;
   guardian_consent?: boolean;
   document_version?: string;
@@ -90,7 +90,7 @@ export async function recordConsent(
     research_analysis: input.research_analysis === true,
     anonymized_export: input.anonymized_export === true,
     raw_text_retention: input.raw_text_retention === true,
-    future_fine_tuning: input.future_fine_tuning === true,
+    model_training_use: input.model_training_use === true,
     minor_assent: input.minor_assent === true,
     guardian_consent: input.guardian_consent === true,
     consent_version: CONSENT_VERSION,
@@ -128,7 +128,7 @@ export async function revokeConsent(
       research_analysis: false,
       anonymized_export: false,
       raw_text_retention: false,
-      future_fine_tuning: false,
+      model_training_use: false,
       minor_assent: false,
       guardian_consent: false,
       consent_version: CONSENT_VERSION,
@@ -158,7 +158,7 @@ export function consentMismatch(claimed: unknown, stored: ConsentState): string[
     "research_analysis",
     "anonymized_export",
     "raw_text_retention",
-    "future_fine_tuning",
+    "model_training_use",
     "minor_assent",
     "guardian_consent",
   ] as const;
