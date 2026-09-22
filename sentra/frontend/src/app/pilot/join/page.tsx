@@ -36,6 +36,7 @@ import { ApiClient, type GuardianStatusResponse, type PilotEnrollmentSummary } f
 import { Icon } from "@/components/ui/Icon";
 import { GUARDIAN_STATUS_MESSAGE } from "@/lib/guardianVerification";
 import { enrollmentProgress, joinStep } from "@/lib/pilotEnrollment";
+import { t } from "@/lib/i18n";
 
 /** 説明文書で個別に選べる項目。研究解析そのものは選択制ではない。 */
 const OPTIONAL_GRANTS = [
@@ -62,6 +63,7 @@ export default function PilotJoinPage() {
   const [enrollment, setEnrollment] = useState<PilotEnrollmentSummary | null>(null);
   const [guardian, setGuardian] = useState<GuardianStatusResponse | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -70,28 +72,59 @@ export default function PilotJoinPage() {
   const [assent, setAssent] = useState(false);
   const [optional, setOptional] = useState<Record<string, boolean>>({});
 
+  /**
+   * Read the participant's enrollment state.
+   *
+   * Never rejects, and always resolves `loaded` (#236). It used to do neither:
+   * `setLoaded(true)` was the last statement, so a single failed request left
+   * the screen on the spinner below with no message, no retry and no way out
+   * but a reload the participant had to think of. `void refresh()` swallowed
+   * the rejection, and the 15-second poll could not rescue it either — that
+   * poll starts on `guardian?.status === "pending"`, and `guardian` is only
+   * ever set in here, so a first failure meant it never ran at all.
+   *
+   * What it does NOT do is carry on as if the read had worked. Not knowing
+   * which step someone is on is bad; showing them a step chosen from nothing,
+   * and letting them act on it, is worse.
+   */
   const refresh = useCallback(async () => {
-    if (!user) return;
-    const rows = await ApiClient.pilotEnrollments();
-    const live = rows.find((row) => row.state !== "withdrawn" && row.state !== "completed") ?? rows[0] ?? null;
-    setEnrollment(live);
-
-    const status = live && live.is_minor ? await ApiClient.guardianStatus(live.id) : null;
-    setGuardian(status);
-    // The optional grants live in React state while the participant is ticking
-    // them, and nowhere else until the request is recorded. After a reload they
-    // came back empty, and the next request would have asked the guardian to
-    // approve nothing — silently converting every choice into a refusal. The
-    // outstanding request is the record of what was asked, so it seeds them.
-    if (status?.requested_grants) {
-      const restored = status.requested_grants;
-      setOptional({
-        raw_text_retention: restored.raw_text_retention === true,
-        anonymized_export: restored.anonymized_export === true,
-        model_training_use: restored.model_training_use === true,
-      });
+    if (!user) {
+      // Signed out is an answer, not a pending request. Left unresolved, this
+      // was the same永久スピナー for anyone who opened the link before signing
+      // in — a state no test covered, because every e2e case logs in first.
+      setLoadFailed(false);
+      setLoaded(true);
+      return;
     }
-    setLoaded(true);
+    try {
+      const rows = await ApiClient.pilotEnrollments();
+      const live = rows.find((row) => row.state !== "withdrawn" && row.state !== "completed") ?? rows[0] ?? null;
+      setEnrollment(live);
+
+      const status = live && live.is_minor ? await ApiClient.guardianStatus(live.id) : null;
+      setGuardian(status);
+      // The optional grants live in React state while the participant is ticking
+      // them, and nowhere else until the request is recorded. After a reload they
+      // came back empty, and the next request would have asked the guardian to
+      // approve nothing — silently converting every choice into a refusal. The
+      // outstanding request is the record of what was asked, so it seeds them.
+      if (status?.requested_grants) {
+        const restored = status.requested_grants;
+        setOptional({
+          raw_text_retention: restored.raw_text_retention === true,
+          anonymized_export: restored.anonymized_export === true,
+          model_training_use: restored.model_training_use === true,
+        });
+      }
+      setLoadFailed(false);
+    } catch {
+      // The message shown comes from the catalogue, not from the error. A fetch
+      // or Supabase error is English and describes our plumbing; neither belongs
+      // on a student's screen.
+      setLoadFailed(true);
+    } finally {
+      setLoaded(true);
+    }
   }, [user]);
 
   useEffect(() => {
@@ -101,11 +134,15 @@ export default function PilotJoinPage() {
 
   // 保護者の確認は別の端末で行われるので、この画面には通知が届かない。
   // 待っているあいだだけ、控えめな間隔で状態を見に行く。答えが出たら止める。
+  //
+  // 読み込みに失敗しているあいだも同じ間隔で試し直す（#236）。以前はこの条件が
+  // `guardian?.status` だけを見ていて、その `guardian` は refresh の中でしか
+  // 設定されないため、最初の失敗は自分では絶対に回復できなかった。
   useEffect(() => {
-    if (guardian?.status !== "pending") return;
+    if (guardian?.status !== "pending" && !loadFailed) return;
     const timer = setInterval(() => void refresh(), 15000);
     return () => clearInterval(timer);
-  }, [guardian?.status, refresh]);
+  }, [guardian?.status, loadFailed, refresh]);
 
   const step = useMemo(() => joinStep(enrollment), [enrollment]);
 
@@ -131,6 +168,66 @@ export default function PilotJoinPage() {
     );
   }
 
+  /*
+   * Signed out. The手続き needs an account, so say that and point at the door
+   * rather than rendering the invite-code step for a session that cannot redeem
+   * one (#236).
+   */
+  if (!user) {
+    return (
+      <main className="bl-wrap bl-stack">
+        <header className="bl-stack" style={{ gap: 6 }}>
+          <p className="bl-eyebrow">研究への参加</p>
+          <h1 className="bl-h1">{t.pilotJoin.signedOutTitle}</h1>
+        </header>
+        <section className="bl-card bl-stack">
+          <p>{t.pilotJoin.signedOutBody}</p>
+          <Link className="bl-btn bl-btn--primary" href="/login">
+            {t.pilotJoin.signedOutAction}
+          </Link>
+        </section>
+      </main>
+    );
+  }
+
+  /*
+   * The read failed and there is nothing to fall back on.
+   *
+   * Deliberately not the手続き with an error banner on top: without a state
+   * there is no step to show, and a screen that guesses one invites the
+   * participant to act on it. Say the state is unknown, and give them the
+   * button (#236).
+   */
+  if (loadFailed && !enrollment) {
+    return (
+      <main className="bl-wrap bl-stack">
+        <header className="bl-stack" style={{ gap: 6 }}>
+          <p className="bl-eyebrow">研究への参加</p>
+          <h1 className="bl-h1">{t.pilotJoin.loadFailedTitle}</h1>
+        </header>
+        <section className="bl-card bl-stack" role="alert">
+          <p>{t.pilotJoin.loadFailedBody}</p>
+          <p className="bl-meta">{t.pilotJoin.loadFailedRetrying}</p>
+          <button
+            type="button"
+            className="bl-btn bl-btn--primary"
+            data-testid="pilot-join-retry"
+            disabled={busy}
+            onClick={() => void refresh()}
+          >
+            {t.common.retry}
+          </button>
+        </section>
+
+        <section className="bl-card bl-stack" aria-label="研究問い合わせ先">
+          <h2 className="bl-h2">研究問い合わせ先</h2>
+          <a href={PILOT_CONTACT_HREF}>{PILOT_CONTACT_EMAIL}</a>
+          <p className="bl-meta">{PILOT_CONTACT_PRIVACY_NOTICE}</p>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="bl-wrap bl-stack">
       <header className="bl-stack" style={{ gap: 6 }}>
@@ -150,6 +247,27 @@ export default function PilotJoinPage() {
         <p className="bl-notice" role="status">
           {notice}
         </p>
+      ) : null}
+
+      {/*
+        A later read failed while an earlier one had worked. The steps below are
+        the state as of that earlier read, so they are shown — but labelled, and
+        with the button, rather than left to look current (#236).
+      */}
+      {loadFailed ? (
+        <section className="bl-card bl-stack" role="alert" data-testid="pilot-join-stale">
+          <p>{t.pilotJoin.loadFailedStale}</p>
+          <p className="bl-meta">{t.pilotJoin.loadFailedRetrying}</p>
+          <button
+            type="button"
+            className="bl-btn bl-btn--secondary"
+            data-testid="pilot-join-retry"
+            disabled={busy}
+            onClick={() => void refresh()}
+          >
+            {t.common.retry}
+          </button>
+        </section>
       ) : null}
 
       <LegalDraftNotice />

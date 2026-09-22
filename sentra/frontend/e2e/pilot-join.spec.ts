@@ -218,3 +218,59 @@ test.describe("direct URL", () => {
     await expect(page).toHaveURL(/\/pilot\/join|\/login/);
   });
 });
+
+test.describe("unreadable state", () => {
+  /*
+   * The screen has to come back when the read fails (#236).
+   *
+   * This is the case CI found by accident: on #235 the `expired invitation`
+   * test failed once at `page.goto("/pilot/join")`, waiting on the 招待コード
+   * heading that never appeared, and passed on a re-run of the same head. The
+   * screen was not flaky in the test's sense — `refresh()` had no catch and
+   * `setLoaded(true)` was its last statement, so one failed request left the
+   * spinner up for good. A participant's only way out was a page reload they
+   * had to think of.
+   *
+   * Failing the request on purpose is the only honest way to test that, and it
+   * is why this is a case of its own rather than an assertion bolted onto one
+   * of the eight above.
+   */
+  test("says so, and recovers, instead of spinning forever", async ({ page }) => {
+    await login(page, USERS.stranger);
+
+    // Fail only the first attempt. The second has to succeed for the recovery
+    // half of this test to mean anything.
+    let attempts = 0;
+    await page.route("**/api/pilot/enrollment*", async (route) => {
+      attempts += 1;
+      if (attempts === 1) return route.abort("failed");
+      return route.continue();
+    });
+
+    await page.goto("/pilot/join");
+
+    // Not the spinner: a heading that says what happened, and a button.
+    await expect(page.getByRole("heading", { name: "参加の状態を読み込めませんでした" })).toBeVisible();
+    const retry = page.getByTestId("pilot-join-retry");
+    await expect(retry).toBeVisible();
+
+    // And it must not have guessed a step out of a read that never landed.
+    await expect(page.getByRole("heading", { name: "招待コード" })).toHaveCount(0);
+
+    await page.screenshot({ path: evidence("unreadable-state"), fullPage: true });
+
+    // The participant's own retry works, without reloading the page.
+    await retry.click();
+    await expect(page.getByRole("heading", { name: "招待コード" })).toBeVisible();
+    expect(attempts).toBeGreaterThan(1);
+  });
+
+  test("points a signed-out visitor at the login instead of a spinner", async ({ page }) => {
+    // Every other case here signs in first, which is exactly why this one was
+    // never seen: `if (!user) return` left `loaded` false and the screen sat on
+    // its spinner for anyone who opened the invitation link before signing in.
+    await page.goto("/pilot/join");
+    await expect(page.getByRole("heading", { name: "ログインが必要です" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "ログインする" })).toBeVisible();
+  });
+});

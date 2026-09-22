@@ -191,3 +191,80 @@ describe("isCollecting", () => {
     }
   });
 });
+
+/**
+ * The join screen has to come back from a failed read (#236).
+ *
+ * These are structural assertions on the source rather than a render, because
+ * the behaviour they protect is a control-flow property — "every path resolves
+ * `loaded`" — and the screen it lives on needs a session, a Supabase client and
+ * an effect pass to render at all. The behavioural version of this is the
+ * `unreadable state` case in `e2e/pilot-join.spec.ts`, which fails the request
+ * for real and asserts on what a participant sees.
+ *
+ * What went wrong without them: `setLoaded(true)` was the last statement of an
+ * un-caught async function, so one failed request left the screen on its
+ * spinner, with no message, no retry, and a poll that could not start because
+ * the state it keys on is only ever set by the call that failed.
+ */
+describe("the /pilot/join loading path", () => {
+  const source = readFileSync(
+    fileURLToPath(new URL("../src/app/pilot/join/page.tsx", import.meta.url)),
+    "utf8",
+  );
+
+  it("resolves the spinner on every path, including the failing one", () => {
+    // `finally`, not a second `setLoaded(true)` in the catch: the point is that
+    // no future branch added to the try can skip it.
+    const finallyBlock = source.match(/}\s*finally\s*{([^}]*)}/);
+    assert.ok(finallyBlock, "refresh() has no finally block");
+    assert.match(
+      finallyBlock[1],
+      /setLoaded\(true\)/,
+      "the spinner is not cleared in the finally, so a throw can still strand it",
+    );
+  });
+
+  it("catches the failure rather than rejecting into a swallowed void", () => {
+    assert.match(source, /catch\s*{[\s\S]*?setLoadFailed\(true\)/);
+  });
+
+  it("retries by itself after the first failure", () => {
+    // The poll used to key on `guardian?.status` alone. `guardian` is only set
+    // by refresh(), so a first failure meant the interval never started and the
+    // screen could not recover on its own.
+    assert.match(
+      source,
+      /guardian\?\.status !== "pending" && !loadFailed/,
+      "the poll does not run while the screen is in its failed state",
+    );
+  });
+
+  it("offers the participant a retry that is not a page reload", () => {
+    assert.match(source, /data-testid="pilot-join-retry"/);
+    assert.match(source, /onClick=\{\(\) => void refresh\(\)\}/);
+  });
+
+  it("says the state is unknown instead of showing a step it guessed", () => {
+    // Rendering the invite step from a read that failed would invite someone to
+    // act on a state nobody knows.
+    assert.match(source, /loadFailed && !enrollment/);
+    assert.match(source, /t\.pilotJoin\.loadFailedTitle/);
+  });
+
+  it("does not strand a signed-out visitor either", () => {
+    // `if (!user) return` left `loaded` false, which is the same spinner by a
+    // different route — and every e2e case logs in first, so nothing saw it.
+    const guard = source.match(/if \(!user\) {([\s\S]*?)}\n/);
+    assert.ok(guard, "the signed-out guard in refresh() is gone");
+    assert.match(guard[1], /setLoaded\(true\)/);
+  });
+
+  it("shows the catalogue's words, never the error's", () => {
+    // A Supabase or fetch error is English and describes our plumbing. #116.
+    assert.ok(
+      !/setLoadFailed\([^)]*error/.test(source),
+      "the raw error is being carried into the screen's failure state",
+    );
+  });
+});

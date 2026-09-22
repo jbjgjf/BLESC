@@ -1093,6 +1093,25 @@ export const ja = {
     loadExplanation: "分析の内訳を読み込めませんでした",
     loadAnomaly: "変化の大きさを読み込めませんでした",
     loadGraphSnapshots: "関係グラフを読み込めませんでした",
+    loadPilotEnrollment: "参加の状態を読み込めませんでした",
+  },
+
+  /**
+   * 研究への参加手続きの画面（#164）。
+   *
+   * ここにあるのは、手続きそのものの文言ではなく「状態が読めなかったとき」に
+   * 出すもの（#236）。読めていないのに読めたふりをして先に進ませないための
+   * 文面なので、あいまいに和らげない。
+   */
+  pilotJoin: {
+    loadFailedTitle: "参加の状態を読み込めませんでした",
+    loadFailedBody:
+      "通信がうまくいきませんでした。いまの手続きがどこまで進んでいるか分からないため、この画面からは先に進めません。",
+    loadFailedRetrying: "15秒ごとに自動で読み込み直しています。すぐ試したいときは下のボタンを押してください。",
+    loadFailedStale: "最新の状態を読み込めませんでした。以下に出ているのは、前回読み込めたときの内容です。",
+    signedOutTitle: "ログインが必要です",
+    signedOutBody: "参加の手続きには、あなたのアカウントが必要です。ログインしてから、もう一度この画面を開いてください。",
+    signedOutAction: "ログインする",
   },
 
   /** Educator alerts. Each says what was observed, never what it means. */
