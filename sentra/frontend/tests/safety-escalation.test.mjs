@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
@@ -474,6 +474,59 @@ describe("the wiring that makes this reach anyone", () => {
     const route = read("../src/app/api/entries/route.ts");
     assert.ok(route.includes("notifiableLevel(safetyAssessment.risk_level)"));
     assert.ok(route.includes("escalate(service"));
+  });
+
+  it("escalates from the voice route", () => {
+    // Voice was the third surface and the one that stayed silent (#237). It
+    // recorded the audit row and spoke the canned response, and nobody was
+    // paged — so the crisis a student said out loud was the one crisis the
+    // product kept to itself.
+    const route = read("../src/app/api/voice/turn/route.ts");
+    assert.ok(route.includes("notifiableLevel(safety.risk_level)"));
+    assert.ok(route.includes("escalate(service"));
+    assert.ok(route.includes('surface: "voice"'));
+  });
+
+  /*
+   * The three tests above name three files, which is exactly how the voice gap
+   * survived: the guard listed the surfaces somebody remembered. This one finds
+   * them instead.
+   *
+   * The rule it enforces is the module's own contract — if a route decides a
+   * risk level, it owes someone a notification. A fourth surface that assesses
+   * safety and does not escalate fails here on the day it is added, named.
+   */
+  it("leaves no surface that assesses risk without escalating", () => {
+    const apiRoot = resolve(HERE, "../src/app/api");
+    assert.ok(existsSync(apiRoot), "src/app/api moved; this guard is now checking nothing");
+
+    const routes = readdirSync(apiRoot, { recursive: true, encoding: "utf8" })
+      .filter((entry) => entry.endsWith("route.ts"))
+      .map((entry) => resolve(apiRoot, entry));
+
+    const assessing = routes.filter((path) => {
+      const source = readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+      return source.includes("assessSafety(") || source.includes("assessConversation(");
+    });
+
+    // Three today: chat, entries, voice/turn. Asserted so that a refactor which
+    // stops any of them assessing — and therefore stops them failing the check
+    // below — cannot pass this test by disappearing from it.
+    assert.equal(
+      assessing.length,
+      3,
+      `Expected 3 routes to assess safety, found ${assessing.length}:\n${assessing.join("\n")}`,
+    );
+
+    const silent = assessing
+      .filter((path) => !readFileSync(path, "utf8").includes("escalate(service"))
+      .map((path) => path.slice(apiRoot.length + 1));
+
+    assert.deepEqual(
+      silent,
+      [],
+      `These routes assess a risk level and tell nobody:\n${silent.join("\n")}`,
+    );
   });
 
   it("records before it sends", () => {
