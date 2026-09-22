@@ -192,5 +192,13 @@ export function bubbleShift(centre: number, width: number, viewportWidth: number
  */
 export function hrefMatches(attribute: string | null, href: string, basePath = ""): boolean {
   if (!attribute) return false;
-  return attribute === href || (basePath !== "" && attribute === `${basePath}${href}`);
+  // 末尾の / は無視する。ホーム（"/"）に basePath を足すと "/demo-view/" に
+  // なるが、実際に描かれるのは "/demo-view" — この一文字で一致せず、ホーム
+  // へ案内するときだけ動きが出ない、という形で出ていた。
+  const trim = (value: string) => (value.length > 1 ? value.replace(/\/+$/, "") : value);
+  const target = trim(href);
+  const shown = trim(attribute);
+  if (shown === target) return true;
+  if (basePath === "") return false;
+  return shown === trim(`${trim(basePath)}${target === "/" ? "" : target}`);
 }

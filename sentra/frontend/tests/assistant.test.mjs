@@ -837,6 +837,15 @@ describe("押しに行くリンクを見つける", () => {
     assert.equal(hrefMatches(null, "/journal"), false);
   });
 
+  it("ホーム（/）は、basePath だけの形で描かれる", () => {
+    // これが無いと、ホームへ案内するときだけ押す相手が見つからず、
+    // 案内役が一度も現れないまま画面が変わる。
+    assert.equal(hrefMatches("/demo-view", "/", "/demo-view"), true);
+    assert.equal(hrefMatches("/demo-view/", "/", "/demo-view"), true);
+    assert.equal(hrefMatches("/", "/", ""), true);
+    assert.equal(hrefMatches("/demo-view", "/journal", "/demo-view"), false);
+  });
+
   it("書き出した版では、basePath が付いた形とも一致する", () => {
     // これが無いと、デモ（/demo-view）でだけ案内役が押しに行かない。
     assert.equal(hrefMatches("/demo-view/journal", "/journal", "/demo-view"), true);

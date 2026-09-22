@@ -244,6 +244,8 @@ export function Assistant({ audience }: { audience: Audience }) {
   const pendingNote = useRef<string | null>(null);
   // いま枠を出している相手。案内役が帰るまで残す。
   const lit = useRef<HTMLElement | null>(null);
+  // 開いた先で、見出しの横まで行って言うこと。押す相手が画面に無いときに使う。
+  const pendingLead = useRef<string | null>(null);
 
   // 狭い画面では小石も小さい。跳ぶ距離の計算にも使うので状態で持つ。
   useEffect(() => {
@@ -338,9 +340,17 @@ export function Assistant({ audience }: { audience: Audience }) {
       switch (action.kind) {
         case "navigate": {
           const link = visibleLink(action.href);
-          if (reduced || !link) {
+          if (!link) {
+            // 押す相手が画面に無い行き先（アカウントメニューの中など）。
+            // そのまま飛ぶと、案内役は一度も現れないまま画面だけが変わる。
+            // 開いたあとに、その画面の見出しの横まで行って一言だけ言う。
+            if (!reduced) pendingLead.current = say ?? null;
             navigate(action.href);
-            // 狭い画面ではパネルが行き先を隠す。案内したら引っ込む。
+            if (window.matchMedia(NARROW).matches) close();
+            break;
+          }
+          if (reduced) {
+            navigate(action.href);
             if (window.matchMedia(NARROW).matches) close();
             break;
           }
@@ -447,9 +457,11 @@ export function Assistant({ audience }: { audience: Audience }) {
    * には、跳ねている絵は届かないので、待たせる理由がない。
    */
   const travelTo = useCallback(
-    (located: Found, text: string) => {
-      spotlight(located, reduced, true);
-      lit.current = located.region;
+    (located: Found, text: string, { mark = true }: { mark?: boolean } = {}) => {
+      if (mark) {
+        spotlight(located, reduced, true);
+        lit.current = located.region;
+      }
       afterScroll(() => setTrip({ target: located.region, text }));
     },
     [reduced],
@@ -516,6 +528,34 @@ export function Assistant({ audience }: { audience: Audience }) {
     timer = window.setTimeout(attempt, SHOW_RETRY_MS);
     return () => window.clearTimeout(timer);
   }, [pathname, reduced, openPanel, respond, travelTo]);
+
+  /**
+   * 開いた先で、その画面の見出しの横に立って一言。
+   *
+   * ページを開く案内のうち、タブのように押せる相手が画面に出ているものは、
+   * そこまで行って押す。出ていないもの（アカウントメニューの中の画面など）は
+   * 押しようがないので、着いた先で追いつく。どちらの場合も、連れていかれた
+   * ことが動きで分かる。
+   */
+  useEffect(() => {
+    const text = pendingLead.current;
+    if (!text) return;
+    pendingLead.current = null;
+    let attempts = 0;
+    let timer = 0;
+    const attempt = () => {
+      const heading = document.getElementById("bl-main")?.querySelector<HTMLElement>("h1");
+      if (heading && heading.getClientRects().length > 0) {
+        // 枠は出さない。ページ全体を指しても、示したことにはならない。
+        travelTo({ label: heading, region: heading }, text, { mark: false });
+        return;
+      }
+      attempts += 1;
+      if (attempts < SHOW_ATTEMPTS) timer = window.setTimeout(attempt, SHOW_RETRY_MS);
+    };
+    timer = window.setTimeout(attempt, SHOW_RETRY_MS);
+    return () => window.clearTimeout(timer);
+  }, [pathname, travelTo]);
 
   const act = useCallback(
     (offer: AssistantOffer, note?: string) => {
