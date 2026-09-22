@@ -1,0 +1,83 @@
+{
+  "contract": "ai-provider-inventory-v1",
+  "purpose": "外部AI提供者へ出ていく地点の目録。docs/ai_provider_data_handling.md の表の機械可読版で、frontend/tests/ai-provider-inventory.test.mjs がコードと突き合わせる。新しい送信先をここに書かずに足すとCIが落ちる。",
+  "providers": {
+    "openai": {
+      "host": "api.openai.com",
+      "dpa_signed": false,
+      "zero_data_retention": false,
+      "training_opt_out": "unverified",
+      "note": "未締結。既定のAPI利用条件では入力は学習に使われないとされるが、それは契約ではなく提供者のポリシーで、保持期間（不正利用監視目的の30日）も残る。ZDRは申請制。"
+    },
+    "anthropic": {
+      "host": "api.anthropic.com",
+      "dpa_signed": false,
+      "zero_data_retention": false,
+      "training_opt_out": "unverified",
+      "note": "二重プロバイダ化の経路として参照されるが、現在このアプリから送信している地点は無い。"
+    }
+  },
+  "send_points": [
+    {
+      "id": "entries.extraction",
+      "route": "src/app/api/entries/route.ts",
+      "provider": "openai",
+      "endpoint": "https://api.openai.com/v1/responses",
+      "sends": "日記の本文（原文そのもの）",
+      "carries_raw_journal_text": true,
+      "gated_by_collection_mode": true,
+      "runs_in": "server"
+    },
+    {
+      "id": "entries.embeddings",
+      "route": "src/app/api/entries/route.ts",
+      "provider": "openai",
+      "endpoint": "https://api.openai.com/v1/embeddings",
+      "sends": "日記の本文および抽出結果のテキスト",
+      "carries_raw_journal_text": true,
+      "gated_by_collection_mode": true,
+      "runs_in": "server"
+    },
+    {
+      "id": "chat.responses",
+      "route": "src/app/api/chat/route.ts",
+      "provider": "openai",
+      "endpoint": "https://api.openai.com/v1/responses",
+      "sends": "生徒の発話と、想起のために付ける過去の記録の断片",
+      "carries_raw_journal_text": true,
+      "gated_by_collection_mode": true,
+      "runs_in": "server"
+    },
+    {
+      "id": "audio.transcriptions",
+      "route": "src/app/api/audio/transcriptions/route.ts",
+      "provider": "openai",
+      "endpoint": "https://api.openai.com/v1/audio/transcriptions",
+      "sends": "生徒の音声そのもの（声）",
+      "carries_raw_journal_text": true,
+      "gated_by_collection_mode": true,
+      "runs_in": "server"
+    },
+    {
+      "id": "voice.realtime",
+      "route": "src/app/api/voice/realtime-session/route.ts",
+      "provider": "openai",
+      "endpoint": "https://api.openai.com/v1/realtime/client_secrets",
+      "sends": "セッション発行時は設定のみ。発行後のセッションでは生徒の音声が提供者へ直接流れる",
+      "carries_raw_journal_text": true,
+      "gated_by_collection_mode": true,
+      "runs_in": "server"
+    },
+    {
+      "id": "voice.webrtc",
+      "route": "src/components/VoiceMode.tsx",
+      "provider": "openai",
+      "endpoint": "https://api.openai.com/v1/realtime/calls",
+      "sends": "SDPオファー。接続確立後は生徒の音声がブラウザから提供者へ直接流れる",
+      "carries_raw_journal_text": true,
+      "runs_in": "browser",
+      "gated_by_collection_mode": "indirect",
+      "gate_note": "このファイル自身はゲートを参照しない。接続に必要な一時鍵は api/voice/realtime-session でしか取れず、そちらが収集専用モードで発行を止めるため、収集期間中の参加者はここに到達できない。**間接的な封じ方であることを明示する** -- トークンの取得経路が増えた瞬間にこの封じは外れる。"
+    }
+  ]
+}
