@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isMissingTable, jsonError, requireUser, sha256 } from "@/lib/server/api";
 import { assessConversation, recordSafetyAudit } from "@/lib/server/safety";
+import { serviceRoleClient } from "@/lib/server/supabaseWriter";
+import { escalate, notifiableLevel } from "@/lib/server/safetyEscalation";
 
 export const runtime = "nodejs";
 export const maxDuration = 20;
@@ -27,6 +29,9 @@ type VoiceTurnPayload = {
  * This does NOT generate a reply; the realtime model already spoke. It returns
  * the assessment so the client can have the canned support response spoken when
  * the model's own answer pointed at no real person.
+ *
+ * It also escalates, as chat and the journal do (#237) — see the block after
+ * the audit write.
  */
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
@@ -47,7 +52,9 @@ export async function POST(request: NextRequest) {
     .limit(1)
     .maybeSingle();
   if (participantResult.error) return jsonError(participantResult.error.message, 502);
-  const participant = participantResult.data as { id: string } | null;
+  // `code` is selected above and is what the educator's alert names the
+  // student by; the narrower cast predated the escalation call.
+  const participant = participantResult.data as { id: string; code: string | null } | null;
   if (!participant) return jsonError("Participant was not found.", 404);
 
   const recentResult = await auth.client
@@ -111,6 +118,43 @@ export async function POST(request: NextRequest) {
     pipelineVersion: PIPELINE_VERSION,
     safety,
   });
+
+  /*
+   * Voice was the third surface a crisis arrives on, and the only one that
+   * still told nobody (#237). Chat and the journal escalate; this route
+   * assessed the turn, wrote the audit row, had the support line spoken — and
+   * stopped there. A student who says out loud what they would not type
+   * reached an audit table that nobody is paged by.
+   *
+   * Same shape as the chat route deliberately. `escalate` records the row and
+   * returns, leaving delivery to run on: a student in crisis must not wait on
+   * a school's mail server, and an undelivered row is retried by
+   * `/api/safety/dispatch`, where an unwritten one is simply lost.
+   *
+   * Under the service-role client because the recipients are other people's
+   * rows — the student's own session cannot read their educators' addresses,
+   * and should not be able to.
+   */
+  const notifiable = notifiableLevel(safety.risk_level);
+  if (notifiable) {
+    const service = serviceRoleClient();
+    if (service) {
+      await escalate(service, {
+        ownerUserId: auth.user.id,
+        participantId: participant.id,
+        participantCode: participant.code,
+        riskLevel: notifiable,
+        reasons: safety.reasons,
+        surface: "voice",
+        sourceArtifactId: chatSession.data.id,
+      });
+    } else {
+      console.error(
+        "[safety-escalation] a crisis was assessed and Supabase is not configured; nobody will be told",
+        { participant: participant.id },
+      );
+    }
+  }
 
   return NextResponse.json({
     chat_session_id: chatSession.data.id,

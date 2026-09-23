@@ -476,6 +476,35 @@ describe("the wiring that makes this reach anyone", () => {
     assert.ok(route.includes("escalate(service"));
   });
 
+  it("escalates from the voice route", () => {
+    // Voice was the last surface with the gap: the realtime session streams
+    // browser-to-OpenAI, so a spoken disclosure never passed through /api/chat
+    // and reached only the audit table, which pages nobody (#237).
+    const route = read("../src/app/api/voice/turn/route.ts");
+    assert.ok(route.includes("notifiableLevel(safety.risk_level)"));
+    assert.ok(route.includes("escalate(service"));
+    assert.ok(route.includes('surface: "voice"'));
+  });
+
+  it("escalates under the service role, not the student's own session", () => {
+    // The recipients are the educators' rows. A student's session cannot read
+    // them, so an escalation built on `auth.client` would silently find no
+    // recipient and write a no_recipient row instead of paging anyone.
+    for (const path of [
+      "../src/app/api/chat/route.ts",
+      "../src/app/api/entries/route.ts",
+      "../src/app/api/voice/turn/route.ts",
+    ]) {
+      const route = read(path);
+      const call = route.indexOf("escalate(service");
+      assert.ok(call !== -1, `${path} does not escalate`);
+      assert.ok(
+        route.includes("const service = serviceRoleClient()"),
+        `${path} escalates without taking a service-role client`,
+      );
+    }
+  });
+
   it("records before it sends", () => {
     const source = read("../src/lib/server/safetyEscalation.ts");
     const record = source.indexOf("const escalation = await recordEscalation");
