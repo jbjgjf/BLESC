@@ -46,7 +46,19 @@ type QueueRow = {
 type QueueResponse = {
   slot: "morning" | "afternoon" | "ad_hoc";
   enqueued: number;
-  counts: { pending: number; crisis: number; elevated: number; no_text: number };
+  /** 今回の読み込みで待ち行列に入れ切れなかった件数（#247）。 */
+  deferred: number;
+  /** 走査が最後まで届いたか。false のとき `deferred` は下限値。 */
+  scan_complete: boolean;
+  counts: {
+    /** この画面に出ている未確認の件数。 */
+    pending: number;
+    /** 待っている全件。画面の上限より多いことがある。 */
+    pending_total: number;
+    crisis: number;
+    elevated: number;
+    no_text: number;
+  };
   queue: QueueRow[];
 };
 
@@ -182,11 +194,26 @@ export default function CrisisTriagePage() {
         <section className="bl-card bl-stack">
           <div className="bl-row" style={{ gap: 16, flexWrap: "wrap" }}>
             <span className="bl-micro">いまの枠: <strong>{SLOT_LABEL[data.slot]}</strong></span>
-            <span className="bl-micro">未確認: <strong>{data.counts.pending}</strong></span>
+            <span className="bl-micro">
+              未確認: <strong>{data.counts.pending}</strong>
+              {/* 画面の上限より待ち行列が長いときだけ、全体の件数も出す。
+                  出ている件数だけを見せると、片付いたのか続きがあるのかが
+                  判断できない（#247）。 */}
+              {data.counts.pending_total > data.counts.pending && <> / 全{data.counts.pending_total}</>}
+            </span>
             <span className="bl-micro">危機の可能性: <strong>{data.counts.crisis}</strong></span>
             <span className="bl-micro">気がかり: <strong>{data.counts.elevated}</strong></span>
             <span className="bl-micro">本文なし: <strong>{data.counts.no_text}</strong></span>
           </div>
+          {/* 待ち行列に入れ切れなかった分。黙って打ち切ると
+              「その日は誰も書かなかった」と区別が付かなくなる（#247）。 */}
+          {(data.deferred > 0 || !data.scan_complete) && (
+            <p className="bl-notice bl-notice--watch" role="status">
+              <Icon name="info" size={19} />{" "}
+              まだ待ち行列に入れていない記録が{data.scan_complete ? "" : "少なくとも"}
+              {data.deferred}件あります。この画面をもう一度読み込むと続きが入ります。
+            </p>
+          )}
           {data.slot === "ad_hoc" && (
             <p className="bl-micro">
               いまは §4.4 が定める枠の外です。ここで確認したことは「枠外」として記録され、
