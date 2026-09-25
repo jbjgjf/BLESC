@@ -33,6 +33,7 @@
 import { createHmac } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { reportUndeliverable } from "./opsAlert.ts";
+import { KEY_RULES, readBase64Key } from "./base64Key.ts";
 
 /*
  * `fetchWithTimeout` is duplicated from `lib/server/api.ts` rather than
@@ -184,23 +185,16 @@ export async function recipientsFor(
  * on it is off rather than silently weaker.
  */
 export function recipientHashKey(): Buffer | null {
-  const configured = process.env.SAFETY_RECIPIENT_HASH_KEY;
-  if (!configured) return null;
-
-  let bytes: Buffer;
-  try {
-    bytes = Buffer.from(configured, "base64");
-  } catch {
-    console.error("[safety-escalation] SAFETY_RECIPIENT_HASH_KEY is not valid base64; recipient hashes will be null");
+  const result = readBase64Key(process.env.SAFETY_RECIPIENT_HASH_KEY, KEY_RULES.SAFETY_RECIPIENT_HASH_KEY);
+  if (!result.ok) {
+    if (result.problem !== "absent") {
+      console.error(
+        `[safety-escalation] SAFETY_RECIPIENT_HASH_KEY is unusable (${result.problem}); recipient hashes will be null`,
+      );
+    }
     return null;
   }
-  if (bytes.length < 32) {
-    console.error(
-      "[safety-escalation] SAFETY_RECIPIENT_HASH_KEY must decode to at least 32 bytes; recipient hashes will be null",
-    );
-    return null;
-  }
-  return bytes;
+  return result.bytes;
 }
 
 /**
