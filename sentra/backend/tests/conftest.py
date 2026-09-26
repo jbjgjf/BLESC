@@ -22,3 +22,10 @@ import os
 
 os.environ.setdefault("USE_MOCK_LLM", "true")
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test_research_pipeline.db")
+
+# Since #259 the participant endpoints require a verified Supabase access token.
+# There is no Supabase project in the test environment and there must not be one
+# — these tests drive SQLite. So the suite runs with the documented escape hatch
+# on, and `test_endpoint_authorization.py` turns it off to assert that the
+# refusals are there when it is.
+os.environ.setdefault("BLESC_ALLOW_UNAUTHENTICATED_API", "1")

@@ -88,6 +88,43 @@ Vercel はフロントエンド（Next.js）のデプロイには最適ですが
 - **バックエンド**: [Render](https://render.com/), [Railway](https://railway.app/), または [Heroku]
   - これらは SQLite ファイルを永続化（Persistent Disk）できるプランがあり、Python サーバーを常時起動させるのに向いています。
 
+### バックエンドを公開ホストに置くときの前提（#259）
+
+上の構成は、この FastAPI に**公開 URL が付く**ことを意味する。参加者のデータを
+扱うエンドポイント（`/api/entries`、`/api/timeline`、`/api/research/*` など）は、
+`Authorization: Bearer <Supabase access token>` を要求する。トークンは Supabase
+に問い合わせて検証し、その持ち主が名指しされた participant code を所有している
+ことまで確認する（`app/authz.py` / `supabase_writer.resolve_identity`）。
+
+したがって、**このサービスを置くホストには `SUPABASE_URL` と
+`SUPABASE_SERVICE_ROLE_KEY` を必ず設定すること。** 未設定のとき、サービスは誰も
+検証できないので参加者データを一切返さない（503）。フロントエンドと同じ Supabase
+プロジェクトを指していないと、フロントエンドが発行したトークンは通らない。
+
+| 変数 | 未設定のときの振る舞い |
+| --- | --- |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | 参加者データのエンドポイントが全て 503。トークンの検証ができないため |
+| `BLESC_ALLOW_UNAUTHENTICATED_API` | 既定（未設定）が安全側。`1` にすると**検証を丸ごと止める** |
+| `CORS_ALLOW_ORIGINS` | ブラウザの同一オリジン規則の話であって、認証の代わりにはならない（`curl` には効かない） |
+
+`BLESC_ALLOW_UNAUTHENTICATED_API=1` はローカル開発とテスト用の抜け道で、実データを
+持つ配備では設定しない。設定されている間は `GET /api/health` が
+`"authentication": "disabled"` と答えるので、**配備後にこの1行で確認できる。**
+
+```bash
+curl -s https://<backend-host>/api/health
+# {"status":"ok","version":"2.0.0","authentication":"required"}
+```
+
+`"disabled"` が返る、あるいは `curl "https://<backend-host>/api/entries?user_id=<任意のコード>"`
+が 401 以外を返す配備は、参加者を入れる前に止めること。
+
+フロントエンド側は、`NEXT_PUBLIC_API_URL` が**別オリジン**のときだけトークンを
+添付する（`src/api/client.ts` の `shouldAttachAuthorizationHeader`）。上の推奨構成
+（Vercel と Render/Railway）は別オリジンなので問題ないが、バックエンドを同じ
+オリジンの下にリバースプロキシで生やすと、トークンが付かず全て 401 になる。
+その構成を取るなら `shouldAttachAuthorizationHeader` を先に直すこと。
+
 ## まとめ：Vercel 設定値の早見表
 
 | 設定項目 | 設定値 |

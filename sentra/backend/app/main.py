@@ -14,6 +14,13 @@ from pydantic import BaseModel
 from sqlmodel import Session, select, func
 
 from .analytics.graph_features import build_graph_summary, build_temporal_graph_diff, summarize_temporal_diff
+from .authz import (
+    open_access,
+    require_owner_of,
+    require_participant,
+    require_participant_pair,
+    require_user,
+)
 from .clock import utcnow
 from .database import create_db_and_tables, get_session
 from .seed import seed_data
@@ -221,7 +228,18 @@ def on_startup():
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": "2.0.0"}
+    """Open, and says one thing about itself that matters.
+
+    `authentication` reports whether this process is serving participant data
+    without checking who is asking (#259). It is reported rather than only
+    logged because the log is read once, at startup, by whoever deployed it —
+    and the question "is this instance open?" is asked later, by somebody else.
+    """
+    return {
+        "status": "ok",
+        "version": "2.0.0",
+        "authentication": "disabled" if open_access() else "required",
+    }
 
 
 def _has_openai_key() -> bool:
@@ -239,7 +257,14 @@ def _audio_content_type(content_type: Optional[str]) -> str:
 
 
 @app.post("/api/audio/transcriptions")
-async def transcribe_audio(file: UploadFile = File(...)):
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    authorization: Optional[str] = Header(default=None),
+):
+    # No participant is named, so there is nothing to own — but this route
+    # sends audio to OpenAI on this deployment's key, so the caller has to be
+    # somebody (#259).
+    require_user(authorization)
     extension = _audio_extension(file.filename)
     content_type = _audio_content_type(file.content_type)
     if extension not in AUDIO_EXTENSIONS and content_type not in AUDIO_CONTENT_TYPES:
@@ -406,7 +431,11 @@ def _to_extraction_response(extraction: Extraction) -> ExtractionResponse:
 
 
 @app.post("/api/reflections/analyze")
-def analyze_reflection_endpoint(payload: ReflectionAnalyzeRequest):
+def analyze_reflection_endpoint(
+    payload: ReflectionAnalyzeRequest,
+    authorization: Optional[str] = Header(default=None),
+):
+    require_user(authorization)
     if not payload.content.strip():
         raise HTTPException(status_code=422, detail="Reflection content is required")
     return analyze_reflection(
@@ -418,7 +447,11 @@ def analyze_reflection_endpoint(payload: ReflectionAnalyzeRequest):
 
 
 @app.post("/api/reflections/eval")
-def run_reflection_eval_endpoint(payload: ReflectionEvalRequest = Body(default=ReflectionEvalRequest())):
+def run_reflection_eval_endpoint(
+    payload: ReflectionEvalRequest = Body(default=ReflectionEvalRequest()),
+    authorization: Optional[str] = Header(default=None),
+):
+    require_user(authorization)
     result = run_reflection_eval(payload.case_ids)
     if result["status"] != "passed":
         raise HTTPException(status_code=500, detail=result)
@@ -426,7 +459,13 @@ def run_reflection_eval_endpoint(payload: ReflectionEvalRequest = Body(default=R
 
 
 @app.post("/api/research/hf-benchmark")
-def run_hf_research_benchmark_endpoint(payload: HfResearchBenchmarkRequest = Body(default=HfResearchBenchmarkRequest())):
+def run_hf_research_benchmark_endpoint(
+    payload: HfResearchBenchmarkRequest = Body(default=HfResearchBenchmarkRequest()),
+    authorization: Optional[str] = Header(default=None),
+):
+    # No participant data, but it is a retrieval benchmark over a downloaded
+    # dataset — unbounded synchronous work for anyone with the URL (#259).
+    require_user(authorization)
     result = run_hf_research_benchmark(methods=payload.methods, k=payload.k)
     if payload.include_dataset_rows:
         result["hf_dataset_rows"] = hf_dataset_rows()
@@ -442,6 +481,12 @@ def create_entry(
     authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ):
+    # Before any work: the caller owns this participant code, or there is no
+    # request to serve (#259). Previously only the Supabase mirror at the end
+    # checked, so an unauthenticated POST still ran extraction and wrote the
+    # SQLite side under whatever code it named.
+    user_id = require_participant(authorization, user_id)
+
     journal_text = (payload.journal_text if payload else None) or (payload.text if payload else None) or text or ""
     recall_text = (payload.recall_text if payload else None) or ""
     entry_text = "\n\n".join(
@@ -781,7 +826,9 @@ def create_entry(
     except supabase_writer.NotAuthorized as exc:
         # Not a 4xx: the submission itself is valid and its result is returned.
         # Only the mirror is withheld, because there is no verified owner to
-        # write it under. Local development with no Supabase lands here.
+        # write it under. Since #259 the only way to reach this is
+        # BLESC_ALLOW_UNAUTHENTICATED_API=1 — local development and the test
+        # suite, where there is no Supabase project to mirror into.
         logger.info("[submit] supabase sync skipped: %s", exc)
         response.supabase_sync = {"status": "skipped", "reason": str(exc), "warnings": []}
     except Exception:
@@ -796,22 +843,40 @@ def create_entry(
 
 
 @app.get("/api/entries", response_model=List[Entry])
-def list_entries(user_id: str, session: Session = Depends(get_session)):
+def list_entries(
+    user_id: str,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    user_id = require_participant(authorization, user_id)
     query = select(Entry).where(Entry.user_id == user_id).order_by(Entry.created_at.desc())
     return session.exec(query).all()
 
 
 @app.get("/api/entries/{entry_id}", response_model=Entry)
-def get_entry(entry_id: int, session: Session = Depends(get_session)):
+def get_entry(
+    entry_id: int,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
     entry = session.get(Entry, entry_id)
+    # Checked before the 404 so that a caller counting upwards from 1 learns
+    # nothing: no token is 401 everywhere, and with a token "not yours" and
+    # "does not exist" are the same answer (#259).
+    require_owner_of(authorization, entry.user_id if entry else None)
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
     return entry
 
 
 @app.get("/api/entries/{entry_id}/structure", response_model=EntrySubmissionResponse)
-def get_entry_structure(entry_id: int, session: Session = Depends(get_session)):
+def get_entry_structure(
+    entry_id: int,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
     entry = session.get(Entry, entry_id)
+    require_owner_of(authorization, entry.user_id if entry else None)
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
 
@@ -838,7 +903,13 @@ def get_entry_structure(entry_id: int, session: Session = Depends(get_session)):
 
 
 @app.get("/api/graph-snapshots", response_model=List[GraphSnapshot])
-def list_graph_snapshots(user_id: str, limit: int = 12, session: Session = Depends(get_session)):
+def list_graph_snapshots(
+    user_id: str,
+    limit: int = 12,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    user_id = require_participant(authorization, user_id)
     query = (
         select(GraphSnapshot)
         .where(GraphSnapshot.user_id == user_id)
@@ -862,6 +933,7 @@ def get_participant_temporal_graph(
     limit: int = 120,
     as_of: Optional[str] = None,
     max_gap_days: int = 0,
+    authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ):
     """The participant temporal graph (#95), assembled on read.
@@ -875,6 +947,7 @@ def get_participant_temporal_graph(
     that day. This is a data model, not a prediction: see
     `docs/participant_temporal_graph.md`.
     """
+    user_id = require_participant(authorization, user_id)
     query = (
         select(GraphSnapshot)
         .where(GraphSnapshot.user_id == user_id)
@@ -913,6 +986,7 @@ def get_relation_aware_traversal(
     limit: int = 120,
     max_hops: int = 3,
     audience: str = "research",
+    authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ):
     """Deterministic relation-aware traversal (#96), assembled and walked on read.
@@ -929,6 +1003,7 @@ def get_relation_aware_traversal(
 
     Nothing here is learned. The fixed parameter table travels with the response.
     """
+    user_id = require_participant(authorization, user_id)
     try:
         traversal_mode = TraversalMode(mode)
     except ValueError:
@@ -981,21 +1056,36 @@ def get_relation_aware_traversal(
 
 
 @app.get("/api/timeline", response_model=List[AnomalyResult])
-def get_timeline(user_id: str, session: Session = Depends(get_session)):
+def get_timeline(
+    user_id: str,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    user_id = require_participant(authorization, user_id)
     query = select(AnomalyResult).where(AnomalyResult.user_id == user_id).order_by(AnomalyResult.day.asc())
     return session.exec(query).all()
 
 
 @app.get("/api/explanations/{explanation_id}", response_model=HybridExplanation)
-def get_explanation(explanation_id: int, session: Session = Depends(get_session)):
+def get_explanation(
+    explanation_id: int,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
     expl = session.get(HybridExplanation, explanation_id)
+    require_owner_of(authorization, expl.user_id if expl else None)
     if not expl:
         raise HTTPException(status_code=404, detail="Explanation not found")
     return expl
 
 
 @app.get("/api/features")
-def get_features(user_id: str, session: Session = Depends(get_session)):
+def get_features(
+    user_id: str,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    user_id = require_participant(authorization, user_id)
     query = select(DailyFeatureAggregation).where(DailyFeatureAggregation.user_id == user_id).order_by(DailyFeatureAggregation.day.asc())
     return session.exec(query).all()
 
@@ -1054,6 +1144,7 @@ def get_ontology_resolution(
     source_id: str,
     target_id: str,
     user_id: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ):
     """What is believed about one directed pair, and from whose point of view.
@@ -1069,7 +1160,10 @@ def get_ontology_resolution(
     """
     claims: List[Any] = list(curated_edges_from_seed())
 
+    # The curated layer is about people in general and is open. Naming a
+    # participant asks what *their* entries said, which is theirs (#259).
     if user_id:
+        user_id = require_participant(authorization, user_id)
         rows = session.exec(
             select(GraphSnapshot)
             .where(GraphSnapshot.user_id == user_id)
@@ -1099,6 +1193,7 @@ def get_ontology_resolution(
 def get_participant_dynamics(
     user_id: str,
     days: int = 90,
+    authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ):
     """Exploratory time-series dynamics (#97), computed on read.
@@ -1115,6 +1210,7 @@ def get_participant_dynamics(
     across their own days, because the bare Kendall tau has a ~25% false-positive
     rate on flat input and is not reportable alone.
     """
+    user_id = require_participant(authorization, user_id)
     if days < 1:
         raise HTTPException(status_code=400, detail="days must be at least 1")
     if days > MAX_DYNAMICS_DAYS:
@@ -1156,7 +1252,12 @@ def get_participant_dynamics(
 
 
 @app.get("/api/baseline")
-def get_baseline(user_id: str, session: Session = Depends(get_session)):
+def get_baseline(
+    user_id: str,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    user_id = require_participant(authorization, user_id)
     query = select(BaselineStats).where(BaselineStats.user_id == user_id).order_by(BaselineStats.created_at.desc()).limit(1)
     res = session.exec(query).first()
     if not res:
@@ -1165,7 +1266,12 @@ def get_baseline(user_id: str, session: Session = Depends(get_session)):
 
 
 @app.get("/api/anomaly")
-def get_current_anomaly(user_id: str, session: Session = Depends(get_session)):
+def get_current_anomaly(
+    user_id: str,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    user_id = require_participant(authorization, user_id)
     query = select(AnomalyResult).where(AnomalyResult.user_id == user_id).order_by(AnomalyResult.day.desc()).limit(1)
     res = session.exec(query).first()
     if not res:
@@ -1174,14 +1280,25 @@ def get_current_anomaly(user_id: str, session: Session = Depends(get_session)):
 
 
 @app.get("/api/embeddings")
-def get_embeddings(user_id: str, session: Session = Depends(get_session)):
+def get_embeddings(
+    user_id: str,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    user_id = require_participant(authorization, user_id)
     query = select(Embedding).join(Entry).where(Entry.user_id == user_id)
     return session.exec(query).all()
 
 
 @app.get("/api/similar")
-def get_similar(entry_id: int, k: int = 5, session: Session = Depends(get_session)):
+def get_similar(
+    entry_id: int,
+    k: int = 5,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
     entry = session.get(Entry, entry_id)
+    require_owner_of(authorization, entry.user_id if entry else None)
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
     query = entry.raw_text or entry.provenance_hash or str(entry.id)
@@ -1190,8 +1307,12 @@ def get_similar(entry_id: int, k: int = 5, session: Session = Depends(get_sessio
 
 
 @app.post("/api/research/similar")
-def research_similar(payload: SimilarQueryRequest, session: Session = Depends(get_session)):
-    participant_code = payload.participant_code or payload.user_id
+def research_similar(
+    payload: SimilarQueryRequest,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    participant_code = require_participant_pair(authorization, payload.user_id, payload.participant_code)
     return {
         "query_hash_only": True,
         "similar": search_similar_embeddings(
@@ -1205,7 +1326,10 @@ def research_similar(payload: SimilarQueryRequest, session: Session = Depends(ge
 
 
 @app.get("/api/research/static-knowledge")
-def static_knowledge_status():
+def static_knowledge_status(authorization: Optional[str] = Header(default=None)):
+    # Names no participant, but answers with `vector_store_id` and what is
+    # configured — a deployment self-description, which is not public (#259).
+    require_user(authorization)
     config = static_knowledge_config()
     connection = get_or_create_blesc_vector_store(create_if_missing=False)
     return {
@@ -1220,10 +1344,14 @@ def static_knowledge_status():
 
 
 @app.post("/api/chat")
-def create_chat(payload: ChatCreateRequest, session: Session = Depends(get_session)):
+def create_chat(
+    payload: ChatCreateRequest,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
     if not payload.message.strip():
         raise HTTPException(status_code=422, detail="Message is required")
-    participant_code = payload.participant_code or payload.user_id
+    participant_code = require_participant_pair(authorization, payload.user_id, payload.participant_code)
     return generate_research_chat_response(
         session=session,
         user_id=payload.user_id,
@@ -1238,9 +1366,10 @@ def get_conversation_recall(
     user_id: str,
     participant_code: Optional[str] = None,
     refresh: bool = False,
+    authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ):
-    participant = participant_code or user_id
+    participant = require_participant_pair(authorization, user_id, participant_code)
     return get_latest_conversation_recall_30(
         session=session,
         user_id=user_id,
@@ -1255,9 +1384,10 @@ def get_conversation_memory_objects_route(
     participant_code: Optional[str] = None,
     active_only: bool = True,
     limit: int = 50,
+    authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ):
-    participant = participant_code or user_id
+    participant = require_participant_pair(authorization, user_id, participant_code)
     return {
         "memory_objects": get_conversation_memory_objects(
             session=session,
@@ -1270,8 +1400,12 @@ def get_conversation_memory_objects_route(
 
 
 @app.post("/api/research/exports")
-def create_export(payload: ExportCreateRequest, session: Session = Depends(get_session)):
-    participant_code = payload.participant_code or payload.user_id
+def create_export(
+    payload: ExportCreateRequest,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    participant_code = require_participant_pair(authorization, payload.user_id, payload.participant_code)
     return create_research_export(
         session=session,
         user_id=payload.user_id,
@@ -1285,9 +1419,10 @@ def get_entry_replay(
     entry_session_id: int,
     user_id: str,
     participant_code: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ):
-    participant = participant_code or user_id
+    participant = require_participant_pair(authorization, user_id, participant_code)
     replay = reconstruct_entry_replay(
         session=session,
         user_id=user_id,
@@ -1300,8 +1435,12 @@ def get_entry_replay(
 
 
 @app.post("/api/research/fine-tuning-dataset")
-def create_fine_tuning_dataset(payload: FineTuningDatasetRequest, session: Session = Depends(get_session)):
-    participant_code = payload.participant_code or payload.user_id
+def create_fine_tuning_dataset(
+    payload: FineTuningDatasetRequest,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    participant_code = require_participant_pair(authorization, payload.user_id, payload.participant_code)
     return create_fine_tuning_dataset_export(
         session=session,
         user_id=payload.user_id,
@@ -1310,8 +1449,13 @@ def create_fine_tuning_dataset(payload: FineTuningDatasetRequest, session: Sessi
 
 
 @app.get("/api/research/eval-examples")
-def list_eval_examples(user_id: str, participant_code: Optional[str] = None, session: Session = Depends(get_session)):
-    participant = participant_code or user_id
+def list_eval_examples(
+    user_id: str,
+    participant_code: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    participant = require_participant_pair(authorization, user_id, participant_code)
     query = (
         select(EvalExample)
         .where(EvalExample.user_id == user_id, EvalExample.participant_code == participant)
@@ -1321,8 +1465,13 @@ def list_eval_examples(user_id: str, participant_code: Optional[str] = None, ses
 
 
 @app.post("/api/research/eval-examples/{eval_example_id}/review")
-def review_eval_example(eval_example_id: int, payload: EvalReviewRequest, session: Session = Depends(get_session)):
-    participant_code = payload.participant_code or payload.user_id
+def review_eval_example(
+    eval_example_id: int,
+    payload: EvalReviewRequest,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    participant_code = require_participant_pair(authorization, payload.user_id, payload.participant_code)
     try:
         example = update_eval_example_review_status(
             session,
@@ -1339,14 +1488,24 @@ def review_eval_example(eval_example_id: int, payload: EvalReviewRequest, sessio
 
 
 @app.get("/api/research/evals/summary")
-def get_eval_summary(user_id: str, participant_code: Optional[str] = None, session: Session = Depends(get_session)):
-    participant = participant_code or user_id
+def get_eval_summary(
+    user_id: str,
+    participant_code: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    participant = require_participant_pair(authorization, user_id, participant_code)
     return summarize_eval_readiness(session, user_id, participant)
 
 
 @app.get("/api/research/personalization")
-def get_personalization(user_id: str, participant_code: Optional[str] = None, session: Session = Depends(get_session)):
-    participant = participant_code or user_id
+def get_personalization(
+    user_id: str,
+    participant_code: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    participant = require_participant_pair(authorization, user_id, participant_code)
     return get_personalization_profile(session, user_id, participant)
 
 
@@ -1356,9 +1515,10 @@ def get_patterns(
     participant_code: Optional[str] = None,
     pattern_kind: Optional[str] = None,
     refresh: bool = False,
+    authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ):
-    participant = participant_code or user_id
+    participant = require_participant_pair(authorization, user_id, participant_code)
     if refresh:
         try:
             mine_longitudinal_patterns(session, user_id, participant)
@@ -1368,8 +1528,12 @@ def get_patterns(
 
 
 @app.post("/api/research/fine-tuning-jobs")
-def create_fine_tuning_job(payload: FineTuningJobRequest, session: Session = Depends(get_session)):
-    participant_code = payload.participant_code or payload.user_id
+def create_fine_tuning_job(
+    payload: FineTuningJobRequest,
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    participant_code = require_participant_pair(authorization, payload.user_id, payload.participant_code)
     return create_openai_fine_tuning_job(
         session=session,
         user_id=payload.user_id,
