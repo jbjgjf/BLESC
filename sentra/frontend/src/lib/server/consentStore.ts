@@ -104,68 +104,13 @@ export async function recordConsent(
   return normalizeConsent(result.data);
 }
 
-/**
- * What happens to already-collected journal text when someone withdraws (#224).
- *
- * `delete` destroys it now. `keep` leaves it until the ordinary retention
- * window closes and `purge_expired_raw_text()` takes it like any other row.
- *
- * **`keep` is not permission to keep using it.** Withdrawal is still
- * withdrawal: research analysis and training use stop either way, and the
- * export gate does not consult this field. It governs destruction only. The
- * distinction matters because the obvious misreading — "they said keep, so we
- * may carry on" — converts a decision about someone's own record into a
- * consent nobody gave.
+/*
+ * `revokeConsent` stood here. It wrote a revocation row and nothing else, which
+ * is how `/consent` came to revoke consent while leaving the enrollment
+ * collecting (#263). Revocation is now part of the single withdrawal procedure
+ * in `withdrawal.ts`. It was removed rather than left beside it, because a
+ * second way to revoke is how the first split happened.
  */
-export type RetainedDataDisposition = "delete" | "keep";
-
-/**
- * Revoke. A revocation row carries the grants set to false so that reading the
- * newest row is enough to know the answer — no consumer has to walk the
- * history to discover that an earlier `true` was withdrawn.
- *
- * `disposition` defaults to `delete`. Not because deleting is the neutral
- * choice — it is the irreversible one — but because the alternative default is
- * "a request that did not say anything keeps the text", and silence is not a
- * decision to keep. A participant who wants their record preserved has to say
- * so, and saying so is exactly what this parameter is for.
- *
- * Deleting the retained journal text is the caller's next step
- * (`purge_raw_text_for_participant`); this function only records the decision.
- */
-export async function revokeConsent(
-  client: SupabaseClient,
-  ownerUserId: string,
-  participantId: string,
-  source = "student_ui",
-  disposition: RetainedDataDisposition = "delete",
-): Promise<ConsentState> {
-  const now = new Date().toISOString();
-  const result = await client
-    .from("consent_records")
-    .insert({
-      owner_user_id: ownerUserId,
-      participant_id: participantId,
-      app_use: true,
-      research_analysis: false,
-      anonymized_export: false,
-      raw_text_retention: false,
-      model_training_use: false,
-      minor_assent: false,
-      guardian_consent: false,
-      consent_version: CONSENT_VERSION,
-      document_version: CONSENT_DOCUMENT_VERSION,
-      status: "revoked",
-      granted_at: now,
-      revoked_at: now,
-      retained_data_disposition: disposition,
-      source,
-    })
-    .select(CONSENT_COLUMNS)
-    .single();
-  if (result.error) throw new Error(`consent_records revoke: ${result.error.message}`);
-  return normalizeConsent(result.data);
-}
 
 /**
  * Names the grants the client claimed to hold that the stored record does not.
