@@ -27,9 +27,9 @@ import { jsonError, requireUser } from "@/lib/server/api";
 import {
   loadConsentState,
   recordConsent,
-  revokeConsent,
   type RetainedDataDisposition,
 } from "@/lib/server/consentStore";
+import { withdrawParticipation, withdrawalMessage } from "@/lib/server/withdrawal";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { loadEnrollmentByParticipant } from "@/lib/server/pilotStore";
 import { consentSnapshot } from "@/lib/consent";
@@ -189,6 +189,14 @@ export async function POST(request: NextRequest) {
  * Withdrawal is withdrawal either way. `keep` does not resume collection, does
  * not re-open the export gate and does not permit training use; it only means
  * the stored text is left to its ordinary retention window.
+ *
+ * **It also ends the participation (#263).** This route used to write the
+ * revocation, purge the text, and leave `pilot_enrollments` alone — so a
+ * student who withdrew here stayed `collecting`: `pilotGate` kept admitting
+ * them to `/journal`, and the dashboard kept counting them as someone who owed
+ * a daily entry while reporting `withdrawn: 0`. The whole act now lives in
+ * `withdrawal.ts` and is shared with `/pilot/join`, which had the opposite half
+ * of the same defect.
  */
 export async function DELETE(request: NextRequest) {
   const resolved = await resolve(request);
@@ -197,52 +205,39 @@ export async function DELETE(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as { retained_data?: unknown };
   const disposition: RetainedDataDisposition = body.retained_data === "keep" ? "keep" : "delete";
 
-  try {
-    const consent = await revokeConsent(
-      resolved.service,
-      resolved.ownerUserId,
-      resolved.participantId,
-      "student_ui",
-      disposition,
-    );
+  const result = await withdrawParticipation(resolved.service, {
+    ownerUserId: resolved.ownerUserId,
+    participantId: resolved.participantId,
+    disposition,
+    actor: "participant",
+    source: "student_ui",
+  });
 
-    if (disposition === "keep") {
-      // Nothing is purged, and the response says so in the same field the
-      // delete path uses, so a caller cannot mistake "kept" for "deleted zero".
-      return NextResponse.json({
-        consent,
-        retained_data: "keep",
-        purged_raw_text: 0,
-        detail: "同意を撤回しました。保存済みの本文は、保持期限が来るまで残ります。",
-      });
-    }
-
-    // Purge before answering. A revocation that returns success while the text
-    // is still stored is the failure this route exists to prevent, so a purge
-    // failure is reported as one — the participant can retry, and the operator
-    // sees it.
-    const purge = await resolved.service.rpc("purge_raw_text_for_participant", {
-      target_participant: resolved.participantId,
-    });
-    if (purge.error) {
-      console.error("[consent] raw text purge failed after revocation", purge.error);
-      return NextResponse.json(
-        {
-          consent,
-          retained_data: "delete",
-          purged_raw_text: null,
-          detail: "同意は撤回しましたが、保存済みの本文の削除に失敗しました。",
-        },
-        { status: 502 },
-      );
-    }
-
-    return NextResponse.json({
-      consent,
-      retained_data: "delete",
-      purged_raw_text: purge.data ?? 0,
-    });
-  } catch (err) {
-    return jsonError(err instanceof Error ? err.message : "同意を撤回できませんでした。", 502);
+  // The consent row could not be written, so there is no consent state to
+  // answer with and the screen has nothing to re-render from. The message still
+  // comes from `withdrawalMessage`, because the other two steps were attempted
+  // and the participant needs to know which of the three did not finish —
+  // 「同意を撤回できませんでした」 alone would be wrong about the two that did.
+  if (result.consent.outcome === "failed") {
+    return jsonError(withdrawalMessage(result), 502, { code: "consent_not_recorded" });
   }
+
+  // `purged_raw_text` keeps its old meaning for existing callers: a count when
+  // text was destroyed, 0 when it was kept, null when the purge failed. A
+  // caller cannot mistake "kept" for "deleted zero", because `retained_data`
+  // says which.
+  const payload = {
+    consent: result.consent.state,
+    retained_data: result.retained_data,
+    purged_raw_text: result.raw_text.purged,
+    enrollment: result.enrollment,
+    complete: result.complete,
+    detail: withdrawalMessage(result),
+  };
+
+  // A partial withdrawal is reported as one. Answering 200 over a purge that
+  // failed, or over an enrollment still marked `collecting`, is the failure
+  // this route exists to prevent — the participant can retry, and the operator
+  // sees it.
+  return NextResponse.json(payload, { status: result.complete ? 200 : 502 });
 }

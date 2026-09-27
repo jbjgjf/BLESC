@@ -116,13 +116,21 @@ describe("the irreversible option is not one click away", () => {
 });
 
 describe("the response cannot be misread", () => {
+  // The two guarantees below moved into `withdrawal.ts` when withdrawal became
+  // one act shared with `/pilot/join` (#263). They are asserted against the
+  // running code in `withdrawal.test.mjs` rather than against this route's
+  // text; what stays here is that the route still reports them.
+
   it("keeping reports zero purged alongside an explicit keep", () => {
     // `purged_raw_text: 0` on its own reads as "deleted nothing", which is what
-    // a failed delete also looks like.
-    assert.match(code(route), /retained_data: "keep",\s*purged_raw_text: 0,/);
+    // a failed delete also looks like. So the count never travels without the
+    // disposition that says which it was.
+    const body = code(route);
+    assert.match(body, /retained_data: result\.retained_data,/);
+    assert.match(body, /purged_raw_text: result\.raw_text\.purged,/);
   });
 
   it("a failed purge is still an error", () => {
-    assert.match(code(route), /status: 502/);
+    assert.match(code(route), /status: result\.complete \? 200 : 502/);
   });
 });

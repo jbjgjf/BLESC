@@ -151,11 +151,11 @@ export default function ConsentPage() {
       });
       setAssent(false);
       setWithdrawing(false);
-      setMessage(
-        result.retainedData === "keep"
-          ? "同意を撤回しました。保管していた日記の本文は、保存期間が終わるまで残ります。研究には使われません。"
-          : "同意を撤回しました。保管していた日記の本文は削除されました。",
-      );
+      // サーバーが書いた文をそのまま出す。同じ手続きを `/pilot/join` からも
+      // 実行できるようになったので（#263）、結果の言い方を画面ごとに持つと、
+      // 同じことが起きたのに違う説明が出る。途中で止まった場合の文面も含めて、
+      // 何が起きたかを知っているのはサーバーの側。
+      setMessage(result.detail);
     } catch (err) {
       setError(err instanceof Error ? err.message : "同意を撤回できませんでした。");
     } finally {

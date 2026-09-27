@@ -20,7 +20,10 @@ import {
   NO_CONSENT,
   normalizeConsent,
   type ConsentState,
-} from "@/lib/consent";
+// Relative, with the extension, rather than through the `@/` alias: node
+// resolves neither when the unit tests load `withdrawal.ts` — which imports
+// this file — directly. See the header of `safetyDispatch.ts`.
+} from "../consent.ts";
 
 const CONSENT_COLUMNS =
   "app_use, research_analysis, anonymized_export, raw_text_retention, model_training_use, " +

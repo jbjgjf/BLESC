@@ -402,9 +402,15 @@ export default function PilotJoinPage() {
 /**
  * 参加をやめるボタン。
  *
- * どの段階からでも同じ場所に、同じ大きさで出す。確認ダイアログは1回だけで、
- * 「本当に？」を重ねたり、やめる理由を尋ねたりはしない — 理由を聞くこと自体が
- * 圧力になる。
+ * どの段階からでも同じ場所に、同じ大きさで出す。やめる理由は尋ねない —
+ * 理由を聞くこと自体が圧力になる。
+ *
+ * 確認は1段階で、そこで聞くことは1つだけ:「保管してある本文をどうするか」。
+ * これは「本当に？」を重ねるための段階ではなく、取り消せない選択を1クリックの
+ * 裏に置かないための段階である（#224）。以前はここに確認だけがあって選択が無く、
+ * やめても本文は保持期限まで残り続けていた（#263）— 本人には何も聞かないまま。
+ * 文面は `/consent` の同じ問いと揃えてある。同じ判断を2つの言い方で尋ねると、
+ * 2つの違う判断になる。
  */
 function WithdrawButton({
   busy,
@@ -416,6 +422,24 @@ function WithdrawButton({
   onDone: () => Promise<void>;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const withdraw = async (retainedData: "delete" | "keep") => {
+    setWorking(true);
+    setError(null);
+    try {
+      await ApiClient.withdrawFromPilot(enrollmentId, retainedData);
+      setConfirming(false);
+      await onDone();
+    } catch (err) {
+      // 失敗を黙って閉じない。撤回は途中で止まりうる手続きで、
+      // どこまで進んだかは本人がもう一度押すかどうかの判断材料になる。
+      setError(err instanceof Error ? err.message : "参加をやめる手続きを完了できませんでした。");
+    } finally {
+      setWorking(false);
+    }
+  };
 
   if (!confirming) {
     return (
@@ -425,22 +449,60 @@ function WithdrawButton({
     );
   }
 
+  const disabled = busy || working;
+
   return (
-    <span className="bl-row" style={{ gap: 8 }}>
-      <button
-        type="button"
-        className="bl-btn bl-btn--secondary"
-        disabled={busy}
-        onClick={async () => {
-          await ApiClient.advancePilotEnrollment(enrollmentId, "withdrawn");
-          await onDone();
-        }}
-      >
-        やめる
-      </button>
-      <button type="button" className="bl-btn bl-btn--ghost" disabled={busy} onClick={() => setConfirming(false)}>
-        戻る
-      </button>
-    </span>
+    // 親は `bl-row`（横並び・折り返しあり）なので、幅いっぱいを占めて
+    // 自分の行に落ちるようにする。取り消せない選択を、他のボタンの隣に
+    // 押し込まれた状態で出さないため。見出しは親セクションの h2 の下なので h3。
+    <section className="bl-card bl-stack" aria-live="polite" style={{ flexBasis: "100%" }}>
+      <h3 className="bl-h3">保管してある日記の本文をどうしますか</h3>
+      <p className="bl-body">
+        どちらを選んでも、<strong>研究への協力はここで終わります。</strong>
+        これから書くものが研究に使われることはありませんし、残す方を選んでも、
+        すでに書いたものが研究の分析やAIの学習に使われることはありません。
+        選ぶのは「いま消すかどうか」だけです。
+      </p>
+      <div className="bl-stack" style={{ gap: 10 }}>
+        <button
+          type="button"
+          className="bl-btn bl-btn--secondary bl-btn--block"
+          disabled={disabled}
+          onClick={() => void withdraw("delete")}
+        >
+          いま削除する
+          <span className="bl-micro" style={{ display: "block" }}>
+            保管してある本文をすぐに消します。元に戻せません。
+          </span>
+        </button>
+        <button
+          type="button"
+          className="bl-btn bl-btn--secondary bl-btn--block"
+          disabled={disabled}
+          onClick={() => void withdraw("keep")}
+        >
+          残す
+          <span className="bl-micro" style={{ display: "block" }}>
+            自分の記録として、保存期間が終わるまで残します。期間が来たら自動で消えます。
+          </span>
+        </button>
+        <button
+          type="button"
+          className="bl-btn bl-btn--ghost bl-btn--block"
+          disabled={disabled}
+          onClick={() => {
+            setError(null);
+            setConfirming(false);
+          }}
+        >
+          戻る
+        </button>
+      </div>
+      {error && (
+        <p className="bl-notice bl-notice--alert" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }

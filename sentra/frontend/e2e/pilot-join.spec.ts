@@ -121,7 +121,14 @@ test.describe("decline", () => {
     // Declining is offered as an equal choice, not as an escape hatch.
     await expect(page.getByRole("button", { name: "参加をやめる" })).toBeEnabled();
     await page.getByRole("button", { name: "参加をやめる" }).click();
-    await page.getByRole("button", { name: "やめる", exact: true }).click();
+    // Leaving asks one question — what happens to the text already collected —
+    // and it is the same question the consent screen asks (#263). It used to
+    // be a bare 「やめる」 confirmation, which is how withdrawing from this
+    // screen came to leave the retained text in place without asking.
+    await expect(
+      page.getByRole("heading", { name: "保管してある日記の本文をどうしますか" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "いま削除する" }).click();
 
     await expect(page.getByRole("heading", { name: "参加を終了しました" })).toBeVisible();
     // Nothing that reads as a failure: declining is a valid outcome, and
@@ -167,7 +174,13 @@ test.describe("withdrawal", () => {
 
     await page.goto("/pilot/join");
     await page.getByRole("button", { name: "参加をやめる" }).click();
-    await page.getByRole("button", { name: "やめる", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "保管してある日記の本文をどうしますか" }),
+    ).toBeVisible();
+    // 「残す」 deliberately, not 「いま削除する」: keeping governs destruction
+    // and nothing else, so the rest of this test — the journal shut, the API
+    // refusing — has to hold for the participant who kept their record (#263).
+    await page.getByRole("button", { name: "残す" }).click();
     await expect(page.getByRole("heading", { name: "参加を終了しました" })).toBeVisible();
     await page.screenshot({ path: evidence("withdrawal"), fullPage: true });
 

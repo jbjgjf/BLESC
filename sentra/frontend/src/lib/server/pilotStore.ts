@@ -16,7 +16,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { generateResearchCode, hashInviteCode, inviteCodePrefix, normalizeInviteCode } from "./inviteCodes";
+import { generateResearchCode, hashInviteCode, inviteCodePrefix, normalizeInviteCode } from "./inviteCodes.ts";
 import type { PilotState } from "@/lib/pilotEnrollment";
 
 export type PilotStudy = {
@@ -149,33 +149,51 @@ export async function loadEnrollmentById(
 }
 
 /**
- * The live enrollment for a participant record, if there is one.
+ * Every live enrollment for a participant record. Newest first.
  *
- * "Live" excludes `withdrawn` and `completed`: the consent route asks this to
- * decide whether a guardian is required, and a study someone has left should
- * not be what decides that for the study they are in now. Newest first, so a
- * second enrollment supersedes an older one.
+ * "Live" excludes `withdrawn` and `completed`: a study someone has already left
+ * is not one they can leave again, and it is not one that should decide
+ * anything about the study they are in now.
+ *
+ * All of them rather than the newest one, because withdrawal acts on all of
+ * them (#263). `pilot_enrollments` permits one person to be enrolled in more
+ * than one study — the export already assumes so — and a withdrawal that
+ * stopped at the first row would leave the others collecting.
  */
-export async function loadEnrollmentByParticipant(
+export async function loadLiveEnrollmentsForParticipant(
   client: SupabaseClient,
   ownerUserId: string,
   participantId: string,
-): Promise<PilotEnrollmentRow | null> {
+): Promise<PilotEnrollmentRow[]> {
   const result = await client
     .from("pilot_enrollments")
     .select(ENROLLMENT_COLUMNS)
     .eq("owner_user_id", ownerUserId)
     .eq("participant_id", participantId)
     .not("state", "in", "(withdrawn,completed)")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order("created_at", { ascending: false });
 
   if (result.error) {
     console.warn("[pilot] enrollment lookup by participant failed", result.error.message);
-    return null;
+    return [];
   }
-  return (result.data as unknown as PilotEnrollmentRow) ?? null;
+  return (result.data as unknown as PilotEnrollmentRow[]) ?? [];
+}
+
+/**
+ * The live enrollment for a participant record, if there is one.
+ *
+ * The consent route asks this to decide whether a guardian is required, and one
+ * answer is what that question takes. Newest first, so a second enrollment
+ * supersedes an older one.
+ */
+export async function loadEnrollmentByParticipant(
+  client: SupabaseClient,
+  ownerUserId: string,
+  participantId: string,
+): Promise<PilotEnrollmentRow | null> {
+  const live = await loadLiveEnrollmentsForParticipant(client, ownerUserId, participantId);
+  return live[0] ?? null;
 }
 
 /** Every enrollment the caller holds, newest first. Used by the join screen. */

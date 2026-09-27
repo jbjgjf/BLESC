@@ -679,14 +679,47 @@ export class ApiClient {
    * decides whether the step is legal. `guardian_verified` and `collecting` are
    * refused here whatever this sends — the first belongs to the guardian's own
    * request, the second to the study's schedule.
+   *
+   * `withdrawn` does not go through here either: it is more than a transition,
+   * and it takes a decision this signature has no room for. Use
+   * `withdrawFromPilot`.
    */
   static async advancePilotEnrollment(
     enrollmentId: string,
-    to: PilotState,
+    to: Exclude<PilotState, "withdrawn">,
   ): Promise<{ status: string; state?: PilotState }> {
     return this.fetch<{ status: string; state?: PilotState }>("/pilot/enrollment", {
       method: "POST",
       body: JSON.stringify({ enrollment_id: enrollmentId, to }),
+    });
+  }
+
+  /**
+   * Leave the study (#263).
+   *
+   * One call that revokes consent, withdraws every live enrollment, and acts on
+   * the journal text already collected. It is the same server-side act as
+   * `revokeConsent`, reached from the join screen instead of the consent screen
+   * — the two used to perform opposite halves of it and neither finished.
+   *
+   * `retainedData` is required rather than defaulted, for the reason
+   * `revokeConsent` gives: a screen must not destroy a participant's record by
+   * not thinking about it. `keep` does not soften the withdrawal.
+   *
+   * `status: "partial"` means some step did not complete; `detail` names which,
+   * and the call is safe to repeat.
+   */
+  static async withdrawFromPilot(
+    enrollmentId: string,
+    retainedData: "delete" | "keep",
+  ): Promise<{ status: string; state?: PilotState; detail: string }> {
+    return this.fetch<{ status: string; state?: PilotState; detail: string }>("/pilot/enrollment", {
+      method: "POST",
+      body: JSON.stringify({
+        enrollment_id: enrollmentId,
+        to: "withdrawn",
+        retained_data: retainedData,
+      }),
     });
   }
 
@@ -720,7 +753,7 @@ export class ApiClient {
   }
 
   /**
-   * Withdraw consent (#131, #224).
+   * Withdraw consent (#131, #224, #263).
    *
    * `retainedData` says what happens to journal text already stored: `delete`
    * destroys it before this resolves, `keep` leaves it to its ordinary
@@ -731,15 +764,28 @@ export class ApiClient {
    *
    * `keep` does not soften the withdrawal: collection stops, the export gate
    * stays shut and training use stays off.
+   *
+   * It also withdraws the participation itself. It used to leave the enrollment
+   * `collecting`, so the journal stayed open and the dashboard kept counting
+   * the participant as one; `withdrawFromPilot` is the same act reached from
+   * the join screen, and both now finish. `detail` is the server's sentence
+   * about what happened — including the partial case, which the screen must
+   * show rather than replace with a success message of its own.
    */
   static async revokeConsent(
     userId: string,
     retainedData: "delete" | "keep",
-  ): Promise<{ consent: ConsentState; purgedRawText: number | null; retainedData: "delete" | "keep" }> {
+  ): Promise<{
+    consent: ConsentState;
+    purgedRawText: number | null;
+    retainedData: "delete" | "keep";
+    detail: string;
+  }> {
     const result = await this.fetch<{
       consent: ConsentState;
       purged_raw_text: number | null;
       retained_data: "delete" | "keep";
+      detail: string;
     }>(`/consent?user_id=${encodeURIComponent(userId)}`, {
       method: "DELETE",
       body: JSON.stringify({ retained_data: retainedData }),
@@ -748,6 +794,7 @@ export class ApiClient {
       consent: normalizeConsent(result.consent),
       purgedRawText: result.purged_raw_text,
       retainedData: result.retained_data,
+      detail: result.detail,
     };
   }
 
