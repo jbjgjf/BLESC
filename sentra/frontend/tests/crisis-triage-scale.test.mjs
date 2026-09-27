@@ -38,6 +38,13 @@ import {
 
 const ASSESSOR = "test-assessor";
 
+/** Columns with a unique index, per table — what a total order can end on. */
+const UNIQUE_COLUMNS = {
+  entries: ["id"],
+  pilot_crisis_reviews: ["id", "entry_id"],
+  pilot_enrollments: ["participant_id"],
+};
+
 /**
  * An in-memory Supabase double.
  *
@@ -77,10 +84,25 @@ function fakeDb({ entries = [], reviews = [], enrollments = [], maxRows = 1000 }
 
     let rows = tables[state.table].filter((row) => state.filters.every((match) => match(row)));
 
-    if (state.order) {
-      const { column, ascending } = state.order;
-      rows = [...rows].sort((a, b) =>
-        a[column] === b[column] ? 0 : (a[column] < b[column] ? -1 : 1) * (ascending ? 1 : -1),
+    if (state.orders.length > 0) {
+      rows = [...rows].sort((a, b) => {
+        for (const { column, ascending } of state.orders) {
+          if (a[column] === b[column]) continue;
+          return (a[column] < b[column] ? -1 : 1) * (ascending ? 1 : -1);
+        }
+        return 0;
+      });
+    }
+
+    if (state.range) {
+      // OFFSET paging is only a partition of the table under a total order.
+      // Postgres makes no promise about the order of an unordered query, or of
+      // rows that tie, from one request to the next — so a ranged read whose
+      // last sort key is not unique can return a row twice and another never.
+      const last = state.orders.at(-1)?.column;
+      assert.ok(
+        last && UNIQUE_COLUMNS[state.table]?.includes(last),
+        `ranged read of ${state.table} is not totally ordered (last key: ${last ?? "none"})`,
       );
     }
 
@@ -98,7 +120,7 @@ function fakeDb({ entries = [], reviews = [], enrollments = [], maxRows = 1000 }
       table,
       op: "select",
       filters: [],
-      order: null,
+      orders: [],
       limit: null,
       range: null,
       head: false,
@@ -129,7 +151,7 @@ function fakeDb({ entries = [], reviews = [], enrollments = [], maxRows = 1000 }
         return chain;
       },
       order(column, options = {}) {
-        state.order = { column, ascending: options.ascending !== false };
+        state.orders.push({ column, ascending: options.ascending !== false });
         return chain;
       },
       limit(value) {

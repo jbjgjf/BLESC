@@ -164,8 +164,19 @@ export async function enqueuePendingReviews(
   service: SupabaseClient,
   assessorVersion: string,
 ): Promise<EnqueueResult> {
+  // Every paged read carries a total order. OFFSET over an unordered — or
+  // tie-ordered — query is not a partition of the table: Postgres may return
+  // the rows in a different order on the next request (a reviewer's decision
+  // rewrites the row it touches), so a row can land on two pages and another
+  // on none. `entry_id` is unique; `id` breaks ties between entries written in
+  // the same instant.
   const reviewed = await readPaged<{ entry_id: string }>(
-    (from, to) => service.from("pilot_crisis_reviews").select("entry_id").range(from, to),
+    (from, to) =>
+      service
+        .from("pilot_crisis_reviews")
+        .select("entry_id")
+        .order("entry_id", { ascending: true })
+        .range(from, to),
     MAX_SCAN_PAGES,
   );
   const seen = new Set(reviewed.rows.map((row) => String(row.entry_id)));
@@ -180,6 +191,7 @@ export async function enqueuePendingReviews(
         .select("id")
         .not("raw_text_ciphertext", "is", null)
         .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
         .range(from, to),
     MAX_SCAN_PAGES,
   );
