@@ -19,6 +19,7 @@ import { escalate, notifiableLevel } from "@/lib/server/safetyEscalation";
 import { gateForUser, pilotGateEnforced } from "@/lib/server/pilotGate";
 import { loadEnrollmentsForUser } from "@/lib/server/pilotStore";
 import { jsonError, requireUser } from "@/lib/server/api";
+import { DeadlineExceeded, entryModelTimeouts, withDeadline } from "@/lib/server/modelDeadline";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -53,6 +54,9 @@ const EXTRACTION_MODEL = process.env.OPENAI_EXTRACTION_MODEL || process.env.LLM_
 const EXTRACTION_REASONING_EFFORT = process.env.OPENAI_EXTRACTION_REASONING_EFFORT || "high";
 const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
 const PIPELINE_VERSION = "next-production-research-pipeline-v1";
+// Read once per process, like the model names above. `maxDuration` below is
+// the 60 s these limits are budgeted against (see `modelDeadline.ts`) (#264).
+const MODEL_TIMEOUTS = entryModelTimeouts();
 
 const extractionSchema = {
   type: "object",
@@ -153,52 +157,59 @@ async function extractWithOpenAI(
   }
 
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: EXTRACTION_MODEL,
-        store: false,
-        reasoning: { effort: EXTRACTION_REASONING_EFFORT },
-        input: [
-          {
-            role: "system",
-            content: [
-              "You are Sentra's transparent research extraction model. Return schema-valid, evidence-grounded JSON for longitudinal journaling analysis.",
-              // Labels, summaries and reflection cards are rendered verbatim on
-              // a Japanese student's screen and in the educator view (#116).
-              // Without this the model answers in the language of its
-              // instructions, and English reaches the product through the data,
-              // where reviewing the UI would never catch it.
-              "Write every human-readable field — labels, summaries, evidence and reflection card titles and bodies — in natural Japanese (敬体), the way a Japanese school would write to a student.",
-              "Use plain, school-appropriate wording. Do not diagnose, do not assert certainty, and avoid clinical terms.",
-              "Enum values, ids and schema keys stay exactly as the schema defines them; only the human-readable text is Japanese.",
-            ].join(" "),
-          },
-          {
-            role: "user",
-            content: `Extract typed ontology nodes and relations from this student submission. Keep labels short and evidence-grounded.\\n\\n${entryText}`,
-          },
-        ],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "sentra_entry_extraction",
-            strict: true,
-            schema: extractionSchema,
-          },
+    // The whole exchange — headers and body — inside one deadline (#264). A
+    // bare fetch here let a stalled upstream run the handler into
+    // `maxDuration`, which killed it before the entry was written.
+    const outcome = await withDeadline(MODEL_TIMEOUTS.extractionMs, async (signal) => {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        signal,
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
         },
-      }),
+        body: JSON.stringify({
+          model: EXTRACTION_MODEL,
+          store: false,
+          reasoning: { effort: EXTRACTION_REASONING_EFFORT },
+          input: [
+            {
+              role: "system",
+              content: [
+                "You are Sentra's transparent research extraction model. Return schema-valid, evidence-grounded JSON for longitudinal journaling analysis.",
+                // Labels, summaries and reflection cards are rendered verbatim on
+                // a Japanese student's screen and in the educator view (#116).
+                // Without this the model answers in the language of its
+                // instructions, and English reaches the product through the data,
+                // where reviewing the UI would never catch it.
+                "Write every human-readable field — labels, summaries, evidence and reflection card titles and bodies — in natural Japanese (敬体), the way a Japanese school would write to a student.",
+                "Use plain, school-appropriate wording. Do not diagnose, do not assert certainty, and avoid clinical terms.",
+                "Enum values, ids and schema keys stay exactly as the schema defines them; only the human-readable text is Japanese.",
+              ].join(" "),
+            },
+            {
+              role: "user",
+              content: `Extract typed ontology nodes and relations from this student submission. Keep labels short and evidence-grounded.\\n\\n${entryText}`,
+            },
+          ],
+          text: {
+            format: {
+              type: "json_schema",
+              name: "sentra_entry_extraction",
+              strict: true,
+              schema: extractionSchema,
+            },
+          },
+        }),
+      });
+      if (!response.ok) return { failedStatus: response.status };
+      return { json: await response.json() as Record<string, unknown> };
     });
 
-    if (!response.ok) {
-      return { extraction: fallbackExtraction(entryText), provider: "openai", model: EXTRACTION_MODEL, status: `failed_${response.status}` };
+    if ("failedStatus" in outcome) {
+      return { extraction: fallbackExtraction(entryText), provider: "openai", model: EXTRACTION_MODEL, status: `failed_${outcome.failedStatus}` };
     }
-    const json = await response.json() as Record<string, unknown>;
-    const text = outputText(json);
+    const text = outputText(outcome.json);
     if (!text) throw new Error("Missing structured output text");
     return {
       extraction: normalizeExtraction(JSON.parse(text) as Partial<ExtractionPayload>, entryText),
@@ -206,8 +217,14 @@ async function extractWithOpenAI(
       model: EXTRACTION_MODEL,
       status: "completed",
     };
-  } catch {
-    return { extraction: fallbackExtraction(entryText), provider: "openai", model: EXTRACTION_MODEL, status: "fallback" };
+  } catch (err) {
+    // `timeout` and `fallback` are different things to an operator reading
+    // `extraction_status`: the upstream never answered, versus it answered
+    // with something unusable. Either way the entry is saved with the
+    // deterministic extraction, and the crisis check (which never depended on
+    // the model) still runs and escalates.
+    const status = err instanceof DeadlineExceeded ? "timeout" : "fallback";
+    return { extraction: fallbackExtraction(entryText), provider: "openai", model: EXTRACTION_MODEL, status };
   }
 }
 
@@ -243,16 +260,19 @@ async function embeddingArtifact(
   }
 
   try {
-    const response = await fetch("https://api.openai.com/v1/embeddings", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ model: EMBEDDING_MODEL, input: content }),
+    const json = await withDeadline(MODEL_TIMEOUTS.embeddingMs, async (signal) => {
+      const response = await fetch("https://api.openai.com/v1/embeddings", {
+        signal,
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ model: EMBEDDING_MODEL, input: content }),
+      });
+      if (!response.ok) throw new Error(`embedding_${response.status}`);
+      return await response.json() as { data?: Array<{ embedding?: number[] }> };
     });
-    if (!response.ok) throw new Error(`embedding_${response.status}`);
-    const json = await response.json() as { data?: Array<{ embedding?: number[] }> };
     return {
       content_kind: contentKind,
       embedding_model: EMBEDDING_MODEL,
@@ -260,13 +280,13 @@ async function embeddingArtifact(
       content_hash: contentHash,
       metadata_json: metadata,
     };
-  } catch {
+  } catch (err) {
     return {
       content_kind: contentKind,
       embedding_model: EMBEDDING_MODEL,
       vector_json: [],
       content_hash: contentHash,
-      metadata_json: { ...metadata, status: "embedding_failed" },
+      metadata_json: { ...metadata, status: err instanceof DeadlineExceeded ? "embedding_timeout" : "embedding_failed" },
     };
   }
 }

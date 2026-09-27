@@ -122,6 +122,14 @@ const SCHEDULED_JOB_FAILURES = ["purge_expired_raw_text returned no count"];
 const DEVELOPER_ERRORS = ["useAuth must be used inside AuthProvider"];
 
 /**
+ * The message of an error that is always caught before any response is built
+ * (#264). `DeadlineExceeded` becomes `extraction_status: "timeout"`,
+ * `embedding_timeout`, or the transcription route's fixed 504 body; the
+ * message itself reaches a stack trace at most.
+ */
+const CAUGHT_BEFORE_A_RESPONSE = ["upstream did not answer within ${timeoutMs} ms"];
+
+/**
  * Column lists in a PostgREST `select`. These are the database's own column
  * names; translating one would ask for a column that does not exist. Route
  * handlers are skipped wholesale by the scanner, so only the ones in
@@ -188,6 +196,7 @@ export const ALLOWLIST = [
   ...DELIVERY_FAILURES,
   ...SCHEDULED_JOB_FAILURES,
   ...DEVELOPER_ERRORS,
+  ...CAUGHT_BEFORE_A_RESPONSE,
   ...COLUMN_PROJECTIONS,
   ...OPERATOR_DIAGNOSTICS,
   ...PAYLOAD_FIELD_MARKERS,
