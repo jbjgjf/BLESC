@@ -349,24 +349,16 @@ export async function POST(request: NextRequest) {
     .select("id")
     .single();
 
-  if (chatSession.error || !chatSession.data) {
-    return jsonError(chatSession.error?.message ?? "Chat session could not be saved.", 502);
-  }
-
-  await recordSafetyAudit(auth.client, {
-    ownerUserId: auth.user.id,
-    participantId: participant.id,
-    artifactId: chatSession.data.id,
-    surface: "chat",
-    pipelineVersion: PIPELINE_VERSION,
-    safety,
-  });
-
   /*
-   * The audit row above records that a judgement was made. It does not reach
+   * The audit row below records that a judgement was made. It does not reach
    * anyone, and until this call nothing did: the educator alert was computed in
    * the educator's browser when they opened the dashboard, so a crisis at 02:00
    * waited for a teacher to open a tab.
+   *
+   * Placed before the session insert's failure is turned into a 502, and
+   * before the messages are written: a transient error on either write must
+   * not decide whether anyone is told. The escalation carries the session id
+   * (null when that row did not land) and a time, never the words.
    *
    * Recording is awaited — losing the row is the one unrecoverable failure
    * here. Sending is not: `escalate` starts the delivery and returns, because a
@@ -388,7 +380,7 @@ export async function POST(request: NextRequest) {
         riskLevel: notifiable,
         reasons: safety.reasons,
         surface: "chat",
-        sourceArtifactId: chatSession.data.id,
+        sourceArtifactId: chatSession.data?.id ?? null,
       });
     } else {
       console.error(
@@ -397,6 +389,19 @@ export async function POST(request: NextRequest) {
       );
     }
   }
+
+  if (chatSession.error || !chatSession.data) {
+    return jsonError(chatSession.error?.message ?? "Chat session could not be saved.", 502);
+  }
+
+  await recordSafetyAudit(auth.client, {
+    ownerUserId: auth.user.id,
+    participantId: participant.id,
+    artifactId: chatSession.data.id,
+    surface: "chat",
+    pipelineVersion: PIPELINE_VERSION,
+    safety,
+  });
 
   const userHash = await sha256(message);
   const assistantHash = await sha256(answer);

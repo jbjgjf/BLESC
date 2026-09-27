@@ -505,6 +505,21 @@ describe("the wiring that makes this reach anyone", () => {
     }
   });
 
+  it("escalates a conversation even when its session row failed to save", () => {
+    // A failed chat_sessions insert answers 502. The voice client does not
+    // retry a failed turn, so an escalation behind that return is one a
+    // transient write error can cancel. The escalation takes a nullable
+    // source id for exactly this case.
+    for (const path of ["../src/app/api/chat/route.ts", "../src/app/api/voice/turn/route.ts"]) {
+      const source = code(path);
+      const escalation = source.indexOf("escalate(service");
+      const sessionFailure = source.indexOf("if (chatSession.error || !chatSession.data)");
+      assert.ok(escalation !== -1 && sessionFailure !== -1, `${path}: expected an escalation and a session-failure return`);
+      assert.ok(escalation < sessionFailure, `${path} returns on a failed session write before it escalates`);
+      assert.match(source, /sourceArtifactId: chatSession\.data\?\.id \?\? null/);
+    }
+  });
+
   it("escalates a conversation before writing its messages", () => {
     // Both conversational routes answer 502 when the message insert fails. An
     // escalation placed after that insert is one a transient write error can

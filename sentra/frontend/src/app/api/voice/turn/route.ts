@@ -88,18 +88,6 @@ export async function POST(request: NextRequest) {
     })
     .select("id")
     .single();
-  if (chatSession.error || !chatSession.data) {
-    return jsonError(chatSession.error?.message ?? "Voice turn could not be saved.", 502);
-  }
-
-  await recordSafetyAudit(auth.client, {
-    ownerUserId: auth.user.id,
-    participantId: participant.id,
-    artifactId: chatSession.data.id,
-    surface: "voice",
-    pipelineVersion: PIPELINE_VERSION,
-    safety,
-  });
 
   /*
    * Voice was the third surface a crisis arrives on, and the only one that
@@ -108,12 +96,14 @@ export async function POST(request: NextRequest) {
    * stopped there. A student who says out loud what they would not type
    * reached an audit table that nobody is paged by.
    *
-   * Same shape as the chat route deliberately, including the order: the audit
-   * row and the escalation come straight after the session row exists, and
-   * before the messages are written. A failed `chat_messages` insert answers
-   * 502, and if that came first a crisis spoken aloud would again reach
-   * nobody — the escalation carries the session id and a time, never the
-   * words, so it does not need the messages to have landed.
+   * Same shape as the chat route deliberately, including the order: the
+   * escalation comes straight after the session insert is *attempted* —
+   * before its failure is turned into a 502, and before the messages are
+   * written. Either of those writes can fail on a transient error, and the
+   * voice client does not retry a failed turn, so an escalation placed after
+   * them is one a spoken crisis can miss. The escalation carries a session id
+   * (null when the session row did not land) and a time, never the words, so
+   * it depends on neither write.
    *
    * `escalate` records the row and returns, leaving delivery to run on: a
    * student in crisis must not wait on a school's mail server, and an
@@ -135,7 +125,7 @@ export async function POST(request: NextRequest) {
         riskLevel: notifiable,
         reasons: safety.reasons,
         surface: "voice",
-        sourceArtifactId: chatSession.data.id,
+        sourceArtifactId: chatSession.data?.id ?? null,
       });
     } else {
       console.error(
@@ -144,6 +134,19 @@ export async function POST(request: NextRequest) {
       );
     }
   }
+
+  if (chatSession.error || !chatSession.data) {
+    return jsonError(chatSession.error?.message ?? "Voice turn could not be saved.", 502);
+  }
+
+  await recordSafetyAudit(auth.client, {
+    ownerUserId: auth.user.id,
+    participantId: participant.id,
+    artifactId: chatSession.data.id,
+    surface: "voice",
+    pipelineVersion: PIPELINE_VERSION,
+    safety,
+  });
 
   const rows = [
     {
