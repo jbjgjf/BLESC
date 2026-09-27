@@ -105,15 +105,18 @@ async function readPaged<T>(
   maxPages: number,
 ): Promise<{ rows: T[]; complete: boolean }> {
   const rows: T[] = [];
+  let from = 0;
   for (let page = 0; page < maxPages; page += 1) {
-    const from = page * PAGE;
     const result = await fetchRange(from, from + PAGE - 1);
     if (result.error) throw new Error(result.error.message);
     const batch = (result.data ?? []) as T[];
+    // Only an empty page is the end of the table. A short one may be the end,
+    // or a project whose `db-max-rows` is below PAGE — the same silent cap
+    // this function exists to see past — so the next page starts where this
+    // one actually stopped, and the loop costs one empty request to be sure.
+    if (batch.length === 0) return { rows, complete: true };
     rows.push(...batch);
-    // A short page is the end of the table. A full one may or may not be, so
-    // it costs one more request to find out.
-    if (batch.length < PAGE) return { rows, complete: true };
+    from += batch.length;
   }
   return { rows, complete: false };
 }

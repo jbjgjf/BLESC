@@ -245,6 +245,19 @@ describe("the queue survives the gateway's row cap", () => {
     }
   });
 
+  it("still reads everything when a project's row cap is below the page size", async () => {
+    // A hosted project can lower `db-max-rows`. With a cap of 100 every page
+    // comes back short; taking a short page for the end of the table would
+    // stop after 100 reviewed rows and re-enqueue the other 1,100.
+    const entries = seedEntries(1200);
+    const db = fakeDb({ entries, reviews: reviewsFor(entries), maxRows: 100 });
+    const result = await enqueuePendingReviews(db, ASSESSOR);
+    assert.equal(result.enqueued, 0);
+    assert.equal(result.deferred, 0);
+    assert.equal(result.skipped, 1200);
+    assert.equal(result.scanComplete, true);
+  });
+
   it("asks for fewer rows per request than the cap", async () => {
     const entries = seedEntries(1200);
     const db = fakeDb({ entries, reviews: reviewsFor(entries), maxRows: 1000 });

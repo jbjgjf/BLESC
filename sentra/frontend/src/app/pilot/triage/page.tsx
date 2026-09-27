@@ -24,7 +24,7 @@
  *      「その日は誰も書かなかった」と区別がつかない。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { Icon } from "@/components/ui/Icon";
 import { ApiClient } from "@/api/client";
@@ -101,15 +101,22 @@ export default function CrisisTriagePage() {
   const [openReason, setOpenReason] = useState<string | null>(null);
   const [note, setNote] = useState("");
 
+  // 最後に出した読み込みの番号。古い応答が後から届いても、新しい結果を
+  // 上書きさせない（失敗が一覧を消すようになったので、順序が大事になった）。
+  const latestLoad = useRef(0);
+
   const refresh = useCallback(async () => {
+    const ticket = ++latestLoad.current;
     setProblem(null);
     try {
       const result = await ApiClient.fetch<QueueResponse>(
         `/pilot/triage${includeDecided ? "?include_decided=1" : ""}`,
       );
+      if (ticket !== latestLoad.current) return;
       setData(result);
       setLoadFailed(false);
     } catch (err) {
+      if (ticket !== latestLoad.current) return;
       // 前回の一覧を残さない（#260）。判断を記録した直後の再読み込みが
       // 失敗したとき、古い一覧には判断済みの行が「未確認」のまま残っていて、
       // それを見て次の判断をすることになる。読めなかったときに出すのは
@@ -220,8 +227,10 @@ export default function CrisisTriagePage() {
           {(data.deferred > 0 || !data.scan_complete) && (
             <p className="bl-notice bl-notice--watch" role="status">
               <Icon name="info" size={19} />{" "}
-              まだ待ち行列に入れていない記録が{data.scan_complete ? "" : "少なくとも"}
-              {data.deferred}件あります。この画面をもう一度読み込むと続きが入ります。
+              {data.deferred > 0
+                ? <>まだ待ち行列に入れていない記録が{data.scan_complete ? "" : "少なくとも"}{data.deferred}件あります。</>
+                : <>記録が多く、今回の読み込みでは全件を確認しきれていません。</>}
+              この画面をもう一度読み込むと続きが入ります。
             </p>
           )}
           {data.slot === "ad_hoc" && (
@@ -230,19 +239,21 @@ export default function CrisisTriagePage() {
               定時のレビューを実施した証跡にはなりません。
             </p>
           )}
-          <label className="bl-choice">
-            <input
-              type="checkbox"
-              checked={includeDecided}
-              onChange={(event) => setIncludeDecided(event.target.checked)}
-            />
-            判断済みの行も表示する
-          </label>
         </section>
       )}
 
       <section className="bl-card bl-stack">
         <h2 className="bl-h2">待ち行列</h2>
+        {/* 一覧の外に置く。読み込みに失敗すると一覧（data）は消えるので、
+            中に置くと「判断済みも表示」で失敗したとき元の表示に戻せない。 */}
+        <label className="bl-choice">
+          <input
+            type="checkbox"
+            checked={includeDecided}
+            onChange={(event) => setIncludeDecided(event.target.checked)}
+          />
+          判断済みの行も表示する
+        </label>
         {/* 3つの状態を分けて出す（#260）。以前は読み込みに失敗しても
             「確認を待っている記録はありません」と表示していた。§4.4 の
             レビュアーにとって、それは「今日は片付いた」という意味になる。 */}
