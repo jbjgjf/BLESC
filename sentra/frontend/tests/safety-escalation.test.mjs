@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
@@ -503,6 +503,39 @@ describe("the wiring that makes this reach anyone", () => {
         `${path} escalates without taking a service-role client`,
       );
     }
+  });
+
+  /*
+   * The tests above name three files, which is exactly how the voice gap
+   * survived: the guard listed the surfaces somebody remembered. This one finds
+   * them instead — any route that decides a risk level owes someone a
+   * notification, and a fourth surface that assesses without escalating fails
+   * here, by name, on the day it is added.
+   */
+  it("leaves no surface that assesses risk without escalating", () => {
+    const apiRoot = resolve(HERE, "../src/app/api");
+    assert.ok(existsSync(apiRoot), "src/app/api moved; this guard is now checking nothing");
+
+    const assessing = readdirSync(apiRoot, { recursive: true, encoding: "utf8" })
+      .filter((entry) => entry.endsWith("route.ts"))
+      .map((entry) => resolve(apiRoot, entry))
+      .filter((path) => {
+        const source = code(path);
+        return source.includes("assessSafety(") || source.includes("assessConversation(");
+      });
+
+    // Pinned so a refactor that stops one of them assessing — and so stops it
+    // being checked below — cannot pass by disappearing from the list.
+    assert.equal(
+      assessing.length,
+      3,
+      `Expected 3 routes to assess safety (chat, entries, voice/turn), found ${assessing.length}:\n${assessing.join("\n")}`,
+    );
+
+    const silent = assessing
+      .filter((path) => !code(path).includes("escalate(service"))
+      .map((path) => path.slice(apiRoot.length + 1));
+    assert.deepEqual(silent, [], `These routes assess a risk level and tell nobody:\n${silent.join("\n")}`);
   });
 
   it("records before it sends", () => {
