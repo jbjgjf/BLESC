@@ -10,8 +10,12 @@ import { Icon } from "@/components/ui/Icon";
 /**
  * 教員向け画面の入口。
  *
- * ここでの制御は表示上のものにすぎない。実際のアクセス制御は Supabase の
- * RLS 側にあり、教員でないユーザーがこの URL に到達してもデータは返らない。
+ * 教員でないセッションは、このレイアウトに届く前に `src/proxy.ts` がサーバー側で
+ * "/" へ返す（#229）。ここに残した判定は、デモモードの切り替えのように
+ * ブラウザにしか分からない状態のためのもの。
+ *
+ * どちらもデータのアクセス制御ではない。それは Supabase の RLS 側にあり、
+ * 教員でないユーザーがこの URL に到達してもデータは返らない。
  * デモモードでは固定データしか読まないため、この判定を通す。
  */
 export default function EducatorLayout({ children }: { children: React.ReactNode }) {

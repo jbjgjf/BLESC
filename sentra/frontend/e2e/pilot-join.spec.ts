@@ -15,6 +15,7 @@ const evidence = (name: string) => `../docs/evidence/pilot-enrollment/${name}.pn
  *   expired     — a dead code is refused, and refused the same way as any other
  *   withdrawal  — leaving stops the next submission, from either door (#263)
  *   direct URL  — the collection screen is unreachable without an enrollment
+ *   educator    — an educator screen is refused on the server, before it renders (#229)
  *
  * These run against a real build, a real database and the real state machine.
  * The assertions are on what a participant sees, because the criteria in #164
@@ -284,5 +285,42 @@ test.describe("direct URL", () => {
 
     await page.goto("/journal");
     await expect(page).toHaveURL(/\/pilot\/join|\/login/);
+  });
+});
+
+test.describe("educator screens", () => {
+  /*
+   * #229: the educator shell used to be decided in the browser. A signed-in
+   * student who opened /educator/roster was served the page, saw the educator
+   * shell with the organisation bar, and was only then sent home by
+   * `educator/layout.tsx`. `src/proxy.ts` answers before anything renders.
+   */
+  test("are refused to a signed-in account with no membership, before rendering", async ({ page }) => {
+    await login(page, USERS.stranger);
+
+    // The server's answer, not the browser's. `page.request` shares this
+    // context's cookies, so this is the same session, with no JavaScript run.
+    const response = await page.request.get("/educator/roster", { maxRedirects: 0 });
+    expect(response.status()).toBe(307);
+    expect(new URL(response.headers()["location"], "http://x").pathname).toBe("/");
+    expect(await response.text()).not.toContain("bl-orgbar");
+
+    // And the same in a real navigation: the educator shell never paints.
+    await page.goto("/educator/roster");
+    await expect(page).not.toHaveURL(/\/educator/);
+    await expect(page.locator(".bl-orgbar")).toHaveCount(0);
+  });
+
+  test("send a signed-out visitor to /login from the server", async ({ request }) => {
+    const response = await request.get("/educator/roster", { maxRedirects: 0 });
+    expect(response.status()).toBe(307);
+    expect(response.headers()["location"]).toContain("/login?next=%2Feducator%2Froster");
+  });
+
+  test("leave the public screens open without a session", async ({ request }) => {
+    for (const path of ["/login", "/legal"]) {
+      const response = await request.get(path, { maxRedirects: 0 });
+      expect(response.status(), path).toBe(200);
+    }
   });
 });
