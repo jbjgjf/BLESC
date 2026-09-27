@@ -39,6 +39,10 @@ deployment that is running open says so to anyone who asks rather than only to
 whoever reads the startup log. It must be exactly `"1"`: `true`, `yes` and an
 accidental empty string do not turn it on.
 
+It is also ignored whenever Supabase is configured. A process that can verify
+callers always does. The only process that needs the flag is one with no
+Supabase project at all, and a deployment holding real entries is never that.
+
 ## 401 or 404
 
 A missing or rejected token is 401 — the caller has not said who they are, and
@@ -65,12 +69,31 @@ logger = logging.getLogger(__name__)
 OPEN_ACCESS_ENV = "BLESC_ALLOW_UNAUTHENTICATED_API"
 
 
-def open_access() -> bool:
-    """Whether this process serves participant data without a verified token."""
+def _open_access_requested() -> bool:
     return (os.getenv(OPEN_ACCESS_ENV) or "").strip() == "1"
 
 
-if open_access():  # pragma: no cover - startup announcement
+def open_access() -> bool:
+    """Whether this process serves participant data without a verified token.
+
+    Only ever true on a process that *cannot* verify anyone: the flag is ignored
+    when Supabase is configured. The flag exists for the SQLite development
+    target and the test suite, which have no Supabase project. A deployment that
+    holds real entries has one, because that is where the entries are mirrored
+    and where tokens come from. So "flag set and Supabase configured" is never
+    the local case. It is a production variable copied from a development
+    `.env`, and the safe reading of it is to keep checking.
+    """
+    return _open_access_requested() and not supabase_writer.is_configured()
+
+
+if _open_access_requested() and supabase_writer.is_configured():  # pragma: no cover - startup announcement
+    logger.error(
+        "[authz] %s=1 is ignored: Supabase is configured, so callers can be verified and will be. "
+        "Remove the variable from this deployment.",
+        OPEN_ACCESS_ENV,
+    )
+elif open_access():  # pragma: no cover - startup announcement
     logger.warning(
         "[authz] %s=1: participant endpoints are being served without authentication. "
         "This is for local development and tests. Never set it on a deployment that "

@@ -104,11 +104,13 @@ Vercel はフロントエンド（Next.js）のデプロイには最適ですが
 | 変数 | 未設定のときの振る舞い |
 | --- | --- |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | 参加者データのエンドポイントが全て 503。トークンの検証ができないため |
-| `BLESC_ALLOW_UNAUTHENTICATED_API` | 既定（未設定）が安全側。`1` にすると**検証を丸ごと止める** |
+| `BLESC_ALLOW_UNAUTHENTICATED_API` | 既定（未設定）が安全側。`1` にすると**検証を丸ごと止める**。ただし上の2つが設定されている配備では無視される |
 | `CORS_ALLOW_ORIGINS` | ブラウザの同一オリジン規則の話であって、認証の代わりにはならない（`curl` には効かない） |
 
 `BLESC_ALLOW_UNAUTHENTICATED_API=1` はローカル開発とテスト用の抜け道で、実データを
-持つ配備では設定しない。設定されている間は `GET /api/health` が
+持つ配備では設定しない。**Supabase が設定されている（= 検証できる）プロセスではこの値は無視され**、
+起動ログにエラーとして残る。実データを持つ配備は必ず Supabase を持つので、開発用の
+`.env` を写し間違えても検証は止まらない。効いている間は `GET /api/health` が
 `"authentication": "disabled"` と答えるので、**配備後にこの1行で確認できる。**
 
 ```bash

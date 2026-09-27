@@ -338,7 +338,7 @@ class TestOpenSurface:
 
 
 class TestTheEscapeHatchIsVisible:
-    def test_health_reports_that_this_instance_is_open(self, monkeypatch):
+    def test_health_reports_that_this_instance_is_open(self, closed, monkeypatch):
         monkeypatch.setenv(authz.OPEN_ACCESS_ENV, "1")
         assert client.get("/api/health").json()["authentication"] == "disabled"
 
@@ -356,3 +356,26 @@ class TestTheEscapeHatchIsVisible:
         monkeypatch.setenv(authz.OPEN_ACCESS_ENV, value)
         expected = value.strip() == "1"
         assert authz.open_access() is expected
+
+
+class TestTheEscapeHatchCannotOpenARealDeployment:
+    """The flag is for a process with no Supabase. With Supabase it is ignored.
+
+    A deployment holding real entries has Supabase configured, because that is
+    where entries are mirrored and where tokens come from. If the flag shows up
+    there, it was copied from a development `.env`, so the check stays on.
+    """
+
+    @pytest.fixture
+    def configured(self, closed, monkeypatch):
+        monkeypatch.setenv(authz.OPEN_ACCESS_ENV, "1")
+        monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key")
+
+    def test_the_flag_is_ignored(self, configured):
+        assert authz.open_access() is False
+        assert client.get("/api/health").json()["authentication"] == "required"
+
+    def test_participant_data_still_needs_a_token(self, configured):
+        response = client.get("/api/entries", params={"user_id": OWNER_CODE})
+        assert response.status_code == 401
