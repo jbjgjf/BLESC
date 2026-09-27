@@ -6,6 +6,7 @@ import { assessConversation, recordSafetyAudit, RISK_DIRECTIVES, SAFETY_GUARDRAI
 import { fetchWithTimeout, isMissingTable, jsonError, JsonValue, openAIKey, providerError, requireUser, sha256 } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { escalate, notifiableLevel } from "@/lib/server/safetyEscalation";
+import { chatSessionConsentSnapshot } from "@/lib/server/consentStore";
 import { RULES, consumeRateLimit, rateLimitHeaders, rateLimitSubject } from "@/lib/server/rateLimit";
 import {
   COLLECTION_ONLY_MESSAGE,
@@ -337,7 +338,13 @@ export async function POST(request: NextRequest) {
     .insert({
       owner_user_id: auth.user.id,
       participant_id: participant.id,
-      consent_snapshot_json: { app_use: true, research_analysis: true, source: "student_ui" },
+      // The participant's stored consent, not a constant (#238).
+      consent_snapshot_json: await chatSessionConsentSnapshot(
+        serviceRoleClient(),
+        auth.user.id,
+        participant.id,
+        "student_ui",
+      ),
     })
     .select("id")
     .single();

@@ -3,6 +3,7 @@ import { isMissingTable, jsonError, requireUser, sha256 } from "@/lib/server/api
 import { assessConversation, recordSafetyAudit } from "@/lib/server/safety";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { escalate, notifiableLevel } from "@/lib/server/safetyEscalation";
+import { chatSessionConsentSnapshot } from "@/lib/server/consentStore";
 
 export const runtime = "nodejs";
 export const maxDuration = 20;
@@ -77,7 +78,13 @@ export async function POST(request: NextRequest) {
     .insert({
       owner_user_id: auth.user.id,
       participant_id: participant.id,
-      consent_snapshot_json: { app_use: true, research_analysis: true, source: "student_voice" },
+      // The participant's stored consent, not a constant (#238).
+      consent_snapshot_json: await chatSessionConsentSnapshot(
+        serviceRoleClient(),
+        auth.user.id,
+        participant.id,
+        "student_voice",
+      ),
     })
     .select("id")
     .single();
