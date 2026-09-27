@@ -16,7 +16,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
-import { slotFor } from "../src/lib/server/crisisTriage.ts";
+import {
+  countPending,
+  enqueuePendingReviews,
+  loadQueue,
+  readEntryText,
+  recordDecision,
+  slotFor,
+} from "../src/lib/server/crisisTriage.ts";
 import { SAFETY_ASSESSMENT_VERSION } from "../src/lib/safety-assessment.ts";
 
 const read = (relative) =>
@@ -148,5 +155,180 @@ describe("the screen does not overstate what this is", () => {
 
   it("does not claim the escalate button notifies anyone", () => {
     assert.match(page, /このボタンは記録であって、通知は送りません/);
+  });
+});
+
+/*
+ * A failed read is not an empty read (#260).
+ *
+ * PostgREST does not throw: a failed query resolves to `{ data: null, error }`,
+ * and `data ?? []` turns that into "there is nothing here". In `loadQueue` that
+ * made a failed `entries` read into every row showing 本文なし — which the
+ * screen answers by recording `unreadable`, taking a crisis row nobody read out
+ * of the queue for good — and a failed `pilot_enrollments` read into every row
+ * losing its pseudonym. Neither showed an error.
+ *
+ * The double below answers every query the module makes, and fails whichever
+ * one it is told to. Each case asserts the function rejects rather than
+ * resolving with less than it was asked for.
+ */
+function failingDb(shouldFail = () => false) {
+  const tables = {
+    pilot_crisis_reviews: [
+      {
+        id: "review-1",
+        entry_id: "entry-1",
+        participant_id: "participant-1",
+        assessed_risk: "crisis",
+        assessed_reasons: ["self_harm"],
+        status: "pending",
+        reviewed_at: null,
+        review_slot: null,
+        created_at: "2026-09-21T01:00:00Z",
+      },
+    ],
+    pilot_enrollments: [{ participant_id: "participant-1", research_code: "R-001" }],
+    entries: [
+      {
+        id: "entry-1",
+        owner_user_id: "owner-1",
+        participant_id: "participant-1",
+        raw_text_ciphertext: "cipher-1",
+        created_at: "2026-09-21T00:00:00Z",
+      },
+      {
+        id: "entry-2",
+        owner_user_id: "owner-2",
+        participant_id: "participant-2",
+        raw_text_ciphertext: "cipher-2",
+        created_at: "2026-09-21T00:30:00Z",
+      },
+    ],
+    pilot_crisis_review_reads: [],
+  };
+
+  function from(table) {
+    const state = { table, op: "select", filters: [], single: false, head: false };
+
+    function settle() {
+      if (shouldFail(state)) return { data: null, count: null, error: { message: `${table} ${state.op} failed` } };
+      if (state.op !== "select") return { data: [], error: null };
+      const rows = tables[table].filter((row) => state.filters.every((match) => match(row)));
+      if (state.head) return { data: null, count: rows.length, error: null };
+      if (state.single) return { data: rows[0] ?? null, error: null };
+      return { data: rows, error: null };
+    }
+
+    const chain = {
+      select(_columns, options = {}) {
+        state.head = Boolean(options.head);
+        return chain;
+      },
+      eq(column, value) {
+        state.filters.push((row) => row[column] === value);
+        return chain;
+      },
+      in(column, values) {
+        const wanted = new Set(values);
+        state.filters.push((row) => wanted.has(row[column]));
+        return chain;
+      },
+      not(column) {
+        state.filters.push((row) => row[column] !== null && row[column] !== undefined);
+        return chain;
+      },
+      order: () => chain,
+      limit: () => chain,
+      range: () => chain,
+      upsert() {
+        state.op = "upsert";
+        return chain;
+      },
+      insert() {
+        state.op = "insert";
+        return chain;
+      },
+      update() {
+        state.op = "update";
+        return chain;
+      },
+      maybeSingle() {
+        state.single = true;
+        return Promise.resolve(settle());
+      },
+      then(onFulfilled, onRejected) {
+        return Promise.resolve(settle()).then(onFulfilled, onRejected);
+      },
+    };
+    return chain;
+  }
+
+  return { from };
+}
+
+const failing = (table, op = "select") => failingDb((state) => state.table === table && state.op === op);
+
+describe("a failed read is reported, not shown as an empty one (#260)", () => {
+  it("reads the queue normally when nothing fails", async () => {
+    const [row] = await loadQueue(failingDb());
+    assert.equal(row.text_available, true);
+    assert.equal(row.research_code, "R-001");
+  });
+
+  it("does not report 本文なし when the entries read failed", async () => {
+    await assert.rejects(loadQueue(failing("entries")), /entries select failed/);
+  });
+
+  it("does not drop every pseudonym when the enrollments read failed", async () => {
+    await assert.rejects(loadQueue(failing("pilot_enrollments")), /pilot_enrollments select failed/);
+  });
+
+  it("does not show an empty queue when the reviews read failed", async () => {
+    await assert.rejects(loadQueue(failing("pilot_crisis_reviews")), /pilot_crisis_reviews select failed/);
+  });
+
+  const everyQuery = [
+    ["enqueuePendingReviews", "pilot_crisis_reviews", "select", (db) => enqueuePendingReviews(db, "v")],
+    ["enqueuePendingReviews", "entries", "select", (db) => enqueuePendingReviews(db, "v")],
+    ["enqueuePendingReviews", "pilot_crisis_reviews", "upsert", (db) => enqueuePendingReviews(db, "v")],
+    ["countPending", "pilot_crisis_reviews", "select", (db) => countPending(db)],
+    ["readEntryText", "pilot_crisis_reviews", "select", (db) => readEntryText(db, "review-1", "reader-1")],
+    ["readEntryText", "entries", "select", (db) => readEntryText(db, "review-1", "reader-1")],
+    ["readEntryText", "pilot_crisis_review_reads", "insert", (db) => readEntryText(db, "review-1", "reader-1")],
+    [
+      "recordDecision",
+      "pilot_crisis_reviews",
+      "update",
+      (db) => recordDecision(db, { reviewId: "review-1", reviewerUserId: "reader-1", status: "no_concern" }),
+    ],
+  ];
+
+  for (const [name, table, op, call] of everyQuery) {
+    it(`${name} rejects when its ${table} ${op} fails`, async () => {
+      await assert.rejects(call(failing(table, op)), new RegExp(`${table} ${op} failed`));
+    });
+  }
+
+  it("the route answers a failed read with 502, not a shorter 200", () => {
+    assert.match(code(route), /catch \(err\)[\s\S]*?jsonError\([\s\S]*?502\)/);
+  });
+
+  it("the screen drops the previous list when a reload fails", () => {
+    // After a decision the screen reloads. If that reload fails and the old
+    // list stays up, the row just decided is still shown as 未確認 and the
+    // reviewer works from a list that is no longer true.
+    const refresh = code(page).match(/const refresh = useCallback\([\s\S]*?\}, \[includeDecided\]\);/);
+    assert.ok(refresh, "refresh() moved; this check is reading nothing");
+    const failureBranch = refresh[0].slice(refresh[0].indexOf("catch"));
+    assert.match(failureBranch, /setData\(null\)/);
+    assert.match(failureBranch, /setLoadFailed\(true\)/);
+  });
+
+  it("the screen does not say the queue is empty when it could not read it", () => {
+    assert.match(page, /確認を待っている記録が無いという意味ではありません/);
+    const body = code(page);
+    const failed = body.indexOf("loadFailed ?");
+    const empty = body.indexOf("確認を待っている記録はありません。");
+    assert.ok(failed !== -1 && empty !== -1 && failed < empty, "the failure branch must be decided before the empty one");
   });
 });

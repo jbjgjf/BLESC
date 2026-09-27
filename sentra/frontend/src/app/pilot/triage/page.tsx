@@ -88,6 +88,9 @@ export default function CrisisTriagePage() {
   const { isLoading, session } = useAuth();
 
   const [data, setData] = useState<QueueResponse | null>(null);
+  // 最後の読み込みが失敗したか（#260）。失敗と「待ちがない」は画面上で
+  // 区別しなければならない。どちらも一覧が空に見えるため。
+  const [loadFailed, setLoadFailed] = useState(false);
   const [includeDecided, setIncludeDecided] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -105,7 +108,14 @@ export default function CrisisTriagePage() {
         `/pilot/triage${includeDecided ? "?include_decided=1" : ""}`,
       );
       setData(result);
+      setLoadFailed(false);
     } catch (err) {
+      // 前回の一覧を残さない（#260）。判断を記録した直後の再読み込みが
+      // 失敗したとき、古い一覧には判断済みの行が「未確認」のまま残っていて、
+      // それを見て次の判断をすることになる。読めなかったときに出すのは
+      // 「読めなかった」だけにする。
+      setData(null);
+      setLoadFailed(true);
       setProblem(err instanceof Error ? err.message : "読み込めませんでした。");
     }
   }, [includeDecided]);
@@ -233,7 +243,30 @@ export default function CrisisTriagePage() {
 
       <section className="bl-card bl-stack">
         <h2 className="bl-h2">待ち行列</h2>
-        {!data || data.queue.length === 0 ? (
+        {/* 3つの状態を分けて出す（#260）。以前は読み込みに失敗しても
+            「確認を待っている記録はありません」と表示していた。§4.4 の
+            レビュアーにとって、それは「今日は片付いた」という意味になる。 */}
+        {loadFailed ? (
+          <div className="bl-stack" role="alert">
+            <p className="bl-notice bl-notice--watch">
+              <Icon name="info" size={19} />{" "}
+              レビュー待ちの一覧を読み込めませんでした。確認を待っている記録が無いという意味ではありません。
+              一部だけの一覧では判断できないため、何も表示していません。
+            </p>
+            <div>
+              <button
+                type="button"
+                className="bl-btn bl-btn--secondary"
+                disabled={busy}
+                onClick={() => void refresh()}
+              >
+                もう一度読み込む
+              </button>
+            </div>
+          </div>
+        ) : !data ? (
+          <p className="bl-meta" role="status">一覧を読み込んでいます…</p>
+        ) : data.queue.length === 0 ? (
           <p className="bl-meta">確認を待っている記録はありません。</p>
         ) : (
           <div className={styles.tableScroll}>
