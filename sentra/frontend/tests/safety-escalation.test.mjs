@@ -505,6 +505,20 @@ describe("the wiring that makes this reach anyone", () => {
     }
   });
 
+  it("escalates a conversation before writing its messages", () => {
+    // Both conversational routes answer 502 when the message insert fails. An
+    // escalation placed after that insert is one a transient write error can
+    // skip — the gap #237 closed, reopened by ordering. The escalation carries
+    // the session id and a time, never the words, so it needs only the session.
+    for (const path of ["../src/app/api/chat/route.ts", "../src/app/api/voice/turn/route.ts"]) {
+      const source = code(path);
+      const escalation = source.indexOf("escalate(service");
+      const messages = source.search(/from\("chat_messages"\)\s*\.insert\(/);
+      assert.ok(escalation !== -1 && messages !== -1, `${path}: expected both an escalation and a message insert`);
+      assert.ok(escalation < messages, `${path} writes its messages before it escalates`);
+    }
+  });
+
   /*
    * The tests above name three files, which is exactly how the voice gap
    * survived: the guard listed the surfaces somebody remembered. This one finds

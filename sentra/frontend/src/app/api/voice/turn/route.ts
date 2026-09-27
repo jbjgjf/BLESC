@@ -92,31 +92,6 @@ export async function POST(request: NextRequest) {
     return jsonError(chatSession.error?.message ?? "Voice turn could not be saved.", 502);
   }
 
-  const rows = [
-    {
-      owner_user_id: auth.user.id,
-      participant_id: participant.id,
-      chat_session_id: chatSession.data.id,
-      role: "user",
-      content_hash: await sha256(message),
-      content_redacted: message.slice(0, 500),
-      evidence_refs_json: [],
-    },
-  ];
-  if (reply) {
-    rows.push({
-      owner_user_id: auth.user.id,
-      participant_id: participant.id,
-      chat_session_id: chatSession.data.id,
-      role: "assistant",
-      content_hash: await sha256(reply),
-      content_redacted: reply.slice(0, 1000),
-      evidence_refs_json: [],
-    });
-  }
-  const inserted = await auth.client.from("chat_messages").insert(rows);
-  if (inserted.error) return jsonError(inserted.error.message, 502);
-
   await recordSafetyAudit(auth.client, {
     ownerUserId: auth.user.id,
     participantId: participant.id,
@@ -133,10 +108,17 @@ export async function POST(request: NextRequest) {
    * stopped there. A student who says out loud what they would not type
    * reached an audit table that nobody is paged by.
    *
-   * Same shape as the chat route deliberately. `escalate` records the row and
-   * returns, leaving delivery to run on: a student in crisis must not wait on
-   * a school's mail server, and an undelivered row is retried by
-   * `/api/safety/dispatch`, where an unwritten one is simply lost.
+   * Same shape as the chat route deliberately, including the order: the audit
+   * row and the escalation come straight after the session row exists, and
+   * before the messages are written. A failed `chat_messages` insert answers
+   * 502, and if that came first a crisis spoken aloud would again reach
+   * nobody — the escalation carries the session id and a time, never the
+   * words, so it does not need the messages to have landed.
+   *
+   * `escalate` records the row and returns, leaving delivery to run on: a
+   * student in crisis must not wait on a school's mail server, and an
+   * undelivered row is retried by `/api/safety/dispatch`, where an unwritten
+   * one is simply lost.
    *
    * Under the service-role client because the recipients are other people's
    * rows — the student's own session cannot read their educators' addresses,
@@ -162,6 +144,31 @@ export async function POST(request: NextRequest) {
       );
     }
   }
+
+  const rows = [
+    {
+      owner_user_id: auth.user.id,
+      participant_id: participant.id,
+      chat_session_id: chatSession.data.id,
+      role: "user",
+      content_hash: await sha256(message),
+      content_redacted: message.slice(0, 500),
+      evidence_refs_json: [],
+    },
+  ];
+  if (reply) {
+    rows.push({
+      owner_user_id: auth.user.id,
+      participant_id: participant.id,
+      chat_session_id: chatSession.data.id,
+      role: "assistant",
+      content_hash: await sha256(reply),
+      content_redacted: reply.slice(0, 1000),
+      evidence_refs_json: [],
+    });
+  }
+  const inserted = await auth.client.from("chat_messages").insert(rows);
+  if (inserted.error) return jsonError(inserted.error.message, 502);
 
   return NextResponse.json({
     chat_session_id: chatSession.data.id,
