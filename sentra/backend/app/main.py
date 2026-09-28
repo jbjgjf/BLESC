@@ -15,6 +15,7 @@ from sqlmodel import Session, select, func
 
 from .analytics.graph_features import build_graph_summary, build_temporal_graph_diff, summarize_temporal_diff
 from .clock import utcnow
+from .env_number import env_positive_int
 from .database import create_db_and_tables, get_session
 from .seed import seed_data
 from .ontology.repair import get_fallback_extraction
@@ -97,7 +98,7 @@ from .api.research_world_model import router as research_world_model_router  # n
 
 app.include_router(research_world_model_router)
 
-AUDIO_MAX_BYTES = int(os.getenv("OPENAI_TRANSCRIPTION_MAX_BYTES", str(24 * 1024 * 1024)))
+AUDIO_MAX_BYTES = env_positive_int("OPENAI_TRANSCRIPTION_MAX_BYTES", 24 * 1024 * 1024)
 AUDIO_EXTENSIONS = {".webm", ".wav", ".mp3", ".m4a", ".mp4", ".mpeg", ".mpga"}
 AUDIO_CONTENT_TYPES = {
     "audio/webm",
