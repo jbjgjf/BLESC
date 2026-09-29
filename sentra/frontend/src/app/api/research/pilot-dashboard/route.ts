@@ -35,9 +35,30 @@ import {
 import { authorizedExporters } from "@/lib/server/researchExportAudit";
 import { cronSecretConfigured } from "@/lib/server/cronAuth";
 import { channelsConfigured } from "@/lib/server/safetyEscalation";
+import { fetchAllRows } from "@/lib/server/pagedSelect";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+type EntryRow = {
+  id: string;
+  participant_id: string;
+  created_at: string;
+  client_submission_id: string | null;
+  /** Read as "is there ciphertext", never decrypted and never returned. */
+  raw_text_ciphertext: string | null;
+  raw_text_expires_at: string | null;
+};
+
+type SelfReportRow = { entry_id: string; participant_id: string; schema_version: string };
+type FailureRow = { participant_id: string; outcome: string };
+type PiiReviewRow = {
+  participant_id: string;
+  status: string;
+  max_confidence: string | null;
+  scanner_version: string;
+};
+type ConsentRow = Record<string, unknown> & { participant_id: string };
 
 type EnrollmentRow = {
   participant_id: string;
@@ -100,43 +121,90 @@ export async function GET(request: NextRequest) {
   //
   // `entries` gives id, participant and timestamp — the timestamp becomes a
   // relative day and the absolute value never leaves this handler.
+  //
+  // Every one of them is paged (#275). A plain `.in(...)` stops at
+  // `db-max-rows` — 1,000 on a stock Supabase project — without an error, and
+  // 50 participants x 21 days is up to 1,050 entries and the same number of
+  // self-report rows. Truncated, this handler reports days a student did write
+  // as missing, and reports retained text that is past its expiry as purged.
+  //
+  // None of the five can be replaced by a count. `submissions`, `self_reports`
+  // and `integrity` group by participant or by value, and `retention` buckets
+  // expiry dates into overdue / within-7-days — a `head: true` count answers
+  // none of those questions. So the rows are fetched, completely, and the
+  // ordering on each is deterministic (the primary key last) because paging
+  // without a total order skips and repeats rows.
   const [entriesResult, selfReportResult, failureResult, reviewResult, consentResult] = await Promise.all([
-    service
-      .from("entries")
-      .select("id, participant_id, created_at, client_submission_id, raw_text_ciphertext, raw_text_expires_at")
-      .in("participant_id", participantIds),
-    service.from("pilot_self_reports").select("entry_id, participant_id, schema_version").in("participant_id", participantIds),
-    service.from("submission_failures").select("participant_id, outcome").in("participant_id", participantIds),
-    service.from("pilot_pii_reviews").select("participant_id, status, max_confidence, scanner_version").in("participant_id", participantIds),
-    service
-      .from("consent_records")
-      .select(
-        "participant_id, app_use, research_analysis, anonymized_export, raw_text_retention, model_training_use, minor_assent, guardian_consent, consent_version, document_version, status, granted_at, revoked_at, created_at",
-      )
-      .in("participant_id", participantIds)
-      .order("granted_at", { ascending: false }),
+    fetchAllRows<EntryRow>((from, to) =>
+      service
+        .from("entries")
+        .select(
+          "id, participant_id, created_at, client_submission_id, raw_text_ciphertext, raw_text_expires_at",
+          { count: "exact" },
+        )
+        .in("participant_id", participantIds)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows<SelfReportRow>((from, to) =>
+      service
+        .from("pilot_self_reports")
+        .select("entry_id, participant_id, schema_version", { count: "exact" })
+        .in("participant_id", participantIds)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows<FailureRow>((from, to) =>
+      service
+        .from("submission_failures")
+        .select("participant_id, outcome", { count: "exact" })
+        .in("participant_id", participantIds)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows<PiiReviewRow>((from, to) =>
+      service
+        .from("pilot_pii_reviews")
+        .select("participant_id, status, max_confidence, scanner_version", { count: "exact" })
+        .in("participant_id", participantIds)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows<ConsentRow>((from, to) =>
+      service
+        .from("consent_records")
+        .select(
+          "participant_id, app_use, research_analysis, anonymized_export, raw_text_retention, model_training_use, minor_assent, guardian_consent, consent_version, document_version, status, granted_at, revoked_at, created_at",
+          { count: "exact" },
+        )
+        .in("participant_id", participantIds)
+        .order("granted_at", { ascending: false })
+        // Newest first is what "the newest row wins" below reads, and `id`
+        // makes that order total so the pages do not overlap. It is a tie-break
+        // for paging, not a rule about which consent row is current (#272).
+        .order("id", { ascending: false })
+        .range(from, to),
+    ),
   ]);
 
-  for (const result of [entriesResult, selfReportResult, failureResult, reviewResult, consentResult]) {
-    if (result.error) return jsonError(result.error.message, 502);
-  }
+  // A read that could not be completed is a failure, never a shorter list.
+  if ("error" in entriesResult) return jsonError(entriesResult.error, 502);
+  if ("error" in selfReportResult) return jsonError(selfReportResult.error, 502);
+  if ("error" in failureResult) return jsonError(failureResult.error, 502);
+  if ("error" in reviewResult) return jsonError(reviewResult.error, 502);
+  if ("error" in consentResult) return jsonError(consentResult.error, 502);
 
-  const entries = (entriesResult.data ?? []) as Array<{
-    id: string;
-    participant_id: string;
-    created_at: string;
-    client_submission_id: string | null;
-    // Read as "is there ciphertext", never decrypted and never returned.
-    raw_text_ciphertext: string | null;
-    raw_text_expires_at: string | null;
-  }>;
+  const entries = entriesResult.rows;
+  const selfReports = selfReportResult.rows;
+  const failures = failureResult.rows;
+  const piiReviews = reviewResult.rows;
+  const consentRows = consentResult.rows;
 
-  const selfReportEntryIds = new Set(
-    ((selfReportResult.data ?? []) as Array<{ entry_id: string }>).map((row) => row.entry_id),
-  );
+  const selfReportEntryIds = new Set(selfReports.map((row) => row.entry_id));
 
   const failuresByParticipant = new Map<string, number>();
-  for (const row of (failureResult.data ?? []) as Array<{ participant_id: string }>) {
+  for (const row of failures) {
     failuresByParticipant.set(row.participant_id, (failuresByParticipant.get(row.participant_id) ?? 0) + 1);
   }
 
@@ -151,7 +219,7 @@ export async function GET(request: NextRequest) {
   // applies, so a participant the dashboard shows as consented is one the
   // export would include.
   const currentConsent = new Map<string, Record<string, unknown>>();
-  for (const record of (consentResult.data ?? []) as Array<Record<string, unknown>>) {
+  for (const record of consentRows) {
     const key = String(record.participant_id);
     if (!currentConsent.has(key)) currentConsent.set(key, record);
   }
@@ -217,30 +285,31 @@ export async function GET(request: NextRequest) {
       entries_without_self_report: entries.filter((entry) => !selfReportEntryIds.has(entry.id)).length,
       // More than one schema version in a running study means two instruments
       // are in the field at once, which the analysis has to know about.
-      by_schema_version: tally(
-        ((selfReportResult.data ?? []) as Array<{ schema_version: string }>).map((row) => row.schema_version),
-      ),
+      by_schema_version: tally(selfReports.map((row) => row.schema_version)),
     },
 
     integrity: {
-      failures_by_outcome: tally(
-        ((failureResult.data ?? []) as Array<{ outcome: string }>).map((row) => row.outcome),
-      ),
+      failures_by_outcome: tally(failures.map((row) => row.outcome)),
       // An entry without an idempotency key cannot be de-duplicated on retry.
       // Zero is the expected value once every client sends one.
       entries_without_submission_id: entries.filter((entry) => !entry.client_submission_id).length,
     },
 
     pii_review: {
-      by_status: tally(((reviewResult.data ?? []) as Array<{ status: string }>).map((row) => row.status)),
-      by_confidence: tally(
-        ((reviewResult.data ?? []) as Array<{ max_confidence: string | null }>).map((row) => row.max_confidence),
-      ),
-      by_scanner_version: tally(
-        ((reviewResult.data ?? []) as Array<{ scanner_version: string }>).map((row) => row.scanner_version),
-      ),
+      by_status: tally(piiReviews.map((row) => row.status)),
+      by_confidence: tally(piiReviews.map((row) => row.max_confidence)),
+      by_scanner_version: tally(piiReviews.map((row) => row.scanner_version)),
     },
 
+    // Now counted over every entry in the study rather than the first 1,000
+    // (#275), so `overdue` is no longer the wrong half of the answer.
+    //
+    // It can still differ from `observed.retention_purge.overdue` on
+    // `/api/pilot/admin/ops`, and both remaining differences are deliberate:
+    // that endpoint counts the whole deployment where this counts one study,
+    // and it compares instants where this compares JST calendar days — the
+    // same day boundary `expiring_within_7_days` is bucketed on. A row that
+    // expired four hours ago is overdue there and overdue here tomorrow.
     retention: retentionStatus(
       entries.filter((entry) => entry.raw_text_ciphertext !== null).map((entry) => entry.raw_text_expires_at),
       now,
