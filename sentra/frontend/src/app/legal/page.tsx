@@ -1,7 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LEGAL_CONTACT, LEGAL_DOCUMENTS } from "@/lib/legalDocuments";
-import { legalEffectiveDate, legalEnacted } from "@/lib/legalEnactment";
+import { legalEffectiveDate, legalEffectiveDateLabel, legalEnactmentState } from "@/lib/legalEnactment";
+
+/**
+ * Rendered per request, not prerendered (#282).
+ *
+ * The version and the date are `NEXT_PUBLIC_*`, which the bundler inlines at
+ * build time — those are deployment decisions and being fixed per deployment
+ * is correct. **The clock is not.** Whether the declared date has arrived is
+ * answered at render time, so a statically prerendered page would keep saying
+ * 「施行予定」 after the day came, until somebody happened to redeploy. There is
+ * no data fetch here; the cost is rendering a few constant documents.
+ */
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "書類の確認用草案 | blesc",
@@ -9,19 +21,30 @@ export const metadata: Metadata = {
 };
 
 export default function LegalDraftsPage() {
-  // 施行の有無で見出しと注記が切り替わる。「（案）」と「施行済み」を
+  // 施行の状態で見出しと注記が切り替わる。「（案）」と「施行済み」を
   // 同じ画面が別々の根拠で名乗らないように、判定は一箇所から取る。
-  const enacted = legalEnacted();
+  //
+  // 状態は3つある（#282）。「まだ決まっていない」と「決まっているが、まだ
+  // その日ではない」は参加者に伝えるべきことが違い、後者には見せられる日付が
+  // ある。施行日前に「施行済み」と読める画面を出さないための分岐でもある。
+  const state = legalEnactmentState();
   const effectiveDate = legalEffectiveDate();
+  const effectiveDateLabel = legalEffectiveDateLabel();
 
   return (
     <main className="bl-wrap bl-stack" style={{ paddingBlock: 32 }}>
       <header className="bl-stack">
         <p className="bl-eyebrow">blesc · 確認用草案</p>
         <h1 className="bl-h1">利用・個人情報・研究の書類</h1>
-        {enacted ? (
+        {state === "in_force" ? (
           <p className="bl-notice" role="note">
             以下は {effectiveDate} 施行の規約・プライバシーポリシーです。
+            研究参加の同意はこれとは別に取得します（この書類への同意は研究同意ではありません）。
+          </p>
+        ) : state === "scheduled" ? (
+          <p className="bl-notice" role="note">
+            以下は {effectiveDate} 施行予定の案です。施行日まではまだ効力がなく、
+            閲覧しても同意した扱いにはなりません。施行日より前に同意を記録することもできません。
             研究参加の同意はこれとは別に取得します（この書類への同意は研究同意ではありません）。
           </p>
         ) : (
@@ -44,7 +67,7 @@ export default function LegalDraftsPage() {
           <p className="bl-meta">
             版：{document.version}
             {" ／施行日："}
-            {enacted ? effectiveDate : "未設定"}
+            {effectiveDateLabel}
           </p>
           {document.sections.map((section) => (
             <section key={section.title} className="bl-stack" style={{ gap: 10 }}>
