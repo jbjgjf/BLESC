@@ -52,9 +52,35 @@ export function legalEnacted(): boolean {
   );
 }
 
-/** What the documents call themselves: a draft until enacted. */
+/**
+ * What the terms and the privacy policy call themselves: a draft until enacted.
+ *
+ * This existed with no callers while every title in `legalDocuments.ts` carried
+ * a hard-coded 「（案）」 and the page headed itself 「確認用草案」 unconditionally.
+ * So the notice at the top of `/legal` switched on enactment and the headings
+ * under it did not — one screen naming itself two ways, which is the thing the
+ * page's own comment says it must not do. `documentHeading()` in
+ * `legalDocuments.ts` is the caller.
+ */
 export function legalDocumentLabel(base: string): string {
   return legalEnacted() ? base : `${base}（案）`;
+}
+
+/**
+ * The version string the terms and the privacy policy *display*.
+ *
+ * It has to be the version an acceptance row would be stamped with, because
+ * that record is worth something only if it names the text the person read —
+ * which is why `POST /api/legal/acceptance` refuses to take a version from the
+ * request. A page headed `legal-review-2026-09-14-v1` that writes
+ * `legal-2026-10-01-v1` reintroduces the same gap through the other side.
+ *
+ * `draftVersion` rather than a constant: while unenacted the page keeps naming
+ * the draft it is actually showing, and nothing is recorded at all (the route
+ * answers 409). The switch only has to be true at the moment a row can exist.
+ */
+export function legalDisplayVersion(draftVersion: string): string {
+  return legalEnacted() ? LEGAL_ENACTED_VERSION : draftVersion;
 }
 
 /** The version stamped onto an acceptance row written by this build. */

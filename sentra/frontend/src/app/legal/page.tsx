@@ -1,12 +1,33 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { LEGAL_CONTACT, LEGAL_DOCUMENTS } from "@/lib/legalDocuments";
+import {
+  LEGAL_CONTACT,
+  LEGAL_DOCUMENTS,
+  documentHeading,
+  documentVersion,
+} from "@/lib/legalDocuments";
 import { legalEffectiveDate, legalEnacted } from "@/lib/legalEnactment";
 
-export const metadata: Metadata = {
-  title: "書類の確認用草案 | blesc",
-  robots: { index: false, follow: false },
-};
+/**
+ * `generateMetadata` rather than a static `metadata` object, because the title
+ * is one of the things enactment changes. 「確認用草案」 in the tab while the
+ * notice below says 「施行の規約・プライバシーポリシーです」 is the same screen
+ * naming itself two ways.
+ *
+ * Sync and reading only a `NEXT_PUBLIC_` value, which the bundler inlines at
+ * build time — no dynamic behaviour, so the page stays prerendered and the
+ * title ships in the initial HTML.
+ *
+ * `robots` stays `noindex` on both branches. Enacting the terms is not a
+ * decision to list participant-facing URLs in a search engine; that is #249's
+ * question and is answered for the whole deployment, not here.
+ */
+export function generateMetadata(): Metadata {
+  return {
+    title: legalEnacted() ? "規約・プライバシーポリシー | blesc" : "書類の確認用草案 | blesc",
+    robots: { index: false, follow: false },
+  };
+}
 
 export default function LegalDraftsPage() {
   // 施行の有無で見出しと注記が切り替わる。「（案）」と「施行済み」を
@@ -17,7 +38,7 @@ export default function LegalDraftsPage() {
   return (
     <main className="bl-wrap bl-stack" style={{ paddingBlock: 32 }}>
       <header className="bl-stack">
-        <p className="bl-eyebrow">blesc · 確認用草案</p>
+        <p className="bl-eyebrow">{enacted ? "blesc · 規約・ポリシー" : "blesc · 確認用草案"}</p>
         <h1 className="bl-h1">利用・個人情報・研究の書類</h1>
         {enacted ? (
           <p className="bl-notice" role="note">
@@ -33,16 +54,16 @@ export default function LegalDraftsPage() {
         )}
         <nav id="legal-toc" className="bl-stack" aria-label="書類の目次">
           {LEGAL_DOCUMENTS.map((document) => (
-            <a key={document.id} href={`#${document.id}`}>{document.title}</a>
+            <a key={document.id} href={`#${document.id}`}>{documentHeading(document)}</a>
           ))}
         </nav>
         <Link href="/login" className="bl-btn bl-btn--ghost">ログイン画面へ</Link>
       </header>
       {LEGAL_DOCUMENTS.map((document) => (
         <article id={document.id} key={document.id} className="bl-card bl-stack" style={{ scrollMarginTop: 24 }}>
-          <h2 className="bl-h2">{document.title}</h2>
+          <h2 className="bl-h2">{documentHeading(document)}</h2>
           <p className="bl-meta">
-            版：{document.version}
+            版：{documentVersion(document)}
             {" ／施行日："}
             {enacted ? effectiveDate : "未設定"}
           </p>

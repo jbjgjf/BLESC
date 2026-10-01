@@ -8,6 +8,7 @@ import { contextForPath } from "@/lib/blesc/context";
 import { DisplaySettings } from "@/components/a11y/DisplaySettings";
 import { useAuth } from "@/lib/auth";
 import { useDemoMode } from "@/lib/demo";
+import { legalEnacted } from "@/lib/legalEnactment";
 import { Icon, type IconName } from "@/components/ui/Icon";
 
 type NavItem = { href: string; label: string; icon: IconName; exact?: boolean };
@@ -32,16 +33,25 @@ const DEMO_ONLY_NAV_PATHS = new Set([
   "/reflect",
 ]);
 
-/** Secondary surfaces, reachable from the account menu rather than the tab bar. */
-const MORE_LINKS: Array<{ href: string; label: string; icon: IconName }> = [
-  { href: "/legal",          label: "書類（確認用草案）", icon: "description" },
-  { href: "/research",        label: "研究用の記録",   icon: "description" },
-  { href: "/graph",           label: "関係グラフ",     icon: "graphic_eq" },
-  { href: "/timeline",        label: "タイムライン",   icon: "timeline" },
-  { href: "/support-summary", label: "支援サマリー",   icon: "summarize" },
-  { href: "/sharing",         label: "共有の設定",     icon: "shield" },
-  { href: "/audit",           label: "AI処理の記録",   icon: "history" },
-];
+/**
+ * Secondary surfaces, reachable from the account menu rather than the tab bar.
+ *
+ * A function rather than a constant because the `/legal` label depends on
+ * whether the terms are enacted. A module-level array would have frozen
+ * 「確認用草案」 into the menu of a deployment whose `/legal` says 「施行」 —
+ * which is what it did.
+ */
+function moreLinks(): Array<{ href: string; label: string; icon: IconName }> {
+  return [
+    { href: "/legal",          label: legalEnacted() ? "規約・ポリシー" : "書類（確認用草案）", icon: "description" },
+    { href: "/research",        label: "研究用の記録",   icon: "description" },
+    { href: "/graph",           label: "関係グラフ",     icon: "graphic_eq" },
+    { href: "/timeline",        label: "タイムライン",   icon: "timeline" },
+    { href: "/support-summary", label: "支援サマリー",   icon: "summarize" },
+    { href: "/sharing",         label: "共有の設定",     icon: "shield" },
+    { href: "/audit",           label: "AI処理の記録",   icon: "history" },
+  ];
+}
 
 function isActive(pathname: string, item: NavItem) {
   return item.exact ? pathname === item.href : pathname.startsWith(item.href);
@@ -169,7 +179,7 @@ export function AppNav() {
                     now, and `tests/demo-only-routes.test.mjs` holds the rule
                     this filter was standing in for: nothing in this menu may
                     point at a demo-only route. */}
-                {MORE_LINKS.map((link) => (
+                {moreLinks().map((link) => (
                   <TransitionLink key={link.href} href={link.href} className="bl-menu__item" role="menuitem">
                     <Icon name={link.icon} size={19} />
                     {link.label}
