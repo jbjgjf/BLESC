@@ -34,6 +34,7 @@ import {
 } from "@/lib/pilotOps";
 import { authorizedExporters } from "@/lib/server/researchExportAudit";
 import { cronSecretConfigured } from "@/lib/server/cronAuth";
+import { pilotGateEnforced, pilotStudySlug } from "@/lib/server/pilotGate";
 import { channelsConfigured } from "@/lib/server/safetyEscalation";
 
 export const runtime = "nodejs";
@@ -189,6 +190,7 @@ export async function GET(request: NextRequest) {
     generated_at: now,
 
     scheduled_jobs: scheduledJobs(),
+    pilot_enforcement: pilotEnforcement(study.slug),
 
     enrollment: {
       total: enrollments.length,
@@ -284,6 +286,42 @@ function scheduledJobs() {
   };
 }
 
+/**
+ * Whether this deployment actually applies the pilot's rules to the study being
+ * looked at (#296).
+ *
+ * Not "can the gate reach the database". That one cannot be reported from here
+ * and does not need to be: without the service-role client this route answers
+ * 503 at line 61, which is the loudest signal available and arrives before any
+ * number does.
+ *
+ * What *can* be true while this dashboard renders normally is worse, because it
+ * looks like nothing: `PILOT_STUDY_SLUG` is read from the environment, the
+ * study shown here comes from the `?study=` parameter, and nothing has ever
+ * required them to be the same string. `pilotGateEnforced()` is what switches
+ * on the enrollment gate (#164) and, since #296, the fail-closed side of the
+ * collection-only gate (#165). Off, both stand down — an uninvited account can
+ * open the journal, and a participant inside their window has their text sent
+ * for inference. The counts on this page stay plausible throughout.
+ *
+ * So the two facts are reported side by side: whether the rules are on at all,
+ * and whether they are on *for this study*. A reader who sees `enforced: true`
+ * with `study_matches_deployment: false` is reading a dashboard for one study on
+ * a deployment collecting under another's rules.
+ */
+function pilotEnforcement(requestedSlug: string) {
+  const configured = pilotStudySlug();
+  return {
+    // False means PILOT_STUDY_SLUG is unset, NEXT_PUBLIC_DEMO_MODE is 1, or
+    // NODE_ENV is development. Expected true on any deployment collecting data.
+    enforced: pilotGateEnforced(),
+    // The deployment's own slug, so a mismatch names itself. Null is the same
+    // fact as `enforced: false`, repeated where it is actionable.
+    deployment_study_slug: configured,
+    study_matches_deployment: configured !== null && configured === requestedSlug,
+  };
+}
+
 function emptyDashboard(
   study: { slug: string; status: string; protocol_version: string; baseline_days: number; observation_days: number; is_dry_run: boolean },
   now: string,
@@ -301,6 +339,7 @@ function emptyDashboard(
     // exactly when a missing CRON_SECRET is cheapest to fix and least visible
     // in the counts.
     scheduled_jobs: scheduledJobs(),
+    pilot_enforcement: pilotEnforcement(study.slug),
     enrollment: { total: 0, by_state: {}, minors: 0, withdrawn: 0 },
     submissions: totalsFor([]),
     consent: { records: 0, without_record: 0, research_use_allowed: 0, by_document_version: {}, revoked: 0 },

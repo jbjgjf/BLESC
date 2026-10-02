@@ -180,6 +180,31 @@ describe("adaptive surfaces are refused server-side, not merely hidden", () => {
   });
 });
 
+/**
+ * Run `body` as if this process were the pilot's own deployment.
+ *
+ * `pilotGateEnforced()` reads the environment on every call, so setting it here
+ * is enough and nothing has to be re-imported. Restored in a `finally` because
+ * a leaked `PILOT_STUDY_SLUG` would turn every later test in this file into a
+ * pilot test. `NODE_ENV` matters too: the predicate is off in development, and
+ * `node --test` does not set it.
+ */
+async function withPilotDeployment(body) {
+  const before = { slug: process.env.PILOT_STUDY_SLUG, env: process.env.NODE_ENV, demo: process.env.NEXT_PUBLIC_DEMO_MODE };
+  process.env.PILOT_STUDY_SLUG = "pilot-2026";
+  process.env.NODE_ENV = "production";
+  delete process.env.NEXT_PUBLIC_DEMO_MODE;
+  try {
+    await body();
+  } finally {
+    if (before.slug === undefined) delete process.env.PILOT_STUDY_SLUG;
+    else process.env.PILOT_STUDY_SLUG = before.slug;
+    if (before.env === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = before.env;
+    if (before.demo !== undefined) process.env.NEXT_PUBLIC_DEMO_MODE = before.demo;
+  }
+}
+
 /** A stand-in Supabase client: `rpc` and `from(...).select(...)` only. */
 function fakeClient({ rpcData, rpcError, rows, rowsError }) {
   return {
@@ -211,9 +236,24 @@ describe("collectionOnlyForParticipant", () => {
     assert.equal(await collectionOnlyForParticipant(client, "participant-1"), true);
   });
 
-  it("is false when there is no client or participant to check", async () => {
+  it("is false with nothing to check on an ordinary deployment", async () => {
+    // No `PILOT_STUDY_SLUG`, so there is no study and no enrollment to protect.
+    // A school evaluating the product keeps its graph.
     assert.equal(await collectionOnlyForParticipant(null, "participant-1"), false);
     assert.equal(await collectionOnlyForParticipant(fakeClient({ rpcData: true }), null), false);
+  });
+
+  /*
+   * #296. These two used to return false, which opened all five send points on
+   * a pilot deployment whose service-role key was missing, mistyped or rotated
+   * — the enrollments were in the database and this process had lost the key to
+   * read them. A gate that cannot answer is not a gate that says yes.
+   */
+  it("fails closed on a pilot deployment when the gate cannot be reached", async () => {
+    await withPilotDeployment(async () => {
+      assert.equal(await collectionOnlyForParticipant(null, "participant-1"), true);
+      assert.equal(await collectionOnlyForParticipant(fakeClient({ rpcData: false }), null), true);
+    });
   });
 });
 
@@ -231,6 +271,21 @@ describe("collectionOnlyForUser", () => {
   it("fails closed on a query error", async () => {
     const client = fakeClient({ rowsError: { message: "permission denied" } });
     assert.equal(await collectionOnlyForUser(client, "user-1"), true);
+  });
+
+  it("is false with nothing to check on an ordinary deployment", async () => {
+    assert.equal(await collectionOnlyForUser(null, "user-1"), false);
+    assert.equal(await collectionOnlyForUser(fakeClient({ rows: [] }), null), false);
+  });
+
+  /* #296, for the voice and transcription routes: they pass
+   * `serviceRoleClient()` straight through, so a missing service-role key used
+   * to send a participant's recording to a third party mid-study. */
+  it("fails closed on a pilot deployment when the gate cannot be reached", async () => {
+    await withPilotDeployment(async () => {
+      assert.equal(await collectionOnlyForUser(null, "user-1"), true);
+      assert.equal(await collectionOnlyForUser(fakeClient({ rows: [] }), null), true);
+    });
   });
 });
 
