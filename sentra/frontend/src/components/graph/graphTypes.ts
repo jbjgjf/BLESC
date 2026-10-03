@@ -38,6 +38,12 @@ export interface GraphViewerLink extends ExtractionRelation {
 export interface GraphViewerData {
   nodes: GraphViewerNode[];
   links: GraphViewerLink[];
+  /**
+   * Relations that named an endpoint the layer does not carry, so could not be
+   * drawn. Reported rather than discarded quietly: the whole of #303 was that
+   * every relation of every snapshot failed to resolve and nothing said so.
+   */
+  unresolvedLinks?: number;
 }
 
 export interface GraphNodeSelection {
