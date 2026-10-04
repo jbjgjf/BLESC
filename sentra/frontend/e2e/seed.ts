@@ -177,8 +177,7 @@ export async function seed() {
       slug: STUDY_SLUG,
       title: "E2E 参加登録テスト",
       status: "recruiting",
-      observation_days: 7,
-      baseline_days: 14,
+      study_days: 28,
     })
     .select("id")
     .single();

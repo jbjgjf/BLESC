@@ -23,7 +23,7 @@
 | exportの実行記録 | `public.research_exports` | 同上 |
 | 記録の過程 | `sentra/frontend/src/lib/telemetry.ts` | — |
 | 外部AI送信の停止 | `sentra/frontend/src/lib/server/collectionMode.ts`（5経路） | — |
-| protocol版・期間 | `public.pilot_studies.protocol_version` / `baseline_days` / `observation_days` | `20260906010000_pilot_enrollment.sql` |
+| protocol版・期間 | `public.pilot_studies.protocol_version` / `study_days`（28日の1区間、#315） | `20260906010000_pilot_enrollment.sql`、`20261004000000_pilot_study_days.sql` |
 
 ## 未実装（protocolでは定義済み）
 

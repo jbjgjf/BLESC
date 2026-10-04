@@ -26,8 +26,8 @@ values
   ('00000000-0000-0000-0000-000000263b01', '00000000-0000-0000-0000-000000263b00', 'W_KEEP'),
   ('00000000-0000-0000-0000-000000263c01', '00000000-0000-0000-0000-000000263c00', 'W_BYSTANDER');
 
-insert into public.pilot_studies (id, slug, title, status, baseline_days, observation_days)
-values ('00000000-0000-0000-0000-000000263501', 'withdrawal-test', 'Withdrawal test', 'recruiting', 3, 0);
+insert into public.pilot_studies (id, slug, title, status, study_days)
+values ('00000000-0000-0000-0000-000000263501', 'withdrawal-test', 'Withdrawal test', 'recruiting', 3);
 
 insert into public.pilot_enrollments
   (id, study_id, owner_user_id, participant_id, research_code, cohort, state, is_minor,

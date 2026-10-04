@@ -46,7 +46,7 @@ delete from auth.users where id in (
 
 insert into public.pilot_studies (
   id, slug, title, status, protocol_version, consent_document_version,
-  baseline_days, observation_days, is_dry_run, opens_at, closes_at
+  study_days, is_dry_run, opens_at, closes_at
 ) values (
   '22222222-1111-0000-0000-000000000000',
   'dry-run-2026',
@@ -54,8 +54,8 @@ insert into public.pilot_studies (
   'recruiting',
   'pilot-protocol-v1',
   'research-consent-doc-v1',
-  -- Three days, not 14+7: the dry run proves the paths, not the study design.
-  2, 1,
+  -- Three days, not 28: the dry run proves the paths, not the study design.
+  3,
   true,
   now(), now() + interval '14 days'
 );

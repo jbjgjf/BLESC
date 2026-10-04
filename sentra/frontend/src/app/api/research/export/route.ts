@@ -41,7 +41,6 @@ import {
   type ExportEnrollmentRow,
   type ExportEntryRow,
   type ExportSelfReportRow,
-  type PhaseConfig,
 } from "@/lib/researchExport";
 
 export const runtime = "nodejs";
@@ -209,29 +208,22 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // `study_phase` is measured against each study's own baseline/observation
-  // split, so the studies in scope are read rather than assuming the column
-  // defaults. One query for the whole export, not one per enrollment.
-  const phasesByStudy = new Map<string, PhaseConfig>();
+  // The window closes at each study's own `study_days`, so the studies in scope
+  // are read rather than assuming the column default. One query for the whole
+  // export, not one per enrollment.
+  const studyDaysByStudy = new Map<string, number>();
   const studyIds = Array.from(new Set(enrollments.map((row) => row.study_id).filter(Boolean)));
   if (studyIds.length > 0) {
     const studies = await service
       .from("pilot_studies")
-      .select("id, baseline_days, observation_days")
+      .select("id, study_days")
       .in("id", studyIds);
     if (studies.error) {
       await audit("failed", 0, studies.error.message);
       return jsonError(studies.error.message, 502);
     }
-    for (const row of (studies.data ?? []) as Array<{
-      id: string;
-      baseline_days: number;
-      observation_days: number;
-    }>) {
-      phasesByStudy.set(row.id, {
-        baselineDays: row.baseline_days,
-        observationDays: row.observation_days,
-      });
+    for (const row of (studies.data ?? []) as Array<{ id: string; study_days: number }>) {
+      studyDaysByStudy.set(row.id, row.study_days);
     }
   }
 
@@ -265,7 +257,7 @@ export async function GET(request: NextRequest) {
     consentByParticipant,
     timeZone: studyTimezone(),
     decryptedText,
-    phasesByStudy,
+    studyDaysByStudy,
     selfReportByEntry,
   });
 

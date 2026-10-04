@@ -5,8 +5,8 @@ import { describe, it } from "node:test";
 
 import {
   CONSENT_DOCUMENT_V1,
-  CONSENT_DOCUMENT_V2,
-  consentDocumentV2Enacted,
+  CONSENT_DOCUMENT_V3,
+  consentDocumentV3Enacted,
   currentConsentDocumentVersion,
   researchDocumentLabel,
 } from "../src/lib/consentDocument.ts";
@@ -25,6 +25,7 @@ import {
 
 const read = (relative) => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
 const PACK = read("../../../docs/pilot/consent-pack.md");
+const APPROVALS = read("../../../docs/pilot/approvals.md");
 
 function withEnv(value, run) {
   const prior = process.env.NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED;
@@ -39,32 +40,41 @@ function withEnv(value, run) {
 }
 
 describe("one source for the document version", () => {
-  it("stamps v1 while v2 is not enacted", () => {
+  it("stamps v1 while v3 is not enacted", () => {
     withEnv(undefined, () => {
       assert.equal(currentConsentDocumentVersion(), CONSENT_DOCUMENT_V1);
       // And the page says so, rather than presenting the draft as final.
-      assert.equal(researchDocumentLabel(), `${CONSENT_DOCUMENT_V2}-draft`);
+      assert.equal(researchDocumentLabel(), `${CONSENT_DOCUMENT_V3}-draft`);
     });
   });
 
-  it("stamps v2 and drops the draft label together", () => {
-    withEnv(CONSENT_DOCUMENT_V2, () => {
-      assert.equal(currentConsentDocumentVersion(), CONSENT_DOCUMENT_V2);
-      assert.equal(researchDocumentLabel(), CONSENT_DOCUMENT_V2);
+  it("stamps v3 and drops the draft label together", () => {
+    withEnv(CONSENT_DOCUMENT_V3, () => {
+      assert.equal(currentConsentDocumentVersion(), CONSENT_DOCUMENT_V3);
+      assert.equal(researchDocumentLabel(), CONSENT_DOCUMENT_V3);
     });
   });
 
   it("ignores a value that is not the exact version string", () => {
     // `=1` or `=true` would be the natural guess and must not enact anything:
     // the variable names the document, so a deployment cannot enact "whatever
-    // v2 happens to mean later".
-    for (const value of ["1", "true", "v2", "research-consent-doc-v2-draft"]) {
-      withEnv(value, () => assert.equal(consentDocumentV2Enacted(), false, value));
+    // v3 happens to mean later".
+    for (const value of ["1", "true", "v3", "research-consent-doc-v3-draft"]) {
+      withEnv(value, () => assert.equal(consentDocumentV3Enacted(), false, value));
     }
   });
 
+  it("no longer enacts v2, whose text this build does not carry (#315)", () => {
+    // A deployment that set the flag to v2 before the period changed must fall
+    // back to v1, not keep stamping a document that said 21 days.
+    withEnv("research-consent-doc-v2", () => {
+      assert.equal(consentDocumentV3Enacted(), false);
+      assert.equal(currentConsentDocumentVersion(), CONSENT_DOCUMENT_V1);
+    });
+  });
+
   it("the two constants stay distinct", () => {
-    assert.notEqual(CONSENT_DOCUMENT_V1, CONSENT_DOCUMENT_V2);
+    assert.notEqual(CONSENT_DOCUMENT_V1, CONSENT_DOCUMENT_V3);
   });
 });
 
@@ -75,7 +85,7 @@ describe("what has to be true before v2 may be enacted", () => {
    * reaching a state where doing so looks finished when it is not.
    */
 
-  it("the pack still has blanks, so this build must not be stamping v2", () => {
+  it("the pack still has blanks, so this build must not be stamping v3", () => {
     const placeholders = PACK.split("【要記入】").length - 1;
 
     if (placeholders > 0) {
@@ -83,7 +93,7 @@ describe("what has to be true before v2 may be enacted", () => {
         process.env.NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED,
         undefined,
         `consent-pack.md still has ${placeholders} 【要記入】 placeholder(s). ` +
-          "Enacting v2 now would stamp rows as agreement to a document that does not exist yet.",
+          "Enacting v3 now would stamp rows as agreement to a document that does not exist yet.",
       );
     }
   });
@@ -96,9 +106,28 @@ describe("what has to be true before v2 may be enacted", () => {
   });
 
   it("the pack and the code agree on the formal version string", () => {
-    assert.ok(
-      PACK.includes(CONSENT_DOCUMENT_V2),
+    assert.match(
+      PACK,
+      new RegExp(`\\| 文書版名 \\| \`${CONSENT_DOCUMENT_V3}\` \\|`),
       "the pack no longer names the version this build would stamp",
     );
+  });
+
+  it("v3 is not enacted until all three signatories have approved v3", () => {
+    // approvals.md is where the version and the approval meet. The v2 rows
+    // approved a 21-day text; they must not be read as approval of v3, and the
+    // flag must not be set while any v3 row is still waiting.
+    const v3Rows = APPROVALS.split("\n").filter(
+      (line) => line.startsWith("|") && line.includes(`\`${CONSENT_DOCUMENT_V3}\``),
+    );
+    assert.equal(v3Rows.length, 3, "approvals.md needs one v3 row per signatory");
+    const approved = v3Rows.filter((line) => line.includes("承認済み")).length;
+    if (approved < 3) {
+      assert.notEqual(
+        process.env.NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED,
+        CONSENT_DOCUMENT_V3,
+        `only ${approved} of 3 signatories have approved ${CONSENT_DOCUMENT_V3}`,
+      );
+    }
   });
 });

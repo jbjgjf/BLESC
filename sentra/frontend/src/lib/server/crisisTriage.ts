@@ -121,7 +121,7 @@ async function readPaged<T>(
   return { rows, complete: false };
 }
 
-/** 100,000 entries. Far past the pilot's 1,050; a stop so this cannot spin. */
+/** 100,000 entries. Far past the pilot's 1,400 (`PILOT_MAX_ENTRIES`); a stop so this cannot spin. */
 const MAX_SCAN_PAGES = 200;
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -143,8 +143,8 @@ function chunk<T>(items: T[], size: number): T[][] {
  * ## Why this is written in pages (#247)
  *
  * The first version read both tables in one unbounded request and scanned only
- * the newest 500 entries. At the pilot's own size — 50 students × 21 days, up
- * to 1,050 entries — both bounds land inside the study:
+ * the newest 500 entries. At the pilot's own size — 50 students × 28 days, up
+ * to 1,400 entries — both bounds land inside the study:
  *
  *   - past `db-max-rows` the set of already-reviewed entries came back
  *     truncated, so reviewed entries looked new, the insert hit the `unique`
@@ -291,7 +291,7 @@ const QUEUE_LIMIT = 200;
  * `limit` and the sort never saw it. The reviewer got a screen ordered worst
  * first and had no way to tell that the worst row was not on it.
  *
- * 1,050 entries is the pilot's own design size, so "past 200 pending" is a
+ * 1,400 entries is the pilot's own design size, so "past 200 pending" is a
  * normal Monday, not an edge case.
  *
  * `assessed_risk` is text, and text order (`none` > `low` > `elevated` >
@@ -384,7 +384,7 @@ export async function loadQueue(
  * How many rows are waiting, counted rather than inferred from the page.
  *
  * The console shows at most `QUEUE_LIMIT`. Without this the screen could say
- * "200 pending" while 1,050 were — the one number a reviewer would use to
+ * "200 pending" while 1,400 were — the one number a reviewer would use to
  * decide whether they are done for the slot.
  */
 export async function countPending(service: SupabaseClient): Promise<number> {

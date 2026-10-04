@@ -33,6 +33,7 @@
  */
 
 import { localDayKey } from "./journalStats.ts";
+import { PILOT_STUDY_DAYS } from "./pilotProtocol.ts";
 import { scanForPii, summarizePii, type PiiFinding } from "./piiScanner.ts";
 
 /** An entry as the export route reads it. */
@@ -54,9 +55,9 @@ export type ExportEnrollmentRow = {
   /**
    * Which study's window this enrollment belongs to.
    *
-   * `study_phase` is measured against that study's own `baseline_days`, and one
-   * person may be enrolled in more than one study — so the phase cannot come
-   * from a single deployment-wide constant.
+   * The window's length is that study's own `study_days`, and one person may be
+   * enrolled in more than one study — so the length cannot come from a single
+   * deployment-wide constant.
    */
   study_id: string;
   state: string;
@@ -116,19 +117,16 @@ export type ExclusionReason =
 export type ResearchRow = {
   research_code: string;
   cohort: string;
-  /** 1 on the first day of this participant's window. Never a wall-clock date. */
-  day_index: number;
   /**
-   * Which half of the protocol this day falls in, or null past the end.
+   * 1 on the first day of this participant's window, at most the study's
+   * `study_days`. Never a wall-clock date.
    *
-   * Derived from the study's own `baseline_days`, not from the 14/21 in the
-   * data dictionary: those are the column defaults, and a study configured with
-   * a different split would otherwise be exported under someone else's phase
-   * boundary. A day beyond `baseline_days + observation_days` is `null` rather
-   * than `observation` — an entry past the end of the protocol is not a late
-   * observation day, it is a day the protocol does not describe.
+   * There is no `study_phase` beside it since #315, which made the two named
+   * halves (14 baseline + 7 observation) one 28-day period. A split the
+   * analysis wants is computed from `day_index` under the analysis plan, not
+   * stamped here as if the participant had been told about it.
    */
-  study_phase: StudyPhase | null;
+  day_index: number;
   observation_type: string | null;
   /**
    * The five settled self-report items for this submission, or null when the
@@ -206,6 +204,21 @@ const NO_EXCLUSIONS: Record<ExclusionReason, number> = {
   outside_window: 0,
 };
 
+/** The length assumed for a study the route did not read: the column default. */
+export const DEFAULT_STUDY_DAYS = PILOT_STUDY_DAYS;
+
+/**
+ * Whether a study day is one the protocol collects.
+ *
+ * Inclusive and 1-based, matching `day_index`: with the default 28, days 1-28
+ * are in and day 29 is not. Day 0 cannot occur — `buildResearchDataset`
+ * excludes anything below 1 as before the window — and is treated as outside
+ * here too.
+ */
+export function withinStudy(day: number, studyDays: number): boolean {
+  return Number.isFinite(day) && day >= 1 && day <= studyDays;
+}
+
 /**
  * Day 1 is the first day of the participant's own window, in the study's
  * timezone.
@@ -216,29 +229,6 @@ const NO_EXCLUSIONS: Record<ExclusionReason, number> = {
  * and therefore on the same day — which is exactly the boundary a nightly
  * journal sits on.
  */
-export type StudyPhase = "baseline" | "observation";
-
-/** How long each half of a study runs. Defaults match the column defaults. */
-export type PhaseConfig = { baselineDays: number; observationDays: number };
-
-export const DEFAULT_PHASES: PhaseConfig = { baselineDays: 14, observationDays: 7 };
-
-/**
- * The phase a study day falls in.
- *
- * Boundaries are inclusive and 1-based, matching `day_index`: with the default
- * 14/7, days 1-14 are `baseline` and 15-21 are `observation`. Day 0 cannot
- * occur — `buildResearchDataset` excludes anything below 1 as outside the
- * window — and is treated as outside the protocol here too rather than silently
- * counted as baseline.
- */
-export function studyPhase(day: number, phases: PhaseConfig): StudyPhase | null {
-  if (!Number.isFinite(day) || day < 1) return null;
-  if (day <= phases.baselineDays) return "baseline";
-  if (day <= phases.baselineDays + phases.observationDays) return "observation";
-  return null;
-}
-
 export function dayIndex(createdAt: string, startedAt: string, timeZone: string): number | null {
   const entryDay = localDayKey(createdAt, timeZone);
   const startDay = localDayKey(startedAt, timeZone);
@@ -297,17 +287,17 @@ export function buildResearchDataset(input: {
   /** Text by entry id. An entry absent from the map exports no text. */
   decryptedText?: Map<string, string | null>;
   /**
-   * Phase boundaries by study id. A study missing from the map falls back to
-   * the column defaults rather than exporting a null phase for every row,
-   * because the common deployment has exactly one study on the defaults.
+   * `study_days` by study id. A study missing from the map falls back to the
+   * column default rather than excluding every row, because the common
+   * deployment has exactly one study on the default.
    */
-  phasesByStudy?: Map<string, PhaseConfig>;
+  studyDaysByStudy?: Map<string, number>;
   /** Self-report by entry id. An entry with no reading exports `null`. */
   selfReportByEntry?: Map<string, ExportSelfReportRow>;
 }): DatasetResult {
   const { entries, enrollments, consentByParticipant, timeZone } = input;
   const decrypted = input.decryptedText ?? new Map<string, string | null>();
-  const phasesByStudy = input.phasesByStudy ?? new Map<string, PhaseConfig>();
+  const studyDaysByStudy = input.studyDaysByStudy ?? new Map<string, number>();
   const selfReportByEntry = input.selfReportByEntry ?? new Map<string, ExportSelfReportRow>();
 
   const enrollmentByParticipant = new Map<string, ExportEnrollmentRow>();
@@ -361,9 +351,14 @@ export function buildResearchDataset(input: {
     // day 0 or day -41 of a window it predates.
     //
     // `day_index` is 1 on the opening day, so anything below 1 is before the
-    // window, and `collection_ends_at` closes the other end when the study sets
-    // one.
+    // window. The other end is closed twice: by the study's own `study_days`,
+    // because the consent pack says writing after the last day 「研究データとしない」
+    // (第4条), and by `collection_ends_at` when the study sets one.
     if (index < 1) {
+      excluded.outside_window += 1;
+      continue;
+    }
+    if (!withinStudy(index, studyDaysByStudy.get(enrollment.study_id) ?? DEFAULT_STUDY_DAYS)) {
       excluded.outside_window += 1;
       continue;
     }
@@ -387,7 +382,6 @@ export function buildResearchDataset(input: {
       research_code: enrollment.research_code,
       cohort: enrollment.cohort,
       day_index: index,
-      study_phase: studyPhase(index, phasesByStudy.get(enrollment.study_id) ?? DEFAULT_PHASES),
       observation_type: entry.observation_type,
       // Rebuilt field by field rather than spread. A spread would carry
       // `entry_id` and anything a later column adds to the table straight into
@@ -455,8 +449,8 @@ export function buildResearchDataset(input: {
 /**
  * The columns the identity map actually reads.
  *
- * Narrower than `ExportEnrollmentRow` on purpose: that type gained `study_id`
- * for `study_phase`, and the identity-map route does not select it. Reusing the
+ * Narrower than `ExportEnrollmentRow` on purpose: that type carries `study_id`
+ * for the study's length, and the identity-map route does not select it. Reusing the
  * wider type would leave a cast asserting a column the query never asked for.
  */
 export type IdentityMapRow = Omit<ExportEnrollmentRow, "study_id" | "collection_ends_at">;

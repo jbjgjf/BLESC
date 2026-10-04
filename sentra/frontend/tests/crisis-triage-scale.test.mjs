@@ -6,8 +6,8 @@
  * the queue still works once there is a study's worth of rows in it, which is
  * a different question and had a different answer.
  *
- * The pilot is 50 students × 21 days, up to 1,050 entries. Three bounds in the
- * first version of this code sat inside that number:
+ * The pilot is 50 students × 28 days, up to 1,400 entries (`PILOT_MAX_ENTRIES`).
+ * Three bounds in the first version of this code sat inside that number:
  *
  *   1. the set of already-reviewed entries was read in one unbounded request,
  *      so past Supabase's `db-max-rows` it came back **silently truncated**,
@@ -35,6 +35,7 @@ import {
   enqueuePendingReviews,
   loadQueue,
 } from "../src/lib/server/crisisTriage.ts";
+import { PILOT_MAX_ENTRIES } from "../src/lib/pilotProtocol.ts";
 
 const ASSESSOR = "test-assessor";
 
@@ -294,7 +295,7 @@ describe("nothing ages out of the backlog", () => {
   });
 
   it("leaves no entry permanently out of reach", async () => {
-    const entries = seedEntries(1050); // the pilot's own maximum
+    const entries = seedEntries(PILOT_MAX_ENTRIES); // the pilot's own maximum
     const db = fakeDb({ entries, maxRows: 1000 });
 
     for (let open = 0; open < 10; open += 1) {
@@ -421,11 +422,11 @@ describe("worst first means worst first", () => {
 
 describe("the screen is told how much it is not showing", () => {
   it("counts every pending row, not just the page", async () => {
-    const entries = seedEntries(1050);
+    const entries = seedEntries(PILOT_MAX_ENTRIES);
     const db = fakeDb({ entries, reviews: reviewsFor(entries), maxRows: 1000 });
 
     // The count must not be capped by the gateway either.
-    assert.equal(await countPending(db), 1050);
+    assert.equal(await countPending(db), PILOT_MAX_ENTRIES);
   });
 
   it("does not count rows that have been decided", async () => {

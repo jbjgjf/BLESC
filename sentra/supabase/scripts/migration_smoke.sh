@@ -33,6 +33,8 @@ TESTS="$SUPABASE_DIR/tests"
 DEPLOY_GATED=(
   "20260906000100_restrict_entries_raw_text_columns.sql"
   "20260907000000_restrict_entries_raw_text_writes.sql"
+  "20261004000000_pilot_study_days.sql"
+  "20261004000100_drop_pilot_study_split.sql"
 )
 
 say() { printf '\n=== %s ===\n' "$1"; }
