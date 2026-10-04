@@ -3,13 +3,13 @@ import Link from "next/link";
 import {
   LEGAL_CONTACT,
   LEGAL_DOCUMENTS,
+  documentEffectiveDateLabel,
   documentHeading,
   documentVersion,
 } from "@/lib/legalDocuments";
 import {
   isLegalAcceptableDocument,
   legalEffectiveDate,
-  legalEffectiveDateLabel,
   legalEnacted,
   legalEnactmentState,
 } from "@/lib/legalEnactment";
@@ -62,7 +62,6 @@ export default function LegalDraftsPage() {
   const state = legalEnactmentState(now);
   const enacted = legalEnacted(now);
   const effectiveDate = legalEffectiveDate();
-  const effectiveDateLabel = legalEffectiveDateLabel(now);
 
   // 同意欄（#251）にも同じ判定を渡す。押せるかどうかを画面側で別に計算すると、
   // 「施行済み」を名乗る根拠が二つになる。施行予定日は、ボタンが無い理由を
@@ -104,7 +103,7 @@ export default function LegalDraftsPage() {
           <p className="bl-meta">
             版：{documentVersion(document)}
             {" ／施行日："}
-            {effectiveDateLabel}
+            {documentEffectiveDateLabel(document, now)}
           </p>
           {document.sections.map((section) => (
             <section key={section.title} className="bl-stack" style={{ gap: 10 }}>

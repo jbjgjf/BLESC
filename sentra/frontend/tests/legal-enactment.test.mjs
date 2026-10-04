@@ -37,6 +37,7 @@ import {
   LEGAL_DOCUMENTS,
   LEGAL_DRAFT_VERSION,
   RESEARCH_DRAFT_VERSION,
+  documentEffectiveDateLabel,
   documentHeading,
   documentVersion,
 } from "../src/lib/legalDocuments.ts";
@@ -272,10 +273,11 @@ describe("the page tells the truth in both states", () => {
   });
 
   it("gets the effective-date line from one tested function", () => {
-    // The three states are asserted above by calling `legalEffectiveDateLabel`.
-    // What is checked here is only that the page uses it rather than deciding
-    // again — a second copy of the rule is a second place to get it wrong.
-    assert.match(code(page), /\{effectiveDateLabel\}/);
+    // The states are asserted by calling `documentEffectiveDateLabel` (below).
+    // What is checked here is only that the page uses it, per document, rather
+    // than deciding again — a second copy of the rule is a second place to get
+    // it wrong.
+    assert.match(code(page), /\{documentEffectiveDateLabel\(document, now\)\}/);
     assert.doesNotMatch(code(page), /"未設定"/);
   });
 
@@ -444,6 +446,43 @@ describe("what the page names and what a row records are the same document", () 
         assert.equal(documentVersion(byId(id)), RESEARCH_DRAFT_VERSION);
         assert.match(documentVersion(byId(id)), /-draft$/);
       }
+    });
+  });
+
+  it("the legal date labels only the legal documents (#282)", () => {
+    // The per-article meta line used to print one label for all four documents,
+    // so scheduling the terms printed 「2026-10-01（施行予定）」 under the consent
+    // pack, and once in force gave it a date its own switch never declared.
+    withEnv(ENACTED, () => {
+      for (const [now, expected] of [
+        [DAY_BEFORE, "2026-10-01（施行予定）"],
+        [EFFECTIVE_DAY, "2026-10-01"],
+      ]) {
+        for (const id of ["terms", "privacy"]) {
+          assert.equal(documentEffectiveDateLabel(byId(id), now), expected, id);
+        }
+        for (const id of ["research", "guardian"]) {
+          const label = documentEffectiveDateLabel(byId(id), now);
+          assert.equal(label, "未設定", id);
+          assert.doesNotMatch(label, /2026-10-01|施行予定/, id);
+        }
+      }
+    });
+    withEnv(UNENACTED, () => {
+      for (const document of LEGAL_DOCUMENTS) {
+        assert.equal(documentEffectiveDateLabel(document, EFFECTIVE_DAY), "未設定", document.id);
+      }
+    });
+  });
+
+  it("enacting the research documents does not borrow the legal date", () => {
+    // The research switch carries a version and no date; there is nothing for
+    // those documents to show but 「未設定」, whatever the legal switch says.
+    withEnv({ ...ENACTED, NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED: "research-consent-doc-v2" }, () => {
+      for (const id of ["research", "guardian"]) {
+        assert.equal(documentEffectiveDateLabel(byId(id), EFFECTIVE_DAY), "未設定", id);
+      }
+      assert.equal(documentEffectiveDateLabel(byId("terms"), EFFECTIVE_DAY), "2026-10-01");
     });
   });
 
