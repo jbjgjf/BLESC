@@ -21,7 +21,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
-import { advanceEnrollment, loadEnrollmentsForUser, loadStudyBySlug } from "@/lib/server/pilotStore";
+import {
+  advanceEnrollment,
+  loadEnrollmentById,
+  loadEnrollmentsForUser,
+  loadStudyBySlug,
+} from "@/lib/server/pilotStore";
+import { parseDisposition, withdrawFromResearch, withdrawalResponseBody } from "@/lib/server/withdrawal";
 import { canTransition, enrollmentProgress, pendingRequirement, type PilotState } from "@/lib/pilotEnrollment";
 
 export const runtime = "nodejs";
@@ -64,6 +70,8 @@ type TransitionBody = {
   enrollment_id?: string;
   to?: string;
   reason?: string;
+  /** Only read when `to` is `withdrawn`. See `parseDisposition`. */
+  retained_data?: unknown;
 };
 
 export async function POST(request: NextRequest) {
@@ -87,6 +95,31 @@ export async function POST(request: NextRequest) {
 
   const service = serviceRoleClient();
   if (!service) return jsonError("Supabase is not configured.", 503);
+
+  // Withdrawal is not a step in the enrollment state machine any more. It is
+  // the single withdrawal procedure `/consent` also runs (#263): enrollment,
+  // consent record and stored text, together. Advancing only the enrollment
+  // here is what left consent active and the text kept without asking.
+  if (to === "withdrawn") {
+    const target = await loadEnrollmentById(service, enrollmentId);
+    // Somebody else's enrollment is indistinguishable from none at all.
+    if (!target || target.owner_user_id !== auth.user.id) {
+      return jsonError("参加登録が見つかりません。", 404);
+    }
+    const result = await withdrawFromResearch(service, {
+      ownerUserId: auth.user.id,
+      participantId: target.participant_id,
+      disposition: parseDisposition(body.retained_data),
+      actor: "participant",
+      source: "pilot_join",
+      reason: typeof body.reason === "string" ? body.reason.slice(0, 200) : "withdrawn on /pilot/join",
+    });
+    if (result.outcome === "not_withdrawn") {
+      console.error("[pilot] withdrawal failed; nothing was changed", result.reason);
+      return NextResponse.json({ ...withdrawalResponseBody(result), state: target.state }, { status: 502 });
+    }
+    return NextResponse.json({ ...withdrawalResponseBody(result), state: "withdrawn" });
+  }
 
   // A local check before the round trip, so the common "your tab is stale"
   // case returns the current state instead of a generic failure. It does not

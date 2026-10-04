@@ -64,8 +64,10 @@ export const USERS = {
   minor: `e2e-minor-${RUN_ID}@example.test`,
   /** Declines at the assent step. */
   decliner: `e2e-decline-${RUN_ID}@example.test`,
-  /** Already collecting; withdraws during the test. */
+  /** Already collecting; withdraws from /pilot/join during the test. */
   withdrawer: `e2e-withdraw-${RUN_ID}@example.test`,
+  /** Already collecting with research consent; withdraws from /consent (#263). */
+  consentWithdrawer: `e2e-consent-withdraw-${RUN_ID}@example.test`,
   /** Has an account and nothing else. Used for the direct-URL check. */
   stranger: `e2e-stranger-${RUN_ID}@example.test`,
 };
@@ -85,7 +87,7 @@ function hash(code: string): string {
     .digest("hex");
 }
 
-function admin() {
+export function admin() {
   if (!/127\.0\.0\.1|localhost/.test(SUPABASE_URL)) {
     throw new Error(
       `Refusing to seed: ${SUPABASE_URL} is not a local Supabase stack. ` +
@@ -108,6 +110,62 @@ async function createUser(client: SupabaseClient, email: string) {
   });
   if (created.error) throw new Error(`could not create ${email}: ${created.error.message}`);
   return created.data.user;
+}
+
+/**
+ * A participant already in `collecting`, with the research consent that
+ * `enrolled` required. The consent row matters for the `/consent` path: a
+ * withdrawal that only has a revocation to write, and nothing to revoke, would
+ * pass for the wrong reason.
+ */
+async function seedCollecting(
+  client: SupabaseClient,
+  studyId: string,
+  ownerUserId: string,
+  researchCode: string,
+  since: string,
+) {
+  const participant = await client
+    .from("participants")
+    .insert({
+      owner_user_id: ownerUserId,
+      code: "research_user_01",
+      display_name: "E2E 撤回テスト",
+    })
+    .select("id")
+    .single();
+  if (participant.error) {
+    throw new Error(`could not create the participant: ${participant.error.message}`);
+  }
+
+  const consent = await client.from("consent_records").insert({
+    owner_user_id: ownerUserId,
+    participant_id: participant.data.id,
+    app_use: true,
+    research_analysis: true,
+    raw_text_retention: true,
+    minor_assent: true,
+    granted_at: since,
+  });
+  if (consent.error) throw new Error(`could not record consent: ${consent.error.message}`);
+
+  const enrollment = await client.from("pilot_enrollments").insert({
+    study_id: studyId,
+    owner_user_id: ownerUserId,
+    participant_id: participant.data.id,
+    research_code: researchCode,
+    cohort: "adult",
+    state: "collecting",
+    // Adult, so the guardian constraint does not apply to this fixture.
+    is_minor: false,
+    information_read_at: since,
+    assented_at: since,
+    enrolled_at: since,
+    collection_started_at: since,
+  });
+  if (enrollment.error) {
+    throw new Error(`could not create the enrollment: ${enrollment.error.message}`);
+  }
 }
 
 export async function seed() {
@@ -147,38 +205,12 @@ export async function seed() {
     users[role] = await createUser(client, email);
   }
 
-  // The withdrawer starts already collecting, because withdrawing from a study
-  // you have not joined is not the case worth testing.
-  const participant = await client
-    .from("participants")
-    .insert({
-      owner_user_id: users.withdrawer.id,
-      code: "research_user_01",
-      display_name: "E2E 撤回テスト",
-    })
-    .select("id")
-    .single();
-  if (participant.error) {
-    throw new Error(`could not create the participant: ${participant.error.message}`);
-  }
-
-  const enrollment = await client.from("pilot_enrollments").insert({
-    study_id: studyId,
-    owner_user_id: users.withdrawer.id,
-    participant_id: participant.data.id,
-    research_code: "P-E2E-W1",
-    cohort: "adult",
-    state: "collecting",
-    // Adult, so the guardian constraint does not apply to this fixture.
-    is_minor: false,
-    information_read_at: yesterday,
-    assented_at: yesterday,
-    enrolled_at: yesterday,
-    collection_started_at: yesterday,
-  });
-  if (enrollment.error) {
-    throw new Error(`could not create the enrollment: ${enrollment.error.message}`);
-  }
+  // Both withdrawers start already collecting, because withdrawing from a
+  // study you have not joined is not the case worth testing. There are two
+  // because there are two doors, `/pilot/join` and `/consent`, and #263 was
+  // that each door did half the job.
+  await seedCollecting(client, studyId, users.withdrawer.id, "P-E2E-W1", yesterday);
+  await seedCollecting(client, studyId, users.consentWithdrawer.id, "P-E2E-W2", yesterday);
 
   return { studyId, users };
 }

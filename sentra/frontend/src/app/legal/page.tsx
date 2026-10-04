@@ -1,7 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { LEGAL_CONTACT, LEGAL_DOCUMENTS } from "@/lib/legalDocuments";
-import { legalEffectiveDate, legalEffectiveDateLabel, legalEnactmentState } from "@/lib/legalEnactment";
+import {
+  LEGAL_CONTACT,
+  LEGAL_DOCUMENTS,
+  documentHeading,
+  documentVersion,
+} from "@/lib/legalDocuments";
+import {
+  isLegalAcceptableDocument,
+  legalEffectiveDate,
+  legalEffectiveDateLabel,
+  legalEnacted,
+  legalEnactmentState,
+} from "@/lib/legalEnactment";
+import { LegalAcceptanceControl, LegalAcceptanceProvider } from "@/components/LegalAcceptance";
 
 /**
  * Rendered per request, not prerendered (#282).
@@ -15,10 +27,26 @@ import { legalEffectiveDate, legalEffectiveDateLabel, legalEnactmentState } from
  */
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "書類の確認用草案 | blesc",
-  robots: { index: false, follow: false },
-};
+/**
+ * `generateMetadata` rather than a static `metadata` object, because the title
+ * is one of the things enactment changes. 「確認用草案」 in the tab while the
+ * notice below says 「施行の規約・プライバシーポリシーです」 is the same screen
+ * naming itself two ways.
+ *
+ * Sync, and evaluated per request like the rest of the page (`force-dynamic`
+ * above): the version and the date are inlined at build time, but whether the
+ * date has arrived is not (#282). The title still ships in the initial HTML.
+ *
+ * `robots` stays `noindex` on both branches. Enacting the terms is not a
+ * decision to list participant-facing URLs in a search engine; that is #249's
+ * question and is answered for the whole deployment, not here.
+ */
+export function generateMetadata(): Metadata {
+  return {
+    title: legalEnacted() ? "規約・プライバシーポリシー | blesc" : "書類の確認用草案 | blesc",
+    robots: { index: false, follow: false },
+  };
+}
 
 export default function LegalDraftsPage() {
   // 施行の状態で見出しと注記が切り替わる。「（案）」と「施行済み」を
@@ -27,14 +55,23 @@ export default function LegalDraftsPage() {
   // 状態は3つある（#282）。「まだ決まっていない」と「決まっているが、まだ
   // その日ではない」は参加者に伝えるべきことが違い、後者には見せられる日付が
   // ある。施行日前に「施行済み」と読める画面を出さないための分岐でもある。
-  const state = legalEnactmentState();
+  //
+  // 判定はリクエスト時の一つの時刻で行う（`force-dynamic`）。施行予定日の前は
+  // `enacted` は false で、同意欄にボタンは出ない。
+  const now = new Date();
+  const state = legalEnactmentState(now);
+  const enacted = legalEnacted(now);
   const effectiveDate = legalEffectiveDate();
-  const effectiveDateLabel = legalEffectiveDateLabel();
+  const effectiveDateLabel = legalEffectiveDateLabel(now);
 
+  // 同意欄（#251）にも同じ判定を渡す。押せるかどうかを画面側で別に計算すると、
+  // 「施行済み」を名乗る根拠が二つになる。施行予定日は、ボタンが無い理由を
+  // 「未決定」と取り違えさせないために、表示用にだけ渡す。
   return (
+    <LegalAcceptanceProvider enacted={enacted} scheduledDate={state === "scheduled" ? effectiveDate : null}>
     <main className="bl-wrap bl-stack" style={{ paddingBlock: 32 }}>
       <header className="bl-stack">
-        <p className="bl-eyebrow">blesc · 確認用草案</p>
+        <p className="bl-eyebrow">{enacted ? "blesc · 規約・ポリシー" : "blesc · 確認用草案"}</p>
         <h1 className="bl-h1">利用・個人情報・研究の書類</h1>
         {state === "in_force" ? (
           <p className="bl-notice" role="note">
@@ -56,16 +93,16 @@ export default function LegalDraftsPage() {
         )}
         <nav id="legal-toc" className="bl-stack" aria-label="書類の目次">
           {LEGAL_DOCUMENTS.map((document) => (
-            <a key={document.id} href={`#${document.id}`}>{document.title}</a>
+            <a key={document.id} href={`#${document.id}`}>{documentHeading(document)}</a>
           ))}
         </nav>
         <Link href="/login" className="bl-btn bl-btn--ghost">ログイン画面へ</Link>
       </header>
       {LEGAL_DOCUMENTS.map((document) => (
         <article id={document.id} key={document.id} className="bl-card bl-stack" style={{ scrollMarginTop: 24 }}>
-          <h2 className="bl-h2">{document.title}</h2>
+          <h2 className="bl-h2">{documentHeading(document)}</h2>
           <p className="bl-meta">
-            版：{document.version}
+            版：{documentVersion(document)}
             {" ／施行日："}
             {effectiveDateLabel}
           </p>
@@ -75,6 +112,7 @@ export default function LegalDraftsPage() {
               {section.paragraphs.map((paragraph) => <p className="bl-body" key={paragraph}>{paragraph}</p>)}
             </section>
           ))}
+          {isLegalAcceptableDocument(document.id) ? <LegalAcceptanceControl documentId={document.id} /> : null}
         </article>
       ))}
       <footer className="bl-stack">
@@ -82,5 +120,6 @@ export default function LegalDraftsPage() {
         <a href="#legal-toc">書類の目次へ戻る</a>
       </footer>
     </main>
+    </LegalAcceptanceProvider>
   );
 }

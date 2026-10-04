@@ -41,6 +41,17 @@
  * second one has a date to show them.
  */
 
+/**
+ * The documents a person can accept. Research consent is not among them: it is
+ * recorded in `consent_records`, by a different screen, under different rules.
+ */
+export const LEGAL_ACCEPTABLE_DOCUMENTS = ["terms", "privacy"] as const;
+export type LegalAcceptableDocument = (typeof LEGAL_ACCEPTABLE_DOCUMENTS)[number];
+
+export function isLegalAcceptableDocument(value: unknown): value is LegalAcceptableDocument {
+  return typeof value === "string" && (LEGAL_ACCEPTABLE_DOCUMENTS as readonly string[]).includes(value);
+}
+
 /** The version string that the enacted documents carry. */
 export const LEGAL_ENACTED_VERSION = "legal-2026-10-01-v1";
 
@@ -115,7 +126,17 @@ export function legalEnacted(now: Date = new Date()): boolean {
   return legalEnactmentState(now) === "in_force";
 }
 
-/** What the documents call themselves: a draft until the date arrives. */
+/**
+ * What the terms and the privacy policy call themselves: a draft until the
+ * effective day arrives (#282) — not merely until a date has been declared.
+ *
+ * This existed with no callers while every title in `legalDocuments.ts` carried
+ * a hard-coded 「（案）」 and the page headed itself 「確認用草案」 unconditionally.
+ * So the notice at the top of `/legal` switched on enactment and the headings
+ * under it did not — one screen naming itself two ways, which is the thing the
+ * page's own comment says it must not do. `documentHeading()` in
+ * `legalDocuments.ts` is the caller.
+ */
 export function legalDocumentLabel(base: string, now: Date = new Date()): string {
   return legalEnacted(now) ? base : `${base}（案）`;
 }
@@ -138,6 +159,25 @@ export function legalEffectiveDateLabel(now: Date = new Date()): string {
     default:
       return "未設定";
   }
+}
+
+/**
+ * The version string the terms and the privacy policy *display*.
+ *
+ * It has to be the version an acceptance row would be stamped with, because
+ * that record is worth something only if it names the text the person read —
+ * which is why `POST /api/legal/acceptance` refuses to take a version from the
+ * request. A page headed `legal-review-2026-09-14-v1` that writes
+ * `legal-2026-10-01-v1` reintroduces the same gap through the other side.
+ *
+ * `draftVersion` rather than a constant: while unenacted the page keeps naming
+ * the draft it is actually showing, and nothing is recorded at all (the route
+ * answers 409). The switch only has to be true at the moment a row can exist.
+ * Before the effective day (`scheduled`, #282) that is still the draft: the
+ * route refuses, so nothing is stamped with the enacted version yet either.
+ */
+export function legalDisplayVersion(draftVersion: string, now: Date = new Date()): string {
+  return legalEnacted(now) ? LEGAL_ENACTED_VERSION : draftVersion;
 }
 
 /** The version stamped onto an acceptance row written by this build. */

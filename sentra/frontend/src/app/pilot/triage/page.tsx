@@ -24,7 +24,7 @@
  *      「その日は誰も書かなかった」と区別がつかない。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { Icon } from "@/components/ui/Icon";
 import { ApiClient } from "@/api/client";
@@ -46,7 +46,19 @@ type QueueRow = {
 type QueueResponse = {
   slot: "morning" | "afternoon" | "ad_hoc";
   enqueued: number;
-  counts: { pending: number; crisis: number; elevated: number; no_text: number };
+  /** 今回の読み込みで待ち行列に入れ切れなかった件数（#247）。 */
+  deferred: number;
+  /** 走査が最後まで届いたか。false のとき `deferred` は下限値。 */
+  scan_complete: boolean;
+  counts: {
+    /** この画面に出ている未確認の件数。 */
+    pending: number;
+    /** 待っている全件。画面の上限より多いことがある。 */
+    pending_total: number;
+    crisis: number;
+    elevated: number;
+    no_text: number;
+  };
   queue: QueueRow[];
 };
 
@@ -76,6 +88,9 @@ export default function CrisisTriagePage() {
   const { isLoading, session } = useAuth();
 
   const [data, setData] = useState<QueueResponse | null>(null);
+  // 最後の読み込みが失敗したか（#260）。失敗と「待ちがない」は画面上で
+  // 区別しなければならない。どちらも一覧が空に見えるため。
+  const [loadFailed, setLoadFailed] = useState(false);
   const [includeDecided, setIncludeDecided] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -86,14 +101,28 @@ export default function CrisisTriagePage() {
   const [openReason, setOpenReason] = useState<string | null>(null);
   const [note, setNote] = useState("");
 
+  // 最後に出した読み込みの番号。古い応答が後から届いても、新しい結果を
+  // 上書きさせない（失敗が一覧を消すようになったので、順序が大事になった）。
+  const latestLoad = useRef(0);
+
   const refresh = useCallback(async () => {
+    const ticket = ++latestLoad.current;
     setProblem(null);
     try {
       const result = await ApiClient.fetch<QueueResponse>(
         `/pilot/triage${includeDecided ? "?include_decided=1" : ""}`,
       );
+      if (ticket !== latestLoad.current) return;
       setData(result);
+      setLoadFailed(false);
     } catch (err) {
+      if (ticket !== latestLoad.current) return;
+      // 前回の一覧を残さない（#260）。判断を記録した直後の再読み込みが
+      // 失敗したとき、古い一覧には判断済みの行が「未確認」のまま残っていて、
+      // それを見て次の判断をすることになる。読めなかったときに出すのは
+      // 「読めなかった」だけにする。
+      setData(null);
+      setLoadFailed(true);
       setProblem(err instanceof Error ? err.message : "読み込めませんでした。");
     }
   }, [includeDecided]);
@@ -182,31 +211,73 @@ export default function CrisisTriagePage() {
         <section className="bl-card bl-stack">
           <div className="bl-row" style={{ gap: 16, flexWrap: "wrap" }}>
             <span className="bl-micro">いまの枠: <strong>{SLOT_LABEL[data.slot]}</strong></span>
-            <span className="bl-micro">未確認: <strong>{data.counts.pending}</strong></span>
+            <span className="bl-micro">
+              未確認: <strong>{data.counts.pending}</strong>
+              {/* 画面の上限より待ち行列が長いときだけ、全体の件数も出す。
+                  出ている件数だけを見せると、片付いたのか続きがあるのかが
+                  判断できない（#247）。 */}
+              {data.counts.pending_total > data.counts.pending && <> / 全{data.counts.pending_total}</>}
+            </span>
             <span className="bl-micro">危機の可能性: <strong>{data.counts.crisis}</strong></span>
             <span className="bl-micro">気がかり: <strong>{data.counts.elevated}</strong></span>
             <span className="bl-micro">本文なし: <strong>{data.counts.no_text}</strong></span>
           </div>
+          {/* 待ち行列に入れ切れなかった分。黙って打ち切ると
+              「その日は誰も書かなかった」と区別が付かなくなる（#247）。 */}
+          {(data.deferred > 0 || !data.scan_complete) && (
+            <p className="bl-notice bl-notice--watch" role="status">
+              <Icon name="info" size={19} />{" "}
+              {data.deferred > 0
+                ? <>まだ待ち行列に入れていない記録が{data.scan_complete ? "" : "少なくとも"}{data.deferred}件あります。</>
+                : <>記録が多く、今回の読み込みでは全件を確認しきれていません。</>}
+              この画面をもう一度読み込むと続きが入ります。
+            </p>
+          )}
           {data.slot === "ad_hoc" && (
             <p className="bl-micro">
               いまは §4.4 が定める枠の外です。ここで確認したことは「枠外」として記録され、
               定時のレビューを実施した証跡にはなりません。
             </p>
           )}
-          <label className="bl-choice">
-            <input
-              type="checkbox"
-              checked={includeDecided}
-              onChange={(event) => setIncludeDecided(event.target.checked)}
-            />
-            判断済みの行も表示する
-          </label>
         </section>
       )}
 
       <section className="bl-card bl-stack">
         <h2 className="bl-h2">待ち行列</h2>
-        {!data || data.queue.length === 0 ? (
+        {/* 一覧の外に置く。読み込みに失敗すると一覧（data）は消えるので、
+            中に置くと「判断済みも表示」で失敗したとき元の表示に戻せない。 */}
+        <label className="bl-choice">
+          <input
+            type="checkbox"
+            checked={includeDecided}
+            onChange={(event) => setIncludeDecided(event.target.checked)}
+          />
+          判断済みの行も表示する
+        </label>
+        {/* 3つの状態を分けて出す（#260）。以前は読み込みに失敗しても
+            「確認を待っている記録はありません」と表示していた。§4.4 の
+            レビュアーにとって、それは「今日は片付いた」という意味になる。 */}
+        {loadFailed ? (
+          <div className="bl-stack" role="alert">
+            <p className="bl-notice bl-notice--watch">
+              <Icon name="info" size={19} />{" "}
+              レビュー待ちの一覧を読み込めませんでした。確認を待っている記録が無いという意味ではありません。
+              一部だけの一覧では判断できないため、何も表示していません。
+            </p>
+            <div>
+              <button
+                type="button"
+                className="bl-btn bl-btn--secondary"
+                disabled={busy}
+                onClick={() => void refresh()}
+              >
+                もう一度読み込む
+              </button>
+            </div>
+          </div>
+        ) : !data ? (
+          <p className="bl-meta" role="status">一覧を読み込んでいます…</p>
+        ) : data.queue.length === 0 ? (
           <p className="bl-meta">確認を待っている記録はありません。</p>
         ) : (
           <div className={styles.tableScroll}>

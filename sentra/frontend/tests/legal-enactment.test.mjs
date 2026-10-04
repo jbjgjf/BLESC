@@ -22,14 +22,25 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 import {
+  LEGAL_ACCEPTABLE_DOCUMENTS,
   LEGAL_ENACTED_VERSION,
   currentLegalVersion,
+  isLegalAcceptableDocument,
+  legalDisplayVersion,
   legalDocumentLabel,
   legalEffectiveDate,
   legalEffectiveDateLabel,
   legalEnacted,
   legalEnactmentState,
 } from "../src/lib/legalEnactment.ts";
+import {
+  LEGAL_DOCUMENTS,
+  LEGAL_DRAFT_VERSION,
+  RESEARCH_DRAFT_VERSION,
+  documentHeading,
+  documentVersion,
+} from "../src/lib/legalDocuments.ts";
+import { ja } from "../src/lib/i18n/ja.ts";
 
 const read = (relative) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
@@ -37,7 +48,19 @@ const code = (text) => text.replace(/\/\*[\s\S]*?\*\//g, " ");
 
 const route = read("../src/app/api/legal/acceptance/route.ts");
 const page = read("../src/app/legal/page.tsx");
+const control = read("../src/components/LegalAcceptance.tsx");
 const migration = read("../../supabase/migrations/20260921040000_legal_acceptances.sql");
+const nav = read("../src/components/AppNav.tsx");
+
+const ENACTED = {
+  NEXT_PUBLIC_LEGAL_ENACTED: LEGAL_ENACTED_VERSION,
+  NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: "2026-10-01",
+};
+const UNENACTED = {
+  NEXT_PUBLIC_LEGAL_ENACTED: undefined,
+  NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: undefined,
+};
+const byId = (id) => LEGAL_DOCUMENTS.find((document) => document.id === id);
 
 function withEnv(values, run) {
   const saved = {};
@@ -270,5 +293,211 @@ describe("the page tells the truth in both states", () => {
 
   it("does not let the legal acceptance read as research consent", () => {
     assert.match(page, /この書類への同意は研究同意ではありません/);
+  });
+});
+
+describe("the page has somewhere to accept (#251)", () => {
+  it("takes enactment from legalEnactment.ts and hands the same value to the control", () => {
+    // One source for "in force". A screen that decided it on its own grounds
+    // could offer a button for a version the server would stamp differently.
+    // Judged once per request, at one instant shared with the notice (#282).
+    assert.match(code(page), /const now = new Date\(\)/);
+    assert.match(code(page), /const enacted = legalEnacted\(now\)/);
+    assert.match(code(page), /const state = legalEnactmentState\(now\)/);
+    assert.match(code(page), /<LegalAcceptanceProvider enacted=\{enacted\}/);
+  });
+
+  it("hands the control the scheduled day for display only, never as permission (#282)", () => {
+    // `enacted` is false while scheduled, so no button; the date only explains why.
+    assert.match(code(page), /scheduledDate=\{state === "scheduled" \? effectiveDate : null\}/);
+    assert.match(code(control), /scheduledDate \? t\.legalAcceptance\.notYetEffective\(scheduledDate\) : t\.legalAcceptance\.notEnacted/);
+    assert.doesNotMatch(code(control), /scheduledDate[^\n]*canAccept = true/);
+    assert.match(ja.legalAcceptance.notYetEffective("2026-10-01"), /2026-10-01 に施行される予定です/);
+    assert.doesNotMatch(ja.legalAcceptance.notYetEffective("2026-10-01"), /施行日が決まり/);
+  });
+
+  it("offers acceptance only beneath a document showing the version the route will stamp", () => {
+    // Otherwise a row would attest to a version the person was never shown.
+    withEnv(
+      { NEXT_PUBLIC_LEGAL_ENACTED: LEGAL_ENACTED_VERSION, NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: "2026-10-01" },
+      () => {
+        for (const document of LEGAL_DOCUMENTS.filter((d) => isLegalAcceptableDocument(d.id))) {
+          assert.equal(documentVersion(document), currentLegalVersion(), document.id);
+          assert.doesNotMatch(documentHeading(document), /（案）/, document.id);
+        }
+      },
+    );
+    assert.match(code(page), /版：\{documentVersion\(document\)\}/);
+  });
+
+  it("the control does not compute enactment itself", () => {
+    assert.doesNotMatch(code(control), /legalEnacted\(/);
+    assert.doesNotMatch(code(control), /NEXT_PUBLIC_LEGAL/);
+    assert.doesNotMatch(code(control), /LEGAL_ENACTED_VERSION/);
+    // The only thing it imports from the enactment module is a type.
+    assert.match(code(control), /import type \{ LegalAcceptableDocument \} from "@\/lib\/legalEnactment"/);
+  });
+
+  it("offers the button only when enacted", () => {
+    // #282: the not-enacted branch now also covers "scheduled", naming the day.
+    assert.match(code(control), /if \(!enacted\) \{\s*status = \(\s*<p className="bl-body">\s*\{scheduledDate \? t\.legalAcceptance\.notYetEffective\(scheduledDate\) : t\.legalAcceptance\.notEnacted\}/);
+    assert.match(code(control), /canAccept \? \(/);
+  });
+
+  it("never sends a version, only which document", () => {
+    assert.match(code(control), /JSON\.stringify\(\{ document_id: documentId \}\)/);
+    assert.doesNotMatch(code(control), /JSON\.stringify\([^)]*(document_version|current_version)/);
+  });
+
+  it("judges 'accepted' against the version the server says is current", () => {
+    assert.match(code(control), /row\.document_version === state\.status\.current_version/);
+  });
+
+  it("answers already_accepted and not_enacted differently", () => {
+    assert.match(code(control), /body\.status === "already_accepted"/);
+    assert.match(code(control), /response\.status === 409 && body\.code === "not_enacted"/);
+    assert.match(code(control), /already_accepted: t\.legalAcceptance\.alreadyAccepted/);
+    assert.match(code(control), /not_enacted: t\.legalAcceptance\.rejectedNotEnacted/);
+    assert.notEqual(ja.legalAcceptance.alreadyAccepted, ja.legalAcceptance.rejectedNotEnacted);
+  });
+
+  it("answers not_yet_effective as its own refusal, not as a generic failure (#282)", () => {
+    assert.match(code(control), /response\.status === 409 && body\.code === "not_yet_effective"/);
+    assert.match(code(control), /not_yet_effective: t\.legalAcceptance\.rejectedNotYetEffective/);
+    assert.notEqual(ja.legalAcceptance.rejectedNotYetEffective, ja.legalAcceptance.rejectedNotEnacted);
+    assert.match(ja.legalAcceptance.rejectedNotYetEffective, /施行日を迎えていない/);
+  });
+
+  it("says, next to the button, that this is not research consent", () => {
+    assert.match(code(control), /t\.legalAcceptance\.notResearchConsent/);
+    assert.match(ja.legalAcceptance.notResearchConsent, /研究参加の同意ではありません/);
+  });
+
+  it("leaves the documents readable when signed out", () => {
+    // Only the status is gated on a session; the articles render regardless.
+    assert.match(code(control), /state\.kind === "signed_out"/);
+    assert.doesNotMatch(code(page), /useAuth|redirect\(/);
+  });
+
+  it("only terms and privacy can be accepted, on the page and in the route alike", () => {
+    assert.deepEqual([...LEGAL_ACCEPTABLE_DOCUMENTS], ["terms", "privacy"]);
+    assert.equal(isLegalAcceptableDocument("terms"), true);
+    assert.equal(isLegalAcceptableDocument("privacy"), true);
+    assert.equal(isLegalAcceptableDocument("research"), false);
+    assert.equal(isLegalAcceptableDocument("guardian"), false);
+    assert.equal(isLegalAcceptableDocument(undefined), false);
+    assert.match(code(route), /isLegalAcceptableDocument\(documentId\)/);
+    assert.match(code(page), /isLegalAcceptableDocument\(document\.id\)/);
+  });
+});
+
+/*
+ * The gap this block exists for.
+ *
+ * `legalDocumentLabel()` had no callers while all four titles carried a
+ * hard-coded 「（案）」 and the page headed itself 「確認用草案」 unconditionally.
+ * Enacting therefore produced one screen naming itself two ways, and — worse —
+ * the terms and the privacy policy displayed `legal-review-2026-09-14-v1` while
+ * `POST /api/legal/acceptance` wrote `legal-2026-10-01-v1`. The row asserted
+ * agreement to a version the page had never shown, which is the one failure the
+ * route's refusal to take a version from the request exists to rule out.
+ *
+ * So these assert values, not the presence of identifiers in a source file: a
+ * test that greps for `legalDocumentLabel` would have passed throughout the
+ * period the function was dead (#288).
+ */
+describe("what the page names and what a row records are the same document", () => {
+  for (const id of ["terms", "privacy"]) {
+    it(`${id}: the displayed version is the version that would be recorded, once enacted`, () => {
+      withEnv(ENACTED, () => {
+        assert.equal(documentVersion(byId(id)), currentLegalVersion());
+        assert.equal(documentVersion(byId(id)), LEGAL_ENACTED_VERSION);
+      });
+    });
+
+    it(`${id}: while unenacted the page keeps naming the draft it is showing`, () => {
+      withEnv(UNENACTED, () => {
+        assert.equal(documentVersion(byId(id)), LEGAL_DRAFT_VERSION);
+        // Nothing can be recorded in this state — the route answers 409 — so the
+        // displayed version deliberately does not match `currentLegalVersion()`.
+        assert.match(currentLegalVersion(), /-draft$/);
+      });
+    });
+
+    it(`${id}: 「（案）」 is dropped by enactment rather than stored in the title`, () => {
+      assert.doesNotMatch(byId(id).title, /（案）/);
+      withEnv(UNENACTED, () => assert.match(documentHeading(byId(id)), /（案）$/));
+      withEnv(ENACTED, () => {
+        assert.equal(documentHeading(byId(id)), byId(id).title);
+        assert.doesNotMatch(documentHeading(byId(id)), /（案）/);
+      });
+    });
+  }
+
+  it("the legal switch does not relabel the research and guardian documents", () => {
+    // Two enactments, two decisions: counsel enacting the terms says nothing
+    // about whether the consent pack's 附則 blanks are filled. Enacting one must
+    // not quietly declare the other's documents final.
+    withEnv(ENACTED, () => {
+      for (const id of ["research", "guardian"]) {
+        assert.match(documentHeading(byId(id)), /（案）$/);
+        assert.equal(documentVersion(byId(id)), RESEARCH_DRAFT_VERSION);
+        assert.match(documentVersion(byId(id)), /-draft$/);
+      }
+    });
+  });
+
+  it("every document declares which switch governs it", () => {
+    for (const document of LEGAL_DOCUMENTS) {
+      assert.ok(
+        ["legal", "research"].includes(document.enactment),
+        `${document.id} does not say which enactment decision governs it`,
+      );
+    }
+  });
+
+  it("legalDocumentLabel and legalDisplayVersion are reached from the page", () => {
+    // The functions are unit-tested above; this is the wiring. `documentHeading`
+    // / `documentVersion` are the only callers, and the page must use them
+    // rather than reading `document.title` and `document.version` raw.
+    assert.match(code(page), /documentHeading\(document\)/);
+    assert.match(code(page), /documentVersion\(document\)/);
+    assert.doesNotMatch(code(page), /\{document\.title\}/);
+    assert.doesNotMatch(code(page), /版：\{document\.version\}/);
+  });
+
+  it("the helpers themselves switch", () => {
+    withEnv(UNENACTED, () => {
+      assert.equal(legalDocumentLabel("利用規約"), "利用規約（案）");
+      assert.equal(legalDisplayVersion(LEGAL_DRAFT_VERSION), LEGAL_DRAFT_VERSION);
+    });
+    withEnv(ENACTED, () => {
+      assert.equal(legalDocumentLabel("利用規約"), "利用規約");
+      assert.equal(legalDisplayVersion(LEGAL_DRAFT_VERSION), LEGAL_ENACTED_VERSION);
+    });
+  });
+
+  it("before the effective day the helpers still name the draft (#282)", () => {
+    // A declared future date is not in force: the heading keeps 「（案）」 and the
+    // displayed version stays the draft the page is actually showing.
+    withEnv(ENACTED, () => {
+      assert.equal(legalDocumentLabel("利用規約", DAY_BEFORE), "利用規約（案）");
+      assert.equal(legalDisplayVersion(LEGAL_DRAFT_VERSION, DAY_BEFORE), LEGAL_DRAFT_VERSION);
+      assert.equal(legalDisplayVersion(LEGAL_DRAFT_VERSION, EFFECTIVE_DAY), LEGAL_ENACTED_VERSION);
+    });
+  });
+
+  it("the tab title and the eyebrow switch with the notice", () => {
+    // A static `metadata` object cannot, which is why the page exports
+    // `generateMetadata()`. The noindex must survive the change.
+    assert.match(code(page), /export function generateMetadata\(\)/);
+    assert.doesNotMatch(code(page), /export const metadata/);
+    assert.match(code(page), /index: false, follow: false/);
+    assert.match(code(page), /legalEnacted\(\) \? "規約・プライバシーポリシー \| blesc"/);
+    assert.match(code(page), /enacted \? "blesc · 規約・ポリシー"/);
+  });
+
+  it("the account menu does not keep calling it a draft", () => {
+    assert.match(code(nav), /legalEnacted\(\) \? "規約・ポリシー" : "書類（確認用草案）"/);
   });
 });
