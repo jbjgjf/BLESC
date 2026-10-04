@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { canonicalNodeId, extractionFellBack, fallbackExtraction, normalizeExtraction, sanitizeId } from "../src/lib/extraction.ts";
+import {
+  canonicalNodeId,
+  extractionFellBack,
+  fallbackExtraction,
+  normalizeExtraction,
+  normalizeModelExtraction,
+  sanitizeId,
+} from "../src/lib/extraction.ts";
 import { aggregateDailyFeatures, checkRules } from "../src/lib/baseline.ts";
 
 /**
@@ -296,5 +303,39 @@ describe("extractionFellBack", () => {
       });
       assert.ok(!hits.some((hit) => hit.rule === "protective_decline"), text);
     }
+  });
+
+  it("reports a model response normalised into the fallback graph as a fallback", () => {
+    // A syntactically valid response with fewer than three unique labels is
+    // replaced by `fallbackExtraction` inside normalisation. The route used to
+    // record that as `completed`, so the placeholder graph was read as a
+    // measurement and could report a protective decline.
+    const text = "締め切りが近くて心配。疲れた。";
+    const thin = {
+      nodes: [
+        { id: "a", category: "Trigger", label: "締め切り", intensity: 0.7, confidence: 0.8 },
+        { id: "b", category: "Trigger", label: "締め切り", intensity: 0.7, confidence: 0.8 },
+        { id: "c", category: "State", label: "疲れ", intensity: 0.6, confidence: 0.7 },
+      ],
+      relations: [],
+    };
+    const { extraction, status } = normalizeModelExtraction(thin, text);
+    assert.deepEqual(extraction.nodes, fallbackExtraction(text).nodes);
+    assert.equal(status, "fallback");
+    assert.equal(extractionFellBack(status), true);
+
+    const features = aggregateDailyFeatures([{ nodes: extraction.nodes, relations: extraction.relations }]);
+    const decline = { drop_in_protective_nodes: 0, current_protective_nodes: 0, previous_protective_nodes: 0 };
+    const hits = checkRules(features, {}, { event_count: features.event_count }, {}, decline, {
+      extractionFellBack: extractionFellBack(status),
+    });
+    assert.ok(!hits.some((hit) => hit.rule === "protective_decline"));
+  });
+
+  it("reports a model response that survives normalisation as completed", () => {
+    const { extraction, status } = normalizeModelExtraction(japaneseExtraction, "テスト前で眠れない。");
+    assert.equal(status, "completed");
+    assert.equal(extractionFellBack(status), false);
+    assert.equal(extraction.nodes.length, japaneseExtraction.nodes.length);
   });
 });

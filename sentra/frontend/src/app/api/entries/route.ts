@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { assessSafety, SAFETY_ASSESSMENT_VERSION } from "@/lib/safety-assessment";
 import {
   fallbackExtraction,
-  normalizeExtraction,
+  normalizeModelExtraction,
   type ExtractionPayload,
 } from "@/lib/extraction";
 import { buildTemporalDiff, EMPTY_SNAPSHOT } from "@/lib/temporalDiff";
@@ -211,12 +211,11 @@ async function extractWithOpenAI(
     }
     const text = outputText(outcome.json);
     if (!text) throw new Error("Missing structured output text");
-    return {
-      extraction: normalizeExtraction(JSON.parse(text) as Partial<ExtractionPayload>, entryText),
-      provider: "openai",
-      model: EXTRACTION_MODEL,
-      status: "completed",
-    };
+    // A valid response too thin to use is replaced by the fallback graph during
+    // normalisation, and the status says so — otherwise the rules read the
+    // placeholder nodes as a measurement (#310).
+    const { extraction, status } = normalizeModelExtraction(JSON.parse(text) as Partial<ExtractionPayload>, entryText);
+    return { extraction, provider: "openai", model: EXTRACTION_MODEL, status };
   } catch (err) {
     // `timeout` and `fallback` are different things to an operator reading
     // `extraction_status`: the upstream never answered, versus it answered

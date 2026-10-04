@@ -75,6 +75,23 @@ export function clamp01(value: unknown, fallback: number): number {
 }
 
 export function normalizeExtraction(candidate: Partial<ExtractionPayload>, sourceText: string): ExtractionPayload {
+  return normalizeModelExtraction(candidate, sourceText).extraction;
+}
+
+/**
+ * `normalizeExtraction`, plus the `extraction_status` its result deserves.
+ *
+ * A syntactically valid model response with fewer than three unique labels is
+ * replaced by `fallbackExtraction`'s nodes inside normalisation. Recording that
+ * as `completed` made `extractionFellBack()` read the placeholder graph as a
+ * measurement, so a thin response could report a protective decline (#310).
+ * Whether the fallback was used now travels with the result, rather than being
+ * inferred afterwards from a status the caller picked.
+ */
+export function normalizeModelExtraction(
+  candidate: Partial<ExtractionPayload>,
+  sourceText: string,
+): { extraction: ExtractionPayload; status: "completed" | "fallback" } {
   const sourceNodes = Array.isArray(candidate.nodes) ? candidate.nodes : [];
 
   // Model id -> stored id. Relations arrive in the model's id space and the
@@ -145,7 +162,7 @@ export function normalizeExtraction(candidate: Partial<ExtractionPayload>, sourc
       ? fallback.relations
       : [];
 
-  return {
+  const extraction: ExtractionPayload = {
     nodes: finalNodes,
     relations: finalRelations,
     temporal_summary: String(candidate.temporal_summary || fallback.temporal_summary).slice(0, 280),
@@ -155,6 +172,7 @@ export function normalizeExtraction(candidate: Partial<ExtractionPayload>, sourc
       : fallback.evidence_summaries
     ).map((item) => String(item).slice(0, 220)).slice(0, 8),
   };
+  return { extraction, status: usingFallbackNodes ? "fallback" : "completed" };
 }
 
 /**
@@ -205,7 +223,9 @@ const INTENSIFIER = lexicon(INTENSIFIER_TERMS);
  * Whether an `extraction_status` says the graph is `fallbackExtraction`'s.
  *
  * The statuses the entries route writes when it falls back: `missing_key`,
- * `failed_<status>`, `timeout` and `fallback`. Anything else — `completed`,
+ * `failed_<status>`, `timeout` and `fallback` — the last also when a model
+ * response was replaced by the fallback during normalisation
+ * (`normalizeModelExtraction`). Anything else — `completed`,
  * the collection-only status, or no status at all (FastAPI's response does not
  * carry one; its fallback is an empty graph, which `checkRules` handles on its
  * own) — is not a fallback.
