@@ -244,15 +244,49 @@ describe("collectionOnlyForParticipant", () => {
   });
 
   /*
-   * #296. These two used to return false, which opened all five send points on
-   * a pilot deployment whose service-role key was missing, mistyped or rotated
-   * — the enrollments were in the database and this process had lost the key to
+   * #296. This used to return false, which opened all five send points on a
+   * pilot deployment whose service-role key was missing, mistyped or rotated —
+   * the enrollments were in the database and this process had lost the key to
    * read them. A gate that cannot answer is not a gate that says yes.
    */
-  it("fails closed on a pilot deployment when the gate cannot be reached", async () => {
+  it("fails closed on a pilot deployment when there is no client", async () => {
     await withPilotDeployment(async () => {
       assert.equal(await collectionOnlyForParticipant(null, "participant-1"), true);
-      assert.equal(await collectionOnlyForParticipant(fakeClient({ rpcData: false }), null), true);
+    });
+  });
+
+  it("says why it closed, in a line distinct from supabaseWriter's 'skipping sync'", async () => {
+    const lines = [];
+    const original = console.error;
+    console.error = (...args) => lines.push(args.join(" "));
+    try {
+      await withPilotDeployment(async () => {
+        await collectionOnlyForParticipant(null, "participant-1");
+      });
+    } finally {
+      console.error = original;
+    }
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], /^\[collection-mode\] no service-role client/);
+    assert.match(lines[0], /SUPABASE_SERVICE_ROLE_KEY/);
+    assert.doesNotMatch(lines[0], /skipping sync/);
+  });
+
+  it("stays open on a pilot deployment when there is no participant to protect", async () => {
+    // Kept apart from the missing-client case: no participant id means no
+    // enrollment can exist, so there is nothing for the gate to withhold.
+    await withPilotDeployment(async () => {
+      assert.equal(await collectionOnlyForParticipant(fakeClient({ rpcData: true }), null), false);
+    });
+  });
+
+  it("stays open without a client in demo mode and in development", async () => {
+    await withPilotDeployment(async () => {
+      process.env.NEXT_PUBLIC_DEMO_MODE = "1";
+      assert.equal(await collectionOnlyForParticipant(null, "participant-1"), false);
+      delete process.env.NEXT_PUBLIC_DEMO_MODE;
+      process.env.NODE_ENV = "development";
+      assert.equal(await collectionOnlyForParticipant(null, "participant-1"), false);
     });
   });
 });
@@ -281,10 +315,15 @@ describe("collectionOnlyForUser", () => {
   /* #296, for the voice and transcription routes: they pass
    * `serviceRoleClient()` straight through, so a missing service-role key used
    * to send a participant's recording to a third party mid-study. */
-  it("fails closed on a pilot deployment when the gate cannot be reached", async () => {
+  it("fails closed on a pilot deployment when there is no client", async () => {
     await withPilotDeployment(async () => {
       assert.equal(await collectionOnlyForUser(null, "user-1"), true);
-      assert.equal(await collectionOnlyForUser(fakeClient({ rows: [] }), null), true);
+    });
+  });
+
+  it("stays open on a pilot deployment when there is no user to check", async () => {
+    await withPilotDeployment(async () => {
+      assert.equal(await collectionOnlyForUser(fakeClient({ rows: [{ id: "enrollment-1" }] }), null), false);
     });
   });
 });

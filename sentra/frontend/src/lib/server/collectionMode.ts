@@ -82,13 +82,12 @@ import { pilotGateEnforced } from "./pilotDeployment.ts";
  * happened, and so a reader of this file can see that "not a pilot deployment"
  * and "a pilot deployment that cannot check" are different answers (#296).
  */
-function unreachableGate(scope: "participant" | "user", detail: Record<string, unknown>): boolean {
+function unreachableGate(scope: "participant" | "user"): boolean {
   if (!pilotGateEnforced()) return false;
   console.error(
-    `[collection-mode] cannot reach the ${scope} gate on a pilot deployment; withholding external calls. ` +
+    `[collection-mode] no service-role client for the ${scope} gate on a pilot deployment; withholding external calls. ` +
       "Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY: without them this process cannot tell whether a " +
       "participant's collection window is open, and #165 promises their text is not sent while it is.",
-    detail,
   );
   return true;
 }
@@ -125,12 +124,13 @@ export async function collectionOnlyForParticipant(
   client: SupabaseClient | null,
   participantId: string | null,
 ): Promise<boolean> {
-  // On an ordinary deployment there is no enrollment to protect, so this is the
-  // non-pilot path and returns false. On a pilot deployment it is a gate that
-  // cannot answer, which is the one case that must not be read as "open".
-  if (!client || !participantId) {
-    return unreachableGate("participant", { client: Boolean(client), participant: Boolean(participantId) });
-  }
+  // No participant means no enrollment can exist, so there is nothing to
+  // protect — on any deployment.
+  if (!participantId) return false;
+  // No client is a different fact: the enrollment may well exist and this
+  // process has lost the key to read it. On a pilot deployment that is a gate
+  // that cannot answer, which must not be read as "open" (#296).
+  if (!client) return unreachableGate("participant");
 
   const result = await client.rpc("pilot_collection_open", { target_participant: participantId });
   if (result.error) {
@@ -156,9 +156,8 @@ export async function collectionOnlyForUser(
   client: SupabaseClient | null,
   ownerUserId: string | null,
 ): Promise<boolean> {
-  if (!client || !ownerUserId) {
-    return unreachableGate("user", { client: Boolean(client), user: Boolean(ownerUserId) });
-  }
+  if (!ownerUserId) return false;
+  if (!client) return unreachableGate("user");
 
   const result = await client
     .from("pilot_enrollments")

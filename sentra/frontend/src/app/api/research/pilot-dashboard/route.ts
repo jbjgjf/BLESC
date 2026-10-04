@@ -59,7 +59,12 @@ export async function GET(request: NextRequest) {
   }
 
   const service = serviceRoleClient();
-  if (!service) return jsonError("Supabase is not configured.", 503);
+  // The 503 carries the same diagnostic the normal body does, so a reader of
+  // this response learns that the collection-only gate cannot decide — and, on
+  // a pilot deployment, is withholding every external call (#296).
+  if (!service) {
+    return jsonError("Supabase is not configured.", 503, { collection_only_gate: collectionOnlyGate(false) });
+  }
 
   const studySlug = request.nextUrl.searchParams.get("study");
   if (!studySlug) return jsonError("study パラメータが必要です。", 422);
@@ -191,6 +196,7 @@ export async function GET(request: NextRequest) {
 
     scheduled_jobs: scheduledJobs(),
     pilot_enforcement: pilotEnforcement(study.slug),
+    collection_only_gate: collectionOnlyGate(true),
 
     enrollment: {
       total: enrollments.length,
@@ -290,10 +296,9 @@ function scheduledJobs() {
  * Whether this deployment actually applies the pilot's rules to the study being
  * looked at (#296).
  *
- * Not "can the gate reach the database". That one cannot be reported from here
- * and does not need to be: without the service-role client this route answers
- * 503 at line 61, which is the loudest signal available and arrives before any
- * number does.
+ * Not "can the gate reach the database" — that is `collection_only_gate`
+ * below, and without the service-role client this route answers 503 carrying
+ * it, before any number does.
  *
  * What *can* be true while this dashboard renders normally is worse, because it
  * looks like nothing: `PILOT_STUDY_SLUG` is read from the environment, the
@@ -322,6 +327,23 @@ function pilotEnforcement(requestedSlug: string) {
   };
 }
 
+/**
+ * Whether the collection-only gate (#165) can decide at all (#296).
+ *
+ * `collectionMode.ts` asks the database, through the service-role client,
+ * whether a participant's window is open. Without that client it cannot ask;
+ * on a pilot deployment it then withholds every external call rather than
+ * guessing "open". `decidable` is whether this process holds the client — the
+ * same `serviceRoleClient()` every send point passes to the gate — and
+ * `withholding_all_external_calls` is what the gate does when it does not.
+ */
+function collectionOnlyGate(serviceClientAvailable: boolean) {
+  return {
+    decidable: serviceClientAvailable,
+    withholding_all_external_calls: !serviceClientAvailable && pilotGateEnforced(),
+  };
+}
+
 function emptyDashboard(
   study: { slug: string; status: string; protocol_version: string; baseline_days: number; observation_days: number; is_dry_run: boolean },
   now: string,
@@ -340,6 +362,7 @@ function emptyDashboard(
     // in the counts.
     scheduled_jobs: scheduledJobs(),
     pilot_enforcement: pilotEnforcement(study.slug),
+    collection_only_gate: collectionOnlyGate(true),
     enrollment: { total: 0, by_state: {}, minors: 0, withdrawn: 0 },
     submissions: totalsFor([]),
     consent: { records: 0, without_record: 0, research_use_allowed: 0, by_document_version: {}, revoked: 0 },
