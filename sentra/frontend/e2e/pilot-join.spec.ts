@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { CODES, PASSWORD, USERS } from "./seed";
+import { CODES, PASSWORD, USERS, admin } from "./seed";
 
 const evidence = (name: string) => `../docs/evidence/pilot-enrollment/${name}.png`;
 
@@ -13,8 +13,9 @@ const evidence = (name: string) => `../docs/evidence/pilot-enrollment/${name}.pn
  *   minor       — and cannot be skipped by someone who does
  *   decline     — saying no is accepted plainly, with no pressure and no error
  *   expired     — a dead code is refused, and refused the same way as any other
- *   withdrawal  — leaving stops the next submission
+ *   withdrawal  — leaving stops the next submission, from either door (#263)
  *   direct URL  — the collection screen is unreachable without an enrollment
+ *   educator    — an educator screen is refused on the server, before it renders (#229)
  *
  * These run against a real build, a real database and the real state machine.
  * The assertions are on what a participant sees, because the criteria in #164
@@ -121,7 +122,9 @@ test.describe("decline", () => {
     // Declining is offered as an equal choice, not as an escape hatch.
     await expect(page.getByRole("button", { name: "参加をやめる" })).toBeEnabled();
     await page.getByRole("button", { name: "参加をやめる" }).click();
-    await page.getByRole("button", { name: "やめる", exact: true }).click();
+    // Leaving asks what to do with stored text, the same choice /consent
+    // offers (#263). Nothing has been written yet, so either answer is fine.
+    await page.getByRole("button", { name: /いま削除する/ }).click();
 
     await expect(page.getByRole("heading", { name: "参加を終了しました" })).toBeVisible();
     // Nothing that reads as a failure: declining is a valid outcome, and
@@ -156,8 +159,57 @@ test.describe("expired invitation", () => {
   });
 });
 
+/**
+ * What both withdrawal doors must leave behind (#263): the enrollment
+ * withdrawn and the newest consent row a revocation carrying the choice. Read
+ * with the service role because the point is the stored state, not the screen.
+ */
+async function expectFullyWithdrawn(email: string, disposition: "delete" | "keep") {
+  const client = admin();
+  const users = await client.auth.admin.listUsers({ perPage: 1000 });
+  const owner = users.data.users.find((user) => user.email === email);
+  expect(owner, `no account ${email}`).toBeTruthy();
+
+  const enrollment = await client
+    .from("pilot_enrollments")
+    .select("state, withdrawn_at")
+    .eq("owner_user_id", owner!.id)
+    .single();
+  expect(enrollment.data?.state).toBe("withdrawn");
+  expect(enrollment.data?.withdrawn_at).toBeTruthy();
+
+  const consent = await client
+    .from("consent_records")
+    .select("status, research_analysis, retained_data_disposition")
+    .eq("owner_user_id", owner!.id)
+    .order("granted_at", { ascending: false })
+    .limit(1)
+    .single();
+  expect(consent.data).toMatchObject({
+    status: "revoked",
+    research_analysis: false,
+    retained_data_disposition: disposition,
+  });
+}
+
+/** The server, not the redirect, refuses a replayed submission. */
+async function expectSubmissionRefused(page: Page) {
+  const refusal = await page.evaluate(async () => {
+    const response = await fetch("/api/entries?user_id=research_user_01&observation_type=daily", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "撤回後の提出" }),
+    });
+    return { status: response.status, body: await response.text() };
+  });
+  // 403 specifically: the collection gate's answer. Anything else would mean
+  // the request failed for some other reason and the gate was never asked.
+  expect(refusal.status).toBe(403);
+  expect(refusal.body).not.toContain("撤回後の提出");
+}
+
 test.describe("withdrawal", () => {
-  test("stops the next submission", async ({ page }) => {
+  test("from /pilot/join stops the next submission and revokes consent", async ({ page }) => {
     await login(page, USERS.withdrawer);
 
     // Collecting, so the journal is reachable to begin with — otherwise this
@@ -167,7 +219,10 @@ test.describe("withdrawal", () => {
 
     await page.goto("/pilot/join");
     await page.getByRole("button", { name: "参加をやめる" }).click();
-    await page.getByRole("button", { name: "やめる", exact: true }).click();
+    // The same choice, with the same wording, as /consent (#224, #263). It
+    // used to be a bare "やめる" that kept the text without asking.
+    await expect(page.getByText("本文を削除しても残るもの:")).toBeVisible();
+    await page.getByRole("button", { name: /いま削除する/ }).click();
     await expect(page.getByRole("heading", { name: "参加を終了しました" })).toBeVisible();
     await page.screenshot({ path: evidence("withdrawal"), fullPage: true });
 
@@ -177,16 +232,30 @@ test.describe("withdrawal", () => {
 
     // And so is the API behind it: a client that kept a token, or replayed the
     // request, is refused by the server rather than by the redirect.
-    const refusal = await page.evaluate(async () => {
-      const response = await fetch("/api/entries?user_id=research_user_01&observation_type=daily", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text: "撤回後の提出" }),
-      });
-      return { status: response.status, body: await response.text() };
-    });
-    expect(refusal.status).toBeGreaterThanOrEqual(400);
-    expect(refusal.body).not.toContain("撤回後の提出");
+    await expectSubmissionRefused(page);
+    await expectFullyWithdrawn(USERS.withdrawer, "delete");
+  });
+
+  test("from /consent does the same, including closing collection", async ({ page }) => {
+    await login(page, USERS.consentWithdrawer);
+
+    await page.goto("/journal");
+    await expect(page).toHaveURL(/\/journal/);
+
+    await page.goto("/consent");
+    await page.getByRole("button", { name: "同意を撤回する" }).click();
+    await page.getByRole("button", { name: /^残す/ }).click();
+    await expect(page.getByText(/研究への参加をやめ、同意を撤回しました/)).toBeVisible();
+
+    // Before #263 this door revoked consent and left the enrollment
+    // `collecting`: the journal stayed open and the dashboard counted nobody
+    // as withdrawn. Both are read from the enrollment.
+    await page.goto("/journal");
+    await expect(page).toHaveURL(/\/pilot\/join/);
+    await expect(page.getByRole("heading", { name: "参加を終了しました" })).toBeVisible();
+
+    await expectSubmissionRefused(page);
+    await expectFullyWithdrawn(USERS.consentWithdrawer, "keep");
   });
 });
 
@@ -216,5 +285,42 @@ test.describe("direct URL", () => {
 
     await page.goto("/journal");
     await expect(page).toHaveURL(/\/pilot\/join|\/login/);
+  });
+});
+
+test.describe("educator screens", () => {
+  /*
+   * #229: the educator shell used to be decided in the browser. A signed-in
+   * student who opened /educator/roster was served the page, saw the educator
+   * shell with the organisation bar, and was only then sent home by
+   * `educator/layout.tsx`. `src/proxy.ts` answers before anything renders.
+   */
+  test("are refused to a signed-in account with no membership, before rendering", async ({ page }) => {
+    await login(page, USERS.stranger);
+
+    // The server's answer, not the browser's. `page.request` shares this
+    // context's cookies, so this is the same session, with no JavaScript run.
+    const response = await page.request.get("/educator/roster", { maxRedirects: 0 });
+    expect(response.status()).toBe(307);
+    expect(new URL(response.headers()["location"], "http://x").pathname).toBe("/");
+    expect(await response.text()).not.toContain("bl-orgbar");
+
+    // And the same in a real navigation: the educator shell never paints.
+    await page.goto("/educator/roster");
+    await expect(page).not.toHaveURL(/\/educator/);
+    await expect(page.locator(".bl-orgbar")).toHaveCount(0);
+  });
+
+  test("send a signed-out visitor to /login from the server", async ({ request }) => {
+    const response = await request.get("/educator/roster", { maxRedirects: 0 });
+    expect(response.status()).toBe(307);
+    expect(response.headers()["location"]).toContain("/login?next=%2Feducator%2Froster");
+  });
+
+  test("leave the public screens open without a session", async ({ request }) => {
+    for (const path of ["/login", "/legal"]) {
+      const response = await request.get(path, { maxRedirects: 0 });
+      expect(response.status(), path).toBe(200);
+    }
   });
 });
