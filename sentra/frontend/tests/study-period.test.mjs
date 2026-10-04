@@ -93,6 +93,17 @@ describe("every statement of the period agrees", () => {
     assert.doesNotMatch(legal, /企画書とは異なる計画/);
   });
 
+  it("the transfer-study pre-registration (#211, #213)", () => {
+    // The synthetic participants are generated to the pilot's shape. If the
+    // pre-registration states a different period, a rank difference between
+    // synthetic and real could be a difference in data shape, not in models.
+    const prereg = read("docs/transfer_study_preregistration.md");
+    assert.match(prereg, new RegExp(`\\*\\*${DAYS}日固定\\*\\*`));
+    assert.match(prereg, new RegExp(`相対日 1〜${DAYS}`));
+    assert.match(prereg, /1,400件/);
+    assert.match(prereg, new RegExp(`\`${PILOT_PROTOCOL_VERSION}\``));
+  });
+
   it("the dry-run seed sets its own length rather than inheriting the pilot's", () => {
     const seed = read("sentra/supabase/seed/pilot_dry_run.seed.sql");
     assert.match(seed, /study_days, is_dry_run/);
@@ -132,6 +143,7 @@ const HISTORY = /#315|issues\/315|v2/;
  */
 const SCANNED = [
   "README.md",
+  "docs/transfer_study_preregistration.md",
   "docs/pilot",
   "docs/legal",
   "docs/rollout",
@@ -184,6 +196,7 @@ describe("no current description still states the old period", () => {
       "sentra/frontend/src/lib/legalDocuments.ts",
       "sentra/frontend/src/lib/server/crisisTriage.ts",
       "sentra/docs/world-model/math-dynamics.md",
+      "docs/transfer_study_preregistration.md",
     ]) {
       assert.ok(files.includes(expected), `${expected} is not scanned`);
     }
