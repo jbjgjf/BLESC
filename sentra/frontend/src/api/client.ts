@@ -230,6 +230,20 @@ export class EntryNotPersistedError extends Error {
   }
 }
 
+/** What both withdrawal routes answer on success (`lib/server/withdrawal.ts`). */
+export type WithdrawalResponse = {
+  status: "withdrawn";
+  steps: {
+    enrollment: "withdrawn" | "none_active";
+    consent: "revoked";
+    raw_text: "deleted" | "kept";
+  };
+  retained_data: "delete" | "keep";
+  purged_raw_text: number;
+  enrollments_withdrawn: number;
+  detail: string;
+};
+
 async function responseError(prefix: string, res: Response): Promise<Error> {
   let detail = res.statusText || `HTTP ${res.status}`;
   try {
@@ -732,23 +746,47 @@ export class ApiClient {
    * `keep` does not soften the withdrawal: collection stops, the export gate
    * stays shut and training use stays off.
    */
+  /**
+   * Withdraw from the research, from the consent screen (#263).
+   *
+   * The same procedure as `withdrawFromPilot`: the enrollment, the consent
+   * record and the stored text change together, or nothing changes and this
+   * throws with a message that says so.
+   */
   static async revokeConsent(
     userId: string,
     retainedData: "delete" | "keep",
-  ): Promise<{ consent: ConsentState; purgedRawText: number | null; retainedData: "delete" | "keep" }> {
-    const result = await this.fetch<{
-      consent: ConsentState;
-      purged_raw_text: number | null;
-      retained_data: "delete" | "keep";
-    }>(`/consent?user_id=${encodeURIComponent(userId)}`, {
-      method: "DELETE",
-      body: JSON.stringify({ retained_data: retainedData }),
-    });
+  ): Promise<{ consent: ConsentState; purgedRawText: number; retainedData: "delete" | "keep" }> {
+    const result = await this.fetch<WithdrawalResponse & { consent: ConsentState }>(
+      `/consent?user_id=${encodeURIComponent(userId)}`,
+      {
+        method: "DELETE",
+        body: JSON.stringify({ retained_data: retainedData }),
+      },
+    );
     return {
       consent: normalizeConsent(result.consent),
       purgedRawText: result.purged_raw_text,
       retainedData: result.retained_data,
     };
+  }
+
+  /**
+   * Withdraw from the research, from `/pilot/join` (#263).
+   *
+   * Not `advancePilotEnrollment(id, "withdrawn")`. That advanced the enrollment
+   * alone and left consent active and the stored text kept without asking.
+   * `retainedData` has no default, for the same reason as `revokeConsent`: the
+   * screen must ask.
+   */
+  static async withdrawFromPilot(
+    enrollmentId: string,
+    retainedData: "delete" | "keep",
+  ): Promise<WithdrawalResponse> {
+    return this.fetch<WithdrawalResponse>("/pilot/enrollment", {
+      method: "POST",
+      body: JSON.stringify({ enrollment_id: enrollmentId, to: "withdrawn", retained_data: retainedData }),
+    });
   }
 
   /**

@@ -67,10 +67,13 @@ const WRITE_FAILURES = [
   // `consent_records insert` used to be here, naming the writer's own insert.
   // That insert is gone: it wrote a consent row per submission built from
   // defaults, which is how the table came to hold consent nobody had given
-  // (#134). Consent is now recorded where it is obtained, and these two name
-  // the failures of that write instead.
+  // (#134). Consent is now recorded where it is obtained, and this names the
+  // failure of that write instead. Its sibling `consent_records revoke` went
+  // with `revokeConsent`: revocation is part of `withdraw_from_research` (#263).
   "consent_records insert: ${result.error.message}",
-  "consent_records revoke: ${result.error.message}",
+  // Server log only, returned as `reason` and never shown: the participant is
+  // told 「撤回は完了していません」 (`withdrawalResponseBody`).
+  "withdraw_from_research returned no row",
   "entry_sessions insert",
   "entry_fields insert: ${fieldsInsert.error.message}",
   "interaction_events insert: ${eventsInsert.error.message}",
