@@ -49,7 +49,18 @@ class RuleEngine:
             + float(feature_vector.get("behavior_count", 0.0))
         )
         ratio_was_measured = risk_node_count > 0
-        if (ratio_was_measured and protective_ratio < 0.2) or protective_drop > 0:
+        # Whether the day's graph is a measurement at all. A day with no nodes
+        # — `get_fallback_extraction()` on every failed extraction — has nothing
+        # to compare, so against yesterday's real graph its missing Protective
+        # nodes would read as a drop. That decline would be about the
+        # extraction failing, not the entry (#310). A vector carrying no counts
+        # says nothing about emptiness and is left to the ratio and the drop.
+        # Mirrors `checkRules` in lib/baseline.ts.
+        count_keys = ("state_count", "trigger_count", "protective_count", "behavior_count", "event_count")
+        graph_was_empty = any(key in feature_vector for key in count_keys) and (
+            sum(float(feature_vector.get(key, 0.0)) for key in count_keys) == 0
+        )
+        if not graph_was_empty and ((ratio_was_measured and protective_ratio < 0.2) or protective_drop > 0):
             contributions.append(
                 RuleHit(
                     rule="protective_decline",

@@ -201,6 +201,20 @@ const SUPPORT = lexicon(SUPPORT_TERMS);
 const LOAD = lexicon(LOAD_TERMS);
 const INTENSIFIER = lexicon(INTENSIFIER_TERMS);
 
+/**
+ * Whether an `extraction_status` says the graph is `fallbackExtraction`'s.
+ *
+ * The statuses the entries route writes when it falls back: `missing_key`,
+ * `failed_<status>`, `timeout` and `fallback`. Anything else — `completed`,
+ * the collection-only status, or no status at all (FastAPI's response does not
+ * carry one; its fallback is an empty graph, which `checkRules` handles on its
+ * own) — is not a fallback.
+ */
+export function extractionFellBack(status: unknown): boolean {
+  if (typeof status !== "string") return false;
+  return status === "missing_key" || status === "timeout" || status === "fallback" || status.startsWith("failed_");
+}
+
 export function fallbackExtraction(sourceText: string): ExtractionPayload {
   const nodes: ExtractedNode[] = [
     { id: "current_reflection", category: "State", label: t.extraction.fallbackNode.currentReflection, intensity: 0.5, confidence: 0.55 },

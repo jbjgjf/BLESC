@@ -297,6 +297,36 @@ describe("rule engine", () => {
     );
   });
 
+  it("does not report a protective decline for an empty graph after a day with support", () => {
+    // Yesterday's real graph had support; today's is empty. The drop is the
+    // extraction failing, not the entry (#310).
+    const empty = aggregateDailyFeatures([{ nodes: [], relations: [] }]);
+    const drop = { drop_in_protective_nodes: 2, current_protective_nodes: 0, previous_protective_nodes: 2 };
+    assert.deepEqual(checkRules(empty, {}, { event_count: 0 }, noDiff, drop).map((hit) => hit.rule), []);
+  });
+
+  it("does not report a protective decline for a graph that came from the fallback", () => {
+    // Risk without support, which fires on a model graph — but the fallback's
+    // State and Behavior nodes are placeholders.
+    const risky = aggregateDailyFeatures([{
+      nodes: [
+        { id: "a", category: "State", label: "x", intensity: 0.5, confidence: 0.55 },
+        { id: "b", category: "Behavior", label: "y", intensity: 0.55, confidence: 0.8 },
+      ],
+      relations: [],
+    }]);
+    const drop = { drop_in_protective_nodes: 1, current_protective_nodes: 0, previous_protective_nodes: 1 };
+    assert.deepEqual(
+      checkRules(risky, {}, { event_count: 0 }, noDiff, drop, { extractionFellBack: true }).map((hit) => hit.rule),
+      [],
+    );
+    assert.deepEqual(
+      checkRules(risky, {}, { event_count: 0 }, noDiff, drop).map((hit) => hit.rule),
+      ["protective_decline"],
+      "the same graph from the model still reports one",
+    );
+  });
+
   it("still reports a protective decline when risk nodes were present and support was not", () => {
     // The measurement the rule exists for, and the one the gate must not lose.
     const risky = aggregateDailyFeatures([{

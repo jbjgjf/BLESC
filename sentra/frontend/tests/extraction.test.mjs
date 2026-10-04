@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { canonicalNodeId, fallbackExtraction, normalizeExtraction, sanitizeId } from "../src/lib/extraction.ts";
+import { canonicalNodeId, extractionFellBack, fallbackExtraction, normalizeExtraction, sanitizeId } from "../src/lib/extraction.ts";
 import { aggregateDailyFeatures, checkRules } from "../src/lib/baseline.ts";
 
 /**
@@ -268,5 +268,33 @@ describe("fallbackExtraction reads Japanese and English alike", () => {
       fallbackExtraction(text).nodes.find((node) => node.category === "Trigger")?.intensity;
     assert.equal(load("とても不安だった。"), load("I was very anxious."));
     assert.ok(load("とても不安だった。") > load("不安だった。"));
+  });
+});
+
+describe("extractionFellBack", () => {
+  it("names every status the entries route writes when it falls back", () => {
+    for (const status of ["missing_key", "failed_500", "failed_429", "timeout", "fallback"]) {
+      assert.equal(extractionFellBack(status), true, status);
+    }
+  });
+
+  it("does not name a completed extraction, or a missing status, as a fallback", () => {
+    for (const status of ["completed", undefined, null, 0]) {
+      assert.equal(extractionFellBack(status), false, String(status));
+    }
+  });
+
+  it("keeps a fallback entry naming load but no support from reporting a protective decline", () => {
+    // The fallback graph here is State, Behavior, Trigger, Event, Event — risk
+    // nodes and no Protective node, in either language (#310).
+    for (const text of ["締め切りが近くて心配。疲れた。", "The deadline is close and I am worried. Tired."]) {
+      const payload = fallbackExtraction(text);
+      const features = aggregateDailyFeatures([{ nodes: payload.nodes, relations: payload.relations }]);
+      const decline = { drop_in_protective_nodes: 0, current_protective_nodes: 0, previous_protective_nodes: 0 };
+      const hits = checkRules(features, {}, { event_count: features.event_count }, {}, decline, {
+        extractionFellBack: extractionFellBack("failed_503"),
+      });
+      assert.ok(!hits.some((hit) => hit.rule === "protective_decline"), text);
+    }
   });
 });

@@ -44,6 +44,7 @@ import {
   topFeatures,
   type DayGraph,
 } from "@/lib/baseline";
+import { extractionFellBack } from "@/lib/extraction";
 import { t } from "@/lib/i18n";
 
 type Json = Record<string, unknown>;
@@ -389,8 +390,10 @@ async function buildInsight(params: {
   day: string;
   snapshot: ComputedSubmission["graph_snapshot"];
   previousDayGraph: DayGraph | null;
+  /** `explanation.uncertainty_json.extraction_status`, as the route wrote it. */
+  extractionStatus?: unknown;
 }): Promise<Record<string, unknown>> {
-  const { client, participantId, day, snapshot, previousDayGraph } = params;
+  const { client, participantId, day, snapshot, previousDayGraph, extractionStatus } = params;
   const today: DayGraph = {
     nodes: (snapshot?.nodes_json ?? []) as unknown as DayGraph["nodes"],
     relations: (snapshot?.relations_json ?? []) as unknown as DayGraph["relations"],
@@ -462,7 +465,11 @@ async function buildInsight(params: {
     };
   }
 
-  const ruleHits = checkRules(outcome.featureVector, outcome.zScores, graphSummary, diff, decline);
+  // A fallback graph is a placeholder, not a reading of the entry: it must not
+  // report a protective decline (#310).
+  const ruleHits = checkRules(outcome.featureVector, outcome.zScores, graphSummary, diff, decline, {
+    extractionFellBack: extractionFellBack(extractionStatus),
+  });
   const breakdown = combineHybridScore(ruleHits, outcome.deviationScore, scoreTemporalShift(diff));
 
   return {
@@ -715,6 +722,8 @@ export async function writeEntryResult(
         day: insightDay,
         snapshot: writtenSnapshot ?? computed.graph_snapshot,
         previousDayGraph: writtenPreviousDayGraph,
+        extractionStatus: (computed.explanation?.uncertainty_json as { extraction_status?: unknown } | null | undefined)
+          ?.extraction_status,
       });
       const insightRow = unwrap(
         "insights insert",

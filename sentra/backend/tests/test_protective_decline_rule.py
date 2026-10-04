@@ -48,6 +48,13 @@ class TestNothingToMeasure:
         assert features["protective_ratio"] == 0
         assert _rules(features) == []
 
+    def test_an_empty_graph_after_a_supported_day_reports_no_drop(self):
+        # The fallback graph is empty; yesterday's real one had support. The
+        # difference is the extraction failing, not the entry.
+        features = _features([])
+        diff = {"protective_decline": {"drop_in_protective_nodes": 2}}
+        assert _rules(features, diff) == []
+
 
 class TestTheMeasurementItExistsFor:
     def test_risk_without_support_still_reports_a_decline(self):
