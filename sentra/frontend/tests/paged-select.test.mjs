@@ -142,6 +142,84 @@ describe("fetchAllRows", () => {
     assert.match(result.error, /2000/);
   });
 
+  it("refuses an exact count above the ceiling instead of returning it", async () => {
+    // The count says the result is over the bound. Returning it because the
+    // rows all arrived would make the ceiling apply only to count-less reads.
+    const { read } = table(2500);
+    const result = await fetchAllRows(read, { maxRows: 2000 });
+    assert.ok("error" in result, "an over-ceiling count must not come back as rows");
+    assert.match(result.error, /2000/);
+  });
+
+  /**
+   * A table that gains a row at the front after the first page is served:
+   * every later offset shifts by one, so the next page repeats the last row
+   * already read. `insertions` is how many reads of the whole table see a
+   * write land mid-paging.
+   */
+  function growingTable(total, { insertions = Infinity, withId = true, count = true } = {}) {
+    let rows = Array.from({ length: total }, (_, index) => ({ id: `r-${String(index).padStart(5, "0")}` }));
+    let inserted = 0;
+    let served = 0;
+    const calls = [];
+    const read = (from, to) => {
+      calls.push([from, to]);
+      if (from === 0) served = 0;
+      if (served === 1 && inserted < insertions) {
+        rows = [{ id: `a-${inserted}` }, ...rows];
+        inserted += 1;
+      }
+      served += 1;
+      const data = rows
+        .slice(from, to + 1)
+        .map((row) => (withId ? { ...row } : { value: row.id }));
+      return Promise.resolve({ data, error: null, count: count ? rows.length : null });
+    };
+    return { read, calls };
+  }
+
+  it("fails rather than returning rows when the count changes between pages", async () => {
+    const { read } = growingTable(1050);
+    const result = await fetchAllRows(read);
+    assert.ok("error" in result, "a table that changed mid-read must not come back as rows");
+  });
+
+  it("fails on a count change even when rows carry no id to compare", async () => {
+    const { read } = growingTable(1050, { withId: false });
+    const result = await fetchAllRows(read);
+    assert.ok("error" in result);
+  });
+
+  it("re-reads once when a write lands mid-paging, and returns the settled table", async () => {
+    const { read } = growingTable(1050, { insertions: 1 });
+    const result = await fetchAllRows(read);
+    assert.ok("rows" in result, "one write during the read should be absorbed by a retry");
+    assert.equal(result.rows.length, 1051);
+    assert.equal(new Set(result.rows.map((row) => row.id)).size, 1051);
+  });
+
+  it("refuses rows whose id repeats across pages", async () => {
+    // Count served only on the first page: the duplicate is the only signal.
+    let calls = 0;
+    const read = (from, to) => {
+      calls += 1;
+      const ids = Array.from({ length: Math.min(to - from + 1, 600 - from) }, (_, index) => from + index);
+      // The second page starts one row early: an offset shifted by a write.
+      if (from > 0) {
+        ids.unshift(from - 1);
+        ids.pop();
+      }
+      return Promise.resolve({
+        data: ids.map((id) => ({ id })),
+        error: null,
+        count: from === 0 ? 600 : null,
+      });
+    };
+    const result = await fetchAllRows(read);
+    assert.ok("error" in result, "a repeated id means a row was read twice and another skipped");
+    assert.ok(calls >= 2);
+  });
+
   it("keeps the ceiling above the pilot's design scale", () => {
     assert.ok(MAX_ROWS > 50 * 21, "a 50x21 pilot must not be able to reach the ceiling");
     assert.ok(PAGE_SIZE <= 1000, "a page larger than db-max-rows is served short");

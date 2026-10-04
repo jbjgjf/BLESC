@@ -28,6 +28,16 @@
  * rather than returned as a shorter list — the whole point of this module is
  * that "could not read it all" and "there is not much there" stop looking the
  * same.
+ *
+ * ## Why it compares the count on every page
+ *
+ * Each range is its own query, so a row written while the dashboard is paging
+ * shifts every later offset: the next page repeats a row already read and a
+ * row beyond it is never seen, while the row total can still reach the first
+ * page's figure. So every page's count is compared with the first one, and
+ * rows that carry an `id` are checked for repeats. A mismatch re-reads the
+ * whole table once (a write that has landed usually stays landed); a second
+ * mismatch is reported as a failure, never returned as rows.
  */
 
 /** Rows per request. Below `db-max-rows` on a stock Supabase project. */
@@ -57,6 +67,18 @@ export type RangeResponse<T> = {
  */
 export type RangeReader<T> = (from: number, to: number) => PromiseLike<RangeResponse<T>>;
 
+/** Whole-table reads attempted before a table that keeps changing is an error. */
+const READ_ATTEMPTS = 2;
+
+type ReadOutcome<T> = { rows: T[] } | { error: string; changed?: true };
+
+/** The row's `id`, when it has one usable as a key; otherwise null. */
+function rowKey(row: unknown): string | number | null {
+  if (typeof row !== "object" || row === null || !("id" in row)) return null;
+  const id = (row as { id: unknown }).id;
+  return typeof id === "string" || typeof id === "number" ? id : null;
+}
+
 export async function fetchAllRows<T>(
   read: RangeReader<T>,
   options: { pageSize?: number; maxRows?: number } = {},
@@ -67,7 +89,21 @@ export async function fetchAllRows<T>(
     return { error: `pageSize には正の整数を渡してください（${pageSize}）。` };
   }
 
+  let outcome = await readOnce(read, pageSize, maxRows);
+  for (let attempt = 1; attempt < READ_ATTEMPTS && "changed" in outcome; attempt += 1) {
+    outcome = await readOnce(read, pageSize, maxRows);
+  }
+  return "error" in outcome ? { error: outcome.error } : outcome;
+}
+
+async function readOnce<T>(read: RangeReader<T>, pageSize: number, maxRows: number): Promise<ReadOutcome<T>> {
+  const tooMany = { error: `読み出しが ${maxRows} 行を超えました。問い合わせの範囲が広すぎます。` };
+  const changed = (what: string): ReadOutcome<T> => ({
+    changed: true,
+    error: `読み出し中に${what}。ページがずれた可能性があるため、不正確な集計を返さずに失敗として報告します。`,
+  });
   const rows: T[] = [];
+  const seen = new Set<string | number>();
   // From the first response. Null when the caller did not ask for a count, in
   // which case a short page is the only available end-of-table signal.
   let expected: number | null = null;
@@ -78,8 +114,24 @@ export async function fetchAllRows<T>(
     if (page.error) return { error: page.error.message };
 
     const batch = page.data ?? [];
-    if (expected === null && typeof page.count === "number") expected = page.count;
+    if (typeof page.count === "number") {
+      if (from === 0) {
+        expected = page.count;
+        // Before any return: an exact count over the bound is refused even
+        // when every row would have arrived.
+        if (expected > maxRows) return tooMany;
+      } else if (expected !== null && page.count !== expected) {
+        return changed(`行数が ${expected} 件から ${page.count} 件に変わりました`);
+      }
+    }
+    for (const row of batch) {
+      const key = rowKey(row);
+      if (key === null) continue;
+      if (seen.has(key)) return changed("同じ行が二度返されました");
+      seen.add(key);
+    }
     rows.push(...batch);
+    if (rows.length > maxRows) return tooMany;
 
     if (expected !== null) {
       if (rows.length >= expected) return { rows };
@@ -94,9 +146,6 @@ export async function fetchAllRows<T>(
       return { rows };
     }
 
-    if (rows.length > maxRows) {
-      return { error: `読み出しが ${maxRows} 行を超えました。問い合わせの範囲が広すぎます。` };
-    }
     // By what actually arrived, not by what was asked for: a server-side cap
     // smaller than `pageSize` then advances correctly instead of skipping rows.
     from += batch.length;
