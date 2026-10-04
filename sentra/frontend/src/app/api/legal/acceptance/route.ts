@@ -18,13 +18,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/server/api";
 import {
   currentLegalVersion,
+  isLegalAcceptableDocument,
   legalEffectiveDate,
   legalEnacted,
 } from "@/lib/legalEnactment";
 
 export const runtime = "nodejs";
-
-const DOCUMENTS = new Set(["terms", "privacy"]);
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser(request);
@@ -49,8 +48,8 @@ export async function POST(request: NextRequest) {
   if ("error" in auth) return auth.error;
 
   const body = (await request.json().catch(() => ({}))) as { document_id?: unknown };
-  const documentId = typeof body.document_id === "string" ? body.document_id : "";
-  if (!DOCUMENTS.has(documentId)) {
+  const documentId = body.document_id;
+  if (!isLegalAcceptableDocument(documentId)) {
     return jsonError("document_id must be 'terms' or 'privacy'.", 422);
   }
 

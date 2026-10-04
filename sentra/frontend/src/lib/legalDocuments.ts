@@ -1,5 +1,6 @@
 /** Review-only documents. Never substitute these drafts for an accepted consent version. */
-import { researchDocumentLabel } from "./consentDocument.ts";
+import { consentDocumentLabel, researchDocumentLabel } from "./consentDocument.ts";
+import { legalDisplayVersion, legalDocumentLabel } from "./legalEnactment.ts";
 
 export const LEGAL_DRAFT_VERSION = "legal-review-2026-09-14-v1";
 /**
@@ -19,11 +20,39 @@ export const LEGAL_ORGANIZATION = {
 };
 
 type LegalSection = { title: string; paragraphs: string[] };
-type LegalDocument = { id: string; title: string; version: string; sections: LegalSection[] };
+
+/**
+ * Which enactment decision a document answers to.
+ *
+ * `legal`    — the terms and the privacy policy, under `NEXT_PUBLIC_LEGAL_ENACTED`.
+ * `research` — the participant and guardian documents, under
+ *              `NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED`.
+ *
+ * Two flags, because they are two decisions: counsel enacting the terms says
+ * nothing about whether the consent pack's 附則 blanks are filled. They are
+ * named per document rather than inferred from the id so that adding a fifth
+ * document forces the author to say which decision governs it.
+ */
+type Enactment = "legal" | "research";
+
+/**
+ * `title` and `version` are the **draft** identity: the heading without
+ * 「（案）」 and the version this build shows while unenacted. What a screen
+ * renders comes from `documentHeading()` and `documentVersion()`, never from
+ * these fields directly — reading them raw is what produced a page that said
+ * 「施行済み」 at the top and 「（案）」 in every heading under it.
+ */
+type LegalDocument = {
+  id: string;
+  title: string;
+  version: string;
+  enactment: Enactment;
+  sections: LegalSection[];
+};
 
 export const LEGAL_DOCUMENTS: LegalDocument[] = [
   {
-    id: "privacy", title: "プライバシーポリシー（案）", version: LEGAL_DRAFT_VERSION,
+    id: "privacy", title: "プライバシーポリシー", version: LEGAL_DRAFT_VERSION, enactment: "legal",
     sections: [
       { title: "1. 事業者・お問い合わせ", paragraphs: [
         "Blesc株式会社（代表者：田雨竜）は、blescの提供に伴い取り扱う情報を以下の方針で管理します。お問い合わせ、苦情、個人情報の開示等の請求窓口は blesc.jp@gmail.com です。",
@@ -69,7 +98,7 @@ export const LEGAL_DOCUMENTS: LegalDocument[] = [
     ],
   },
   {
-    id: "terms", title: "利用規約（案）", version: LEGAL_DRAFT_VERSION,
+    id: "terms", title: "利用規約", version: LEGAL_DRAFT_VERSION, enactment: "legal",
     sections: [
       { title: "1. サービス・適用", paragraphs: [
         "Blesc株式会社（代表者：田雨竜）が提供するblescは、日々の記録・振り返り・相談等を支えるサービスです。医療的な診断・治療や緊急通報、24時間の見守りを提供するものではありません。AI出力は不正確な場合があり、重要な判断の唯一の根拠にしないでください。緊急の危険は119・110等へ直接相談してください。",
@@ -93,7 +122,7 @@ export const LEGAL_DOCUMENTS: LegalDocument[] = [
     ],
   },
   {
-    id: "research", title: "研究参加者への説明・本人同意（案）", version: RESEARCH_DRAFT_VERSION,
+    id: "research", title: "研究参加者への説明・本人同意", version: RESEARCH_DRAFT_VERSION, enactment: "research",
     sections: [
       { title: "1. 研究の目的・体制", paragraphs: [
         "実施主体はBlesc株式会社、研究責任者は王謙蘊です。高校生の日々の記録と気分等の自己評定を、AIの応答を受けない条件で集め、将来の時系列モデルの研究・評価に利用します。協力校の高校生を対象とし、目標は50名、期間は21日間（14日と7日の解析上の区分）です。1か月・研究中にAIが分析を返す企画書とは異なる計画です。",
@@ -125,7 +154,7 @@ export const LEGAL_DOCUMENTS: LegalDocument[] = [
     ],
   },
   {
-    id: "guardian", title: "保護者への説明・確認（案）", version: RESEARCH_DRAFT_VERSION,
+    id: "guardian", title: "保護者への説明・確認", version: RESEARCH_DRAFT_VERSION, enactment: "research",
     sections: [
       { title: "本人と別々に確認します", paragraphs: [
         "研究責任者はBlesc株式会社の王謙蘊です。上の本人向け説明と同じ目的・期間・収集項目・リスク・保存期間・撤回削除の条件が適用されます。高校生の日常の記録を対象とするため、未成年者を含める必要性と配慮の方法を計画書・審査で確認します。参加は成績等に関係せず、本人が希望しない場合は保護者が同意しても参加を開始しません。",
@@ -139,3 +168,31 @@ export const LEGAL_DOCUMENTS: LegalDocument[] = [
     ],
   },
 ];
+
+/**
+ * The heading a document carries on screen.
+ *
+ * 「（案）」 is appended by the switch that governs *that* document rather than
+ * stored in its title, so enacting the terms cannot re-label the consent pack
+ * and vice versa.
+ */
+export function documentHeading(document: LegalDocument): string {
+  return document.enactment === "legal"
+    ? legalDocumentLabel(document.title)
+    : consentDocumentLabel(document.title);
+}
+
+/**
+ * The version a document names on screen.
+ *
+ * For the research and guardian documents this is already derived
+ * (`RESEARCH_DRAFT_VERSION` is `researchDocumentLabel()`), so the stored value
+ * is the right one. The terms and the privacy policy stored a fixed draft
+ * string that never moved, which meant an enacted deployment showed
+ * `legal-review-2026-09-14-v1` while `POST /api/legal/acceptance` recorded
+ * `legal-2026-10-01-v1` — a row asserting agreement to a version the page had
+ * never displayed.
+ */
+export function documentVersion(document: LegalDocument): string {
+  return document.enactment === "legal" ? legalDisplayVersion(document.version) : document.version;
+}
