@@ -87,7 +87,7 @@ export function researchDocumentLabel(): string {
 /**
  * The heading the research and guardian documents carry on `/legal`.
  *
- * 「（案）」 until v2 is enacted, and it disappears at the same moment
+ * 「（案）」 until v3 is enacted, and it disappears at the same moment
  * `currentConsentDocumentVersion()` changes — the same one switch as the label
  * above, applied to the visible title rather than to the version string.
  *
@@ -98,5 +98,5 @@ export function researchDocumentLabel(): string {
  * re-label the other's documents.
  */
 export function consentDocumentLabel(base: string): string {
-  return consentDocumentV2Enacted() ? base : `${base}（案）`;
+  return consentDocumentV3Enacted() ? base : `${base}（案）`;
 }
