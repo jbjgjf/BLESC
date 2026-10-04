@@ -116,6 +116,19 @@ OpenAI Responses calls set `store=false` for extraction and chat. If no backend
 key is present, Sentra records deterministic fallback metadata and keeps the
 submission path working.
 
+The Next journal route (`POST /api/entries`) puts each OpenAI call under a
+deadline, so a stalled upstream falls back instead of running the request into
+its 60 s limit before the entry is written (#264). Defaults and caps, in ms:
+`OPENAI_EXTRACTION_TIMEOUT_MS` 25000 (max 28000) and
+`OPENAI_EMBEDDING_TIMEOUT_MS` 4000 per call (max 4000). An override can shorten
+a limit but not spend the 20 s kept for the write and escalation. A timed-out
+extraction is stored with the deterministic extraction and
+`extraction_status: "timeout"` (distinct from `"fallback"`, which means the
+model answered with something unusable); a timed-out embedding is marked
+`embedding_timeout`. `/api/audio/transcriptions` has
+`OPENAI_TRANSCRIPTION_TIMEOUT_MS` (default 45000, max 50000) and answers 504
+on timeout.
+
 ## Retrieval And Chat
 
 `POST /api/research/similar` computes a query embedding when a backend OpenAI

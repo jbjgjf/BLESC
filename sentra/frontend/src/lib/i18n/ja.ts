@@ -1110,6 +1110,33 @@ export const ja = {
   },
 
   /**
+   * `/legal` の同意欄（#251）。規約・プライバシーポリシーへの同意であって、
+   * 研究同意（`consent_records`）ではないことを、押す場所の隣で毎回言う。
+   */
+  legalAcceptance: {
+    heading: "この書類への同意",
+    documentName: { terms: "利用規約", privacy: "プライバシーポリシー" },
+    notResearchConsent:
+      "これは利用規約・プライバシーポリシーへの同意です。研究参加の同意ではありません。研究参加の同意は別の画面で、別に記録します。",
+    notEnacted:
+      "この書類はまだ施行されていないため、同意を受け付けていません。施行日が決まり、承認を経て正式化されると、ここに同意のボタンが表示されます。",
+    signInToSeeStatus: "ログインすると、この版に同意済みかどうかがここに表示されます。書類はログインしなくても読めます。",
+    loadingStatus: "同意の状態を確認しています",
+    loadFailed: "同意の状態を読み込めませんでした。時間をおいて、もう一度お試しください。",
+    accepted: (acceptedAt: string) => `この版に同意済みです（${acceptedAt}）。`,
+    acceptedEarlierVersion:
+      "以前の版には同意していますが、現在の版にはまだ同意していません。内容を確認してから同意してください。",
+    notYetAccepted: "現在の版にはまだ同意していません。",
+    acceptButton: (title: string) => `${title}に同意する`,
+    submitting: "記録しています…",
+    recorded: "同意を記録しました。",
+    alreadyAccepted: "この版への同意はすでに記録されています。新しく記録し直す必要はありません。",
+    rejectedNotEnacted:
+      "この書類はまだ施行されていないため、同意を記録できませんでした。画面を再読み込みして、施行の状態を確認してください。",
+    submitFailed: "同意を記録できませんでした。時間をおいて、もう一度お試しください。",
+  },
+
+  /**
    * The guided demo (#17). Written for whoever is standing at the front of the
    * room: what to open, in what order, and what each screen is meant to show.
    */
