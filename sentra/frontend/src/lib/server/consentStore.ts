@@ -14,13 +14,16 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+// Relative, with the extension, so the node test runner can import this module
+// without the `@/` alias — the same form `crisisTriage.ts` uses.
 import {
   CONSENT_DOCUMENT_VERSION,
   CONSENT_VERSION,
   NO_CONSENT,
+  consentSnapshot,
   normalizeConsent,
   type ConsentState,
-} from "@/lib/consent";
+} from "../consent.ts";
 
 const CONSENT_COLUMNS =
   "app_use, research_analysis, anonymized_export, raw_text_retention, model_training_use, " +
@@ -43,6 +46,24 @@ export async function loadConsentState(
   ownerUserId: string,
   participantId: string,
 ): Promise<ConsentState> {
+  const read = await readConsentState(client, ownerUserId, participantId);
+  if ("error" in read) {
+    console.warn("[consent] lookup failed; treating as no consent", read.error);
+    return { ...NO_CONSENT };
+  }
+  return read.state;
+}
+
+/**
+ * The read behind `loadConsentState`, keeping the one distinction that function
+ * folds away: "there is no consent record" and "the consent table could not be
+ * read" are different facts, even though every *gate* treats them the same.
+ */
+async function readConsentState(
+  client: SupabaseClient,
+  ownerUserId: string,
+  participantId: string,
+): Promise<{ state: ConsentState } | { error: string }> {
   const result = await client
     .from("consent_records")
     .select(CONSENT_COLUMNS)
@@ -52,12 +73,52 @@ export async function loadConsentState(
     .limit(1)
     .maybeSingle();
 
-  if (result.error) {
-    console.warn("[consent] lookup failed; treating as no consent", result.error.message);
-    return { ...NO_CONSENT };
+  if (result.error) return { error: result.error.message };
+  if (!result.data) return { state: { ...NO_CONSENT } };
+  return { state: normalizeConsent(result.data) };
+}
+
+/**
+ * What a server route writes to `chat_sessions.consent_snapshot_json` (#238).
+ *
+ * `/api/chat` and `/api/voice/turn` wrote
+ * `{ app_use: true, research_analysis: true }` on every session, whatever the
+ * participant had agreed to — the defect #134 removed from the browser writer
+ * and the entry writer, surviving in the two server routes. A withdrawn
+ * participant's conversation was recorded as research-consented, and the
+ * optional grants were never recorded at all.
+ *
+ * Now the snapshot is the stored record, read the same way the entry writer
+ * reads it. When that record cannot be read — no service-role client on this
+ * deployment, or the query failed — the snapshot says so (`status: "unknown"`)
+ * rather than guessing in either direction: writing `true` is the original
+ * defect, and writing `false` would be a claim about the participant that
+ * nobody checked. `research_use_allowed` is still `false` there, because that
+ * field is the decision, and without a record the decision is no.
+ *
+ * Rows written before this change carry the old two-key shape and no
+ * `research_use_allowed` key. They are left as written: rewriting them from
+ * today's record would be a second guess about the past. Anything reading
+ * these snapshots must treat that shape as unknown, and re-derive consent from
+ * the `consent_records` history at the session's `created_at` if it needs it.
+ */
+export async function chatSessionConsentSnapshot(
+  client: SupabaseClient | null,
+  ownerUserId: string,
+  participantId: string,
+  source: "student_ui" | "student_voice",
+): Promise<Record<string, unknown>> {
+  if (!client) return unknownConsentSnapshot("consent_store_unavailable", source);
+  const read = await readConsentState(client, ownerUserId, participantId);
+  if ("error" in read) {
+    console.warn("[consent] lookup failed; recording this session's consent as unknown", read.error);
+    return unknownConsentSnapshot("consent_lookup_failed", source);
   }
-  if (!result.data) return { ...NO_CONSENT };
-  return normalizeConsent(result.data);
+  return { ...consentSnapshot(read.state), source };
+}
+
+function unknownConsentSnapshot(reason: string, source: string): Record<string, unknown> {
+  return { status: "unknown", unknown_reason: reason, research_use_allowed: false, source };
 }
 
 export type ConsentGrantInput = {
@@ -104,68 +165,13 @@ export async function recordConsent(
   return normalizeConsent(result.data);
 }
 
-/**
- * What happens to already-collected journal text when someone withdraws (#224).
- *
- * `delete` destroys it now. `keep` leaves it until the ordinary retention
- * window closes and `purge_expired_raw_text()` takes it like any other row.
- *
- * **`keep` is not permission to keep using it.** Withdrawal is still
- * withdrawal: research analysis and training use stop either way, and the
- * export gate does not consult this field. It governs destruction only. The
- * distinction matters because the obvious misreading — "they said keep, so we
- * may carry on" — converts a decision about someone's own record into a
- * consent nobody gave.
+/*
+ * `revokeConsent` stood here. It wrote a revocation row and nothing else, which
+ * is how `/consent` came to revoke consent while leaving the enrollment
+ * collecting (#263). Revocation is now part of the single withdrawal procedure
+ * in `withdrawal.ts`. It was removed rather than left beside it, because a
+ * second way to revoke is how the first split happened.
  */
-export type RetainedDataDisposition = "delete" | "keep";
-
-/**
- * Revoke. A revocation row carries the grants set to false so that reading the
- * newest row is enough to know the answer — no consumer has to walk the
- * history to discover that an earlier `true` was withdrawn.
- *
- * `disposition` defaults to `delete`. Not because deleting is the neutral
- * choice — it is the irreversible one — but because the alternative default is
- * "a request that did not say anything keeps the text", and silence is not a
- * decision to keep. A participant who wants their record preserved has to say
- * so, and saying so is exactly what this parameter is for.
- *
- * Deleting the retained journal text is the caller's next step
- * (`purge_raw_text_for_participant`); this function only records the decision.
- */
-export async function revokeConsent(
-  client: SupabaseClient,
-  ownerUserId: string,
-  participantId: string,
-  source = "student_ui",
-  disposition: RetainedDataDisposition = "delete",
-): Promise<ConsentState> {
-  const now = new Date().toISOString();
-  const result = await client
-    .from("consent_records")
-    .insert({
-      owner_user_id: ownerUserId,
-      participant_id: participantId,
-      app_use: true,
-      research_analysis: false,
-      anonymized_export: false,
-      raw_text_retention: false,
-      model_training_use: false,
-      minor_assent: false,
-      guardian_consent: false,
-      consent_version: CONSENT_VERSION,
-      document_version: CONSENT_DOCUMENT_VERSION,
-      status: "revoked",
-      granted_at: now,
-      revoked_at: now,
-      retained_data_disposition: disposition,
-      source,
-    })
-    .select(CONSENT_COLUMNS)
-    .single();
-  if (result.error) throw new Error(`consent_records revoke: ${result.error.message}`);
-  return normalizeConsent(result.data);
-}
 
 /**
  * Names the grants the client claimed to hold that the stored record does not.

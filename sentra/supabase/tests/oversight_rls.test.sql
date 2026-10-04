@@ -258,18 +258,26 @@ begin
   end;
 end $$;
 
--- The log is append-only: educators cannot rewrite their trail.
+-- The log is append-only: educators cannot rewrite their trail. Since #256 the
+-- UPDATE/DELETE grants are gone as well, so the attempt is refused outright
+-- rather than filtered to zero rows; either outcome leaves the trail intact.
 do $$
 declare
-  touched integer;
+  touched integer := 0;
 begin
-  update public.educator_access_log set view_type = 'alerts' where true;
-  get diagnostics touched = row_count;
+  begin
+    update public.educator_access_log set view_type = 'alerts' where true;
+    get diagnostics touched = row_count;
+  exception when insufficient_privilege then touched := 0;
+  end;
   if touched <> 0 then
     raise exception 'FAIL: educator mutated % access log rows', touched;
   end if;
-  delete from public.educator_access_log where true;
-  get diagnostics touched = row_count;
+  begin
+    delete from public.educator_access_log where true;
+    get diagnostics touched = row_count;
+  exception when insufficient_privilege then touched := 0;
+  end;
   if touched <> 0 then
     raise exception 'FAIL: educator deleted % access log rows', touched;
   end if;

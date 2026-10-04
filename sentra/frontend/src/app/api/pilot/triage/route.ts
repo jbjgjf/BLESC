@@ -19,6 +19,7 @@ import { jsonError } from "@/lib/server/api";
 import { requireOperator } from "@/lib/server/pilotOperator";
 import { SAFETY_ASSESSMENT_VERSION } from "@/lib/safety-assessment";
 import {
+  countPending,
   enqueuePendingReviews,
   loadQueue,
   readEntryText,
@@ -57,13 +58,24 @@ export async function GET(request: NextRequest) {
     // review that never got a row is an entry nobody was ever going to look at.
     const enqueued = await enqueuePendingReviews(operator.service, ASSESSOR_VERSION);
     const queue = await loadQueue(operator.service, { includeDecided });
+    const pendingTotal = await countPending(operator.service);
 
     const pending = queue.filter((row) => row.status === "pending");
     return NextResponse.json({
       slot: slotFor(new Date()),
       enqueued: enqueued.enqueued,
+      // What this call did not get to (#247). A queue that quietly stops at a
+      // cap is the failure this console exists to rule out, so the leftovers
+      // are reported rather than left to be inferred from a page that looks
+      // full. `scan_complete: false` means `deferred` is a lower bound.
+      deferred: enqueued.deferred,
+      scan_complete: enqueued.scanComplete,
       counts: {
         pending: pending.length,
+        // Every row waiting, not just the ones on this page. The screen shows
+        // at most 200; a reviewer deciding whether the slot is finished needs
+        // the other number.
+        pending_total: pendingTotal,
         crisis: pending.filter((row) => row.assessed_risk === "crisis").length,
         elevated: pending.filter((row) => row.assessed_risk === "elevated").length,
         // Entries whose text is gone — purged on withdrawal, or past its

@@ -22,3 +22,20 @@ import os
 
 os.environ.setdefault("USE_MOCK_LLM", "true")
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test_research_pipeline.db")
+
+# Since #259 the participant endpoints require a verified Supabase access token.
+# There is no Supabase project in the test environment and there must not be one
+# — these tests drive SQLite. So the suite runs with the documented escape hatch
+# on, and `test_endpoint_authorization.py` turns it off to assert that the
+# refusals are there when it is.
+os.environ.setdefault("BLESC_ALLOW_UNAUTHENTICATED_API", "1")
+
+# The escape hatch is ignored whenever Supabase is configured, and `app/main.py`
+# loads `.env` / `.env.local`. On a machine whose `.env` points at a real
+# project, the suite would otherwise see Supabase, keep the checks on, and fail
+# with 401s. It would also be one step from mirroring test rows into that
+# project. Set to empty rather than deleted: `load_dotenv` does not override a
+# variable that is already present. Tests that need a configured client set
+# these with `monkeypatch`.
+os.environ["SUPABASE_URL"] = ""
+os.environ["SUPABASE_SERVICE_ROLE_KEY"] = ""

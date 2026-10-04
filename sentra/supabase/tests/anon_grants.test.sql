@@ -145,4 +145,35 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------------------
+-- 6. The tables that record who read what are inside the net (#250)
+-- ---------------------------------------------------------------------------
+
+/*
+ * §1 covers every table in `public` by construction. It says nothing about a
+ * table that is not there. If one of these is renamed or moved to another
+ * schema, the sweep still passes while the thing it was meant to protect is
+ * no longer being looked at. Naming them makes that a failure.
+ */
+do $$
+declare
+  required text[] := array['pilot_crisis_reviews', 'pilot_crisis_review_reads', 'legal_acceptances'];
+  t text;
+begin
+  foreach t in array required loop
+    if to_regclass(format('public.%I', t)) is null then
+      raise exception 'public.% no longer exists; the anon sweep is not covering it', t;
+    end if;
+    if exists (select 1 from information_schema.role_table_grants
+                where table_schema = 'public' and table_name = t and grantee = 'anon') then
+      raise exception 'anon holds a privilege on public.%', t;
+    end if;
+    if has_table_privilege('anon', format('public.%I', t), 'select')
+       or has_table_privilege('anon', format('public.%I', t), 'insert') then
+      raise exception 'anon can reach public.% through an inherited grant', t;
+    end if;
+  end loop;
+end;
+$$;
+
 rollback;
