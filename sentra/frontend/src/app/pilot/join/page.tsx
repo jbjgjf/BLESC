@@ -31,6 +31,7 @@ import { PILOT_CONTACT_EMAIL, PILOT_CONTACT_HREF, PILOT_CONTACT_PRIVACY_NOTICE }
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { LegalDraftNotice } from "@/components/LegalDraftNotice";
+import { WithdrawalChoice } from "@/components/WithdrawalChoice";
 import { useAuth } from "@/lib/auth";
 import { ApiClient, type GuardianStatusResponse, type PilotEnrollmentSummary } from "@/api/client";
 import { Icon } from "@/components/ui/Icon";
@@ -122,6 +123,11 @@ export default function PilotJoinPage() {
       setBusy(false);
     }
   };
+
+  // 「参加をやめる」は /consent の撤回と同じ手続き（#263）。参加登録・同意・
+  // 本文の扱いが1回で決まり、失敗したら何も変わらずに理由が表示される。
+  const withdraw = (retainedData: "delete" | "keep") =>
+    void run(async () => (await ApiClient.withdrawFromPilot(enrollment!.id, retainedData)).detail);
 
   if (isLoading || !loaded) {
     return (
@@ -224,7 +230,7 @@ export default function PilotJoinPage() {
             >
               読み終えました
             </button>
-            <WithdrawButton busy={busy} enrollmentId={enrollment!.id} onDone={refresh} />
+            <WithdrawButton busy={busy} onWithdraw={withdraw} />
           </div>
         </section>
       ) : null}
@@ -281,7 +287,7 @@ export default function PilotJoinPage() {
             >
               同意して次へ
             </button>
-            <WithdrawButton busy={busy} enrollmentId={enrollment!.id} onDone={refresh} />
+            <WithdrawButton busy={busy} onWithdraw={withdraw} />
           </div>
         </section>
       ) : null}
@@ -329,7 +335,7 @@ export default function PilotJoinPage() {
                     ? "依頼をやり直す"
                     : "確認を依頼する"}
                 </button>
-                <WithdrawButton busy={busy} enrollmentId={enrollment!.id} onDone={refresh} />
+                <WithdrawButton busy={busy} onWithdraw={withdraw} />
               </div>
             </>
           )}
@@ -349,7 +355,7 @@ export default function PilotJoinPage() {
             >
               登録を完了する
             </button>
-            <WithdrawButton busy={busy} enrollmentId={enrollment!.id} onDone={refresh} />
+            <WithdrawButton busy={busy} onWithdraw={withdraw} />
           </div>
         </section>
       ) : null}
@@ -370,7 +376,7 @@ export default function PilotJoinPage() {
                 日記を書く
               </Link>
             ) : null}
-            <WithdrawButton busy={busy} enrollmentId={enrollment!.id} onDone={refresh} />
+            <WithdrawButton busy={busy} onWithdraw={withdraw} />
           </div>
         </section>
       ) : null}
@@ -379,8 +385,26 @@ export default function PilotJoinPage() {
         <section className="bl-card bl-stack">
           <h2 className="bl-h2">参加を終了しました</h2>
           <p>これまでのご参加ありがとうございました。以降の記録は研究には使われません。</p>
+          {/*
+            本文を「残す」を選んだ人と、#263 以前に撤回して選択を聞かれなかった人
+            （20260927020000 の修復で「未選択」として記録された人）は、ここから
+            いつでも削除に切り替えられる。問い合わせを経由させると、削除の意思が
+            あっても手間が勝って本文が残る。
+          */}
           <p className="bl-meta">
-            すでに保存されたデータの削除を希望される場合は、下記の研究問い合わせ先へご連絡ください。
+            保管してある日記の本文は、「残す」を選んだ場合や、まだ選んでいない場合でも、
+            ここからいつでも削除できます。
+          </p>
+          <button
+            type="button"
+            className="bl-btn bl-btn--secondary"
+            disabled={busy}
+            onClick={() => withdraw("delete")}
+          >
+            保管してある本文をいま削除する
+          </button>
+          <p className="bl-meta">
+            本文以外の記録（自己評定や記入時間など）の削除を希望される場合は、下記の研究問い合わせ先へご連絡ください。
           </p>
         </section>
       ) : null}
@@ -402,18 +426,19 @@ export default function PilotJoinPage() {
 /**
  * 参加をやめるボタン。
  *
- * どの段階からでも同じ場所に、同じ大きさで出す。確認ダイアログは1回だけで、
- * 「本当に？」を重ねたり、やめる理由を尋ねたりはしない — 理由を聞くこと自体が
- * 圧力になる。
+ * どの段階からでも同じ場所に、同じ大きさで出す。押すと本文の扱い（削除／保持）の
+ * 選択が出る -- /consent と同じ選択肢・同じ説明で（#224, #263）。以前はここに
+ * 「やめる」しかなく、本人に何も聞かないまま本文が保持され続けた。
+ *
+ * 「本当に？」を重ねたり、やめる理由を尋ねたりはしない -- 理由を聞くこと自体が
+ * 圧力になる。選択は1回で、戻ることもできる。
  */
 function WithdrawButton({
   busy,
-  enrollmentId,
-  onDone,
+  onWithdraw,
 }: {
   busy: boolean;
-  enrollmentId: string;
-  onDone: () => Promise<void>;
+  onWithdraw: (retainedData: "delete" | "keep") => void;
 }) {
   const [confirming, setConfirming] = useState(false);
 
@@ -426,21 +451,11 @@ function WithdrawButton({
   }
 
   return (
-    <span className="bl-row" style={{ gap: 8 }}>
-      <button
-        type="button"
-        className="bl-btn bl-btn--secondary"
-        disabled={busy}
-        onClick={async () => {
-          await ApiClient.advancePilotEnrollment(enrollmentId, "withdrawn");
-          await onDone();
-        }}
-      >
-        やめる
-      </button>
-      <button type="button" className="bl-btn bl-btn--ghost" disabled={busy} onClick={() => setConfirming(false)}>
-        戻る
-      </button>
-    </span>
+    <WithdrawalChoice
+      busy={busy}
+      onChoose={onWithdraw}
+      onCancel={() => setConfirming(false)}
+      cancelLabel="戻る（参加を続ける）"
+    />
   );
 }

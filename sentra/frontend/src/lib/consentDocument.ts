@@ -68,3 +68,20 @@ export function currentConsentDocumentVersion(): string {
 export function researchDocumentLabel(): string {
   return consentDocumentV2Enacted() ? CONSENT_DOCUMENT_V2 : `${CONSENT_DOCUMENT_V2}-draft`;
 }
+
+/**
+ * The heading the research and guardian documents carry on `/legal`.
+ *
+ * 「（案）」 until v2 is enacted, and it disappears at the same moment
+ * `currentConsentDocumentVersion()` changes — the same one switch as the label
+ * above, applied to the visible title rather than to the version string.
+ *
+ * Kept here and not in `legalEnactment.ts` because these two documents are
+ * governed by *this* flag. The terms and the privacy policy answer to
+ * `NEXT_PUBLIC_LEGAL_ENACTED`, which is a different decision made by different
+ * people, and a single helper covering both would let one enactment silently
+ * re-label the other's documents.
+ */
+export function consentDocumentLabel(base: string): string {
+  return consentDocumentV2Enacted() ? base : `${base}（案）`;
+}

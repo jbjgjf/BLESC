@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isMissingTable, jsonError, requireUser, sha256 } from "@/lib/server/api";
 import { assessConversation, recordSafetyAudit } from "@/lib/server/safety";
+import { serviceRoleClient } from "@/lib/server/supabaseWriter";
+import { escalate, notifiableLevel } from "@/lib/server/safetyEscalation";
+import { chatSessionConsentSnapshot } from "@/lib/server/consentStore";
 
 export const runtime = "nodejs";
 export const maxDuration = 20;
@@ -27,6 +30,9 @@ type VoiceTurnPayload = {
  * This does NOT generate a reply; the realtime model already spoke. It returns
  * the assessment so the client can have the canned support response spoken when
  * the model's own answer pointed at no real person.
+ *
+ * It also escalates, as chat and the journal do (#237) — see the block after
+ * the audit write.
  */
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
@@ -47,7 +53,9 @@ export async function POST(request: NextRequest) {
     .limit(1)
     .maybeSingle();
   if (participantResult.error) return jsonError(participantResult.error.message, 502);
-  const participant = participantResult.data as { id: string } | null;
+  // `code` is selected above and is what the educator's alert names the
+  // student by; the narrower cast predated the escalation call.
+  const participant = participantResult.data as { id: string; code: string | null } | null;
   if (!participant) return jsonError("Participant was not found.", 404);
 
   const recentResult = await auth.client
@@ -70,13 +78,75 @@ export async function POST(request: NextRequest) {
     .insert({
       owner_user_id: auth.user.id,
       participant_id: participant.id,
-      consent_snapshot_json: { app_use: true, research_analysis: true, source: "student_voice" },
+      // The participant's stored consent, not a constant (#238).
+      consent_snapshot_json: await chatSessionConsentSnapshot(
+        serviceRoleClient(),
+        auth.user.id,
+        participant.id,
+        "student_voice",
+      ),
     })
     .select("id")
     .single();
+
+  /*
+   * Voice was the third surface a crisis arrives on, and the only one that
+   * still told nobody (#237). Chat and the journal escalate; this route
+   * assessed the turn, wrote the audit row, had the support line spoken — and
+   * stopped there. A student who says out loud what they would not type
+   * reached an audit table that nobody is paged by.
+   *
+   * Same shape as the chat route deliberately, including the order: the
+   * escalation comes straight after the session insert is *attempted* —
+   * before its failure is turned into a 502, and before the messages are
+   * written. Either of those writes can fail on a transient error, and the
+   * voice client does not retry a failed turn, so an escalation placed after
+   * them is one a spoken crisis can miss. The escalation carries a session id
+   * (null when the session row did not land) and a time, never the words, so
+   * it depends on neither write.
+   *
+   * `escalate` records the row and returns, leaving delivery to run on: a
+   * student in crisis must not wait on a school's mail server, and an
+   * undelivered row is retried by `/api/safety/dispatch`, where an unwritten
+   * one is simply lost.
+   *
+   * Under the service-role client because the recipients are other people's
+   * rows — the student's own session cannot read their educators' addresses,
+   * and should not be able to.
+   */
+  const notifiable = notifiableLevel(safety.risk_level);
+  if (notifiable) {
+    const service = serviceRoleClient();
+    if (service) {
+      await escalate(service, {
+        ownerUserId: auth.user.id,
+        participantId: participant.id,
+        participantCode: participant.code,
+        riskLevel: notifiable,
+        reasons: safety.reasons,
+        surface: "voice",
+        sourceArtifactId: chatSession.data?.id ?? null,
+      });
+    } else {
+      console.error(
+        "[safety-escalation] a crisis was assessed and Supabase is not configured; nobody will be told",
+        { participant: participant.id },
+      );
+    }
+  }
+
   if (chatSession.error || !chatSession.data) {
     return jsonError(chatSession.error?.message ?? "Voice turn could not be saved.", 502);
   }
+
+  await recordSafetyAudit(auth.client, {
+    ownerUserId: auth.user.id,
+    participantId: participant.id,
+    artifactId: chatSession.data.id,
+    surface: "voice",
+    pipelineVersion: PIPELINE_VERSION,
+    safety,
+  });
 
   const rows = [
     {
@@ -102,15 +172,6 @@ export async function POST(request: NextRequest) {
   }
   const inserted = await auth.client.from("chat_messages").insert(rows);
   if (inserted.error) return jsonError(inserted.error.message, 502);
-
-  await recordSafetyAudit(auth.client, {
-    ownerUserId: auth.user.id,
-    participantId: participant.id,
-    artifactId: chatSession.data.id,
-    surface: "voice",
-    pipelineVersion: PIPELINE_VERSION,
-    safety,
-  });
 
   return NextResponse.json({
     chat_session_id: chatSession.data.id,
