@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
@@ -474,6 +474,97 @@ describe("the wiring that makes this reach anyone", () => {
     const route = read("../src/app/api/entries/route.ts");
     assert.ok(route.includes("notifiableLevel(safetyAssessment.risk_level)"));
     assert.ok(route.includes("escalate(service"));
+  });
+
+  it("escalates from the voice route", () => {
+    // Voice was the last surface with the gap: the realtime session streams
+    // browser-to-OpenAI, so a spoken disclosure never passed through /api/chat
+    // and reached only the audit table, which pages nobody (#237).
+    const route = read("../src/app/api/voice/turn/route.ts");
+    assert.ok(route.includes("notifiableLevel(safety.risk_level)"));
+    assert.ok(route.includes("escalate(service"));
+    assert.ok(route.includes('surface: "voice"'));
+  });
+
+  it("escalates under the service role, not the student's own session", () => {
+    // The recipients are the educators' rows. A student's session cannot read
+    // them, so an escalation built on `auth.client` would silently find no
+    // recipient and write a no_recipient row instead of paging anyone.
+    for (const path of [
+      "../src/app/api/chat/route.ts",
+      "../src/app/api/entries/route.ts",
+      "../src/app/api/voice/turn/route.ts",
+    ]) {
+      const route = read(path);
+      const call = route.indexOf("escalate(service");
+      assert.ok(call !== -1, `${path} does not escalate`);
+      assert.ok(
+        route.includes("const service = serviceRoleClient()"),
+        `${path} escalates without taking a service-role client`,
+      );
+    }
+  });
+
+  it("escalates a conversation even when its session row failed to save", () => {
+    // A failed chat_sessions insert answers 502. The voice client does not
+    // retry a failed turn, so an escalation behind that return is one a
+    // transient write error can cancel. The escalation takes a nullable
+    // source id for exactly this case.
+    for (const path of ["../src/app/api/chat/route.ts", "../src/app/api/voice/turn/route.ts"]) {
+      const source = code(path);
+      const escalation = source.indexOf("escalate(service");
+      const sessionFailure = source.indexOf("if (chatSession.error || !chatSession.data)");
+      assert.ok(escalation !== -1 && sessionFailure !== -1, `${path}: expected an escalation and a session-failure return`);
+      assert.ok(escalation < sessionFailure, `${path} returns on a failed session write before it escalates`);
+      assert.match(source, /sourceArtifactId: chatSession\.data\?\.id \?\? null/);
+    }
+  });
+
+  it("escalates a conversation before writing its messages", () => {
+    // Both conversational routes answer 502 when the message insert fails. An
+    // escalation placed after that insert is one a transient write error can
+    // skip — the gap #237 closed, reopened by ordering. The escalation carries
+    // the session id and a time, never the words, so it needs only the session.
+    for (const path of ["../src/app/api/chat/route.ts", "../src/app/api/voice/turn/route.ts"]) {
+      const source = code(path);
+      const escalation = source.indexOf("escalate(service");
+      const messages = source.search(/from\("chat_messages"\)\s*\.insert\(/);
+      assert.ok(escalation !== -1 && messages !== -1, `${path}: expected both an escalation and a message insert`);
+      assert.ok(escalation < messages, `${path} writes its messages before it escalates`);
+    }
+  });
+
+  /*
+   * The tests above name three files, which is exactly how the voice gap
+   * survived: the guard listed the surfaces somebody remembered. This one finds
+   * them instead — any route that decides a risk level owes someone a
+   * notification, and a fourth surface that assesses without escalating fails
+   * here, by name, on the day it is added.
+   */
+  it("leaves no surface that assesses risk without escalating", () => {
+    const apiRoot = resolve(HERE, "../src/app/api");
+    assert.ok(existsSync(apiRoot), "src/app/api moved; this guard is now checking nothing");
+
+    const assessing = readdirSync(apiRoot, { recursive: true, encoding: "utf8" })
+      .filter((entry) => entry.endsWith("route.ts"))
+      .map((entry) => resolve(apiRoot, entry))
+      .filter((path) => {
+        const source = code(path);
+        return source.includes("assessSafety(") || source.includes("assessConversation(");
+      });
+
+    // Pinned so a refactor that stops one of them assessing — and so stops it
+    // being checked below — cannot pass by disappearing from the list.
+    assert.equal(
+      assessing.length,
+      3,
+      `Expected 3 routes to assess safety (chat, entries, voice/turn), found ${assessing.length}:\n${assessing.join("\n")}`,
+    );
+
+    const silent = assessing
+      .filter((path) => !code(path).includes("escalate(service"))
+      .map((path) => path.slice(apiRoot.length + 1));
+    assert.deepEqual(silent, [], `These routes assess a risk level and tell nobody:\n${silent.join("\n")}`);
   });
 
   it("records before it sends", () => {
