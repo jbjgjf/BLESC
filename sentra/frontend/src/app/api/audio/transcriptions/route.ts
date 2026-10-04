@@ -4,6 +4,7 @@ import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { COLLECTION_ONLY_MESSAGE, collectionOnlyForUser } from "@/lib/server/collectionMode";
 import { RULES, consumeRateLimit, rateLimitHeaders, rateLimitSubject } from "@/lib/server/rateLimit";
 import { envPositiveInt } from "@/lib/server/envNumber";
+import { DeadlineExceeded, transcriptionTimeoutMs, withDeadline } from "@/lib/server/modelDeadline";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -95,30 +96,47 @@ export async function POST(request: NextRequest) {
   upstream.set("prompt", "Transcribe the student's spoken reflection accurately. Preserve Japanese or English as spoken.");
   upstream.set("file", file, file.name || `recording.${extension || "webm"}`);
 
-  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-    },
-    body: upstream,
-  });
+  // Under a deadline, body included (#264): a stalled upstream used to hold
+  // this request until the platform killed it at `maxDuration`, and the
+  // student got no answer at all instead of one saying to try again.
+  let outcome: { ok: true; text: string } | { ok: false; detail: string };
+  try {
+    outcome = await withDeadline(transcriptionTimeoutMs(), async (signal) => {
+      const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        signal,
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+        },
+        body: upstream,
+      });
 
-  if (!response.ok) {
-    let detail = "Audio transcription failed at provider.";
-    try {
-      const payload = await response.json() as { error?: { type?: string; message?: string } };
-      detail = payload.error?.type
-        ? `Audio transcription failed at provider: ${payload.error.type}.`
-        : payload.error?.message ?? detail;
-    } catch {
-      // Keep generic provider failure.
+      if (!response.ok) {
+        let detail = "Audio transcription failed at provider.";
+        try {
+          const payload = await response.json() as { error?: { type?: string; message?: string } };
+          detail = payload.error?.type
+            ? `Audio transcription failed at provider: ${payload.error.type}.`
+            : payload.error?.message ?? detail;
+        } catch {
+          // Keep generic provider failure.
+        }
+        return { ok: false, detail };
+      }
+
+      const payload = await response.json() as { text?: string };
+      return { ok: true, text: payload.text ?? "" };
+    });
+  } catch (err) {
+    if (err instanceof DeadlineExceeded) {
+      return NextResponse.json({ detail: "Audio transcription timed out at provider." }, { status: 504 });
     }
-    return NextResponse.json({ detail }, { status: 502 });
+    return NextResponse.json({ detail: "Audio transcription failed at provider." }, { status: 502 });
   }
 
-  const payload = await response.json() as { text?: string };
+  if (!outcome.ok) return NextResponse.json({ detail: outcome.detail }, { status: 502 });
   return NextResponse.json({
-    text: payload.text ?? "",
+    text: outcome.text,
     provider: "openai",
     model,
     status: "completed",
