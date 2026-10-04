@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { MAX_ROWS, PAGE_SIZE, fetchAllRows } from "../src/lib/server/pagedSelect.ts";
+import {
+  expectedDays,
+  reconcileParticipant,
+  retentionStatus,
+  studyDaysElapsed,
+  totalsFor,
+} from "../src/lib/pilotOps.ts";
 
 /**
  * Reading past `db-max-rows` (#275).
@@ -138,5 +145,108 @@ describe("fetchAllRows", () => {
   it("keeps the ceiling above the pilot's design scale", () => {
     assert.ok(MAX_ROWS > 50 * 21, "a 50x21 pilot must not be able to reach the ceiling");
     assert.ok(PAGE_SIZE <= 1000, "a page larger than db-max-rows is served short");
+  });
+});
+
+/**
+ * The dashboard's own arithmetic at the pilot's design scale (#275).
+ *
+ * The tests above show the pager returns every row. This one shows why that
+ * matters: the same 1,050 entries, read once the way the old handler read them
+ * and once through `fetchAllRows`, then reconciled with the functions the
+ * route calls. Truncated, every participant loses their last day and the
+ * overdue rows on the far side of the cap vanish; paged, both are exact.
+ */
+describe("the dashboard at 50 participants x 21 days", () => {
+  const PARTICIPANTS = 50;
+  const DAYS = 21;
+  // 09:00 JST on 2026-09-01, the opening day.
+  const STARTED_AT = "2026-09-01T00:00:00.000Z";
+  // After the 21-day window has closed.
+  const NOW = "2026-09-23T03:00:00.000Z";
+  const OVERDUE = 30;
+
+  // Sorted the way the route orders `entries`: `created_at`, then `id`.
+  const entries = [];
+  for (let day = 0; day < DAYS; day += 1) {
+    for (let participant = 0; participant < PARTICIPANTS; participant += 1) {
+      entries.push({
+        id: `e-${String(day).padStart(2, "0")}-${String(participant).padStart(2, "0")}`,
+        participant_id: `p-${participant}`,
+        created_at: new Date(Date.parse(STARTED_AT) + day * 86_400_000 + participant * 1000).toISOString(),
+        raw_text_ciphertext: "ciphertext",
+        raw_text_expires_at: "2026-12-01T00:00:00.000Z",
+      });
+    }
+  }
+  // Text past its expiry and still stored, on the far side of row 1,000.
+  for (let index = entries.length - OVERDUE; index < entries.length; index += 1) {
+    entries[index].raw_text_expires_at = "2026-09-10T00:00:00.000Z";
+  }
+  const selfReports = entries.map((entry) => ({ entry_id: entry.id, participant_id: entry.participant_id }));
+
+  /** PostgREST with a stock `db-max-rows`: serves a range, capped, no error. */
+  const served = (rows) => (from, to) =>
+    Promise.resolve({
+      data: rows.slice(from, from + Math.min(to - from + 1, 1000)),
+      error: null,
+      count: rows.length,
+    });
+
+  function dashboard(entryRows, selfReportRows) {
+    const reported = new Set(selfReportRows.map((row) => row.entry_id));
+    const participants = Array.from({ length: PARTICIPANTS }, (_, participant) => {
+      const own = entryRows.filter((entry) => entry.participant_id === `p-${participant}`);
+      return reconcileParticipant({
+        research_code: `R-${participant}`,
+        cohort: "pilot",
+        state: "completed",
+        expected_days: expectedDays({
+          collectionStartedAt: STARTED_AT,
+          baselineDays: 7,
+          observationDays: 14,
+          now: NOW,
+        }),
+        submittedDayNumbers: own.map((entry) => studyDaysElapsed(STARTED_AT, entry.created_at)),
+        failed_submissions: 0,
+        entries_without_self_report: own.filter((entry) => !reported.has(entry.id)).length,
+      });
+    });
+    return {
+      totals: totalsFor(participants),
+      missingSelfReports: entryRows.filter((entry) => !reported.has(entry.id)).length,
+      retention: retentionStatus(
+        entryRows.filter((entry) => entry.raw_text_ciphertext !== null).map((entry) => entry.raw_text_expires_at),
+        NOW,
+      ),
+    };
+  }
+
+  it("was wrong when each table was read in one request", async () => {
+    const truncatedEntries = (await served(entries)(0, entries.length - 1)).data;
+    const truncatedReports = (await served(selfReports)(0, selfReports.length - 1)).data;
+    const result = dashboard(truncatedEntries, truncatedReports);
+
+    assert.equal(truncatedEntries.length, 1000);
+    assert.equal(result.totals.missing_submissions, PARTICIPANTS, "every participant loses their last day");
+    assert.equal(result.retention.overdue, 0, "the overdue rows are the ones cut off");
+  });
+
+  it("is exact when every read is paged", async () => {
+    const pagedEntries = await fetchAllRows(served(entries));
+    const pagedReports = await fetchAllRows(served(selfReports));
+    assert.ok("rows" in pagedEntries && "rows" in pagedReports);
+
+    const result = dashboard(pagedEntries.rows, pagedReports.rows);
+    assert.equal(result.totals.expected_submissions, PARTICIPANTS * DAYS);
+    assert.equal(result.totals.stored_submissions, PARTICIPANTS * DAYS);
+    assert.equal(result.totals.missing_submissions, 0);
+    assert.equal(result.totals.participants_with_gaps, 0);
+    assert.equal(result.missingSelfReports, 0);
+    assert.deepEqual(result.retention, {
+      retained: PARTICIPANTS * DAYS,
+      expiring_within_7_days: 0,
+      overdue: OVERDUE,
+    });
   });
 });
