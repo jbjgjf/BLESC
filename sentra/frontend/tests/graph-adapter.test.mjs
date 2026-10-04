@@ -141,17 +141,23 @@ describe("buildGraphViewerData draws the relations it was given", () => {
     });
   }
 
-  it("draws relations across every layer in temporal mode", () => {
-    const first = snapshot(1, "2026-10-01", extractorRelations);
-    const second = snapshot(2, "2026-10-02", extractorRelations);
-    const { links } = buildGraphViewerData([first, second], "temporal", second);
+  for (const [name, relations] of [
+    ["the extractor's names", extractorRelations],
+    ["the declared names", declaredRelations],
+  ]) {
+    it(`draws relations across every layer in temporal mode, given ${name}`, () => {
+      const first = snapshot(1, "2026-10-01", relations);
+      const second = snapshot(2, "2026-10-02", relations);
+      const data = buildGraphViewerData([first, second], "temporal", second);
 
-    assert.equal(links.length, extractorRelations.length * 2);
-    assert.deepEqual(
-      [...new Set(links.map((link) => link.snapshotId))].sort(),
-      [1, 2],
-    );
-  });
+      assert.equal(data.links.length, relations.length * 2);
+      assert.equal(data.unresolvedLinks, 0);
+      assert.deepEqual(
+        [...new Set(data.links.map((link) => link.snapshotId))].sort(),
+        [1, 2],
+      );
+    });
+  }
 
   it("counts a relation whose endpoint is not in the snapshot instead of hiding it", () => {
     const current = snapshot(1, "2026-10-01", [
