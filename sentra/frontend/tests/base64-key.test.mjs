@@ -98,6 +98,27 @@ describe("readBase64Key", () => {
     assert.match(base64KeyAdvice("looks_like_hex"), /openssl rand -base64/);
   });
 
+  it("rejects padding that only Buffer.from would forgive", () => {
+    // Misplaced or excess `=`, and a final character with stray low bits set:
+    // all of these decode to something without an error.
+    const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const lastData = BASE64_32.at(-2);
+    const stray = ALPHABET[ALPHABET.indexOf(lastData) | 1];
+    assert.notEqual(stray, lastData, "the fixture must change the unused bits");
+    const nonCanonical = `${BASE64_32.slice(0, -2)}${stray}=`;
+    assert.deepEqual(Buffer.from(nonCanonical, "base64"), Buffer.from(BASE64_32, "base64"));
+
+    for (const value of [
+      nonCanonical,
+      `${BASE64_32.slice(0, 20)}=${BASE64_32.slice(20)}`,
+      `${BASE64_32}==`,
+    ]) {
+      const result = readBase64Key(value, { minBytes: 32 });
+      assert.equal(result.ok, false, `${JSON.stringify(value)} must not read as a key`);
+      assert.equal(result.problem, "not_base64");
+    }
+  });
+
   it("separates absent from malformed", () => {
     assert.equal(readBase64Key(undefined, { minBytes: 32 }).problem, "absent");
     assert.equal(readBase64Key("   ", { minBytes: 32 }).problem, "absent");

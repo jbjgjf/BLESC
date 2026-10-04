@@ -125,6 +125,12 @@ export function readBase64Key(configured: string | undefined, rule: Base64KeyRul
   if (!BASE64.test(padded)) return { ok: false, problem: "not_base64" };
 
   const bytes = Buffer.from(padded, "base64");
+  // Round trip: the alphabet test above lets through a final character whose
+  // unused low bits are set (`AB==` decodes to the same byte as `AA==`), which
+  // `Buffer.from` again resolves silently. A value that does not re-encode to
+  // itself is not canonical base64, so `openssl` did not print it.
+  if (bytes.toString("base64") !== padded) return { ok: false, problem: "not_base64" };
+
   const long_enough = "bytes" in rule ? bytes.length === rule.bytes : bytes.length >= rule.minBytes;
   if (!long_enough) return { ok: false, problem: "wrong_length" };
 
