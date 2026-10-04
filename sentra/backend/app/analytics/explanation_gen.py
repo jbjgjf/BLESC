@@ -33,7 +33,23 @@ class RuleEngine:
 
         protective_ratio = float(feature_vector.get("protective_ratio", 1.0))
         protective_drop = float(graph_diff.get("protective_decline", {}).get("drop_in_protective_nodes", 0.0))
-        if protective_ratio < 0.2 or protective_drop > 0:
+        # Whether `protective_ratio` was measured against anything.
+        #
+        # `aggregate_daily_features` divides by `max(1, state + trigger +
+        # behavior)`, so a day with no risk nodes at all reports a ratio of 0 —
+        # the same number a day full of risk and no support reports. Read
+        # identically, the first one fired a protective decline on a day where
+        # nothing had been extracted, which `get_fallback_extraction()` returns
+        # on every repaired response. The default of 1.0 above says "not
+        # measured is not measured low", but the key is always present, so it
+        # was unreachable. Mirrors `checkRules` in lib/baseline.ts.
+        risk_node_count = (
+            float(feature_vector.get("state_count", 0.0))
+            + float(feature_vector.get("trigger_count", 0.0))
+            + float(feature_vector.get("behavior_count", 0.0))
+        )
+        ratio_was_measured = risk_node_count > 0
+        if (ratio_was_measured and protective_ratio < 0.2) or protective_drop > 0:
             contributions.append(
                 RuleHit(
                     rule="protective_decline",

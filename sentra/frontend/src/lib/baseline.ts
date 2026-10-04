@@ -311,7 +311,29 @@ export function checkRules(
 
   const protectiveRatio = safeFloat(featureVector?.protective_ratio, 1);
   const protectiveDrop = safeFloat(decline?.drop_in_protective_nodes, 0);
-  if (protectiveRatio < 0.2 || protectiveDrop > 0) {
+  /**
+   * Whether `protective_ratio` was measured against anything.
+   *
+   * `aggregateDailyFeatures` divides by `max(1, state + trigger + behavior)`,
+   * so a day with no risk nodes at all reports a ratio of 0 — the same number
+   * a day full of risk and no support reports. The two were then read
+   * identically, and the first one fired a protective decline on a day where
+   * nothing had been extracted: an empty graph (the backend's fallback, and
+   * every collection-only submission) and, until the lists were made
+   * bilingual, every Japanese entry that fell back.
+   *
+   * The floor in the denominator is what made the ratio exist; this asks
+   * whether the numerator had anything to be a fraction of. Both
+   * implementations default a *missing* `protective_ratio` to 1.0 for exactly
+   * this reason — "not measured" is not "measured low" — but the key is always
+   * present, so that default was unreachable.
+   */
+  const riskNodeCount =
+    safeFloat(featureVector?.state_count, 0)
+    + safeFloat(featureVector?.trigger_count, 0)
+    + safeFloat(featureVector?.behavior_count, 0);
+  const ratioWasMeasured = riskNodeCount > 0;
+  if ((ratioWasMeasured && protectiveRatio < 0.2) || protectiveDrop > 0) {
     hits.push({
       rule: "protective_decline",
       evidence: t.signal.ruleEvidence.protective_decline,
