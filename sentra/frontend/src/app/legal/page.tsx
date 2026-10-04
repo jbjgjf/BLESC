@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LEGAL_CONTACT, LEGAL_DOCUMENTS } from "@/lib/legalDocuments";
-import { legalEffectiveDate, legalEnacted } from "@/lib/legalEnactment";
+import { isLegalAcceptableDocument, legalEffectiveDate, legalEnacted } from "@/lib/legalEnactment";
+import { LegalAcceptanceControl, LegalAcceptanceProvider } from "@/components/LegalAcceptance";
 
 export const metadata: Metadata = {
   title: "書類の確認用草案 | blesc",
@@ -14,7 +15,10 @@ export default function LegalDraftsPage() {
   const enacted = legalEnacted();
   const effectiveDate = legalEffectiveDate();
 
+  // 同意欄（#251）にも同じ判定を渡す。押せるかどうかを画面側で別に計算すると、
+  // 「施行済み」を名乗る根拠が二つになる。
   return (
+    <LegalAcceptanceProvider enacted={enacted}>
     <main className="bl-wrap bl-stack" style={{ paddingBlock: 32 }}>
       <header className="bl-stack">
         <p className="bl-eyebrow">blesc · 確認用草案</p>
@@ -52,6 +56,7 @@ export default function LegalDraftsPage() {
               {section.paragraphs.map((paragraph) => <p className="bl-body" key={paragraph}>{paragraph}</p>)}
             </section>
           ))}
+          {isLegalAcceptableDocument(document.id) ? <LegalAcceptanceControl documentId={document.id} /> : null}
         </article>
       ))}
       <footer className="bl-stack">
@@ -59,5 +64,6 @@ export default function LegalDraftsPage() {
         <a href="#legal-toc">書類の目次へ戻る</a>
       </footer>
     </main>
+    </LegalAcceptanceProvider>
   );
 }

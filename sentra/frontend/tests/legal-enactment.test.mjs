@@ -18,11 +18,14 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 import {
+  LEGAL_ACCEPTABLE_DOCUMENTS,
   LEGAL_ENACTED_VERSION,
   currentLegalVersion,
+  isLegalAcceptableDocument,
   legalEffectiveDate,
   legalEnacted,
 } from "../src/lib/legalEnactment.ts";
+import { ja } from "../src/lib/i18n/ja.ts";
 
 const read = (relative) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
@@ -30,6 +33,7 @@ const code = (text) => text.replace(/\/\*[\s\S]*?\*\//g, " ");
 
 const route = read("../src/app/api/legal/acceptance/route.ts");
 const page = read("../src/app/legal/page.tsx");
+const control = read("../src/components/LegalAcceptance.tsx");
 const migration = read("../../supabase/migrations/20260921040000_legal_acceptances.sql");
 
 function withEnv(values, run) {
@@ -156,5 +160,66 @@ describe("the page tells the truth in both states", () => {
 
   it("does not let the legal acceptance read as research consent", () => {
     assert.match(page, /この書類への同意は研究同意ではありません/);
+  });
+});
+
+describe("the page has somewhere to accept (#251)", () => {
+  it("takes enactment from legalEnactment.ts and hands the same value to the control", () => {
+    // One source for "in force". A screen that decided it on its own grounds
+    // could offer a button for a version the server would stamp differently.
+    assert.match(code(page), /const enacted = legalEnacted\(\)/);
+    assert.match(code(page), /<LegalAcceptanceProvider enacted=\{enacted\}>/);
+  });
+
+  it("the control does not compute enactment itself", () => {
+    assert.doesNotMatch(code(control), /legalEnacted\(/);
+    assert.doesNotMatch(code(control), /NEXT_PUBLIC_LEGAL/);
+    assert.doesNotMatch(code(control), /LEGAL_ENACTED_VERSION/);
+    // The only thing it imports from the enactment module is a type.
+    assert.match(code(control), /import type \{ LegalAcceptableDocument \} from "@\/lib\/legalEnactment"/);
+  });
+
+  it("offers the button only when enacted", () => {
+    assert.match(code(control), /if \(!enacted\) \{\s*status = <p className="bl-body">\{t\.legalAcceptance\.notEnacted\}/);
+    assert.match(code(control), /canAccept \? \(/);
+  });
+
+  it("never sends a version, only which document", () => {
+    assert.match(code(control), /JSON\.stringify\(\{ document_id: documentId \}\)/);
+    assert.doesNotMatch(code(control), /JSON\.stringify\([^)]*(document_version|current_version)/);
+  });
+
+  it("judges 'accepted' against the version the server says is current", () => {
+    assert.match(code(control), /row\.document_version === state\.status\.current_version/);
+  });
+
+  it("answers already_accepted and not_enacted differently", () => {
+    assert.match(code(control), /body\.status === "already_accepted"/);
+    assert.match(code(control), /response\.status === 409 && body\.code === "not_enacted"/);
+    assert.match(code(control), /already_accepted: t\.legalAcceptance\.alreadyAccepted/);
+    assert.match(code(control), /not_enacted: t\.legalAcceptance\.rejectedNotEnacted/);
+    assert.notEqual(ja.legalAcceptance.alreadyAccepted, ja.legalAcceptance.rejectedNotEnacted);
+  });
+
+  it("says, next to the button, that this is not research consent", () => {
+    assert.match(code(control), /t\.legalAcceptance\.notResearchConsent/);
+    assert.match(ja.legalAcceptance.notResearchConsent, /研究参加の同意ではありません/);
+  });
+
+  it("leaves the documents readable when signed out", () => {
+    // Only the status is gated on a session; the articles render regardless.
+    assert.match(code(control), /state\.kind === "signed_out"/);
+    assert.doesNotMatch(code(page), /useAuth|redirect\(/);
+  });
+
+  it("only terms and privacy can be accepted, on the page and in the route alike", () => {
+    assert.deepEqual([...LEGAL_ACCEPTABLE_DOCUMENTS], ["terms", "privacy"]);
+    assert.equal(isLegalAcceptableDocument("terms"), true);
+    assert.equal(isLegalAcceptableDocument("privacy"), true);
+    assert.equal(isLegalAcceptableDocument("research"), false);
+    assert.equal(isLegalAcceptableDocument("guardian"), false);
+    assert.equal(isLegalAcceptableDocument(undefined), false);
+    assert.match(code(route), /isLegalAcceptableDocument\(documentId\)/);
+    assert.match(code(page), /isLegalAcceptableDocument\(document\.id\)/);
   });
 });

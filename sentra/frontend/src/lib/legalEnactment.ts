@@ -22,6 +22,17 @@
  * said it happened, and the date is the claim they are making.
  */
 
+/**
+ * The documents a person can accept. Research consent is not among them: it is
+ * recorded in `consent_records`, by a different screen, under different rules.
+ */
+export const LEGAL_ACCEPTABLE_DOCUMENTS = ["terms", "privacy"] as const;
+export type LegalAcceptableDocument = (typeof LEGAL_ACCEPTABLE_DOCUMENTS)[number];
+
+export function isLegalAcceptableDocument(value: unknown): value is LegalAcceptableDocument {
+  return typeof value === "string" && (LEGAL_ACCEPTABLE_DOCUMENTS as readonly string[]).includes(value);
+}
+
 /** The version string that the enacted documents carry. */
 export const LEGAL_ENACTED_VERSION = "legal-2026-10-01-v1";
 
