@@ -67,6 +67,26 @@ def test_falls_back_instead_of_raising(monkeypatch, value):
     assert env_positive_int(NAME, 25000) == 25000
 
 
+def test_accepts_up_to_the_javascript_safe_integer_maximum(monkeypatch):
+    monkeypatch.setenv(NAME, "9007199254740991")
+    assert env_positive_int(NAME, 25000) == 2**53 - 1
+    monkeypatch.setenv(NAME, "0009007199254740991")
+    assert env_positive_int(NAME, 25000) == 2**53 - 1
+
+
+@pytest.mark.parametrize("value", ["9007199254740992", "99999999999999999999", "9" * 5000])
+def test_falls_back_above_the_javascript_safe_integer_maximum(monkeypatch, caplog, value):
+    """The TypeScript side rejects these via ``Number.isSafeInteger``.
+
+    The 5000-digit value also used to make ``int()`` raise under Python's
+    integer-string conversion limit, which is the import-time crash again.
+    """
+    monkeypatch.setenv(NAME, value)
+    with caplog.at_level("WARNING"):
+        assert env_positive_int(NAME, 25000) == 25000
+    assert any(NAME in record.getMessage() for record in caplog.records)
+
+
 @pytest.mark.parametrize("value", ["0", "-1", "-20000", "3.5", "0.5"])
 def test_falls_back_on_zero_negatives_and_non_integers(monkeypatch, value):
     monkeypatch.setenv(NAME, value)
@@ -116,6 +136,11 @@ def test_both_implementations_agree(tmp_path):
         "30000", "  30000\n", "", "   ",
         "25s", "24MB", "20_000", '"20000"', "'20000'", "20000ms", "abc", "+20000", "0x20",
         "0", "-1", "3.5",
+        # The safe-integer boundary: JavaScript's Number.MAX_SAFE_INTEGER is
+        # accepted, one above it is not, and a digit string long enough to trip
+        # Python's integer-string conversion limit falls back instead of raising.
+        "9007199254740991", "9007199254740992", "00000009007199254740991",
+        "9" * 5000,
     ]
 
     script = tmp_path / "probe.mjs"

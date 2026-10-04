@@ -38,13 +38,19 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["env_positive_int"]
 
+# JavaScript's `Number.MAX_SAFE_INTEGER` (2**53 - 1). The TypeScript side
+# rejects anything above it via `Number.isSafeInteger`, so this side must too.
+_MAX_SAFE_INTEGER = 2**53 - 1
+_MAX_SAFE_INTEGER_DIGITS = len(str(_MAX_SAFE_INTEGER))
+
 
 def env_positive_int(name: str, fallback: int) -> int:
     """A positive integer from ``name``, or ``fallback``.
 
     Rejects, with a warning: anything that is not a plain integer (``"24MB"``,
     ``"20_000"`` — which ``int()`` accepts and JavaScript does not — ``"3.5"``),
-    zero, and negatives. Surrounding whitespace is accepted, because that is
+    zero, negatives, and anything above ``2**53 - 1`` (JavaScript's
+    ``Number.MAX_SAFE_INTEGER``, which the TypeScript side enforces). Surrounding whitespace is accepted, because that is
     how a value arrives when it is pasted or piped rather than typed.
 
     Zero is refused rather than honoured: every variable read this way is a
@@ -62,8 +68,17 @@ def env_positive_int(name: str, fallback: int) -> int:
     if not (candidate.isascii() and candidate.isdecimal()):
         return _rejected(name, fallback)
 
-    value = int(candidate)
-    if value <= 0:
+    # Above `Number.MAX_SAFE_INTEGER` the TypeScript side falls back, so this
+    # side must as well. The length is checked before `int()` because a long
+    # enough digit string makes `int()` raise (Python's integer-string
+    # conversion limit), which would bring the service down at import again.
+    # Leading zeros are ignored, as `Number("007")` is 7.
+    significant = candidate.lstrip("0")
+    if len(significant) > _MAX_SAFE_INTEGER_DIGITS:
+        return _rejected(name, fallback)
+
+    value = int(significant or "0")
+    if value <= 0 or value > _MAX_SAFE_INTEGER:
         return _rejected(name, fallback)
     return value
 

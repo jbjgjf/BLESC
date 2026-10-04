@@ -93,6 +93,17 @@ describe("a number read from the environment", () => {
     }
   });
 
+  it("accepts up to Number.MAX_SAFE_INTEGER and falls back above it, as FastAPI does", () => {
+    assert.equal(withEnv("9007199254740991", () => envPositiveInt(NAME, 25000)), Number.MAX_SAFE_INTEGER);
+    for (const bad of ["9007199254740992", "9".repeat(5000)]) {
+      assert.equal(
+        withEnv(bad, () => envPositiveInt(NAME, 25000)),
+        25000,
+        `${bad.slice(0, 20)}... should fall back`,
+      );
+    }
+  });
+
   it("falls back on zero, negatives and non-integers", () => {
     for (const bad of ["0", "-1", "-20000", "3.5", "0.5"]) {
       assert.equal(
