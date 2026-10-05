@@ -34,6 +34,28 @@ jobs:
       - run: npm test
       - run: npm run typecheck
 
+      # Known vulnerabilities in the dependency tree (#337). Nothing in this
+      # repository ran `npm audit`, so the only time the answer existed was the
+      # day somebody typed it by hand — and on 2026-10-05 that answer was five
+      # findings, all reaching this package through
+      # `@openai/agents` → `@modelcontextprotocol/sdk`.
+      #
+      # Everything here is a direct `dependencies` entry or below one, so there
+      # is no dev/prod split to make: the gate covers the whole tree.
+      #
+      # The five are closed by the `overrides` block in `sentra/eval/package.json`
+      # (`ip-address`, `fast-uri`, `hono`, `@hono/node-server`, `qs`) rather than
+      # by moving `@openai/agents`. Two reasons. Bumping the MCP SDK alone does
+      # not do it — forcing `@modelcontextprotocol/sdk` to 1.32.0 still resolved
+      # all five, because its own ranges admit the vulnerable versions. And
+      # `@openai/agents` is at 0.3.7 against a current 0.18.0; on a 0.x package
+      # that is a breaking move, and it would be one made for an advisory in the
+      # part of the SDK this runner never touches (it is an MCP *client*, and
+      # these are the dependencies of serving). `package.json` cannot hold a
+      # comment, so the reasoning is here, beside the step that keeps it true.
+      - name: Audit eval dependencies
+        run: npm audit --audit-level=high
+
   backend-research:
     name: Backend research contracts
     runs-on: ubuntu-latest
@@ -111,6 +133,34 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      # Known vulnerabilities in what this deployment actually serves (#337).
+      #
+      # `--omit=dev` rather than the whole tree, and the reason is not
+      # convenience. On 2026-10-05 the tree held one critical — RCE in
+      # `next/og` ImageResponse, GHSA-vcvr-r3jv-pc5j, fixed in 16.3.6 — and
+      # five highs. The critical was in `next` and is gone. **All five highs
+      # are one chain** (`braces` → `micromatch` → `fast-glob` →
+      # `@next/eslint-plugin-next` → `eslint-config-next`), they are
+      # devDependencies that never enter a bundle, and `braces` has no fixed
+      # release: 3.0.3 is both the latest version and inside the advisory's
+      # range. The only thing `npm audit fix --force` offers is
+      # `eslint-config-next@14.2.35` — two majors back, dropping the rules
+      # written for `next@16`. That is not a fix.
+      #
+      # So a gate on the whole tree would be a gate that cannot go green, and a
+      # check that is expected to be red stops being read. This one gates on
+      # the shipped surface, where the honest answer today is zero, and the step
+      # below prints the rest so the dev-side findings are still visible in the
+      # log rather than discovered by hand again.
+      - name: Audit shipped frontend dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      # Not a gate, deliberately: see above. `|| true` because `npm audit`
+      # exits non-zero whenever it finds anything at all.
+      - name: Report all frontend advisories
+        if: always()
+        run: npm audit || true
 
       - name: Run frontend lint
         run: npm run lint

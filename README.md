@@ -82,6 +82,7 @@ For the complete service setup, see [`sentra/README.md`](sentra/README.md). Neve
 
 ```bash
 cd sentra/frontend
+npm audit --omit=dev --audit-level=high
 npm run lint
 npm test
 npm run build
@@ -91,9 +92,16 @@ python -m pytest tests -q
 
 cd ../eval
 npm ci
+npm audit --audit-level=high
 npm test
 npm run typecheck
 ```
+
+`npm audit --omit=dev` is the frontend gate rather than a plain `npm audit`: the
+advisories that remain are `eslint-config-next`'s `braces` chain, which is a
+devDependency and has no fixed release upstream. The workflow prints the full
+`npm audit` beside the gate so those stay visible. See
+[#337](https://github.com/jbjgjf/BLESC/issues/337).
 
 The [Research Contracts workflow](https://github.com/jbjgjf/BLESC/actions/workflows/research-contracts.yml) runs the project checks in GitHub Actions. A production release also requires the human checks in the [release gate](sentra/docs/demo_and_release_gate.md).
 
