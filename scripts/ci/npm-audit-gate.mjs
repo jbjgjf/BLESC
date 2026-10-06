@@ -41,17 +41,39 @@ export function advisories(report) {
 }
 
 /**
- * `accepted` entries are `{ project, package, advisory, reason }`.
+ * `accepted` entries are `{ project, package, advisory, reason, dev_only }`.
+ *
+ * `dev_only: true` scopes the acceptance to the dev tree: it holds only while
+ * the same advisory is absent from `prodReport` (`npm audit --omit=dev`). A
+ * reason like "only reachable through the linter" stops being true the day a
+ * production dependency pulls the same package in, and the gate must notice
+ * that instead of waving it through under the old justification. An entry
+ * that accepts a production advisory has to say so with `dev_only: false`.
+ *
  * Returns what blocks the run and which accepted entries matched nothing.
  */
-export function evaluate(report, accepted, project) {
+export function evaluate(report, accepted, project, prodReport = null) {
   const mine = accepted.filter((entry) => entry.project === project);
   for (const entry of mine) {
     if (!entry.reason || entry.reason.trim().length < 20) {
       throw new Error(`${project}: accepted advisory ${entry.advisory} on ${entry.package} has no reason written down`);
     }
+    if (typeof entry.dev_only !== "boolean") {
+      throw new Error(`${project}: accepted advisory ${entry.advisory} on ${entry.package} must state dev_only: true or false`);
+    }
+    if (entry.dev_only && !prodReport) {
+      throw new Error(`${project}: a dev_only acceptance needs the production audit (npm audit --omit=dev) to check against`);
+    }
   }
-  const isAccepted = (item) => mine.some((entry) => entry.package === item.package && entry.advisory === item.url);
+  const inProduction = (item) =>
+    advisories(prodReport).some((prod) => prod.package === item.package && prod.url === item.url);
+  const isAccepted = (item) =>
+    mine.some(
+      (entry) =>
+        entry.package === item.package &&
+        entry.advisory === item.url &&
+        !(entry.dev_only && inProduction(item)),
+    );
 
   const found = advisories(report);
   const blocking = found.filter((item) => BLOCKING_SEVERITIES.has(item.severity) && !isAccepted(item));
@@ -60,9 +82,9 @@ export function evaluate(report, accepted, project) {
   return { blocking, stale, accepted: acceptedHits, total: found.length };
 }
 
-function runAudit(cwd) {
+function runAudit(cwd, extraArgs = []) {
   try {
-    return execFileSync("npm", ["audit", "--json"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
+    return execFileSync("npm", ["audit", "--json", ...extraArgs], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
   } catch (error) {
     // `npm audit` exits non-zero whenever it finds anything; the report is
     // still on stdout. No stdout means the audit itself failed (no network,
@@ -82,10 +104,13 @@ function main() {
   const repoRoot = path.resolve(here, "..", "..");
   const accepted = JSON.parse(readFileSync(path.join(here, "npm-audit-accepted.json"), "utf8")).accepted;
 
-  const report = JSON.parse(runAudit(path.resolve(repoRoot, project)));
+  const cwd = path.resolve(repoRoot, project);
+  const report = JSON.parse(runAudit(cwd));
   if (report.error) throw new Error(`npm audit failed in ${project}: ${JSON.stringify(report.error)}`);
+  const prodReport = JSON.parse(runAudit(cwd, ["--omit=dev"]));
+  if (prodReport.error) throw new Error(`npm audit --omit=dev failed in ${project}: ${JSON.stringify(prodReport.error)}`);
 
-  const result = evaluate(report, accepted, project);
+  const result = evaluate(report, accepted, project, prodReport);
   for (const item of result.accepted) {
     console.log(`accepted  ${item.severity.padEnd(8)} ${item.package} ${item.url}`);
   }

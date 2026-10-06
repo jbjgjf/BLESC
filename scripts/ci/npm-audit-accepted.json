@@ -1,10 +1,11 @@
 {
-  "$comment": "Known high/critical npm advisories that are deliberately left in the tree, and why (#337). Read by scripts/ci/npm-audit-gate.mjs. Every entry needs a reason; an entry that stops matching fails CI so it is removed. Never add one to make CI green without saying what would have to change for it to be fixed.",
+  "$comment": "Known high/critical npm advisories that are deliberately left in the tree, and why (#337). Read by scripts/ci/npm-audit-gate.mjs. Every entry needs a reason and dev_only (true holds only while `npm audit --omit=dev` does not report the same advisory); an entry that stops matching fails CI so it is removed. Never add one to make CI green without saying what would have to change for it to be fixed.",
   "accepted": [
     {
       "project": "sentra/frontend",
       "package": "braces",
       "advisory": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+      "dev_only": true,
       "reason": "No fixed braces exists (3.0.3 is the latest release and is in the vulnerable range). It reaches the tree only through eslint-config-next -> @next/eslint-plugin-next -> fast-glob@3.3.1 -> micromatch, a devDependency used by `npm run lint` on glob patterns written in this repository; it is not in the production bundle and never sees user input. npm's offered fix is eslint-config-next@14.2.35, a two-major downgrade that drops the next@16 rules, so it is not taken.",
       "revisit": "When braces publishes a fixed release (then pin it with `overrides`) or @next/eslint-plugin-next stops depending on fast-glob@3.3.1."
     }
