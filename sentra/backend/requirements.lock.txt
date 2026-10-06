@@ -131,5 +131,5 @@ typing_extensions==4.16.0
 umap-learn==0.5.12
 unidic-lite==1.0.8
 uvicorn==0.53.0
-websockets==15.0.1
+websockets==17.1
 yarl==1.25.1
