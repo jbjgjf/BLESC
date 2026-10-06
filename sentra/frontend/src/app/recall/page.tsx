@@ -10,6 +10,7 @@ import { ProcessingTimeline } from "@/components/ProcessingTimeline";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
 import { useAuth } from "@/lib/auth";
 import { t } from "@/lib/i18n";
+import { assessSafety } from "@/lib/safety-assessment";
 
 type RecallMessage = {
   id: string;
@@ -34,19 +35,6 @@ const guidedQuestions = [
   "大事なところを見落とさないために、blescが次に聞くとよい質問は何だと思いますか。",
 ];
 
-const crisisTerms = [
-  "自殺",
-  "死にたい",
-  "消えたい",
-  "殺したい",
-  "傷つけたい",
-  "suicide",
-  "kill myself",
-  "want to die",
-  "self-harm",
-  "hurt myself",
-];
-
 const panel: React.CSSProperties = {
   backgroundColor: "#ffffff",
   border: "1px solid var(--limestone)",
@@ -54,11 +42,6 @@ const panel: React.CSSProperties = {
 };
 const displayFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
 const bodyFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
-
-function hasCrisisLanguage(text: string) {
-  const normalized = text.toLowerCase();
-  return crisisTerms.some((term) => normalized.includes(term));
-}
 
 function nextQuestionForTurn(userTurnCount: number) {
   return guidedQuestions[userTurnCount % guidedQuestions.length];
@@ -124,40 +107,39 @@ export default function RecallWorkspacePage() {
         setStep((current) => Math.min(current + 1, recallSteps.length - 2));
       }, 850);
 
-      if (hasCrisisLanguage(content)) {
-        const safetyMessage: RecallMessage = {
-          id: `assistant-safety-${Date.now()}`,
-          role: "assistant",
-          content:
-            "いますぐの危険がある場合は、緊急の連絡先や、信頼できる大人にすぐ連絡してください。blescは緊急時の相談を受けることはできません。もし答えられそうなら、これだけ教えてください——いま安全な場所にいますか。近くに頼れる人はいますか。",
-        };
-        setMessages((current) => [...current, safetyMessage]);
-      } else {
-        const conversationContext = [
-          "BLESC 30-turn recall workspace. Use cautious, non-diagnostic language.",
-          "Briefly reflect the user's latest answer, avoid clinical certainty, then keep the interview moving.",
-          `Current user turn: ${nextUserTurnCount}/${MAX_USER_TURNS}.`,
-          `Next guided question candidate: ${nextQuestionForTurn(nextUserTurnCount)}`,
-        ];
-        const response = await ApiClient.createChat(
-          userId,
-          content,
-          5,
-          { mode: "recall_workspace", conversationContext },
-        );
-        const nextQuestion = nextUserTurnCount >= MAX_USER_TURNS
-          ? t.recall.completed
-          : nextQuestionForTurn(nextUserTurnCount);
-        const assistantMessage: RecallMessage = {
-          id: `assistant-${Date.now()}`,
-          role: "assistant",
-          content: `${response.answer}\n\n${nextQuestion}`,
-        };
-        setMessages((current) => [...current, assistantMessage]);
-        setSummary(response.conversation_recall_30 ?? null);
-        if (response.conversation_recall_30?.memory_objects?.length) {
-          setMemoryObjects(response.conversation_recall_30.memory_objects);
-        }
+      const conversationContext = [
+        "BLESC 30-turn recall workspace. Use cautious, non-diagnostic language.",
+        "Briefly reflect the user's latest answer, avoid clinical certainty, then keep the interview moving.",
+        `Current user turn: ${nextUserTurnCount}/${MAX_USER_TURNS}.`,
+        `Next guided question candidate: ${nextQuestionForTurn(nextUserTurnCount)}`,
+      ];
+      const response = await ApiClient.createChat(
+        userId,
+        content,
+        5,
+        { mode: "recall_workspace", conversationContext },
+      );
+
+      // 危機のときは、次の誘導質問を足さない。
+      //
+      // `escalation_required` は、振り返りカードの抑制が見ているのと同じ線
+      // （`lib/safety-assessment.ts`）。「安全がいちばん大切です」のあとに
+      // 「最近の睡眠はどうでしたか」を続けるのは、面接を進めることを安全より
+      // 優先しているように読める。ambiguous だけで elevated になった回は、
+      // 支える応答は出すが面接は止めない — その線もあちらに合わせている。
+      const escalating = response.safety_assessment?.escalation_required === true;
+      const nextQuestion = nextUserTurnCount >= MAX_USER_TURNS
+        ? t.recall.completed
+        : nextQuestionForTurn(nextUserTurnCount);
+      const assistantMessage: RecallMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: escalating ? response.answer : `${response.answer}\n\n${nextQuestion}`,
+      };
+      setMessages((current) => [...current, assistantMessage]);
+      setSummary(response.conversation_recall_30 ?? null);
+      if (response.conversation_recall_30?.memory_objects?.length) {
+        setMemoryObjects(response.conversation_recall_30.memory_objects);
       }
 
       if (timer) window.clearInterval(timer);
@@ -167,6 +149,28 @@ export default function RecallWorkspacePage() {
       if (nextUserTurnCount >= MIN_SUMMARY_TURNS) void refreshSummary(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "送信に失敗しました。");
+
+      // 送信が通らなかったときだけの退避。
+      //
+      // 送れていないので、安全評価もエスカレーションも記録されていない。それは
+      // ここでは直せない。直せるのは、危機を書いた生徒が「送信に失敗しました」
+      // だけを見て画面を閉じることで、そこは直す価値がある。
+      //
+      // 判定は `assessSafety`（サーバーが使うのと同じ語彙）を呼ぶ。この画面が
+      // 危機語の一覧を自分で持っていたことが #343 の原因なので、二つ目の語彙は
+      // 作らない。文面も `safe_response` をそのまま使う。
+      const local = assessSafety(content);
+      if (local.safe_response) {
+        console.error(
+          "[recall_workspace] send failed on a message assessed as",
+          local.risk_level,
+          "- no safety audit or escalation row was written for this turn",
+        );
+        setMessages((current) => [
+          ...current,
+          { id: `assistant-safety-${Date.now()}`, role: "assistant", content: local.safe_response },
+        ]);
+      }
     } finally {
       if (timer) window.clearInterval(timer);
       setIsSubmitting(false);

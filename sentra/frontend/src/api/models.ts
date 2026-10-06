@@ -523,6 +523,17 @@ export interface ChatResponse {
   chat_session_id: RecordId;
   message_id: RecordId;
   answer: string;
+  /**
+   * サーバーが行った安全評価。
+   *
+   * `POST /api/chat` は以前からこの2つを返していたが、型に無かったので画面から
+   * 読めなかった。読めないことが #343 の遠因で、`/recall` は自分で危機語を判定
+   * して「サーバーに送らない」という答えを出していた。
+   *
+   * デモ（`demoChatReply`）と、この形を返さない配備では undefined になる。
+   */
+  safety_assessment?: SafetyAssessment;
+  safety_flags?: string[];
   evidence_refs: Record<string, JsonValue>;
   retrieval_context: Record<string, JsonValue>;
   conversation_recall_30?: ConversationRecallSummary;

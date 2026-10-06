@@ -13,8 +13,14 @@ const CODE = ["npm run smoke", "#bl-main h1"];
 
 /**
  * Text the product matches *on*, not text it shows. Supabase answers in
- * English, and the crisis lexicon has to match what a student might type in
- * either language, so both stay in the source language of what they match.
+ * English, so those stay in the source language of what they match.
+ *
+ * The crisis lexicon used to need entries here as well, because
+ * `app/recall/page.tsx` carried a second copy of it. That copy is gone (#343):
+ * the only crisis lexicon left is in `src/lib/safety-assessment.ts`, which this
+ * check skips as a whole file (see `MACHINE_MODULES` in `ui-strings.mjs`). An English crisis term
+ * appearing in any other file is now a finding rather than an allowed entry,
+ * which is the point — a third copy would be the same defect again.
  */
 const MATCHED_AGAINST = [
   "invalid login credentials",
@@ -24,9 +30,6 @@ const MATCHED_AGAINST = [
   "rate limit",
   "too many",
   "not configured",
-  "kill myself",
-  "want to die",
-  "hurt myself",
 ];
 
 /**
