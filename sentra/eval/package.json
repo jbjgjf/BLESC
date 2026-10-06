@@ -14,7 +14,7 @@
   "dependencies": {
     "@openai/agents": "^0.3.7",
     "@supabase/supabase-js": "^2.106.2",
-    "openai": "^6.9.0",
+    "openai": "^7.27.0",
     "pdf-lib": "^1.17.1",
     "playwright": "^1.58.0"
   },
