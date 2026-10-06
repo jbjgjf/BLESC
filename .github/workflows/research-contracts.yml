@@ -34,6 +34,31 @@ jobs:
       - run: npm test
       - run: npm run typecheck
 
+  # Known vulnerabilities in the npm dependency trees (#337). Nothing ran
+  # `npm audit` before, so a critical advisory in `next` sat in the lockfile
+  # where nobody would see it. High and critical fail the job unless accepted,
+  # with the reason, in scripts/ci/npm-audit-accepted.json — `npm audit fix
+  # --force` is never the answer (for braces it is a two-major downgrade of
+  # eslint-config-next). `npm audit` reads the lockfile, so no install.
+  dependency-audit:
+    name: npm audit (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - sentra/frontend
+          - sentra/eval
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Test the audit gate
+        run: node --test scripts/ci/npm-audit-gate.test.mjs
+      - name: Audit dependencies
+        run: node scripts/ci/npm-audit-gate.mjs "${{ matrix.project }}"
+
   backend-research:
     name: Backend research contracts
     runs-on: ubuntu-latest
