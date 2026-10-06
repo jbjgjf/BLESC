@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 
 import { recallOfflineSafetyNotice, recallReply, sendRecallTurn } from "../src/lib/recallTurn.ts";
 import { SAFETY_LEXICON_TERMS, assessSafety } from "../src/lib/safety-assessment.ts";
+import { demoChatReply } from "../src/lib/blesc/demoApi.ts";
 
 /**
  * `/recall` used to match ten crisis words in the browser and, on a match,
@@ -101,6 +102,15 @@ describe("recall turn", () => {
     const result = await sendRecallTurn(turnInput("死にたい", createChat));
     assert.ok(result.reply.startsWith(COLLECTION_ONLY_ANSWER));
     assert.ok(result.reply.includes(assessSafety("死にたい").safe_response));
+  });
+
+  it("stops the interview after a crisis in demo mode too", async () => {
+    const createChat = async (content) => demoChatReply(content);
+    const result = await sendRecallTurn(turnInput("死にたい", createChat));
+    assert.equal(result.safety?.escalation_required, true);
+    assert.ok(!result.reply.includes("次の質問"));
+    const ordinary = await sendRecallTurn(turnInput("今日は部活で疲れた", createChat));
+    assert.match(ordinary.reply, /次の質問$/);
   });
 
   it("ends on the completion text after the last turn", () => {
