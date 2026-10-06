@@ -53,6 +53,24 @@ const LEXICONS = {
   cannotStaySafe: lexicon(["cannot stay safe", "can't stay safe", "安全でいられない"]),
 } as const;
 
+/**
+ * Every term the assessment matches on. This module is the one place the
+ * product keeps crisis vocabulary; tests use this list to check that no page
+ * keeps a second copy of its own (#343).
+ */
+export const SAFETY_LEXICON_TERMS: readonly string[] = [
+  ...new Set([
+    ...selfHarmTerms,
+    ...imminentTerms,
+    ...violenceTerms,
+    ...abuseTerms,
+    ...concealmentTerms,
+    ...passiveRiskTerms,
+    ...ambiguousRiskTerms,
+    ...distressTerms,
+  ]),
+];
+
 const RISK_ORDER: SafetyAssessment["risk_level"][] = ["none", "low", "elevated", "crisis"];
 
 /**
