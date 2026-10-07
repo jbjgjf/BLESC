@@ -577,23 +577,20 @@ fieldset {
 .bl-wave--3 { animation: bl-drift 17s linear infinite; opacity: 0.3; }
 
 /* ── Demo badge ─────────────────────────────────────────────── */
-.bl-demo-badge {
-  position: fixed;
-  right: 12px;
-  bottom: 12px;
-  z-index: 90;
+/* デモ表示の札。上のバーの中に置く（固定のバーなので、いつも見えている）。 */
+.bl-nav__demo {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 13px;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 4px 11px;
   border-radius: var(--bl-pill);
   background: var(--bl-watch-bg);
   border: 1px solid var(--bl-watch-line);
   color: var(--bl-watch-ink);
-  font-family: var(--bl-font);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 700;
-  pointer-events: none;
+  white-space: nowrap;
 }
 
 /* ── Loader ─────────────────────────────────────────────────── */
@@ -819,7 +816,6 @@ fieldset {
   .bl-tabbar__tab[data-active="true"] { color: var(--bl-ink); font-weight: 700; }
   .bl-tabbar__tab[data-active="true"] .blesc-icon { color: var(--bl-blue); }
 
-  .bl-demo-badge { bottom: calc(72px + env(safe-area-inset-bottom)); }
 }
 
 /* ── Stagger ────────────────────────────────────────────────
@@ -1148,11 +1144,6 @@ html[data-bl-motion="reduced"] *::after {
    右下の角は案内役の小石が使う。生徒と教員のどちらの画面にも出るので、
    画面の種類ではなく「小石がいるかどうか」で判定する。生徒テーマの層に
    置かないのはそのため。 */
-
-/* デモ表示の札は小石の左へ避ける。 */
-.bl-app:has([data-bl-assistant]) .bl-demo-badge {
-  right: 104px;
-}
 
 /* 最後の行まで小石の上へスクロールできるように、下に逃げ場を足す。 */
 .bl-app:has([data-bl-assistant]) .bl-app__main {

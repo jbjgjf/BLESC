@@ -6,7 +6,6 @@ import { useAuth } from "@/lib/auth";
 import { useDemoMode } from "@/lib/demo";
 import { contextForPath } from "@/lib/blesc/context";
 import { useIsHydrated } from "@/lib/hydration";
-import { Icon } from "@/components/ui/Icon";
 import { AppNav } from "@/components/AppNav";
 import { RouteAnnouncer } from "@/components/a11y/RouteAnnouncer";
 import { Assistant } from "@/components/assistant/Assistant";
@@ -72,12 +71,6 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           どちら向けかで、行き先・画面の説明・つらさへの返事が変わる。
           側を切り替えたら会話を持ち越さないよう、key で作り直す。 */}
       {(context === "student" || context === "educator") && <Assistant key={context} audience={context} />}
-      {demo && (
-        <div className="bl-demo-badge">
-          <Icon name="visibility" size={14} />
-          デモデータ
-        </div>
-      )}
     </div>
   );
 }

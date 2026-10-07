@@ -147,6 +147,15 @@ export function AppNav() {
             })}
           </nav>
 
+          {/* デモの表示中であることは上のバーに出す。右下の角は案内役の席で、
+              そこに札を浮かせると、表のいちばん右の値がその下に隠れる。 */}
+          {demo && (
+            <span className="bl-nav__demo">
+              <Icon name="visibility" size={14} />
+              デモデータ
+            </span>
+          )}
+
           <div className="bl-nav__account" ref={menuRef}>
             <button
               type="button"

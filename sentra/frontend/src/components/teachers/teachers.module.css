@@ -111,6 +111,25 @@
   background: var(--bl-mist);
 }
 
+/* 右下の角は案内役（ラスクくん）の席。いちばん右の列（「変化」など）の
+   中身が、行が画面の下端に来たときにその下へ入らないよう、右端を空けて
+   おく。小石の左端は画面の右から 98px、表の右端は 14px なので、その差に
+   少し足した幅。本文が最大幅（1240px）に達してからは左右の余白が増える
+   ぶんだけ減らし、余白だけで足りる幅になったら元の余白に戻す。 */
+.table th:last-child,
+.table td:last-child {
+  padding-right: max(10px, calc(100px - max(0px, (100vw - 1240px) / 2)));
+}
+
+@media (max-width: 640px) {
+  /* 狭い画面の小石は 68px で、右から 78px の所まで。表は横にスクロール
+     するので、いちばん右まで送ったときに、最後の列が小石の左に出る。 */
+  .table th:last-child,
+  .table td:last-child {
+    padding-right: 80px;
+  }
+}
+
 .num {
   width: 3.2em;
   font-variant-numeric: tabular-nums;
