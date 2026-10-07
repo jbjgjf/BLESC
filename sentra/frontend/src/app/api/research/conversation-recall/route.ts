@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/server/api";
+import {
+  LATEST_TURN_EXCERPT,
+  extractTopics,
+  latestUserTurn,
+  turnCounts,
+} from "@/lib/conversationRecall";
+import { t } from "@/lib/i18n";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -63,46 +70,21 @@ function toRecall(row: ConversationRecallRow) {
   };
 }
 
-function extractTopics(messages: ChatMessageRow[]) {
-  const counts = new Map<string, number>();
-  const stopWords = new Set([
-    "about",
-    "after",
-    "again",
-    "bleSC".toLowerCase(),
-    "could",
-    "from",
-    "have",
-    "that",
-    "this",
-    "with",
-    "what",
-    "when",
-    "where",
-    "your",
-    "recent",
-    "patterns",
-    "reflect",
-  ]);
-  for (const message of messages) {
-    for (const word of (message.content_redacted ?? "").toLowerCase().match(/[a-z][a-z'-]{3,}/g) ?? []) {
-      if (!stopWords.has(word)) counts.set(word, (counts.get(word) ?? 0) + 1);
-    }
-  }
-  return Array.from(counts.entries())
-    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-    .slice(0, 5)
-    .map(([topic, count]) => ({ topic, count }));
-}
-
+/**
+ * The summary a student reads in the 「覚えていること」 panel.
+ *
+ * The sentence and the topic matching both live in `lib/conversationRecall.ts`
+ * now; this route composes them. The text comes from the catalogue because it
+ * is rendered verbatim to a Japanese student and stored in a research row — see
+ * that module's header for what was wrong before (#365).
+ */
 function summarize(messages: ChatMessageRow[]) {
-  const userMessages = messages.filter((message) => message.role === "user");
-  const assistantMessages = messages.filter((message) => message.role === "assistant");
+  const turns = turnCounts(messages);
   const topics = extractTopics(messages);
-  const latestUserText = [...userMessages].reverse().find((message) => message.content_redacted)?.content_redacted;
-  const summary = latestUserText
-    ? `Recent conversation includes ${userMessages.length} user turns and ${assistantMessages.length} assistant responses. The latest user turn focused on: ${latestUserText.slice(0, 180)}`
-    : `Recent conversation includes ${userMessages.length} user turns and ${assistantMessages.length} assistant responses.`;
+  const latest = latestUserTurn(messages);
+  const summary = latest
+    ? t.recall.memorySummary.withLatestTurn(turns.user, turns.assistant, latest.slice(0, LATEST_TURN_EXCERPT))
+    : t.recall.memorySummary.counts(turns.user, turns.assistant);
   return {
     summary,
     recurring_topics: topics,
@@ -121,7 +103,7 @@ function notEnoughHistory(messages: ChatMessageRow[]) {
     message_start: messages[0]?.created_at ?? null,
     message_end: messages[messages.length - 1]?.created_at ?? null,
     summary_json: {
-      summary: "Not enough conversation history.",
+      summary: t.recall.memorySummary.notEnoughHistory,
       recurring_topics: [],
       top_topics: [],
       tone_trends: {},
