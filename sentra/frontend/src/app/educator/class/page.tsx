@@ -13,7 +13,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { CATEGORIES, MOODS, formatDate, relativeDays } from "@/lib/blesc/labels";
+import { CATEGORIES, MOODS, formatDate } from "@/lib/blesc/labels";
 import type { EventCategory, Mood } from "@/lib/blesc/types";
 import { AS_OF, CLASS_NAME, CLASS_STUDENTS, readersOfStudentRecords } from "@/lib/teachers/fixtures";
 import { compareRecentWindows } from "@/lib/teachers/records";
@@ -21,6 +21,7 @@ import { useSchoolSettings } from "@/lib/teachers/store";
 import {
   ChangeMark,
   ChangeRuleNote,
+  LastRecord,
   MoodLabel,
   PageHead,
   ReadersLine,
@@ -111,7 +112,7 @@ function ClassList() {
                     {student.name}
                   </Link>
                 </td>
-                <td className={styles.muted}>{last ? `${formatDate(last, false)}（${relativeDays(last, AS_OF)}）` : "記録なし"}</td>
+                <td className={styles.muted}><LastRecord date={last} /></td>
                 <td>
                   <Sparkline records={student.records} label={student.name} />
                 </td>

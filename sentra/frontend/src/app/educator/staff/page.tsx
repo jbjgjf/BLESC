@@ -13,11 +13,10 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { formatDate, relativeDays } from "@/lib/blesc/labels";
 import { AS_OF, MANAGERS, PERSONAS, STAFF } from "@/lib/teachers/fixtures";
 import { compareRecentWindows } from "@/lib/teachers/records";
 import { useSchoolSettings } from "@/lib/teachers/store";
-import { ChangeMark, ChangeRuleNote, NoExport, NoExportNote, PageHead, RoleGate, Sparkline, styles } from "@/components/teachers/parts";
+import { ChangeMark, ChangeRuleNote, LastRecord, NoExport, NoExportNote, PageHead, RoleGate, Sparkline, styles } from "@/components/teachers/parts";
 import { WorkLegend, WorkRatio } from "@/components/teachers/WorkRatio";
 
 type Sort = "kana" | "recent";
@@ -106,7 +105,7 @@ function StaffList() {
                     </Link>
                   </td>
                   <td className={styles.muted}>{member.duty}</td>
-                  <td className={styles.muted}>{last ? `${formatDate(last, false)}（${relativeDays(last, AS_OF)}）` : "記録なし"}</td>
+                  <td className={styles.muted}><LastRecord date={last} /></td>
                   <td>
                     <Sparkline records={member.records} label={member.name} />
                   </td>

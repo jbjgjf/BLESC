@@ -8,7 +8,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { CATEGORY_BY_VALUE, MOOD_BY_VALUE, formatDate } from "@/lib/blesc/labels";
+import { CATEGORY_BY_VALUE, MOOD_BY_VALUE, formatDate, relativeDays } from "@/lib/blesc/labels";
 import type { EventCategory, Mood } from "@/lib/blesc/types";
 import { AS_OF, PERSONAS, WORK_TAGS } from "@/lib/teachers/fixtures";
 import { MOOD_LEVEL, type ChangeResult, type ChangeSignal } from "@/lib/teachers/records";
@@ -69,6 +69,17 @@ export function Sparkline({ records, label }: { records: ReadonlyArray<SelfRecor
       {points.length > 1 && <path d={path} className={styles.sparkLine} />}
       {last && <circle cx={last.x} cy={last.y} r={2.4} className={styles.sparkDot} />}
     </svg>
+  );
+}
+
+/** 一覧の「直近の記録」。折り返すときは、日付と「（○日前）」の間でだけ折る。 */
+export function LastRecord({ date }: { date: string | null }) {
+  if (!date) return <>記録なし</>;
+  return (
+    <>
+      <span className={styles.nowrap}>{formatDate(date, false)}</span>
+      <span className={styles.nowrap}>（{relativeDays(date, AS_OF)}）</span>
+    </>
   );
 }
 

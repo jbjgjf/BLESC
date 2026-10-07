@@ -140,6 +140,8 @@
   color: inherit;
   text-decoration: none;
   font-weight: 500;
+  /* 名前は途中で折らない（「健 / 太」にしない）。 */
+  white-space: nowrap;
 }
 
 .rowLink:hover {
@@ -150,6 +152,10 @@
 .muted {
   color: var(--bl-ink-3);
   font-size: 0.82rem;
+}
+
+.nowrap {
+  white-space: nowrap;
 }
 
 /* 「変化あり」。色を付けず、線と字だけ。重さは語らない。 */
