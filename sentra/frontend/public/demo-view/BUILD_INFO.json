@@ -1,7 +1,7 @@
 {
   "source_ref": "chat-ui-redesign",
-  "source_commit": "4da23914e2720dcb63c05b6e0643c87019b900f4",
-  "built_at": "2026-10-07T10:38:28Z",
+  "source_commit": "dbe13f1b56390162c05821ecabb770f5aa05d91b",
+  "built_at": "2026-10-07T11:21:11Z",
   "command": "sentra/frontend/scripts/build-demo-view.sh <出力先>",
   "note": "source_commit を checkout して同じコマンドを実行すると、BUILD_INFO.json の built_at 以外は同じ内容になる。"
 }
