@@ -387,6 +387,30 @@ export const ja = {
       `まとめるにはやりとりが足りません。${minimum}往復以上でまとめられます。`,
     completed:
       "これで30往復です。下のまとめを読み返して、気になることがあれば、信頼できる大人や専門の相談先に話してみてください。",
+    /**
+     * The 「覚えていること」 panel on `/recall`.
+     *
+     * Written here rather than in the route handler that builds it, because
+     * `summary_json.summary` is rendered to the student verbatim
+     * (`app/recall/page.tsx`) — it is copy that happens to be assembled on the
+     * server, not an answer to another program. It is also stored in
+     * `conversation_recall_summaries`, so the wording is what a researcher
+     * reads back later.
+     */
+    memorySummary: {
+      counts: (userTurns: number, assistantTurns: number) =>
+        `これまでのやりとりは、あなたの発言が${userTurns}回、blesc の応答が${assistantTurns}回です。`,
+      withLatestTurn: (userTurns: number, assistantTurns: number, latest: string) =>
+        `これまでのやりとりは、あなたの発言が${userTurns}回、blesc の応答が${assistantTurns}回です。` +
+        `直前にあなたが書いていたのは、次のことです。「${latest}」`,
+      /**
+       * Stored in `summary_json.summary` when the window is too short. The
+       * screen does not show it — it shows `notEnoughHistory` above, which can
+       * name the threshold — but the row is kept and read back, so it is not
+       * left in English.
+       */
+      notEnoughHistory: "まとめるにはやりとりが足りません。",
+    },
     privacy:
       "やりとりはあなたのデータとして保存されます。録音した音声は文字にしたあと破棄します。個人の心の状態に関する内容を、OpenAI の Vector Store に保存することはありません。",
   },
