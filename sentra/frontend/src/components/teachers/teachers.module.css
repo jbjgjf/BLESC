@@ -1,0 +1,616 @@
+/* Blesc for Teachers の画面で共通に使うもの。
+ *
+ * 箱（カード）を積まない。地の上に見出しと本文を置き、区切りは細い線で
+ * 引く。一覧は表の行として並べる — 先生が読むのは数字と言葉で、飾りでは
+ * ない。色は気分の色だけに使い、「変化あり」の札にも赤や黄色は使わない
+ * （色で重さを語らせない）。 */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+  padding-bottom: 32px;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.kicker {
+  margin: 0;
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+  color: var(--bl-ink-3);
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--bl-ink);
+}
+
+.lede {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 0.92rem;
+  line-height: 1.85;
+  color: var(--bl-ink-2);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 18px;
+  border-top: 1px solid var(--bl-line);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.h2 {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 500;
+  color: var(--bl-ink);
+}
+
+.note {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.75;
+  color: var(--bl-ink-3);
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* ── 表（一覧） ───────────────────────────────── */
+
+.tableWrap {
+  overflow-x: auto;
+  margin: 0 -4px;
+}
+
+.table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.table th {
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 0.74rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--bl-ink-3);
+  border-bottom: 1px solid var(--bl-line);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--bl-line-soft);
+  color: var(--bl-ink);
+  vertical-align: middle;
+}
+
+.table tr:hover td {
+  background: var(--bl-mist);
+}
+
+.num {
+  width: 3.2em;
+  font-variant-numeric: tabular-nums;
+  color: var(--bl-ink-3);
+}
+
+.rowLink {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.rowLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.muted {
+  color: var(--bl-ink-3);
+  font-size: 0.82rem;
+}
+
+/* 「変化あり」。色を付けず、線と字だけ。重さは語らない。 */
+.changed {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border: 1px solid var(--bl-ink-3);
+  border-radius: 999px;
+  font-size: 0.74rem;
+  color: var(--bl-ink);
+  white-space: nowrap;
+}
+
+/* ── 小さい推移のグラフ ─────────────────────── */
+
+.spark {
+  display: block;
+  overflow: visible;
+}
+
+.sparkLine {
+  fill: none;
+  stroke: var(--bl-ink-3);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.sparkDot {
+  fill: var(--bl-ink-2);
+}
+
+/* ── 業務タグの比率（本人申告ベース） ─────────── */
+
+.ratio {
+  display: flex;
+  width: 120px;
+  height: 7px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bl-line-soft);
+}
+
+.ratio span {
+  display: block;
+  height: 100%;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 0.76rem;
+  color: var(--bl-ink-2);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+/* ── 記録の並び ─────────────────────────────── */
+
+.records {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.record {
+  display: grid;
+  grid-template-columns: 7.2em 1fr;
+  gap: 4px 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--bl-line-soft);
+}
+
+.recordDate {
+  font-size: 0.82rem;
+  color: var(--bl-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.recordBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.recordMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 0.8rem;
+  color: var(--bl-ink-2);
+}
+
+.moodDot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  border-radius: 50%;
+  vertical-align: 0;
+}
+
+.tag {
+  font-size: 0.76rem;
+  color: var(--bl-ink-3);
+}
+
+.recordText {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.8;
+  color: var(--bl-ink);
+}
+
+@media (max-width: 560px) {
+  .record {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── 事実の並び（変化の中身、サマリー） ─────── */
+
+.facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 22px;
+  font-size: 0.9rem;
+}
+
+.facts dt {
+  color: var(--bl-ink-3);
+}
+
+.facts dd {
+  margin: 0;
+  color: var(--bl-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.quote {
+  margin: 0;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--bl-line);
+  font-size: 0.92rem;
+  line-height: 1.8;
+  color: var(--bl-ink);
+}
+
+.quoteDate {
+  display: block;
+  font-size: 0.74rem;
+  color: var(--bl-ink-3);
+}
+
+.aiBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 0 4px;
+  border-top: 1px dashed var(--bl-line);
+}
+
+.aiLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  color: var(--bl-ink-2);
+}
+
+/* ── 切り替え（タブ・期間） ─────────────────── */
+
+.segmented {
+  display: inline-flex;
+  gap: 0;
+  border-bottom: 1px solid var(--bl-line);
+}
+
+.segmented button {
+  padding: 8px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: 0.86rem;
+  color: var(--bl-ink-3);
+  cursor: pointer;
+}
+
+.segmented button[aria-pressed="true"],
+.segmented button[aria-selected="true"] {
+  color: var(--bl-ink);
+  border-bottom-color: var(--bl-ink);
+}
+
+/* ── 閲覧者の表示（A-5） ───────────────────── */
+
+.readers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--bl-line);
+  font-size: 0.86rem;
+  color: var(--bl-ink-2);
+}
+
+.readers strong {
+  font-weight: 500;
+  color: var(--bl-ink);
+}
+
+/* ── 書き出しできない画面（C-5） ─────────────── */
+
+.noExport {
+  font-size: 0.78rem;
+  color: var(--bl-ink-3);
+}
+
+.printBlocked {
+  display: none;
+}
+
+@media print {
+  .printable {
+    display: none !important;
+  }
+  .printBlocked {
+    display: block;
+    padding: 40px;
+    font-size: 14pt;
+    color: #000;
+  }
+}
+
+/* ── 入力 ───────────────────────────────────── */
+
+.fieldLabel {
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: var(--bl-ink);
+}
+
+.required {
+  margin-left: 6px;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--bl-ink-3);
+}
+
+.moodRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.moodOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 1px solid var(--bl-line);
+  border-radius: 999px;
+  background: var(--bl-surface);
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--bl-ink-2);
+  cursor: pointer;
+}
+
+.moodOption[aria-pressed="true"] {
+  border-color: var(--bl-ink);
+  color: var(--bl-ink);
+}
+
+.moodOption:disabled {
+  cursor: default;
+}
+
+.tagRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tagOption {
+  padding: 6px 12px;
+  border: 1px solid var(--bl-line);
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--bl-ink-2);
+  cursor: pointer;
+}
+
+.tagOption[aria-pressed="true"] {
+  border-color: var(--bl-ink);
+  background: var(--bl-ink);
+  color: var(--bl-surface);
+}
+
+.prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  font-size: 0.92rem;
+  color: var(--bl-ink);
+}
+
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--bl-blue-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 14px 16px;
+  border: 1px solid var(--bl-line);
+  border-radius: var(--bl-radius-inner);
+  background: var(--bl-surface);
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.8;
+  color: var(--bl-ink);
+  resize: vertical;
+}
+
+.textarea:focus-visible {
+  outline: 3px solid var(--bl-blue-strong);
+  outline-offset: 2px;
+}
+
+.textarea[readonly] {
+  background: var(--bl-mist);
+}
+
+.counter {
+  font-size: 0.76rem;
+  color: var(--bl-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.saveRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
+.status {
+  font-size: 0.8rem;
+  color: var(--bl-ink-3);
+}
+
+.input {
+  padding: 8px 12px;
+  border: 1px solid var(--bl-line);
+  border-radius: var(--bl-radius-inner);
+  background: var(--bl-surface);
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--bl-ink);
+}
+
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  font-size: 0.88rem;
+  color: var(--bl-ink-2);
+}
+
+.checks label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* ── カレンダー（A-4） ───────────────────────── */
+
+.calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0;
+  border-top: 1px solid var(--bl-line);
+  border-left: 1px solid var(--bl-line-soft);
+}
+
+.calendarHead,
+.calendarDay {
+  border-right: 1px solid var(--bl-line-soft);
+  border-bottom: 1px solid var(--bl-line-soft);
+}
+
+.calendarHead {
+  padding: 6px;
+  font-size: 0.72rem;
+  color: var(--bl-ink-3);
+  text-align: center;
+}
+
+.calendarDay {
+  min-height: 62px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--bl-ink-3);
+  background: none;
+  border-top: 0;
+  border-left: 0;
+  text-align: left;
+  font-family: inherit;
+}
+
+.calendarDay[data-has] {
+  color: var(--bl-ink);
+  cursor: pointer;
+}
+
+.calendarDay[data-selected] {
+  outline: 2px solid var(--bl-ink);
+  outline-offset: -2px;
+}
+
+.calendarDay[data-outside] {
+  opacity: 0.35;
+}
+
+.calendarMood {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+/* ── 話題・業務タグの推移（週ごと） ─────────────── */
+
+.trend {
+  display: grid;
+  gap: 4px;
+  font-size: 0.76rem;
+  color: var(--bl-ink-3);
+}
+
+.trendRow {
+  display: grid;
+  grid-template-columns: 7em repeat(8, minmax(0, 1fr));
+  align-items: center;
+  gap: 4px;
+}
+
+.trendCell {
+  height: 18px;
+  border-radius: 3px;
+  background: var(--bl-line-soft);
+}

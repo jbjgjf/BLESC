@@ -9,6 +9,9 @@ import { DisplaySettings } from "@/components/a11y/DisplaySettings";
 import { useAuth } from "@/lib/auth";
 import { useDemoMode } from "@/lib/demo";
 import { Icon, type IconName } from "@/components/ui/Icon";
+import { PERSONAS } from "@/lib/teachers/fixtures";
+import { ROLE_HOME, setTeacherRole, useTeacherRole } from "@/lib/teachers/store";
+import type { TeacherRole } from "@/lib/teachers/types";
 
 type NavItem = { href: string; label: string; icon: IconName; exact?: boolean };
 
@@ -19,14 +22,36 @@ const STUDENT_NAV: NavItem[] = [
   { href: "/chat",     label: "相談",     icon: "chat_bubble" },
 ];
 
-const EDUCATOR_NAV: NavItem[] = [
-  { href: "/educator",          label: "ホーム",   icon: "dashboard", exact: true },
-  { href: "/educator/roster",   label: "生徒",     icon: "groups" },
-  { href: "/educator/alerts",   label: "アラート", icon: "notifications_active" },
-  { href: "/educator/class",    label: "クラス",   icon: "grid_view" },
-  { href: "/educator/meetings", label: "面談",     icon: "event_note" },
-  { href: "/school",            label: "学校全体", icon: "apartment" },
-];
+/**
+ * Blesc for Teachers のメニュー。立場ごとに入口が違う。
+ * 担任は自分の記録とクラス、管理職は自分の記録と教職員、学校管理者は設定。
+ * 「アラート」は置かない（記録の自動判定・警告はしない、という設計原則）。
+ */
+const EDUCATOR_NAV: Record<TeacherRole, NavItem[]> = {
+  homeroom: [
+    { href: "/educator",            label: "今日の記録", icon: "edit_note", exact: true },
+    { href: "/educator/my-records", label: "振り返り",   icon: "insights" },
+    { href: "/educator/class",      label: "クラス",     icon: "groups" },
+    { href: "/educator/meetings",   label: "面談",       icon: "event_note" },
+  ],
+  manager: [
+    { href: "/educator",            label: "今日の記録", icon: "edit_note", exact: true },
+    { href: "/educator/my-records", label: "振り返り",   icon: "insights" },
+    { href: "/educator/staff",      label: "教職員",     icon: "group" },
+    { href: "/educator/meetings",   label: "面談",       icon: "event_note" },
+  ],
+  admin: [
+    { href: "/educator/settings", label: "設定",     icon: "settings" },
+    { href: "/educator/usage",    label: "利用状況", icon: "bar_chart" },
+  ],
+};
+
+/** 立場を切り替えたときに開く画面。その立場にしかない画面を開き、違いが見えるように。 */
+const SWITCH_TO: Record<TeacherRole, string> = {
+  homeroom: "/educator",
+  manager: "/educator/staff",
+  admin: "/educator/settings",
+};
 
 const GUARDIAN_NAV: NavItem[] = [
   { href: "/guardian", label: "ホーム", icon: "home", exact: true },
@@ -61,9 +86,10 @@ export function AppNav() {
   const setMenuOpen = (open: boolean) => setOpenedAt(open ? pathname : null);
 
   const context = contextForPath(pathname);
+  const role = useTeacherRole();
 
   const items =
-    context === "educator" ? EDUCATOR_NAV : context === "guardian" ? GUARDIAN_NAV : STUDENT_NAV;
+    context === "educator" ? EDUCATOR_NAV[role] : context === "guardian" ? GUARDIAN_NAV : STUDENT_NAV;
 
   // 少しでも動いたらバーを締める。閾値を置くのは、慣性スクロールの
   // 揺り戻しで境界を何度もまたがないようにするため。
@@ -96,7 +122,7 @@ export function AppNav() {
     <>
       <header className="bl-nav" data-scrolled={scrolled}>
         <div className="bl-nav__inner">
-          <TransitionLink href={context === "educator" ? "/educator" : "/"} className="bl-nav__brand">
+          <TransitionLink href={context === "educator" ? ROLE_HOME[role] : "/"} className="bl-nav__brand">
             <Image src="/flower.png" alt="" width={30} height={30} priority />
             <span className="bl-nav__wordmark">blesc</span>
             {context === "educator" && <span className="bl-nav__role">教員</span>}
@@ -137,8 +163,34 @@ export function AppNav() {
                 {(user?.email || demo) && (
                   <div className="bl-menu__identity">
                     <Icon name="person" size={18} />
-                    <span className="bl-menu__email">{user?.email ?? "デモアカウント（固定のデモデータ）"}</span>
+                    <span className="bl-menu__email">
+                      {user?.email ??
+                        (context === "educator"
+                          ? `${PERSONAS[role].name}（${PERSONAS[role].title}）・デモ`
+                          : "デモアカウント（固定のデモデータ）")}
+                    </span>
                   </div>
+                )}
+
+                {/* デモでだけ、立場を切り替えて Blesc for Teachers の各画面を見られる。
+                    本番では立場はアカウントで決まり、ここには出さない。 */}
+                {demo && context === "educator" && (
+                  <>
+                    <div className="bl-menu__group">立場の切り替え（デモ）</div>
+                    {(Object.keys(EDUCATOR_NAV) as TeacherRole[]).map((r) => (
+                      <TransitionLink
+                        key={r}
+                        href={SWITCH_TO[r]}
+                        className="bl-menu__item"
+                        role="menuitemradio"
+                        aria-checked={role === r}
+                        onClick={() => setTeacherRole(r)}
+                      >
+                        <Icon name={role === r ? "check" : "person"} size={19} />
+                        {PERSONAS[r].title}・{PERSONAS[r].name}
+                      </TransitionLink>
+                    ))}
+                  </>
                 )}
 
                 <div className="bl-menu__group">画面の切り替え</div>
@@ -149,9 +201,9 @@ export function AppNav() {
                   </TransitionLink>
                 )}
                 {context !== "educator" && (
-                  <TransitionLink href="/educator" className="bl-menu__item" role="menuitem">
+                  <TransitionLink href={ROLE_HOME[role]} className="bl-menu__item" role="menuitem">
                     <Icon name="dashboard" size={19} />
-                    教員ダッシュボード
+                    先生の画面（Blesc for Teachers）
                   </TransitionLink>
                 )}
                 {context !== "guardian" && (

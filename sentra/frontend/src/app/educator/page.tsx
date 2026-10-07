@@ -1,267 +1,263 @@
 "use client";
 
+/**
+ * 先生自身の記録（A-1 / A-2 / A-3 / A-5 / A-6）。
+ *
+ * 気分だけで保存できる。本文は任意で、思いつかないときは質問を1つ出す。
+ * 1日1件で、その日のうちは書き直せる。翌日からは読むだけになり、書き直した
+ * 履歴は残る。打っているあいだは下書きを端末に残しておく（通信が切れても
+ * 書いたものが消えないように）。
+ *
+ * 誰がこの記録を読めるかは、画面のいちばん上に常に出しておく（設計原則 3）。
+ */
+
 import Link from "next/link";
-import { Icon } from "@/components/ui/Icon";
-import { TrendChip } from "@/components/blesc/BandChip";
-import { CLASS_ROSTER, FOLLOW_UPS, SUBMISSION_ALERTS } from "@/lib/blesc/fixtures";
-import { BANDS, STATUSES, THEMES, formatDate, formatDateTime, relativeDays } from "@/lib/blesc/labels";
-import type { RiskBand } from "@/lib/blesc/types";
-import { PilotCalendar } from "@/components/blesc/PilotCalendar";
-import styles from "./educator.module.css";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { MOODS, formatDate } from "@/lib/blesc/labels";
+import type { Mood } from "@/lib/blesc/types";
+import { AS_OF, PROMPTS, TEXT_LIMIT, WORK_TAGS, readersOfTeacherRecords } from "@/lib/teachers/fixtures";
+import { useSchoolSettings } from "@/lib/teachers/store";
+import type { TeacherRecord, WorkTag } from "@/lib/teachers/types";
+import { PageHead, ReadersLine, RoleGate, styles } from "@/components/teachers/parts";
 
-const BAND_TILES: Array<{ band: RiskBand; hint: string }> = [
-  { band: "alert", hint: "優先的に確認" },
-  { band: "watch", hint: "様子を見る" },
-  { band: "calm", hint: "大きな変化なし" },
-];
+const SAVED_KEY = `blesc:my-record:${AS_OF}`;
+const DRAFT_KEY = `blesc:my-draft:${AS_OF}`;
+const EVENT = "blesc:my-record";
 
-export default function EducatorHome() {
-  const counts = CLASS_ROSTER.reduce(
-    (acc, student) => ({ ...acc, [student.band]: (acc[student.band] ?? 0) + 1 }),
-    {} as Record<RiskBand, number>,
+type Draft = { mood: Mood | null; text: string; tags: WorkTag[]; promptId?: string };
+const EMPTY_DRAFT: Draft = { mood: null, text: "", tags: [] };
+
+const now = () => {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+
+/* 今日の記録は、このタブの中（sessionStorage）に。下書きは端末（localStorage）に。 */
+let savedRaw: string | null | undefined;
+let savedValue: TeacherRecord | null = null;
+function readSaved(): TeacherRecord | null {
+  let raw: string | null = null;
+  try {
+    raw = window.sessionStorage.getItem(SAVED_KEY);
+  } catch {
+    raw = null;
+  }
+  if (raw === savedRaw) return savedValue;
+  savedRaw = raw;
+  try {
+    savedValue = raw ? (JSON.parse(raw) as TeacherRecord) : null;
+  } catch {
+    savedValue = null;
+  }
+  return savedValue;
+}
+const subscribe = (notify: () => void) => {
+  window.addEventListener(EVENT, notify);
+  return () => window.removeEventListener(EVENT, notify);
+};
+
+function readDraft(): Draft {
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY);
+    return raw ? { ...EMPTY_DRAFT, ...(JSON.parse(raw) as Draft) } : EMPTY_DRAFT;
+  } catch {
+    return EMPTY_DRAFT;
+  }
+}
+
+export default function MyRecordTodayPage() {
+  return (
+    <RoleGate allow={["homeroom", "manager"]}>
+      <MyRecordToday />
+    </RoleGate>
+  );
+}
+
+function MyRecordToday() {
+  const settings = useSchoolSettings();
+  const readers = readersOfTeacherRecords(settings);
+  const saved = useSyncExternalStore(subscribe, readSaved, () => null);
+
+  // 下書きは最初の描画のあとで読む（サーバーの HTML と食い違わないように）。
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [loaded, setLoaded] = useState(false);
+  const [draftAt, setDraftAt] = useState<string | null>(null);
+  const [promptIndex, setPromptIndex] = useState(0);
+
+  useEffect(() => {
+    const restored = saved ? { mood: saved.mood, text: saved.text, tags: saved.tags, promptId: saved.promptId } : readDraft();
+    const timer = window.setTimeout(() => {
+      setDraft(restored);
+      setLoaded(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // 開いたときに一度だけ戻す。保存のたびに打ちかけを上書きしない。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 打つたびに下書きを残す（少し待ってからまとめて）。
+  useEffect(() => {
+    if (!loaded) return;
+    const timer = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        setDraftAt(now());
+      } catch {
+        // 端末に残せない環境では、下書きの表示を出さないだけ。
+      }
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [draft, loaded]);
+
+  const prompt = PROMPTS[promptIndex % PROMPTS.length];
+  const length = [...draft.text].length;
+  const over = length > TEXT_LIMIT;
+  const changed = useMemo(
+    () => !saved || saved.mood !== draft.mood || saved.text !== draft.text || saved.tags.join() !== draft.tags.join(),
+    [saved, draft],
   );
 
-  const attention = CLASS_ROSTER.filter((student) => student.band !== "calm").sort(
-    (a, b) => (a.band === "alert" ? 0 : 1) - (b.band === "alert" ? 0 : 1),
-  );
-
-  const urgent = CLASS_ROSTER.filter((student) => student.urgent);
-  const overdue = FOLLOW_UPS.filter((item) => item.state === "worsening" || item.nextMeeting === null);
+  const save = () => {
+    if (!draft.mood || over) return;
+    const record: TeacherRecord = {
+      date: AS_OF,
+      mood: draft.mood,
+      text: draft.text.trim(),
+      tags: draft.tags,
+      promptId: draft.text.trim() ? draft.promptId : undefined,
+      edits: [...(saved?.edits ?? []), now()],
+    };
+    try {
+      window.sessionStorage.setItem(SAVED_KEY, JSON.stringify(record));
+      window.localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      // 保存できない環境でも、画面の上では保存した状態にする。
+    }
+    window.dispatchEvent(new Event(EVENT));
+  };
 
   return (
-    <div className="bl-stack">
-      <header className={styles.head}>
-        <div>
-          <h1 className="bl-h1">2年A組</h1>
-          <p className="bl-meta">担当：山本 直樹 ・ 在籍 {CLASS_ROSTER.length}名</p>
-        </div>
-        <Link href="/educator/roster" className="bl-btn bl-btn--secondary">
-          <Icon name="groups" size={19} />
-          生徒一覧
-        </Link>
-      </header>
+    <div className={styles.page}>
+      <PageHead
+        kicker="先生自身の記録"
+        title={`${formatDate(AS_OF)}の記録`}
+        lede="気分を選ぶだけでも保存できます。書きたいことがあれば、ひとことでも。"
+      >
+        <ReadersLine readers={readers} />
+      </PageHead>
 
-      {/* ── 7-5 緊急性が高い可能性のある内容 ─────────── */}
-      {urgent.length > 0 && (
-        <section className={`${styles.urgent} bl-rise`}>
-          <div className={styles.urgentHead}>
-            <Icon name="priority_high" size={24} fill />
-            <div>
-              <h2 className="bl-h2">早急な確認が必要な可能性があります</h2>
-              <p className="bl-body">学校の定める緊急対応フローに沿って状況を確認してください。</p>
-            </div>
-          </div>
-
-          {urgent.map((student) => (
-            <article key={student.id} className={styles.urgentCard}>
-              <div className="bl-row-between">
-                <Link href={`/educator/student/${student.id}`} className={styles.urgentName}>
-                  {student.name}
-                  <Icon name="chevron_right" size={18} />
-                </Link>
-                <span className="bl-micro">{formatDateTime(student.urgent!.detectedAt)}</span>
-              </div>
-
-              <p className="bl-body" style={{ marginTop: 6 }}>{student.urgent!.detail}</p>
-
-              <div className={styles.reasons}>
-                <span className="bl-micro" style={{ fontWeight: 700 }}>検知の根拠</span>
-                <ul>
-                  {student.urgent!.reasons.map((reason) => (
-                    <li key={reason}>{reason}</li>
-                  ))}
-                </ul>
-              </div>
-
-              <p className="bl-disclaimer" style={{ marginTop: 10 }}>
-                <Icon name="info" size={14} />
-                出典：{student.urgent!.surface === "diary" ? "日記本文" : "対話型AIとのやりとり"}
-              </p>
-            </article>
-          ))}
-        </section>
-      )}
-
-      {/* ── 5-1 状態の内訳 ───────────────────────────── */}
-      <section className="bl-grid bl-grid--3 bl-rise">
-        {BAND_TILES.map(({ band, hint }) => {
-          const meta = BANDS[band];
-          return (
-            <Link
-              key={band}
-              href={`/educator/roster?band=${band}`}
-              className={styles.bandTile}
-              style={{ background: meta.bg, borderColor: meta.line }}
+      <section className={styles.section} aria-labelledby="mood-label">
+        <h2 id="mood-label" className={styles.fieldLabel}>
+          今日の気分<span className={styles.required}>必須</span>
+        </h2>
+        <div className={styles.moodRow} role="group" aria-labelledby="mood-label">
+          {MOODS.map((mood) => (
+            <button
+              key={mood.value}
+              type="button"
+              className={styles.moodOption}
+              aria-pressed={draft.mood === mood.value}
+              onClick={() => setDraft((d) => ({ ...d, mood: mood.value }))}
             >
-              <span className="bl-row" style={{ gap: 8 }}>
-                <span className={`bl-dot ${meta.dot}`} />
-                <span style={{ color: meta.ink, fontWeight: 700, fontSize: "0.88rem" }}>{meta.label}</span>
-              </span>
-              <span className="bl-num" style={{ color: meta.ink }}>
-                {counts[band] ?? 0}
-                <span className={styles.bandUnit}>名</span>
-              </span>
-              <span className="bl-micro">{hint}</span>
-            </Link>
-          );
-        })}
-      </section>
-
-      <div className="bl-grid bl-grid--2">
-        {/* ── 要確認の生徒 ─────────────────────────── */}
-        <section className="bl-card bl-rise">
-          <div className="bl-card-head">
-            <Icon name="visibility" size={21} />
-            <h2 className="bl-h2">確認したい生徒</h2>
-          </div>
-
-          <div className="bl-stack-s">
-            {attention.map((student) => (
-              <Link key={student.id} href={`/educator/student/${student.id}`} className={styles.studentRow}>
-                <span className={`bl-dot ${BANDS[student.band].dot}`} />
-                <span className={styles.studentName}>{student.name}</span>
-                <span className={styles.studentThemes}>
-                  {student.topThemes.slice(0, 2).map((theme) => (
-                    <span key={theme} className="bl-chip bl-chip--tint">
-                      <Icon name={THEMES[theme].icon} size={14} />
-                      {THEMES[theme].label}
-                    </span>
-                  ))}
-                </span>
-                <TrendChip trend={student.trend} />
-                <Icon name="chevron_right" size={19} className={styles.rowChevron} />
-              </Link>
-            ))}
-          </div>
-        </section>
-
-        {/* ── 6-5 未提出アラート ───────────────────── */}
-        <section className="bl-card bl-rise">
-          <div className="bl-card-head">
-            <Icon name="event_busy" size={21} />
-            <h2 className="bl-h2">日記の未提出</h2>
-            <span className="bl-spacer" />
-            <Link href="/educator/alerts" className="bl-btn bl-btn--ghost bl-btn--sm">
-              すべて
-              <Icon name="arrow_forward" size={16} />
-            </Link>
-          </div>
-
-          <div className="bl-stack-s">
-            {SUBMISSION_ALERTS.slice(0, 4).map((alert) => (
-              <div key={alert.studentId} className={styles.alertRow}>
-                <Icon name="event_busy" size={19} />
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span className="bl-h3">{alert.studentName}</span>
-                  <span className="bl-micro" style={{ display: "block" }}>{alert.detail}</span>
-                </span>
-                <span className="bl-micro">{relativeDays(alert.since)}</span>
-              </div>
-            ))}
-          </div>
-
-          <p className="bl-disclaimer" style={{ marginTop: 12 }}>
-            <Icon name="info" size={14} />
-            未提出だけで状態を判断せず、声掛けのきっかけとして使ってください。
-          </p>
-        </section>
-      </div>
-
-      {/* ── 7-2 フォローアップ管理 ───────────────────── */}
-      <section className="bl-card bl-rise">
-        <div className="bl-card-head">
-          <Icon name="event_repeat" size={21} />
-          <h2 className="bl-h2">フォローアップ</h2>
-          {overdue.length > 0 && (
-            <span className="bl-chip bl-chip--watch">
-              <Icon name="warning" size={14} fill />
-              {overdue.length}件 要対応
-            </span>
-          )}
-        </div>
-
-        <div className="bl-stack-s">
-          {FOLLOW_UPS.map((item) => (
-            <div key={item.studentId} className={styles.followRow}>
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span className="bl-row" style={{ gap: 9 }}>
-                  <Link href={`/educator/student/${item.studentId}`} className={styles.studentName}>
-                    {item.studentName}
-                  </Link>
-                  <span className="bl-micro">
-                    前回面談 {formatDate(item.lastMeeting, false)}（{item.daysSince}日前）
-                  </span>
-                </span>
-                <span className="bl-body" style={{ fontSize: "0.87rem", display: "block", marginTop: 2 }}>
-                  {item.note}
-                </span>
-              </span>
-
-              <span
-                className={`bl-chip ${
-                  item.state === "worsening"
-                    ? "bl-chip--alert"
-                    : item.state === "improving"
-                      ? "bl-chip--calm"
-                      : ""
-                }`}
-              >
-                <Icon
-                  name={
-                    item.state === "worsening"
-                      ? "trending_up"
-                      : item.state === "improving"
-                        ? "trending_down"
-                        : "trending_flat"
-                  }
-                  size={15}
-                />
-                {item.state === "worsening" ? "改善なし" : item.state === "improving" ? "改善傾向" : "変化なし"}
-              </span>
-
-              <span className={styles.nextMeeting}>
-                {item.nextMeeting ? (
-                  <>
-                    <Icon name="event_note" size={16} />
-                    次回 {formatDate(item.nextMeeting, false)}
-                  </>
-                ) : (
-                  <>
-                    <Icon name="priority_high" size={16} />
-                    未設定
-                  </>
-                )}
-              </span>
-            </div>
+              <span className={styles.moodDot} style={{ background: mood.color }} aria-hidden="true" />
+              {mood.label}
+            </button>
           ))}
         </div>
       </section>
 
-      {/* ── 対応ステータスの内訳 ─────────────────────── */}
-      <section className="bl-card bl-rise">
-        <div className="bl-card-head">
-          <Icon name="donut_large" size={21} />
-          <h2 className="bl-h2">対応ステータス</h2>
-        </div>
-        <div className={styles.statusList}>
-          {(Object.keys(STATUSES) as Array<keyof typeof STATUSES>).map((status) => {
-            const count = CLASS_ROSTER.filter((student) => student.status === status).length;
-            if (count === 0) return null;
-            return (
-              <span key={status} className="bl-chip bl-chip--tint">
-                <Icon name={STATUSES[status].icon} size={16} />
-                {STATUSES[status].label}
-                <strong style={{ marginLeft: 2 }}>{count}</strong>
-              </span>
-            );
-          })}
-        </div>
+      <section className={styles.section} data-bl-term="今日のこと">
+        <label htmlFor="body" className={styles.fieldLabel}>
+          今日のこと<span className={styles.required}>任意・{TEXT_LIMIT.toLocaleString()}字まで</span>
+        </label>
+        {draft.text.trim() === "" && (
+          <p className={styles.prompt}>
+            <span>{prompt.text}</span>
+            <button type="button" className={styles.linkButton} onClick={() => setPromptIndex((i) => i + 1)}>
+              別の質問にする
+            </button>
+          </p>
+        )}
+        <textarea
+          id="body"
+          className={styles.textarea}
+          value={draft.text}
+          placeholder={draft.text.trim() === "" ? "質問に答えてもいいし、ほかのことでも。" : undefined}
+          onChange={(event) => {
+            const text = event.target.value;
+            // 書き始めた瞬間に出ていた質問を、その回答の紐づけとして持っておく（A-2）。
+            setDraft((d) => ({ ...d, text, promptId: d.text.trim() === "" && text.trim() !== "" ? prompt.id : d.promptId }));
+          }}
+          aria-describedby="body-count"
+        />
+        <span id="body-count" className={styles.counter} style={over ? { color: "var(--bl-alert-ink)" } : undefined}>
+          {length.toLocaleString()} / {TEXT_LIMIT.toLocaleString()}字{over ? "（多すぎます）" : ""}
+        </span>
+        {draft.promptId && draft.text.trim() && (
+          <p className={styles.note}>
+            質問「{PROMPTS.find((p) => p.id === draft.promptId)?.text}」への回答として保存します。
+          </p>
+        )}
       </section>
 
-      {/* ── 試験導入期間 ─────────────────────────────── */}
-      <div className="bl-rise">
-        <PilotCalendar />
-      </div>
+      <section className={styles.section} aria-labelledby="tags-label">
+        <h2 id="tags-label" className={styles.fieldLabel}>
+          今日の業務<span className={styles.required}>任意・いくつでも</span>
+        </h2>
+        <div className={styles.tagRow} role="group" aria-labelledby="tags-label">
+          {WORK_TAGS.map((tag) => (
+            <button
+              key={tag.value}
+              type="button"
+              className={styles.tagOption}
+              aria-pressed={draft.tags.includes(tag.value)}
+              onClick={() =>
+                setDraft((d) => ({
+                  ...d,
+                  tags: d.tags.includes(tag.value) ? d.tags.filter((t) => t !== tag.value) : [...d.tags, tag.value],
+                }))
+              }
+            >
+              {tag.label}
+            </button>
+          ))}
+        </div>
+        <p className={styles.note}>選んだ業務は、管理職が業務の偏りを本人の申告どおりに見るためだけに使います。自動で分類はしません。</p>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.saveRow}>
+          <button type="button" className="bl-btn bl-btn--primary" onClick={save} disabled={!draft.mood || over || !changed}>
+            {saved ? "書き直して保存" : "保存"}
+          </button>
+          <span className={styles.status} aria-live="polite">
+            {saved
+              ? `保存済み（${saved.edits.at(-1)}）。今日のうちは書き直せます。${saved.edits.length > 1 ? `書き直し ${saved.edits.length - 1}回。` : ""}`
+              : draft.mood === null
+                ? "気分を選ぶと保存できます。"
+                : draftAt
+                  ? `下書きを端末に保存しました（${draftAt}）`
+                  : ""}
+          </span>
+        </div>
+        <p className={styles.note}>
+          明日からは読むだけになり、書き直した履歴が残ります。過去の記録は
+          <Link href="/educator/my-records" className={styles.linkButton} style={{ marginLeft: 4 }}>
+            振り返り
+          </Link>
+          で見られます。
+        </p>
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.h2}>お知らせ</h2>
+        <p className={styles.note}>
+          {settings.reminder.enabled
+            ? `帰りのHRの時間（${settings.reminder.time}）に、1日1回だけお知らせします。`
+            : "記録のお知らせは、学校の設定で止めてあります。"}
+          記録しない日が続いても、管理職に知らせることはありません。
+        </p>
+      </section>
     </div>
   );
 }

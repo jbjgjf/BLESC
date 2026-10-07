@@ -1,61 +1,60 @@
 "use client";
 
 /**
- * 生徒の個別画面（B-2）・面談前サマリー（B-3）・面談メモ（B-4）。
+ * 先生の個別画面（C-2）・面談前サマリー（C-3）・面談メモ（C-4）。
  *
- * 記録は全件を新しい順に。気分の推移と、話題（本人が選んだタグ）の推移を
- * 並べる。「変化あり」が付いているときは、どの数字がどう動いたのかをそのまま
- * 出す — 中身の分からない札にしない。
+ * 生徒の個別画面（B-2〜B-4）と同じ組み立てで、話題の代わりに業務タグの
+ * 推移を出す。面談メモは管理職だけが読み、本人には表示しない。異動のときの
+ * 引き継ぎは、学校の設定に従う（既定は引き継がない）。
+ *
+ * どの部分も、印刷・CSV出力・一括ダウンロードはできない（C-5）。
  */
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { MoodTrend } from "@/components/blesc/MoodTrend";
-import { CATEGORIES } from "@/lib/blesc/labels";
-import { AS_OF, ME, getClassStudent, readersOfStudentRecords } from "@/lib/teachers/fixtures";
+import { AS_OF, PERSONAS, WORK_TAGS, getStaffMember } from "@/lib/teachers/fixtures";
 import { compareRecentWindows } from "@/lib/teachers/records";
-import { useSchoolSettings } from "@/lib/teachers/store";
-import { ChangeFacts, ChangeMark, PageHead, ReadersLine, RecordList, RoleGate, TagTrend, styles } from "@/components/teachers/parts";
+import { ChangeFacts, ChangeMark, NoExport, NoExportNote, PageHead, RecordList, RoleGate, TagTrend, styles } from "@/components/teachers/parts";
 import { MemoPanel } from "@/components/teachers/MemoPanel";
 import { SummaryView } from "@/components/teachers/SummaryView";
 
 type Tab = "records" | "summary" | "memo";
 
-export function StudentDetail() {
+export function StaffDetail() {
   return (
-    <RoleGate allow={["homeroom"]}>
-      <Detail />
+    <RoleGate allow={["manager"]}>
+      <NoExport>
+        <Detail />
+      </NoExport>
     </RoleGate>
   );
 }
 
 function Detail() {
-  const params = useParams<{ participantId: string }>();
-  const student = getClassStudent(params.participantId);
-  const settings = useSchoolSettings();
+  const params = useParams<{ staffId: string }>();
+  const member = getStaffMember(params.staffId);
   const [tab, setTab] = useState<Tab>("records");
 
-  if (!student) {
+  if (!member) {
     return (
       <div className={styles.page}>
-        <PageHead title="生徒が見つかりません" lede="担当しているクラスの生徒だけを開けます。" />
-        <Link href="/educator/class" className={styles.linkButton}>
-          クラス一覧へ
+        <PageHead title="先生が見つかりません" />
+        <Link href="/educator/staff" className={styles.linkButton}>
+          教職員の一覧へ
         </Link>
       </div>
     );
   }
 
-  const change = compareRecentWindows(student.records, AS_OF);
-  const newestFirst = [...student.records].reverse();
-  const series = student.records.map(({ date, mood }) => ({ date, mood }));
-  const usedTags = CATEGORIES.map((c) => c.value).filter((tag) => student.records.some((r) => r.tags.includes(tag)));
+  const change = compareRecentWindows(member.records, AS_OF);
+  const usedTags = WORK_TAGS.map((t) => t.value).filter((tag) => member.records.some((r) => r.tags.includes(tag)));
 
   return (
     <div className={styles.page}>
-      <PageHead kicker="生徒の記録" title={`${student.number}　${student.name}`}>
-        <ReadersLine readers={readersOfStudentRecords(settings)} subject="この生徒の記録" />
+      <PageHead kicker={`先生の記録・${member.duty}`} title={member.name}>
+        <NoExportNote />
       </PageHead>
 
       <div className={styles.segmented} role="tablist" aria-label="表示">
@@ -82,30 +81,30 @@ function Detail() {
 
           <section className={styles.section}>
             <h2 className={styles.h2}>気分の推移（8週）</h2>
-            <MoodTrend series={series} />
+            <MoodTrend series={member.records.map(({ date, mood }) => ({ date, mood }))} />
           </section>
 
           <section className={styles.section}>
-            <h2 className={styles.h2}>話題の推移（本人が選んだタグ、週ごと）</h2>
-            <TagTrend records={student.records} tags={usedTags} />
+            <h2 className={styles.h2}>業務タグの推移（本人の申告、週ごと）</h2>
+            <TagTrend records={member.records} tags={usedTags} />
           </section>
 
           <section className={styles.section}>
-            <h2 className={styles.h2}>すべての記録（{student.records.length}件・新しい順）</h2>
-            <RecordList records={newestFirst} />
+            <h2 className={styles.h2}>すべての記録（{member.records.length}件・新しい順）</h2>
+            <RecordList records={[...member.records].reverse()} />
           </section>
         </>
       )}
 
       {tab === "summary" && (
         <section className={styles.section} style={{ borderTop: 0, paddingTop: 0 }}>
-          <SummaryView records={student.records} subject={student.name} />
+          <SummaryView records={member.records} subject={member.name} />
         </section>
       )}
 
       {tab === "memo" && (
         <section className={styles.section} style={{ borderTop: 0, paddingTop: 0 }}>
-          <MemoPanel subject={{ kind: "student", id: student.id, name: student.name }} author={ME.name} />
+          <MemoPanel subject={{ kind: "staff", id: member.id, name: member.name }} author={PERSONAS.manager.name} />
         </section>
       )}
     </div>

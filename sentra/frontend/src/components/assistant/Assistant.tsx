@@ -9,6 +9,7 @@ import { resetA11y, setA11y, useA11y } from "@/lib/a11y";
 import { useReducedMotion } from "@/lib/motion";
 import { assessSafety } from "@/lib/safety-assessment";
 import { pilotProgress, usePilotToday } from "@/lib/blesc/pilot";
+import { useTeacherRole } from "@/lib/teachers/store";
 import {
   ASSISTANT_COPY,
   routeIntent,
@@ -211,6 +212,7 @@ export function Assistant({ audience }: { audience: Audience }) {
   const settings = useA11y();
   const reduced = useReducedMotion();
   const today = usePilotToday();
+  const role = useTeacherRole();
   const copy = ASSISTANT_COPY[audience];
 
   const [open, setOpen] = useState(false);
@@ -417,8 +419,10 @@ export function Assistant({ audience }: { audience: Audience }) {
       pilot: today ? pilotProgress(today) : null,
       safety: assessSafety(text),
       turn,
+      // 教員の画面では、立場で開ける画面が違う。
+      role: audience === "educator" ? role : undefined,
     }),
-    [audience, pathname, settings, today],
+    [audience, pathname, settings, today, role],
   );
 
   const ask = useCallback(

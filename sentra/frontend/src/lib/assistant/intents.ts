@@ -1,6 +1,7 @@
 import type { A11ySettings, TextSize } from "@/lib/a11y";
 import type { AppContext } from "@/lib/blesc/context";
 import type { PilotProgress } from "@/lib/blesc/pilot";
+import type { TeacherRole } from "@/lib/teachers/types";
 import type { IconName } from "@/components/ui/Icon";
 import type { SafetyAssessment } from "@/api/models";
 import type { Expression } from "./pebble";
@@ -21,7 +22,7 @@ import type { Expression } from "./pebble";
  * 画面に出ている言葉の説明（後半の GLOSSARY）も同じ理由で表から引く。
  * 説明はどれも、その画面にすでに書いてある文言と、データの定義
  * （lib/blesc/types.ts・labels.ts）から起こしてある。もっともらしい
- * 作文で埋めると、教員が「要注意」の意味を取り違えることになる。
+ * 作文で埋めると、教員が「変化あり」の意味を取り違えることになる。
  *
  * 表で拾えない言葉は無理に答えない。生徒の画面では、気持ちの話だと
  * 分かった時点で相談ページへ渡す。
@@ -35,6 +36,8 @@ export type Destination = {
   href: string;
   label: string;
   icon: IconName;
+  /** 教員の画面で、そのページを開ける立場。省くとだれでも開ける。 */
+  roles?: readonly TeacherRole[];
 };
 
 export const DESTINATIONS = {
@@ -48,14 +51,34 @@ export const DESTINATIONS = {
   summary:  { href: "/support-summary", label: "支援サマリー",  icon: "summarize" },
 } as const satisfies Record<string, Destination>;
 
+/**
+ * 教員の行き先。roles はナビ（components/AppNav.tsx）の立場ごとの並びと
+ * 揃えてある。開けない立場で頼まれたら、動かずにそう伝える — 開いても
+ * 「この画面は開けません」が出るだけなので。
+ */
 export const EDUCATOR_DESTINATIONS = {
-  home:     { href: "/educator",          label: "ホーム",         icon: "dashboard" },
-  roster:   { href: "/educator/roster",   label: "生徒一覧",       icon: "groups" },
-  alerts:   { href: "/educator/alerts",   label: "アラート",       icon: "notifications_active" },
-  class:    { href: "/educator/class",    label: "クラス全体",     icon: "grid_view" },
-  meetings: { href: "/educator/meetings", label: "面談",           icon: "event_note" },
-  school:   { href: "/school",            label: "学校全体の傾向", icon: "apartment" },
+  today:    { href: "/educator",            label: "今日の記録", icon: "edit_note",  roles: ["homeroom", "manager"] },
+  records:  { href: "/educator/my-records", label: "振り返り",   icon: "insights",   roles: ["homeroom", "manager"] },
+  class:    { href: "/educator/class",      label: "クラス",     icon: "groups",     roles: ["homeroom"] },
+  staff:    { href: "/educator/staff",      label: "教職員",     icon: "group",      roles: ["manager"] },
+  meetings: { href: "/educator/meetings",   label: "面談メモ",   icon: "event_note", roles: ["homeroom", "manager"] },
+  settings: { href: "/educator/settings",   label: "学校の設定", icon: "settings",   roles: ["admin"] },
+  usage:    { href: "/educator/usage",      label: "利用状況",   icon: "bar_chart",  roles: ["admin"] },
 } as const satisfies Record<string, Destination>;
+
+/** 立場の呼び名。components/teachers/parts.tsx の ROLE_NAME と同じ。 */
+const ROLE_NAME: Record<TeacherRole, string> = { homeroom: "担任", manager: "管理職", admin: "学校管理者" };
+
+/**
+ * 立場ごとの入口。first は最初の画面（ナビの先頭）、greet はあいさつの
+ * 続きに出す言葉、featured はその立場にしかない画面、term は「〜って何？」
+ * の例に出す言葉。
+ */
+const ROLE_ENTRY: Record<TeacherRole, { first: Destination; greet: string; featured: Destination; term: string }> = {
+  homeroom: { first: EDUCATOR_DESTINATIONS.today,    greet: "今日の記録を書く", featured: EDUCATOR_DESTINATIONS.class, term: "変化あり" },
+  manager:  { first: EDUCATOR_DESTINATIONS.today,    greet: "今日の記録を書く", featured: EDUCATOR_DESTINATIONS.staff, term: "変化あり" },
+  admin:    { first: EDUCATOR_DESTINATIONS.settings, greet: "学校の設定を開く", featured: EDUCATOR_DESTINATIONS.usage, term: "記録率" },
+};
 
 /** 「〜で見る」に出すページの呼び名。 */
 const PAGE_LABELS: Record<string, string> = {
@@ -67,12 +90,13 @@ const PAGE_LABELS: Record<string, string> = {
   "/insights": "変化の内訳",
   "/audit": "AI処理の記録",
   "/support-summary": "支援サマリー",
-  "/educator": "ホーム",
-  "/educator/roster": "生徒一覧",
-  "/educator/alerts": "アラート",
-  "/educator/class": "クラス全体",
-  "/educator/meetings": "面談",
-  "/school": "学校全体の傾向",
+  "/educator": "今日の記録",
+  "/educator/my-records": "振り返り",
+  "/educator/class": "クラス",
+  "/educator/staff": "教職員",
+  "/educator/meetings": "面談メモ",
+  "/educator/settings": "学校の設定",
+  "/educator/usage": "利用状況",
 };
 
 export type AssistantAction =
@@ -124,6 +148,11 @@ export type AssistantContext = {
   safety: SafetyAssessment;
   /** これまでに送った回数。雑談の返事を毎回同じ言い回しにしないために使う。 */
   turn: number;
+  /**
+   * 教員の画面での立場（担任・管理職・学校管理者）。開ける画面が立場で
+   * 違う。生徒の画面では使わない。
+   */
+  role?: TeacherRole;
 };
 
 /** 小さい順。a11y.ts の TextSize を大小で並べたもの。 */
@@ -164,8 +193,13 @@ type Intent = {
 /** 言い回しを送った回数で回す。乱数にしないのは、試験で再現できるように。 */
 const pick = (lines: readonly string[], turn: number) => lines[turn % lines.length];
 
-const homeOf = (audience: Audience): Destination =>
-  audience === "educator" ? EDUCATOR_DESTINATIONS.home : DESTINATIONS.home;
+/** 立場。省いたときは担任（lib/teachers/store.ts の既定と同じ）。 */
+const roleOf = (context: AssistantContext): TeacherRole => context.role ?? "homeroom";
+
+/** 生徒・先生ひとりずつの画面。面談前サマリーと面談メモは、ここのタブにある。 */
+const onStudentDetail = (pathname: string) => pathname.startsWith("/educator/student/");
+const onStaffDetail = (pathname: string) => pathname.startsWith("/educator/staff/");
+const onPersonDetail = (pathname: string) => onStudentDetail(pathname) || onStaffDetail(pathname);
 
 /** 相手のあいさつに合わせて返す。 */
 function greetingFor(text: string): string {
@@ -177,6 +211,15 @@ function greetingFor(text: string): string {
 }
 
 const goTo = (destination: Destination, context: AssistantContext, say: string): AssistantReply => {
+  const role = roleOf(context);
+  if (context.audience === "educator" && destination.roles && !destination.roles.includes(role)) {
+    return {
+      say: `${destination.label}は、${destination.roles.map((r) => ROLE_NAME[r]).join("・")}の立場で開く画面です。いまは${ROLE_NAME[role]}の立場で見ています。`,
+      expression: "listening",
+      actions: [],
+      offers: [],
+    };
+  }
   if (context.pathname === destination.href) {
     return {
       say: `いま開いているのが${destination.label}のページです。`,
@@ -205,6 +248,27 @@ const changed = (say: string, patch: Partial<A11ySettings>, previous: Partial<A1
 });
 
 const ABOUT_THIS_PAGE: AssistantOffer = { label: "この画面について", icon: "info", action: { kind: "ask", text: "この画面は何？" } };
+
+/** いまの画面の中の場所を、押せば示せるようにして返す。 */
+const pointHere = (heading: string, say: string): AssistantReply => ({
+  say,
+  expression: "bright",
+  actions: [],
+  offers: [{ label: "画面で見る", icon: "visibility", action: { kind: "show", heading, href: null } }],
+});
+
+/** 教員の画面での「使い方」。例に出す画面と言葉は、立場で開けるものにする。 */
+const educatorHelp = (entry: (typeof ROLE_ENTRY)[TeacherRole]): AssistantReply => ({
+  say: `画面を開いたり、文字の大きさや色を変えたりできます。「${entry.featured.label}」のような画面の名前のほか、「${entry.term}って何？」のように、画面に出ている言葉の意味も聞けます。`,
+  expression: "listening",
+  actions: [],
+  offers: [
+    { label: entry.featured.label, icon: entry.featured.icon, action: { kind: "navigate", href: entry.featured.href } },
+    ABOUT_THIS_PAGE,
+    { label: "文字を大きく", icon: "add", action: { kind: "display", patch: { text: "l" } } },
+    { label: "表示設定を開く", icon: "settings", action: { kind: "open-settings" } },
+  ],
+});
 
 const INTENTS: readonly Intent[] = [
   // ── 移動（生徒） ─────────────────────────────────────────
@@ -259,42 +323,68 @@ const INTENTS: readonly Intent[] = [
   },
 
   // ── 移動（教員） ─────────────────────────────────────────
+  // 開ける画面は立場で違う。開けない画面を頼まれたら、goTo がそう答える。
   {
     id: "educator-home",
     audience: "educator",
     words: ["ホーム", "ダッシュボード", "トップ", "最初の画面", "さいしょ"],
-    reply: (context) => goTo(EDUCATOR_DESTINATIONS.home, context, "ホームに戻りますね。"),
+    reply: (context) => goTo(ROLE_ENTRY[roleOf(context)].first, context, "最初の画面に戻りますね。"),
   },
   {
-    id: "roster",
+    id: "today",
     audience: "educator",
-    // 「クラスの生徒」は生徒一覧。「クラス」だけならクラス全体に行く。
-    words: ["生徒一覧", "生徒の一覧", "クラスの生徒", "名簿", "生徒"],
-    reply: (context) => goTo(EDUCATOR_DESTINATIONS.roster, context, "生徒一覧を開きますね。"),
+    words: ["今日の記録", "記録を書", "記録したい", "記録する"],
+    reply: (context) => goTo(EDUCATOR_DESTINATIONS.today, context, "今日の記録を開きますね。"),
   },
   {
-    id: "alerts",
+    id: "my-records",
     audience: "educator",
-    words: ["アラート", "通知", "緊急", "気になる生徒", "確認が必要"],
-    reply: (context) => goTo(EDUCATOR_DESTINATIONS.alerts, context, "アラートを開きますね。"),
+    words: ["振り返り", "ふりかえり", "過去の記録", "これまでの記録", "自分の記録", "カレンダー"],
+    reply: (context) => goTo(EDUCATOR_DESTINATIONS.records, context, "振り返りを開きますね。"),
   },
   {
     id: "class",
     audience: "educator",
-    words: ["クラス全体", "クラス", "学級", "ヒートマップ"],
-    reply: (context) => goTo(EDUCATOR_DESTINATIONS.class, context, "クラス全体を開きますね。"),
+    words: ["クラス", "学級", "生徒一覧", "生徒の一覧", "生徒"],
+    reply: (context) => goTo(EDUCATOR_DESTINATIONS.class, context, "クラスの一覧を開きますね。"),
+  },
+  {
+    id: "staff",
+    audience: "educator",
+    words: ["教職員", "先生の一覧", "先生一覧", "職員"],
+    reply: (context) => goTo(EDUCATOR_DESTINATIONS.staff, context, "教職員の一覧を開きますね。"),
   },
   {
     id: "meetings",
     audience: "educator",
-    words: ["面談", "めんだん", "面接"],
-    reply: (context) => goTo(EDUCATOR_DESTINATIONS.meetings, context, "面談のページを開きますね。"),
+    words: ["面談メモ", "面談", "めんだん", "面接", "メモ"],
+    reply: (context) =>
+      // ひとりずつの画面では、その人の面談メモを示す。一覧の画面ではメモを書けない。
+      onPersonDetail(context.pathname)
+        ? pointHere("面談メモ", "面談メモは、この画面のタブから読み書きできます。")
+        : goTo(EDUCATOR_DESTINATIONS.meetings, context, "面談メモの一覧を開きますね。"),
   },
   {
-    id: "school",
+    id: "summary",
     audience: "educator",
-    words: ["学校全体", "全校", "学年ごと", "学年"],
-    reply: (context) => goTo(EDUCATOR_DESTINATIONS.school, context, "学校全体の傾向を開きますね。"),
+    words: ["面談前サマリー", "サマリー", "要約"],
+    reply: (context) => {
+      if (onPersonDetail(context.pathname)) return pointHere("面談前サマリー", "面談前サマリーは、この画面のタブから開けます。");
+      const list = roleOf(context) === "manager" ? EDUCATOR_DESTINATIONS.staff : EDUCATOR_DESTINATIONS.class;
+      return goTo(list, context, `面談前サマリーは、ひとりずつの画面にあります。${list.label}の一覧から選んでください。`);
+    },
+  },
+  {
+    id: "school-settings",
+    audience: "educator",
+    words: ["学校の設定", "学校設定"],
+    reply: (context) => goTo(EDUCATOR_DESTINATIONS.settings, context, "学校の設定を開きますね。"),
+  },
+  {
+    id: "usage",
+    audience: "educator",
+    words: ["利用状況", "利用率"],
+    reply: (context) => goTo(EDUCATOR_DESTINATIONS.usage, context, "利用状況を開きますね。"),
   },
 
   // ── 表示 ───────────────────────────────────────────────
@@ -391,18 +481,19 @@ const INTENTS: readonly Intent[] = [
     id: "pilot",
     words: ["あと何日", "何日", "いつまで", "期間", "残り", "終わる", "試験導入", "パイロット", "お試し"],
     reply: (context) => {
-      const home = homeOf(context.audience);
-      const calendar: AssistantOffer = {
-        label: "カレンダーを見る",
-        icon: "calendar_month",
-        action: { kind: "show", heading: "試験導入期間", href: home.href },
-      };
+      // カレンダーは生徒のホームにだけある。教員の画面では日数だけを答える。
+      const educator = context.audience === "educator";
+      const offers: AssistantOffer[] = educator
+        ? []
+        : [{ label: "カレンダーを見る", icon: "calendar_month", action: { kind: "show", heading: "試験導入期間", href: DESTINATIONS.home.href } }];
       if (!context.pilot) {
         return {
-          say: "試験導入の残りは、ホームのカレンダーで確かめられます。",
+          say: educator
+            ? "いまは日付を確かめられませんでした。少ししてから、もう一度聞いてください。"
+            : "試験導入の残りは、ホームのカレンダーで確かめられます。",
           expression: "rest",
           actions: [],
-          offers: [calendar],
+          offers,
         };
       }
       const say =
@@ -411,7 +502,7 @@ const INTENTS: readonly Intent[] = [
           : context.pilot.phase === "after"
             ? "試験導入の期間は終わっています。"
             : `試験導入は、今日を入れてあと${context.pilot.remaining}日です。`;
-      return { say, expression: "rest", actions: [], offers: [calendar] };
+      return { say, expression: "rest", actions: [], offers };
     },
   },
   {
@@ -419,17 +510,7 @@ const INTENTS: readonly Intent[] = [
     words: ["使い方", "つかいかた", "何ができる", "なにができる", "ヘルプ", "できること", "help"],
     reply: (context) =>
       context.audience === "educator"
-        ? {
-            say: "画面を開いたり、文字の大きさや色を変えたりできます。「アラート」「面談」のほか、「高リスクって何？」のように、画面に出ている言葉の意味も聞けます。",
-            expression: "listening",
-            actions: [],
-            offers: [
-              { label: "アラート", icon: EDUCATOR_DESTINATIONS.alerts.icon, action: { kind: "navigate", href: EDUCATOR_DESTINATIONS.alerts.href } },
-              ABOUT_THIS_PAGE,
-              { label: "文字を大きく", icon: "add", action: { kind: "display", patch: { text: "l" } } },
-              { label: "表示設定を開く", icon: "settings", action: { kind: "open-settings" } },
-            ],
-          }
+        ? educatorHelp(ROLE_ENTRY[roleOf(context)])
         : {
             say: "ページを開いたり、文字の大きさや色を変えたりできます。「日記」「文字を大きく」のほか、「気分の内訳って何？」のように、画面に出ている言葉の意味も聞けます。",
             expression: "listening",
@@ -497,7 +578,7 @@ const INTENTS: readonly Intent[] = [
     reply: (context, said) => {
       const educator = context.audience === "educator";
       const next = educator
-        ? { destination: EDUCATOR_DESTINATIONS.alerts, label: "アラートを見る" }
+        ? { destination: ROLE_ENTRY[roleOf(context)].first, label: ROLE_ENTRY[roleOf(context)].greet }
         : { destination: DESTINATIONS.journal, label: "日記を書く" };
       return {
         say: said.text.includes("はじめまして")
@@ -594,14 +675,23 @@ export type GlossaryEntry = {
   heading: string;
   /** 聞かれ方。見出しそのものも含める。 */
   words: readonly string[];
-  /** その見出しがあるページ。生徒ごとの画面のように、決まった URL がないものは null。 */
-  href: string | null;
-  /** href で表せないページにあるとき、いまそのページにいるか。 */
+  /**
+   * その見出しがあるページ。教員の画面で立場によって違うときは、立場ごとに
+   * 書く（開けない立場の分は書かない）。ひとりずつの画面のように、決まった
+   * URL が無いものは null。
+   */
+  href: string | null | Partial<Record<TeacherRole, string>>;
+  /** href のほかにも見出しがあるページ（または href で表せないページ）に、いまいるか。 */
   where?: (pathname: string) => boolean;
+  /** ひとりずつの画面にある項目。いまその画面にいないとき、その人を選ぶ一覧。 */
+  pick?: Partial<Record<TeacherRole, string>>;
   say: string;
 };
 
-const onStudentDetail = (pathname: string) => pathname.startsWith("/educator/student/");
+/** 生徒の一覧・先生の一覧のどちらにもある項目。 */
+const LIST: Partial<Record<TeacherRole, string>> = { homeroom: "/educator/class", manager: "/educator/staff" };
+/** 先生自身の記録の画面（学校管理者は記録しない）。 */
+const OWN = (href: string): Partial<Record<TeacherRole, string>> => ({ homeroom: href, manager: href });
 
 export const GLOSSARY: readonly GlossaryEntry[] = [
   // ── 生徒 ───────────────────────────────────────────────
@@ -727,218 +817,273 @@ export const GLOSSARY: readonly GlossaryEntry[] = [
   },
 
   // ── 教員 ───────────────────────────────────────────────
+  // Blesc for Teachers の画面の言葉。どれも本人が書いた・選んだ記録を
+  // 数えて並べたもので、判定や段階を表す言葉は画面にも表にも置かない。
   {
-    id: "band",
+    id: "readers",
     audience: "educator",
-    heading: "状態",
-    words: ["高リスク", "要注意", "安定", "状態の区分", "状態の色", "色分け", "状態"],
-    href: "/educator/roster",
-    say: "日記と対話の内容からAIが算出した傾向を、3つに分けたものです。高リスクは優先的に確認、要注意は様子を見る、安定は大きな変化なし、の目安です。診断ではありません。最終的な判断は学校の支援体制が行います。",
+    heading: "記録を読める人",
+    words: ["記録を読める人", "読める人", "だれが読める", "誰が読める", "閲覧者"],
+    href: { homeroom: "/educator", manager: "/educator", admin: "/educator/settings" },
+    where: (pathname) =>
+      ["/educator", "/educator/my-records", "/educator/class", "/educator/settings"].includes(pathname) || onStudentDetail(pathname),
+    say: "その記録を読める人の表示です。記録する本人の画面には、いつも出しています。読める人は学校の設定で決まり、設定が変わるとこの表示もすぐに変わります。だれも読まない設定のときは「あなただけ」と出ます。",
   },
   {
-    id: "trend",
+    id: "today-mood",
     audience: "educator",
-    heading: "傾向",
-    words: ["悪化傾向", "改善傾向", "横ばい", "傾向"],
-    href: "/educator/roster",
-    say: "最近の記録から見た、状態の変化の向きです。悪化傾向・改善傾向・横ばいの3つで表します。",
+    heading: "今日の気分",
+    words: ["今日の気分", "気分の段階", "5段階"],
+    href: OWN("/educator"),
+    say: "その日の気分を、とても良い・良い・ふつう・少しつらい・つらいの5段階から選びます。記録に必要なのはこれだけで、気分を選ぶだけでも保存できます。",
   },
   {
-    id: "last-entry",
+    id: "today-text",
     audience: "educator",
-    heading: "最終提出",
-    words: ["最終提出"],
-    href: "/educator/roster",
-    say: "その生徒が最後に日記を提出した日です。",
+    heading: "今日のこと",
+    words: ["今日のこと", "別の質問", "質問"],
+    href: OWN("/educator"),
+    say: "その日のことを書く欄です。書かなくても保存でき、書くときは1,000字までです。何を書くか思いつかないときのために質問を1つ出していて、「別の質問にする」で替えられます。質問に答えて書いた記録は、その質問への回答として残ります。",
   },
   {
-    id: "missed",
+    id: "work-tags",
     audience: "educator",
-    heading: "未提出",
-    words: ["未提出日数", "未提出"],
-    href: "/educator/roster",
-    say: "日記を提出していない日数です。未提出は体調・行事・端末の不調など様々な理由で起こるので、状態の判断ではなく、声掛けのきっかけとして使ってください。",
+    heading: "今日の業務",
+    words: ["今日の業務", "業務を選", "業務"],
+    href: OWN("/educator"),
+    say: "その日に関わった業務を、授業・校務・生徒対応・部活動・保護者対応・その他から選びます。いくつ選んでも、選ばなくても構いません。選んだ業務は、管理職が業務の偏りを本人の申告どおりに見るためだけに使い、自動で分類はしません。",
   },
   {
-    id: "follow-up-flag",
+    id: "reminder",
     audience: "educator",
-    heading: "AI補足",
-    words: ["ai補足", "aiによる補足"],
-    href: "/educator/roster",
-    say: "生徒が日記のあと、対話型AIの質問に答えたかどうかです。教員には要約だけが表示され、会話の全文は表示されません。生徒が「話したくない」を選んだ内容は記録されていません。",
+    heading: "お知らせ",
+    words: ["お知らせ", "リマインド", "通知", "帰りのHR"],
+    href: OWN("/educator"),
+    say: "帰りのHRの時間に、1日1回だけ記録のお知らせを出します。時刻と、お知らせを出すかどうかは学校の設定で決まります。記録しない日が続いても、管理職に知らせることはありません。",
   },
   {
-    id: "themes",
+    id: "history",
     audience: "educator",
-    heading: "主な観点",
-    words: ["主な観点", "観点"],
-    href: "/educator/roster",
-    say: "AIが日記を分析するときの観点のうち、その生徒で目立っているものです。学業ストレス・人間関係・家庭環境・睡眠不足・自己否定的な表現・感情の急激な変化・日記未提出・利用頻度の低下があります。AIは診断を行いません。",
+    heading: "記録",
+    words: ["書き直し", "書き直せ", "編集履歴", "履歴"],
+    href: OWN("/educator/my-records"),
+    say: "記録は、その日のうちなら書き直せます。翌日からは読むだけになり、書き直した記録には、保存した時刻と書き直した時刻が残ります。",
   },
   {
-    id: "support-status",
+    id: "change",
     audience: "educator",
-    heading: "対応",
-    words: ["対応ステータス", "未対応", "経過観察", "面談予定", "面談実施済", "連携中", "対応完了"],
-    href: "/educator/roster",
-    say: "その生徒への対応の進み具合です。未対応・経過観察・面談予定・面談実施済・連携中・対応完了があります。",
+    heading: "変化",
+    words: ["変化あり", "変化の札", "変化"],
+    href: LIST,
+    say: "直近4週とその前の4週の記録を比べて、決めてある数値を超える動きがあったときに付く札です。比べるのは本人が書いた・選んだものだけで、気分の平均、記録した日数、1件あたりの文字数、よく選ぶタグの4つです。上がる向きの変化にも同じ札が付き、重さの段階や順位はありません。決め方の数値は、一覧の上に書いてあります。",
   },
   {
-    id: "urgent",
+    id: "insufficient",
     audience: "educator",
-    heading: "優先度の高いアラート",
-    words: ["優先度の高いアラート", "早急な確認", "緊急性", "検知の根拠"],
-    href: "/educator/alerts",
-    say: "日記や対話型AIとのやりとりに、緊急性が高い可能性のある内容が見つかった生徒です。検知された内容の要約、検知の根拠、出典と、対応の流れ（担当者への通知、学校の定める緊急対応フローに沿った確認、必要に応じた連携）が表示されます。",
+    heading: "変化",
+    words: ["判定なし", "判定しない", "判定されない"],
+    href: LIST,
+    say: "前の4週の記録が4件未満で、比べる元が足りないときの表示です。この場合は、変化を判定しません。",
   },
   {
-    id: "missing-alerts",
+    id: "change-detail",
     audience: "educator",
-    heading: "日記の未提出",
-    words: ["日記の未提出", "3日以上未提出", "1週間未利用", "連続提出が中断", "提出頻度が低下"],
-    href: "/educator/alerts",
-    say: "提出の様子に変化がある生徒の一覧です。3日以上未提出・1週間未利用・連続提出が中断・提出頻度が低下の4種類があります。未提出は様々な理由で起こるので、声掛けのきっかけとして使ってください。",
+    heading: "直近4週の変化",
+    words: ["直近4週の変化", "4週の変化", "前の4週"],
+    href: null,
+    where: onPersonDetail,
+    pick: LIST,
+    say: "「変化あり」が付いた理由を、数字のまま並べたものです。前の4週と直近4週で、気分の平均・記録した日数・1件あたりの文字数・よく選ぶタグのうち、どれがどう動いたかを表示します。良し悪しや重さは判定していません。札が付いていないときは、その理由を表示します。",
   },
   {
-    id: "follow-up",
+    id: "sparkline",
     audience: "educator",
-    heading: "フォロー漏れ",
-    words: ["フォロー漏れ", "フォローアップ"],
-    href: "/educator/alerts",
-    say: "面談のあとのフォローが止まっていないかを確かめるための一覧です。前回の面談からの日数、次回の面談日（決まっていなければ未設定）、AIの所見が表示され、そこから面談を設定できます。",
+    heading: "気分（8週）",
+    words: ["気分（8週）", "8週", "小さいグラフ"],
+    href: LIST,
+    say: "直近8週の気分を、週ごとの平均で線にしたものです。上が「とても良い」、下が「つらい」です。記録の無い週は飛ばして、前後の週をつないでいます。",
   },
   {
-    id: "heatmap",
+    id: "mood-trend",
     audience: "educator",
-    heading: "クラス全体ヒートマップ",
-    words: ["クラス全体ヒートマップ", "ヒートマップ"],
-    href: "/educator/class",
-    say: "クラスの生徒を1マスずつ、状態の色（高リスク・要注意・安定）で並べたものです。色は日記と対話の内容からAIが算出した傾向で、診断ではありません。未提出がある生徒にはマークが付き、マスを押すとその生徒の画面を開けます。",
+    heading: "気分の推移",
+    words: ["気分の推移", "気分のグラフ"],
+    href: OWN("/educator/my-records"),
+    where: (pathname) => pathname === "/educator/my-records" || onPersonDetail(pathname),
+    say: "記録した日ごとの気分を、日付の順に線でつないだグラフです。上が「とても良い」、下が「つらい」です。",
   },
   {
-    id: "class-trend",
+    id: "last-record",
     audience: "educator",
-    heading: "クラス全体の傾向",
-    words: ["クラス全体の傾向"],
-    href: "/educator/class",
-    say: "日記と対話の内容から、いま何についての記述が多いかをクラス全体で集計したものです。右端の数値は先週との差（ポイント）です。",
+    heading: "直近の記録",
+    words: ["直近の記録", "最後の記録", "記録なし"],
+    href: LIST,
+    say: "最後に記録した日と、今日から何日前かです。まだ記録が無い人には「記録なし」と出ます。",
   },
   {
-    id: "class-hints",
+    id: "sort",
     audience: "educator",
-    heading: "学級運営のヒント",
-    words: ["学級運営のヒント"],
-    href: "/educator/class",
-    say: "クラス全体の記述の傾向から、学級運営で確かめられそうなことをまとめたものです。",
+    heading: "並び",
+    words: ["出席番号順", "五十音順", "並び順", "並べ替え", "並び", "危険度", "リスク"],
+    href: LIST,
+    say: "一覧は、生徒は出席番号順、先生は五十音順に並べています。ほかに選べるのは「直近の記録日が新しい順」だけで、気分や「変化あり」の順には並べ替えられません。順位を付けないためです。",
   },
   {
-    id: "meeting-support",
+    id: "search",
     audience: "educator",
-    heading: "AIによる面談サポート",
-    words: ["aiによる面談サポート", "面談サポート", "質問案"],
-    href: "/educator/meetings",
-    say: "生徒の記録から、面談で確認したい質問案を用意できます。面談記録は担当教員と支援担当者が閲覧できます。",
+    heading: "記録を探す",
+    words: ["記録を探す", "検索", "絞り込み", "絞りこみ", "探したい"],
+    href: { homeroom: "/educator/class" },
+    say: "担当クラスの記録を、期間・気分・話題・本文に含む言葉で絞りこめます。探せるのは、担当しているクラスの記録だけです。",
   },
   {
-    id: "detail-mood",
+    id: "topic-trend",
     audience: "educator",
-    heading: "感情の推移",
-    words: ["感情の推移"],
+    heading: "話題の推移",
+    words: ["話題の推移", "話題のタグ", "話題"],
     href: null,
     where: onStudentDetail,
-    say: "生徒が記録した日ごとの気分を、日付の順に線でつないだグラフです。上が「とても良い」、下が「つらい」です。",
+    pick: { homeroom: "/educator/class" },
+    say: "生徒が記録のときに選んだ話題のタグを、週ごとに数えたものです（直近8週）。色が濃いほど、その週に選んだ回数が多いことを表します。本人が選んだタグを数えただけで、内容から自動で分類したものではありません。",
   },
   {
-    id: "detail-categories",
+    id: "work-ratio",
     audience: "educator",
-    heading: "出来事の傾向",
-    words: ["出来事の傾向"],
+    heading: "業務タグ（本人の申告）",
+    words: ["業務タグ", "業務の割合", "業務の比率", "業務の偏り"],
+    href: { manager: "/educator/staff" },
+    say: "先生が記録のときに選んだ業務タグを数えて、割合で並べたものです。本人の申告をそのまま数えただけで、自動で分類はしていません。色は業務の種類を見分けるためだけのもので、多い・少ないの良し悪しは表していません。",
+  },
+  {
+    id: "work-trend",
+    audience: "educator",
+    heading: "業務タグの推移",
+    words: ["業務タグの推移"],
     href: null,
-    where: onStudentDetail,
-    say: "生徒が日記で選んだ出来事を、回数で表したものです。",
+    where: onStaffDetail,
+    pick: { manager: "/educator/staff" },
+    say: "先生が記録のときに選んだ業務タグを、週ごとに数えたものです（直近8週）。色が濃いほど、その週に選んだ回数が多いことを表します。",
   },
   {
-    id: "detail-themes",
+    id: "summary",
     audience: "educator",
-    heading: "注目されている観点",
-    words: ["注目されている観点"],
+    heading: "面談前サマリー",
+    words: ["面談前サマリー", "サマリー"],
     href: null,
-    where: onStudentDetail,
-    say: "AIが日記を分析するときの観点のうち、この生徒でいま目立っているものです。AIは診断を行いません。教員が状況を確認するための補助です。",
+    where: onPersonDetail,
+    pick: LIST,
+    say: "選んだ期間（直近1か月・2か月）の記録から、よく出てくる話題・気分の推移・本人の記述の抜粋を並べたものです。ここまでは記録を数えて並べただけで、解釈は入っていません。",
   },
   {
-    id: "detail-timeline",
+    id: "ai-summary",
     audience: "educator",
-    heading: "AIタイムライン",
-    words: ["aiタイムライン"],
+    heading: "AIによる要約",
+    words: ["AIによる要約", "AIの要約", "AI要約", "要約"],
     href: null,
-    where: onStudentDetail,
-    say: "すべての日記と対話を読まなくても、変化の要点を追えるように日付順にまとめたものです。",
+    where: onPersonDetail,
+    pick: LIST,
+    say: "記録をもとにAIが書く短い要約です。診断・推測・評価の言い回しを使わず、本人の記述からの引用を必ず含めたものだけを表示し、条件に合わない要約は表示しません。判断の材料は、要約ではなく記録そのものです。このデモでは、AIの代わりに定型文を表示しています。",
   },
   {
-    id: "detail-follow-up",
+    id: "excerpts",
     audience: "educator",
-    heading: "対話型AIによる補足",
-    words: ["対話型aiによる補足"],
+    heading: "本人の記述の抜粋",
+    words: ["本人の記述の抜粋", "抜粋", "引用"],
     href: null,
-    where: onStudentDetail,
-    say: "日記のあとに対話型AIとやりとりした内容の要約です。会話の全文は表示されません。生徒が「話したくない」を選んだ内容は記録されていません。",
+    where: onPersonDetail,
+    pick: LIST,
+    say: "期間内の、本文のある記録から新しい順に4件までを、本人が書いたとおりに載せています。長い記述は途中で切っています。",
   },
   {
-    id: "detail-suggestions",
+    id: "frequent-topics",
     audience: "educator",
-    heading: "検討できる支援",
-    words: ["検討できる支援", "支援の例"],
+    heading: "よく出てくる話題",
+    words: ["よく出てくる話題"],
     href: null,
-    where: onStudentDetail,
-    say: "観点ごとに、次の一手を考えるための材料として支援の例を挙げています。AIが判断を代替するものではありません。",
+    where: onPersonDetail,
+    pick: LIST,
+    say: "期間内の記録で、本人が選んだタグを回数の多い順に並べたものです。",
   },
   {
-    id: "detail-actions",
+    id: "memo",
     audience: "educator",
-    heading: "対応履歴",
-    words: ["対応履歴"],
-    href: null,
-    where: onStudentDetail,
-    say: "AIの検知と教員の対応をまとめて確認できる記録です。引き継ぎや対応の重複を防ぐために使えます。",
+    heading: "面談メモ",
+    words: ["面談メモ", "メモ"],
+    href: OWN("/educator/meetings"),
+    where: (pathname) => pathname === "/educator/meetings" || onPersonDetail(pathname),
+    say: "面談の日付・内容・次回確かめたいことを残すメモです。読めるのは書いた人だけで、生徒（先生）本人には表示されません。担任が替わるときや先生が異動するときに引き継ぐかどうかは、学校の設定で決まります。",
   },
   {
-    id: "school-breakdown",
+    id: "next-check",
     audience: "educator",
-    heading: "記述されている内容の内訳",
-    words: ["記述されている内容の内訳", "内容の内訳"],
-    href: "/school",
-    say: "学校全体で、何についての記述が多いかの割合です。学校全体の傾向把握が目的で、個人の状態を示すものではなく、診断でもありません。",
+    heading: "面談メモ",
+    words: ["次回確かめたいこと", "次回確かめたい", "次回"],
+    href: OWN("/educator/meetings"),
+    where: (pathname) => pathname === "/educator/meetings" || onPersonDetail(pathname),
+    say: "次の面談で確かめたいことを、メモと一緒に残しておく欄です。面談メモの一覧にも並ぶので、次に話すときの手がかりになります。",
   },
   {
-    id: "school-trend",
+    id: "handover",
     audience: "educator",
-    heading: "6週間の推移",
-    words: ["6週間の推移"],
-    href: "/school",
-    say: "学業・人間関係・睡眠についての記述が、週ごとにどう変わったかを表しています。",
+    heading: "面談メモの引き継ぎ",
+    words: ["面談メモの引き継ぎ", "引き継ぎ", "引継ぎ", "引き継ぐ", "異動"],
+    href: { admin: "/educator/settings" },
+    say: "担任が替わるときに生徒の面談メモを後任の担任へ、先生が異動するときに管理職の面談メモを異動先へ、引き継ぐかどうかの設定です。学校管理者が決めます。先生についてのメモは、原則として引き継ぎません。",
   },
   {
-    id: "school-hidden",
+    id: "no-export",
     audience: "educator",
-    heading: "学年",
-    words: ["母数が小さい", "非表示", "表示されない"],
-    href: "/school",
-    say: "人数が少ない学年は、個人が特定されないよう数値を表示していません。",
+    heading: "印刷・書き出し",
+    words: ["印刷", "CSV", "ダウンロード", "書き出し", "エクスポート", "出力"],
+    href: { manager: "/educator/staff" },
+    where: (pathname) => pathname === "/educator/staff" || onStaffDetail(pathname),
+    say: "先生の記録・サマリー・面談メモは、印刷・CSV出力・一括ダウンロードができません。人事評価に使われないための決まりで、学校の設定でも変えられません。",
   },
   {
-    id: "educator-pilot",
+    id: "readers-setting",
     audience: "educator",
-    heading: "試験導入期間",
-    words: ["試験導入期間", "試験導入"],
-    href: "/educator",
-    say: "blescを試験的に導入している期間です。カレンダーで、始まりから終わりまでの日と今日の位置、残りの日数を確かめられます。",
+    heading: "だれが記録を読めるか",
+    words: ["だれが記録を読めるか", "閲覧の権限", "閲覧権限", "権限", "閲覧の設定"],
+    href: { admin: "/educator/settings" },
+    say: "生徒の記録と先生の記録を、それぞれだれが読めるかを決める設定です。担任は、自分のクラスの生徒の記録をいつも読めます。変更は、記録する本人の画面の「この記録を読める人」にすぐ反映されます。",
+  },
+  {
+    id: "roster-import",
+    audience: "educator",
+    heading: "名簿の取り込み",
+    words: ["名簿の取り込み", "名簿", "CSVの取り込み", "取り込み"],
+    href: { admin: "/educator/settings" },
+    say: "生徒名簿（学年・組・出席番号・氏名）と教職員名簿（氏名・よみ・担当）を、CSVで取り込みます。クラス替え・転出入・異動・退職に伴う更新は、Blescの運用担当が代わりに行うこともできます。",
+  },
+  {
+    id: "reminder-setting",
+    audience: "educator",
+    heading: "記録の時間とお知らせ",
+    words: ["記録の時間とお知らせ", "記録の時間", "お知らせの時刻"],
+    href: { admin: "/educator/settings" },
+    say: "帰りのHRの時刻と、その時刻に1日1回お知らせを出すかどうかの設定です。記録しない日が続いても、管理職へのお知らせは送りません。これは設定では変えられません。",
+  },
+  {
+    id: "retention",
+    audience: "educator",
+    heading: "データの保持と削除",
+    words: ["データの保持と削除", "保持", "保存期間", "削除"],
+    href: { admin: "/educator/settings" },
+    say: "卒業・転出・異動・退職のあと、記録を3か月・6か月・1年・3年のどれだけ残してから削除するかを決める設定です。契約が終わるときは、その学校のデータをすべて完全に削除します。",
+  },
+  {
+    id: "record-rate",
+    audience: "educator",
+    heading: "記録率",
+    words: ["記録率"],
+    href: { admin: "/educator/usage" },
+    say: "記録できた日のうち、記録があった日の割合です。学期ごとに、クラスごとの記録率と、先生全体の記録率だけを出します。個人別の記録率は出さず、クラスの順位も付けません。",
   },
 ];
 
 export type PageGuide = {
   audience: Audience;
-  /** そのページを指す呼び名。「アラートの見方」のように、ページの名前で聞かれたとき。 */
+  /** そのページを指す呼び名。「クラスの見方」のように、ページの名前で聞かれたとき。 */
   names: readonly string[];
   matches: (pathname: string) => boolean;
   say: string;
@@ -984,52 +1129,66 @@ export const PAGE_GUIDES: readonly PageGuide[] = [
   },
   {
     audience: "educator",
-    names: ["ホーム", "ダッシュボード"],
+    names: ["今日の記録"],
     matches: (pathname) => pathname === "/educator",
-    say: "クラスの状態ごとの人数（高リスク・要注意・安定）、確認したい生徒、日記の未提出、フォローアップ、対応ステータス、試験導入期間が並んでいます。早急な確認が必要な可能性がある生徒がいるときは、いちばん上に表示されます。",
-    terms: ["高リスク", "日記の未提出", "フォローアップ"],
+    say: "先生自身の、今日の記録の画面です。必須は今日の気分だけで、今日のこと（1,000字まで）と今日の業務は、書いても書かなくても構いません。1日1件で、今日のうちは書き直せます。いちばん上に、この記録を読める人を表示しています。",
+    terms: ["今日の気分", "今日の業務", "記録を読める人"],
   },
   {
     audience: "educator",
-    names: ["生徒一覧"],
-    matches: (pathname) => pathname === "/educator/roster",
-    say: "クラスの生徒ごとに、状態・傾向・最終提出・未提出・AI補足・主な観点・対応・担当を一覧で見られます。日記の本文と対話の全文は、ここには表示されません。",
-    terms: ["状態", "AI補足", "主な観点"],
+    names: ["振り返り", "ふりかえり"],
+    matches: (pathname) => pathname === "/educator/my-records",
+    say: "これまでの自分の記録を、カレンダーと一覧で見られます。気分の推移のグラフもあります。過去の記録は読むだけで、書き直した日はその履歴も表示します。",
+    terms: ["気分の推移", "書き直し"],
   },
   {
     audience: "educator",
-    names: ["アラート"],
-    matches: (pathname) => pathname === "/educator/alerts",
-    say: "優先度の高いアラート、日記の未提出、フォロー漏れをまとめています。確認のきっかけとして使い、アラートだけで状態を判断しないでください。",
-    terms: ["優先度の高いアラート", "日記の未提出", "フォロー漏れ"],
-  },
-  {
-    audience: "educator",
-    names: ["クラス全体", "クラス"],
+    names: ["クラス", "クラスの一覧"],
     matches: (pathname) => pathname === "/educator/class",
-    say: "クラス全体ヒートマップ、提出・補足・対応の人数、クラス全体の傾向、学級運営のヒントが見られます。",
-    terms: ["クラス全体ヒートマップ", "クラス全体の傾向"],
-  },
-  {
-    audience: "educator",
-    names: ["面談"],
-    matches: (pathname) => pathname === "/educator/meetings",
-    say: "面談の記録と、AIによる面談サポートをまとめています。面談記録は担当教員と支援担当者が閲覧できます。",
-    terms: ["AIによる面談サポート"],
+    say: "担当クラスの生徒を出席番号順に並べ、直近の記録日、直近8週の気分、「変化あり」の札を表示しています。札は本人が書いた・選んだものの推移だけから決まり、重さの段階はありません。「記録を探す」では、クラスの記録を絞りこめます。",
+    terms: ["変化あり", "判定なし", "記録を探す"],
   },
   {
     audience: "educator",
     names: ["生徒の画面", "生徒の詳細"],
     matches: onStudentDetail,
-    say: "生徒ひとりの感情の推移、出来事の傾向、注目されている観点、AIタイムライン、対話型AIによる補足、検討できる支援、面談記録、対応履歴をまとめています。AIは診断を行いません。",
-    terms: ["注目されている観点", "AIタイムライン", "検討できる支援"],
+    say: "生徒ひとりの記録をまとめた画面です。直近4週の変化、気分の推移、話題の推移と、すべての記録を新しい順に並べています。面談前サマリーと面談メモも、ここから開けます。",
+    terms: ["直近4週の変化", "話題の推移", "面談前サマリー"],
   },
   {
     audience: "educator",
-    names: ["学校全体の傾向", "学校全体"],
-    matches: (pathname) => pathname === "/school",
-    say: "学校全体と学年ごとの傾向を、個人が特定されない形で集計しています。個人の状態を示すものではなく、診断でもありません。",
-    terms: ["記述されている内容の内訳", "6週間の推移"],
+    names: ["面談メモの一覧", "面談"],
+    matches: (pathname) => pathname === "/educator/meetings",
+    say: "自分が書いた面談メモが、新しい順に並んでいます。担任は生徒との面談、管理職は先生との面談のメモです。メモは本人には表示されません。新しいメモは、ひとりずつの画面から書きます。",
+    terms: ["面談メモ", "次回確かめたいこと"],
+  },
+  {
+    audience: "educator",
+    names: ["教職員", "教職員の一覧", "担当教職員"],
+    matches: (pathname) => pathname === "/educator/staff",
+    say: "読める立場にある先生の記録を、五十音順に並べています。直近の記録日、直近8週の気分、本人が選んだ業務タグの割合、「変化あり」の札を表示します。印刷・CSV出力・一括ダウンロードはできません。",
+    terms: ["変化あり", "業務タグ", "印刷"],
+  },
+  {
+    audience: "educator",
+    names: ["先生の画面", "先生の詳細"],
+    matches: onStaffDetail,
+    say: "先生ひとりの記録をまとめた画面です。直近4週の変化、気分の推移、業務タグの推移と、すべての記録を新しい順に並べています。面談前サマリーと面談メモも、ここから開けます。印刷・書き出しはできません。",
+    terms: ["直近4週の変化", "業務タグの推移", "面談前サマリー"],
+  },
+  {
+    audience: "educator",
+    names: ["学校の設定"],
+    matches: (pathname) => pathname === "/educator/settings",
+    say: "学校管理者が、だれが記録を読めるか、面談メモの引き継ぎ、名簿の取り込み、記録の時間とお知らせ、データの保持と削除を決める画面です。先生の記録の印刷・書き出しを許す設定はありません。",
+    terms: ["だれが記録を読めるか", "名簿の取り込み", "データの保持と削除"],
+  },
+  {
+    audience: "educator",
+    names: ["利用状況"],
+    matches: (pathname) => pathname === "/educator/usage",
+    say: "学期ごとの、クラスごとの記録率と、先生全体の記録率です。個人別の記録率は出さず、クラスの順位も付けません。",
+    terms: ["記録率"],
   },
 ];
 
@@ -1128,27 +1287,29 @@ function guideByName(text: string, audience: Audience): { guide: PageGuide; stre
   return found && top >= MATCH_FLOOR ? { guide: found, strength: top } : null;
 }
 
-/** 言葉の説明。いまその画面にいれば「画面で見る」、いなければ開いてから示す。 */
+/**
+ * 言葉の説明。いまその画面にいれば「画面で見る」、いなければ開いてから示す。
+ * いまの立場では開けない画面にしか無い言葉は、説明だけをする。
+ */
 function explain(entry: GlossaryEntry, context: AssistantContext): AssistantReply {
-  const here = entry.where ? entry.where(context.pathname) : context.pathname === entry.href;
-  let offer: AssistantOffer;
+  const role = roleOf(context);
+  const href = entry.href === null || typeof entry.href === "string" ? entry.href : (entry.href[role] ?? null);
+  const here = entry.where ? entry.where(context.pathname) : context.pathname === href;
+  const list = entry.pick?.[role];
+  let offer: AssistantOffer | null = null;
   if (here) {
     offer = { label: "画面で見る", icon: "visibility", action: { kind: "show", heading: entry.heading, href: null } };
-  } else if (entry.href) {
+  } else if (href) {
     offer = {
-      label: `${PAGE_LABELS[entry.href] ?? "そのページ"}で見る`,
+      label: `${PAGE_LABELS[href] ?? "そのページ"}で見る`,
       icon: "visibility",
-      action: { kind: "show", heading: entry.heading, href: entry.href },
+      action: { kind: "show", heading: entry.heading, href },
     };
-  } else {
-    // 生徒ごとの画面にある項目。どの生徒かはこちらでは決められない。
-    offer = {
-      label: "生徒一覧から選ぶ",
-      icon: EDUCATOR_DESTINATIONS.roster.icon,
-      action: { kind: "navigate", href: EDUCATOR_DESTINATIONS.roster.href },
-    };
+  } else if (list) {
+    // ひとりずつの画面にある項目。だれの画面かはこちらでは決められない。
+    offer = { label: `${PAGE_LABELS[list] ?? "一覧"}から選ぶ`, icon: "groups", action: { kind: "navigate", href: list } };
   }
-  return { say: entry.say, expression: "listening", actions: [], offers: [offer] };
+  return { say: entry.say, expression: "listening", actions: [], offers: offer ? [offer] : [] };
 }
 
 /** 画面の説明。続けて聞ける言葉をボタンにして添える。 */
@@ -1183,17 +1344,18 @@ function studentCrisis(context: AssistantContext, raw: string): AssistantReply {
 
 /**
  * 教員の画面。生徒向けの監査済みの文（「信頼できる大人に」）は、教員に
- * 向けると噛み合わない。多くは生徒についての話なので、アラートと学校の
- * 緊急対応フローを示す（教員画面にすでにある文言に揃えてある）。
+ * 向けると噛み合わない。多くは生徒についての話なので、ひとりで抱えず、
+ * 学校の定める緊急対応フローに沿って確かめるよう伝える。Blesc for Teachers
+ * は自動の判定や警告の画面を持たない（設計原則 1）ので、行き先は示さない。
  * 教員自身のことである可能性にも一言だけ触れる。言葉はどこにも渡さない。
  */
 function educatorConcern(): AssistantReply {
   return {
-    say: "深刻な内容が含まれているかもしれません。生徒についてのことなら、アラートの画面を開き、学校の定める緊急対応フローに沿って状況を確認してください。ご自身のことであれば、身近な人や専門の窓口に相談してください。",
+    say: "深刻な内容が含まれているかもしれません。生徒についてのことなら、ひとりで抱えず、学校の定める緊急対応フローに沿って、管理職や養護教諭、スクールカウンセラーと確認してください。ご自身のことであれば、身近な人や専門の窓口に相談してください。",
     expression: "steady",
     calm: true,
     actions: [],
-    offers: [{ label: "アラートを見る", icon: EDUCATOR_DESTINATIONS.alerts.icon, action: { kind: "navigate", href: EDUCATOR_DESTINATIONS.alerts.href } }],
+    offers: [],
   };
 }
 
@@ -1204,7 +1366,7 @@ function educatorConcern(): AssistantReply {
  *  1. つらさが混じっていないかを最初に見て、そこで拾ったら表は引かない。
  *     「死にたい、日記を開いて」を日記への移動として処理してしまうのが、
  *     この種の仕組みで一番やってはいけないこと。
- *  2. 意味を聞いていれば説明する。「アラート」は開くが、「アラートって何？」
+ *  2. 意味を聞いていれば説明する。「クラス」は開くが、「クラスって何？」
  *     は開かずに説明する。
  *  3. 頼みごと、言葉の説明、雑談の順。
  */
@@ -1230,8 +1392,8 @@ export function routeIntent(raw: string, context: AssistantContext): AssistantRe
 
   if (meaning) {
     const named = guideByName(text, context.audience);
-    // 長く一致したほうを取る。「クラス全体の傾向とは」は、ページ名の
-    // 「クラス全体」ではなく項目の「クラス全体の傾向」の説明。
+    // 長く一致したほうを取る。「面談メモの引き継ぎとは」は、ページ名の
+    // 「面談」ではなく項目の「面談メモの引き継ぎ」の説明。
     if (entry && (!named || entry.strength >= named.strength)) return explain(entry.entry, context);
     if (named) return describePage(named.guide);
   }
@@ -1244,7 +1406,7 @@ export function routeIntent(raw: string, context: AssistantContext): AssistantRe
   }
 
   if (task) return greeted(task.reply(context, said));
-  // 見出しの言葉だけが来たとき（「日記の未提出」など）も説明する。
+  // 見出しの言葉だけが来たとき（「判定なし」など）も説明する。
   if (entry) return greeted(explain(entry.entry, context));
   if (chat) return chat.reply(context, said);
 
@@ -1286,12 +1448,12 @@ export const ASSISTANT_COPY: Record<
   },
   educator: {
     intro: "開きたい画面や、読みにくいところ、画面に出ている言葉の意味を聞いてください。",
-    placeholder: "アラート、高リスクって何？…",
+    placeholder: "振り返り、変化ありって何？…",
     note: "ここでの言葉は端末の外に出ません。",
     suggestions: [
-      { label: "アラートを見る", icon: "notifications_active" },
       { label: "この画面は何？", icon: "info" },
-      { label: "高リスクって何？", icon: "info" },
+      { label: "だれが読める？", icon: "visibility" },
+      { label: "変化ありって何？", icon: "info" },
       { label: "文字を大きく", icon: "add" },
     ],
   },

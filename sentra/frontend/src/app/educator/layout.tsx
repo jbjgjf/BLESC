@@ -53,7 +53,7 @@ export default function EducatorLayout({ children }: { children: React.ReactNode
         </span>
         <span className="bl-disclaimer">
           <Icon name="medical_information" size={15} />
-          blescは医療的な診断を行いません。最終的な判断は学校の支援体制が行います。
+          blescは診断・判定・評価を行いません。
         </span>
       </div>
 

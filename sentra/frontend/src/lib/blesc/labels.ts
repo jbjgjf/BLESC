@@ -1,11 +1,4 @@
-import type {
-  AnalysisTheme,
-  EventCategory,
-  Mood,
-  RiskBand,
-  SupportStatus,
-  Trend,
-} from "./types";
+import type { EventCategory, Mood } from "./types";
 import type { IconName } from "@/components/ui/Icon";
 
 /**
@@ -55,71 +48,6 @@ export const CATEGORIES: Array<{ value: EventCategory; label: string; icon: Icon
 export const CATEGORY_BY_VALUE = Object.fromEntries(
   CATEGORIES.map((c) => [c.value, c]),
 ) as Record<EventCategory, (typeof CATEGORIES)[number]>;
-
-export const THEMES: Record<AnalysisTheme, { label: string; icon: IconName }> = {
-  academic:      { label: "学業ストレス",       icon: "school" },
-  relationships: { label: "人間関係",           icon: "group" },
-  family:        { label: "家庭環境",           icon: "house" },
-  sleep:         { label: "睡眠不足",           icon: "bedtime" },
-  self_worth:    { label: "自己否定的な表現",   icon: "psychology_alt" },
-  mood_swing:    { label: "感情の急激な変化",   icon: "monitoring" },
-  missing:       { label: "日記未提出",         icon: "event_busy" },
-  usage_drop:    { label: "利用頻度の低下",     icon: "trending_down" },
-};
-
-/** 5-1 / 6-1 の色分け。緑 安定・黄 要注意・赤 高リスク。 */
-export const BANDS: Record<
-  RiskBand,
-  { label: string; chip: string; dot: string; icon: IconName; color: string; bg: string; line: string; ink: string }
-> = {
-  calm: {
-    label: "安定",
-    chip: "bl-chip--calm",
-    dot: "bl-dot--calm",
-    icon: "check_circle",
-    color: "var(--bl-calm)",
-    bg: "var(--bl-calm-bg)",
-    line: "var(--bl-calm-line)",
-    ink: "var(--bl-calm-ink)",
-  },
-  watch: {
-    label: "要注意",
-    chip: "bl-chip--watch",
-    dot: "bl-dot--watch",
-    icon: "warning",
-    color: "var(--bl-watch)",
-    bg: "var(--bl-watch-bg)",
-    line: "var(--bl-watch-line)",
-    ink: "var(--bl-watch-ink)",
-  },
-  alert: {
-    label: "高リスク",
-    chip: "bl-chip--alert",
-    dot: "bl-dot--alert",
-    icon: "priority_high",
-    color: "var(--bl-alert)",
-    bg: "var(--bl-alert-bg)",
-    line: "var(--bl-alert-line)",
-    ink: "var(--bl-alert-ink)",
-  },
-};
-
-export const BAND_ORDER: RiskBand[] = ["alert", "watch", "calm"];
-
-export const TRENDS: Record<Trend, { label: string; icon: IconName; color: string }> = {
-  rising:  { label: "悪化傾向", icon: "trending_up",   color: "var(--bl-alert)" },
-  falling: { label: "改善傾向", icon: "trending_down", color: "var(--bl-calm)" },
-  flat:    { label: "横ばい",   icon: "trending_flat", color: "var(--bl-ink-3)" },
-};
-
-export const STATUSES: Record<SupportStatus, { label: string; icon: IconName }> = {
-  none:              { label: "未対応",     icon: "more_horiz" },
-  watching:          { label: "経過観察",   icon: "visibility" },
-  meeting_scheduled: { label: "面談予定",   icon: "event_note" },
-  meeting_done:      { label: "面談実施済", icon: "check_circle" },
-  sharing:           { label: "連携中",     icon: "support_agent" },
-  resolved:          { label: "対応完了",   icon: "check" },
-};
 
 /* ── 日付ヘルパー ───────────────────────────────────────────── */
 

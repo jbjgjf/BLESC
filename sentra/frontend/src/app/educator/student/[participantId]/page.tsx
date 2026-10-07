@@ -1,4 +1,4 @@
-import { CLASS_ROSTER } from "@/lib/blesc/fixtures";
+import { CLASS_STUDENTS } from "@/lib/teachers/fixtures";
 import { StudentDetail } from "./StudentDetail";
 
 /**
@@ -10,7 +10,7 @@ import { StudentDetail } from "./StudentDetail";
  * ページもこれまでどおり開ける。
  */
 export function generateStaticParams() {
-  return CLASS_ROSTER.map((student) => ({ participantId: student.id }));
+  return CLASS_STUDENTS.map((student) => ({ participantId: student.id }));
 }
 
 export default function StudentDetailPage() {
