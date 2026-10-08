@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SafetyAssessment } from "@/api/models";
-import { assessSafety, escalateAssessment, SAFETY_ASSESSMENT_VERSION } from "@/lib/safety-assessment";
+// Relative, with the extension, for the reason `safetyDispatch.ts` gives: the
+// unit tests load these files directly under node, which does not resolve the
+// `@/` alias for anything that is not a type-only import. `recentDisclosedRisk`
+// below had no test at all while this specifier was aliased (#373).
+import { assessSafety, escalateAssessment, SAFETY_ASSESSMENT_VERSION } from "../safety-assessment.ts";
 
 /**
  * Safety rules shared by every conversational surface.
@@ -52,9 +56,45 @@ const RISK_ORDER: SafetyAssessment["risk_level"][] = ["none", "low", "elevated",
 type ChatMessageRow = { role: string; content_redacted: string | null };
 
 /**
+ * How many of the other surfaces' audit rows one lookup reads.
+ *
+ * The number only means anything because the current surface is excluded in the
+ * query rather than afterwards — see below. Twenty rows of *other* surfaces is
+ * a day's worth; twenty rows before the exclusion was, on a talkative day,
+ * twenty rows of the current surface and nothing else.
+ */
+const DISCLOSED_WINDOW_ROWS = 20;
+
+/**
+ * Surfaces are internal constants — `chat`, `voice`, `journal` — and the one
+ * passed in is interpolated into the PostgREST filter string below, so anything
+ * that is not a bare token is refused rather than sent.
+ */
+const BARE_SURFACE = /^[a-z0-9_]+$/;
+
+/**
  * Highest risk assessed on the student's other surfaces in the last day, so a
  * disclosure written in the Record UI keeps shaping a conversation that never
  * repeats the words.
+ *
+ * ## The exclusion has to happen before the cut, not after (#373)
+ *
+ * This used to read the newest twenty `safety_assessment` rows and then drop the
+ * current surface's own rows in JavaScript. With a quiet day the two are the
+ * same answer, which is why it read as correct. They are not the same answer
+ * once the student has talked: `recordSafetyAudit` writes one row per chat turn
+ * and one per voice turn, unconditionally and whatever the risk level, so from
+ * the twentieth turn of the day the newest twenty rows are *all* this surface's.
+ * Every one was skipped, `none` was returned, and the journal entry written that
+ * morning stopped reaching the conversation — on exactly the day the student was
+ * writing most.
+ *
+ * So the filter goes into the query. `neq` alone would not do it: SQL's
+ * `x <> 'chat'` is NULL rather than true when `x` is NULL, and PostgREST's
+ * `not.eq` is the same shape, so either one would also drop every row with no
+ * `surface` recorded at all — which is what the journal's own rows look like
+ * until #372 lands, and they are the rows this function exists to find. Hence
+ * "null OR not this surface".
  */
 export async function recentDisclosedRisk(
   client: SupabaseClient,
@@ -62,21 +102,52 @@ export async function recentDisclosedRisk(
   excludeSurface: string,
 ): Promise<SafetyAssessment["risk_level"]> {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { data, error } = await client
+
+  let query = client
     .from("model_runs")
     .select("retrieval_config_json")
     .eq("participant_id", participantId)
     .eq("artifact_type", "safety_assessment")
-    .gte("created_at", since)
+    .gte("created_at", since);
+
+  if (BARE_SURFACE.test(excludeSurface)) {
+    query = query.or(
+      `retrieval_config_json->>surface.is.null,retrieval_config_json->>surface.neq.${excludeSurface}`,
+    );
+  } else {
+    // A caller passing something else is a programming error, not input. The
+    // loop below still excludes it, so the answer stays correct; what is lost is
+    // the guarantee that the window holds twenty *other* rows.
+    console.error(
+      "[safety] recentDisclosedRisk was given a surface that cannot go into a filter; " +
+        "falling back to excluding it after the window, which under-reads on a busy day.",
+      { surface: excludeSurface },
+    );
+  }
+
+  const { data, error } = await query
     .order("created_at", { ascending: false })
-    .limit(20);
-  if (error || !data) return "none";
+    .limit(DISCLOSED_WINDOW_ROWS);
+
+  if (error || !data) {
+    // Loud, because the caller cannot tell this apart from "nothing was
+    // disclosed elsewhere" and must not be stopped from replying either way.
+    // `retentionPurge.purgedCount` refuses the same shape for the same reason:
+    // "nothing found" and "the read did not happen" must not look alike.
+    console.error(
+      "[safety] could not read the other surfaces' assessments; treating this turn as if " +
+        "nothing was disclosed elsewhere. A journal disclosure is not shaping this reply.",
+      { participant: participantId, surface: excludeSurface, error: error?.message },
+    );
+    return "none";
+  }
 
   let highest: SafetyAssessment["risk_level"] = "none";
   for (const row of data) {
     const config = (row.retrieval_config_json ?? {}) as { risk_level?: string; surface?: string };
-    // Skip this surface's own audit rows; re-reading them would make a single
-    // elevated turn stick to the participant for a day.
+    // Belt and braces. The query above already excludes these; re-reading this
+    // surface's own rows would make a single elevated turn stick to the
+    // participant for a day, and that is worth two lines of defence.
     if (config.surface === excludeSurface) continue;
     const level = config.risk_level as SafetyAssessment["risk_level"] | undefined;
     if (level && RISK_ORDER.indexOf(level) > RISK_ORDER.indexOf(highest)) highest = level;
