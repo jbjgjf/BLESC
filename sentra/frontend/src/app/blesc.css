@@ -37,7 +37,20 @@
 /* ── Tokens ─────────────────────────────────────────────────── */
 :root {
   --bl-hue: 206;
+}
 
+/* 先生の画面（Blesc for Teachers）はラベンダー、生徒の画面は青。
+   色相だけを変え、彩度と明るさは同じにする。花のロゴも同じだけ回してある
+   （/flower-teachers.png）。 */
+.bl-app[data-bl-context="educator"] {
+  --bl-hue: 262;
+}
+
+/* 色相から作る色。:root だけでなく .bl-app でも作り直すのは、
+   var() が宣言した要素の --bl-hue で決まるため（:root で作った色は、
+   下の要素で --bl-hue を変えても青のまま受け継がれる）。 */
+:root,
+.bl-app {
   --bl-blue: hsl(var(--bl-hue) 74% 72%);
   --bl-blue-hover: hsl(var(--bl-hue) 74% 78%);
   --bl-blue-press: hsl(var(--bl-hue) 66% 66%);
@@ -53,7 +66,9 @@
   --bl-ink: hsl(var(--bl-hue) 60% 20%);
   --bl-ink-2: hsl(var(--bl-hue) 42% 33%);
   --bl-ink-3: hsl(var(--bl-hue) 26% 41%);
+}
 
+:root {
   --bl-surface: #ffffff;
 
   /* 案内役（小石）の色。UI の青とは別に持つ。
@@ -1100,7 +1115,8 @@ html[data-bl-face="ud"] {
 
 /* ── 高コントラスト ─────────────────────────────────
    既定の配色はそのままに、必要な人だけ濃くできるようにする。 */
-html[data-bl-contrast="high"] {
+html[data-bl-contrast="high"],
+html[data-bl-contrast="high"] .bl-app {
   --bl-ink: hsl(var(--bl-hue) 65% 12%);
   --bl-ink-2: hsl(var(--bl-hue) 50% 20%);
   --bl-ink-3: hsl(var(--bl-hue) 35% 28%);

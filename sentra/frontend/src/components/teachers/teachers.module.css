@@ -1,7 +1,7 @@
 /*
  * Blesc for Teachers。UI仕様書の「デザイン原則」に沿う。
  *
- *  - 背景は白。アクセントはロゴと同じ水色のグラデーション。赤と黄色の
+ *  - 背景は白。アクセントはロゴと同じラベンダーのグラデーション。赤と黄色の
  *    警告色は使わない（警告を出さない設計のため）。
  *  - 本文は16px以上。押せるものは高さ44px以上。
  *  - 箱（カード）で囲まず、細い線で区切る。
@@ -14,12 +14,15 @@
   --t-faint: #8b93a1;
   --t-line: #e6e9f0;
   --t-line-strong: #d4dae4;
-  --t-wash: #f5f8fc;
-  --t-blue: #85c0ed;
-  --t-blue-deep: #2b6ea3;
-  --t-accent: linear-gradient(135deg, #b4dbf7 0%, #85c0ed 48%, #5c9fd9 100%);
-  --t-accent-soft: linear-gradient(90deg, #edf6fd 0%, #e2effa 100%);
-  --t-button: linear-gradient(135deg, #3a8ad0 0%, #2b6ea3 100%);
+  /* 色相は --bl-hue（先生の画面ではラベンダー、blesc.css）。彩度と明るさは
+     生徒の画面の青と同じにして、色相だけを変えている。 */
+  --t-wash: hsl(var(--bl-hue) 54% 97.5%);
+  --t-lavender: hsl(var(--bl-hue) 74% 72.5%);
+  --t-lavender-deep: hsl(var(--bl-hue) 58% 40.5%);
+  --t-lavender-veil: hsl(var(--bl-hue) 50% 94.5%);
+  --t-accent: linear-gradient(135deg, hsl(var(--bl-hue) 81% 83.5%) 0%, var(--t-lavender) 48%, hsl(var(--bl-hue) 62% 60.5%) 100%);
+  --t-accent-soft: linear-gradient(90deg, hsl(var(--bl-hue) 80% 96%) 0%, hsl(var(--bl-hue) 70.5% 93.5%) 100%);
+  --t-button: linear-gradient(135deg, hsl(var(--bl-hue) 61.5% 52%) 0%, var(--t-lavender-deep) 100%);
   --nav-w: 232px;
   --gutter-r: 112px;
 
@@ -108,14 +111,14 @@
 
 .navItem[data-active="true"] {
   background: var(--t-accent-soft);
-  color: var(--t-blue-deep);
+  color: var(--t-lavender-deep);
   font-weight: 600;
 }
 
 .navItem:focus-visible,
 .linkButton:focus-visible,
 .button:focus-visible {
-  outline: 3px solid var(--t-blue-deep);
+  outline: 3px solid var(--t-lavender-deep);
   outline-offset: 2px;
 }
 
@@ -429,11 +432,11 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--t-blue-deep);
+  color: var(--t-lavender-deep);
   font: inherit;
   font-size: 0.96rem;
   text-decoration: underline;
-  text-decoration-color: rgba(43, 110, 163, 0.35);
+  text-decoration-color: hsl(var(--bl-hue) 58% 40.5% / 0.35);
   text-underline-offset: 4px;
   cursor: pointer;
 }
@@ -497,9 +500,9 @@
 .input:focus-visible,
 .select:focus-visible,
 .textarea:focus-visible {
-  outline: 3px solid rgba(43, 110, 163, 0.35);
+  outline: 3px solid hsl(var(--bl-hue) 58% 40.5% / 0.35);
   outline-offset: 1px;
-  border-color: var(--t-blue-deep);
+  border-color: var(--t-lavender-deep);
 }
 
 /* ── 気分 ─────────────────────────────────────────── */
@@ -541,7 +544,7 @@
 }
 
 .moodOption:hover .moodFace {
-  background: #eaf1f8;
+  background: var(--t-lavender-veil);
 }
 
 .moodOption[aria-pressed="true"] {
@@ -555,7 +558,7 @@
 }
 
 .moodOption:focus-visible .moodFace {
-  outline: 3px solid var(--t-blue-deep);
+  outline: 3px solid var(--t-lavender-deep);
   outline-offset: 3px;
 }
 
@@ -603,9 +606,9 @@
 }
 
 .chip[aria-pressed="true"] {
-  border-color: var(--t-blue);
+  border-color: var(--t-lavender);
   background: var(--t-accent-soft);
-  color: var(--t-blue-deep);
+  color: var(--t-lavender-deep);
   font-weight: 600;
 }
 
@@ -690,7 +693,7 @@
 }
 
 .classLine:hover {
-  color: var(--t-blue-deep);
+  color: var(--t-lavender-deep);
 }
 
 .backfill {
@@ -837,7 +840,7 @@
 }
 
 .record[data-target="true"] {
-  background: linear-gradient(90deg, #eef6fd 0%, rgba(238, 246, 253, 0) 80%);
+  background: linear-gradient(90deg, hsl(var(--bl-hue) 79% 96.5%) 0%, hsl(var(--bl-hue) 79% 96.5% / 0) 80%);
 }
 
 .recordDate {
@@ -932,7 +935,7 @@
 
 .calendarDay[data-today="true"] > span:first-child {
   font-weight: 700;
-  color: var(--t-blue-deep);
+  color: var(--t-lavender-deep);
 }
 
 /* ── 一覧の画面（クラス・先生） ───────────────────── */
@@ -976,7 +979,7 @@
   gap: 4px 14px;
   margin: 0;
   padding: 12px 16px;
-  border-left: 3px solid var(--t-blue);
+  border-left: 3px solid var(--t-lavender);
   background: var(--t-accent-soft);
   font-size: 0.98rem;
 }
@@ -1033,7 +1036,7 @@
 }
 
 .personLink:hover {
-  color: var(--t-blue-deep);
+  color: var(--t-lavender-deep);
   text-decoration: underline;
   text-underline-offset: 4px;
 }
@@ -1168,7 +1171,7 @@
 
 .miniItem[aria-current="page"] {
   background: var(--t-accent-soft);
-  color: var(--t-blue-deep);
+  color: var(--t-lavender-deep);
   font-weight: 600;
 }
 
@@ -1200,7 +1203,7 @@
 
 .tab[aria-selected="true"],
 .tab[data-active="true"] {
-  border-bottom-color: var(--t-blue-deep);
+  border-bottom-color: var(--t-lavender-deep);
   color: var(--t-ink);
   font-weight: 600;
 }
@@ -1275,7 +1278,7 @@
 }
 
 .quote:hover {
-  border-left-color: var(--t-blue);
+  border-left-color: var(--t-lavender);
   background: var(--t-wash);
 }
 
@@ -1344,7 +1347,7 @@
 .toggle input {
   width: 22px;
   height: 22px;
-  accent-color: var(--t-blue-deep);
+  accent-color: var(--t-lavender-deep);
 }
 
 /* ── 書き出せない画面（先生の記録） ──────────────── */

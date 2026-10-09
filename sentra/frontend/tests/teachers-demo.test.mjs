@@ -207,4 +207,12 @@ describe("画面の言葉（仕様書の文言と、使わない言葉）", () =
     const css = read("src/components/teachers/teachers.module.css");
     assert.doesNotMatch(css, /--bl-(alert|watch)/);
   });
+
+  it("先生の画面はラベンダー、生徒の画面は青（色相だけが違う）", () => {
+    const css = read("src/app/blesc.css");
+    assert.match(css, /:root \{\s*--bl-hue: 206;/);
+    assert.match(css, /\.bl-app\[data-bl-context="educator"\] \{\s*--bl-hue: 262;/);
+    assert.doesNotMatch(read("src/components/teachers/teachers.module.css"), /#[0-9a-f]{6}.*(blue|accent|button)|t-blue/i);
+    assert.ok(read("src/components/teachers/TeacherShell.tsx").includes('src="/flower-teachers.png"'));
+  });
 });

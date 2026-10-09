@@ -107,7 +107,7 @@ export function TeacherShell({ children }: { children: ReactNode }) {
 
   const brand = (
     <TransitionLink href={landingOf(persona)} className={styles.brand} aria-label="blesc for Teachers">
-      <Image src="/flower.png" alt="" width={30} height={30} className={styles.brandMark} priority />
+      <Image src="/flower-teachers.png" alt="" width={30} height={30} className={styles.brandMark} priority />
       <span className={styles.wordmark}>
         <strong>blesc</strong>
         <span>for Teachers</span>
