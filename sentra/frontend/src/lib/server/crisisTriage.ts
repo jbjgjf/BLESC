@@ -299,6 +299,24 @@ const QUEUE_LIMIT = 200;
  * One query per band, worst band first, against the existing
  * `(status, assessed_risk, created_at)` index does — and it stops as soon as
  * the budget is spent, so the usual case is one small query.
+ *
+ * ## Pending before decided, for the same reason (#380)
+ *
+ * `includeDecided` used to widen the band queries in place: the `status` filter
+ * came off and the 200-row budget stayed where it was. Inside a band the order
+ * is `created_at` ascending, and a decided row is always the older one — so
+ * once a band was longer than the remaining budget, the rows cut were the
+ * pending ones, every time.
+ *
+ * `enqueuePendingReviews` gives every retained entry a row, scored `none` when
+ * no signal is found, so the `none` band alone passes 200 within the first week
+ * of a study. From there, ticking 「判断済みの行も表示する」 removed today's
+ * entries from the console and left `counts.pending` reading near zero — the
+ * screen a reviewer would read as "finished for the slot".
+ *
+ * So the budget is spent on pending rows first, across every band, and decided
+ * rows get only what is left over. A decided row can no longer displace a row
+ * nobody has looked at.
  */
 export async function loadQueue(
   service: SupabaseClient,
@@ -319,23 +337,33 @@ export async function loadQueue(
   };
 
   const rows: Row[] = [];
-  for (const risk of RISK_ORDER) {
-    if (rows.length >= limit) break;
 
-    let query = service
-      .from("pilot_crisis_reviews")
-      .select(
-        "id, entry_id, participant_id, assessed_risk, assessed_reasons, status, reviewed_at, review_slot, created_at",
-      )
-      .eq("assessed_risk", risk);
-    if (!options.includeDecided) query = query.eq("status", "pending");
+  /** One worst-first sweep of the bands, within whatever budget is left. */
+  const sweep = async (decided: boolean) => {
+    for (const risk of RISK_ORDER) {
+      if (rows.length >= limit) return;
 
-    // Oldest first inside a band: of two rows the machine scored the same, the
-    // one that has been waiting longer is the one §4.4 is later on.
-    const band = await query.order("created_at", { ascending: true }).limit(limit - rows.length);
-    if (band.error) throw new Error(band.error.message);
-    rows.push(...((band.data ?? []) as Row[]));
-  }
+      const query = service
+        .from("pilot_crisis_reviews")
+        .select(
+          "id, entry_id, participant_id, assessed_risk, assessed_reasons, status, reviewed_at, review_slot, created_at",
+        )
+        .eq("assessed_risk", risk);
+
+      // Two disjoint sweeps rather than one widened query (#380), so a decided
+      // row cannot take a place in the budget from a pending one.
+      const scoped = decided ? query.neq("status", "pending") : query.eq("status", "pending");
+
+      // Oldest first inside a band: of two rows the machine scored the same, the
+      // one that has been waiting longer is the one §4.4 is later on.
+      const band = await scoped.order("created_at", { ascending: true }).limit(limit - rows.length);
+      if (band.error) throw new Error(band.error.message);
+      rows.push(...((band.data ?? []) as Row[]));
+    }
+  };
+
+  await sweep(false);
+  if (options.includeDecided) await sweep(true);
 
   if (rows.length === 0) return [];
 

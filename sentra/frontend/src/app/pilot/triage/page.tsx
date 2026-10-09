@@ -233,6 +233,16 @@ export default function CrisisTriagePage() {
               この画面をもう一度読み込むと続きが入ります。
             </p>
           )}
+          {/* 画面の上限で出し切れなかった未確認の分（#380）。「/ 全N」の数字
+              だけでは、片付いたのか続きがあるのかが読み取れない。#247 の
+              deferred と同じ形で、残りがあることを文として出す。 */}
+          {data.counts.pending_total > data.counts.pending && (
+            <p className="bl-notice bl-notice--watch" role="status">
+              <Icon name="info" size={19} />{" "}
+              確認を待っている記録は{data.counts.pending_total}件で、この画面に出ているのは
+              {data.counts.pending}件です。判断を記録して読み込み直すと続きが入ります。
+            </p>
+          )}
           {data.slot === "ad_hoc" && (
             <p className="bl-micro">
               いまは §4.4 が定める枠の外です。ここで確認したことは「枠外」として記録され、

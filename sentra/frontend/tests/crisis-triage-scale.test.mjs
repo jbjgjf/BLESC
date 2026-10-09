@@ -138,6 +138,10 @@ function fakeDb({ entries = [], reviews = [], enrollments = [], maxRows = 1000 }
         state.filters.push((row) => row[column] === value);
         return chain;
       },
+      neq(column, value) {
+        state.filters.push((row) => row[column] !== value);
+        return chain;
+      },
       in(column, values) {
         assert.ok(values.length <= 100, `in.(…) given ${values.length} ids; the URL has a length`);
         const wanted = new Set(values);
@@ -416,6 +420,119 @@ describe("worst first means worst first", () => {
       // The reviewer works in the study's pseudonyms, not database ids.
       assert.match(row.research_code, /^P-/);
     }
+  });
+});
+
+describe("judged rows never take a pending row's place (#380)", () => {
+  /**
+   * 「判断済みの行も表示する」 widened the band queries in place and left the
+   * 200-row budget where it was. Inside a band the order is `created_at`
+   * ascending and a decided row is always the older one, so the rows cut were
+   * the pending ones — every time, once a band was longer than the budget.
+   *
+   * `enqueuePendingReviews` scores an entry `none` when it finds no signal, so
+   * the `none` band alone passes 200 inside the first week of a study. From
+   * there the checkbox removed today's entries from the console and left
+   * `counts.pending` reading near zero: the screen a reviewer reads as
+   * "finished for the slot".
+   */
+  const cohort = () => {
+    // 800 decided, then 300 pending — decided first so they are also older.
+    const entries = seedEntries(1100);
+    const decided = reviewsFor(entries.slice(0, 800), () => ({
+      status: "no_concern",
+      reviewed_at: "2026-02-01T00:00:00Z",
+      review_slot: "morning",
+    }));
+    const pending = reviewsFor(entries.slice(800));
+    return {
+      entries,
+      reviews: [...decided, ...pending],
+      enrollments: entries.map((entry) => ({
+        participant_id: entry.participant_id,
+        research_code: `P-${entry.participant_id}`,
+      })),
+      maxRows: 1000,
+    };
+  };
+
+  it("fills the page with pending rows even when decided rows are older", async () => {
+    const db = fakeDb(cohort());
+
+    const queue = await loadQueue(db, { includeDecided: true });
+
+    assert.equal(queue.length, 200);
+    assert.equal(
+      queue.filter((row) => row.status === "pending").length,
+      200,
+      "a decided row must not occupy a place a pending row needed",
+    );
+  });
+
+  it("agrees with countPending about what is still waiting", async () => {
+    const db = fakeDb(cohort());
+
+    const queue = await loadQueue(db, { includeDecided: true });
+
+    // The screen counts the pending rows on the page; `countPending` counts
+    // every pending row. The first must not read zero while the second is 300.
+    assert.equal(queue.filter((row) => row.status === "pending").length, 200);
+    assert.equal(await countPending(db), 300);
+  });
+
+  it("still puts the worst band first inside the pending set", async () => {
+    const base = cohort();
+    // One crisis row, written last, so `created_at` alone would put it last.
+    const reviews = base.reviews.map((row, i) =>
+      i === base.reviews.length - 1 ? { ...row, assessed_risk: "crisis" } : row,
+    );
+    const db = fakeDb({ ...base, reviews });
+
+    const queue = await loadQueue(db, { includeDecided: true });
+
+    assert.equal(queue[0].assessed_risk, "crisis");
+    assert.equal(queue[0].status, "pending");
+  });
+
+  it("shows decided rows once the pending ones fit", async () => {
+    const entries = seedEntries(10);
+    const db = fakeDb({
+      entries,
+      reviews: reviewsFor(entries, (_entry, i) =>
+        i < 4 ? { status: "no_concern", reviewed_at: "2026-02-01T00:00:00Z" } : {},
+      ),
+      enrollments: entries.map((entry) => ({
+        participant_id: entry.participant_id,
+        research_code: `P-${entry.participant_id}`,
+      })),
+    });
+
+    const queue = await loadQueue(db, { includeDecided: true });
+
+    assert.equal(queue.length, 10);
+    // Pending first, then the decided ones: the page is a work queue, and the
+    // rows that still need a decision are the ones it is for.
+    assert.deepEqual(
+      queue.map((row) => row.status),
+      [...Array(6).fill("pending"), ...Array(4).fill("no_concern")],
+    );
+  });
+
+  it("leaves the default view to pending rows only", async () => {
+    const entries = seedEntries(10);
+    const db = fakeDb({
+      entries,
+      reviews: reviewsFor(entries, (_entry, i) => (i < 4 ? { status: "escalated" } : {})),
+      enrollments: entries.map((entry) => ({
+        participant_id: entry.participant_id,
+        research_code: `P-${entry.participant_id}`,
+      })),
+    });
+
+    const queue = await loadQueue(db);
+
+    assert.equal(queue.length, 6);
+    assert.ok(queue.every((row) => row.status === "pending"));
   });
 });
 

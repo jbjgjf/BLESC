@@ -228,6 +228,10 @@ function failingDb(shouldFail = () => false) {
         state.filters.push((row) => row[column] === value);
         return chain;
       },
+      neq(column, value) {
+        state.filters.push((row) => row[column] !== value);
+        return chain;
+      },
       in(column, values) {
         const wanted = new Set(values);
         state.filters.push((row) => wanted.has(row[column]));
