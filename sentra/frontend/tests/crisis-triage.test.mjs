@@ -122,7 +122,10 @@ describe("rows whose text is gone still need a decision", () => {
   it("the queue counts them rather than hiding them", () => {
     // Dropping them silently makes "the text was purged" indistinguishable from
     // "nobody wrote that day".
-    assert.match(code(route), /no_text:/);
+    // The counting lives in `queueCounts()` (#380) so it can be tested with
+    // the queue it counts; the route has to go through it.
+    assert.match(code(lib), /no_text:/);
+    assert.match(code(route), /queueCounts\(queue, pendingTotal\)/);
     assert.match(code(lib), /"unreadable"/);
   });
 

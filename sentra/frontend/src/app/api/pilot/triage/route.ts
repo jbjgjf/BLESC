@@ -22,6 +22,7 @@ import {
   countPending,
   enqueuePendingReviews,
   loadQueue,
+  queueCounts,
   readEntryText,
   recordDecision,
   slotFor,
@@ -60,7 +61,7 @@ export async function GET(request: NextRequest) {
     const queue = await loadQueue(operator.service, { includeDecided });
     const pendingTotal = await countPending(operator.service);
 
-    const pending = queue.filter((row) => row.status === "pending");
+    const counts = queueCounts(queue, pendingTotal);
     return NextResponse.json({
       slot: slotFor(new Date()),
       enqueued: enqueued.enqueued,
@@ -70,19 +71,13 @@ export async function GET(request: NextRequest) {
       // full. `scan_complete: false` means `deferred` is a lower bound.
       deferred: enqueued.deferred,
       scan_complete: enqueued.scanComplete,
-      counts: {
-        pending: pending.length,
-        // Every row waiting, not just the ones on this page. The screen shows
-        // at most 200; a reviewer deciding whether the slot is finished needs
-        // the other number.
-        pending_total: pendingTotal,
-        crisis: pending.filter((row) => row.assessed_risk === "crisis").length,
-        elevated: pending.filter((row) => row.assessed_risk === "elevated").length,
-        // Entries whose text is gone — purged on withdrawal, or past its
-        // retention window. They still need a decision, and the decision is
-        // `unreadable`, recorded rather than assumed.
-        no_text: pending.filter((row) => !row.text_available).length,
-      },
+      // `pending` is what is on this page; `pending_total` is every row
+      // waiting; `pending_not_shown` is the difference, so the screen can say
+      // that the page was cut rather than let it read as "done" (#247, #380).
+      // `crisis` / `elevated` / `no_text` count the pending rows on the page.
+      // `no_text` rows still need a decision, and the decision is
+      // `unreadable`, recorded rather than assumed.
+      counts,
       queue,
     });
   } catch (err) {

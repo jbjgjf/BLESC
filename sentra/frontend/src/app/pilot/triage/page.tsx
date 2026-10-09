@@ -55,6 +55,8 @@ type QueueResponse = {
     pending: number;
     /** 待っている全件。画面の上限より多いことがある。 */
     pending_total: number;
+    /** 未確認なのに、この画面の上限で出せなかった件数（#380）。 */
+    pending_not_shown: number;
     crisis: number;
     elevated: number;
     no_text: number;
@@ -231,6 +233,15 @@ export default function CrisisTriagePage() {
                 ? <>まだ待ち行列に入れていない記録が{data.scan_complete ? "" : "少なくとも"}{data.deferred}件あります。</>
                 : <>記録が多く、今回の読み込みでは全件を確認しきれていません。</>}
               この画面をもう一度読み込むと続きが入ります。
+            </p>
+          )}
+          {/* 未確認なのに画面に出せなかった分（#380）。「未確認: 0 / 全40」の
+              小さな文字だけでは、行が無い画面が「片付いた」と読めてしまう。 */}
+          {data.counts.pending_not_shown > 0 && (
+            <p className="bl-notice bl-notice--watch" role="status">
+              <Icon name="info" size={19} />{" "}
+              未確認の記録のうち{data.counts.pending_not_shown}件は、表示の上限のためこの画面に出ていません。
+              判断を記録して読み込み直すと、続きが表示されます。
             </p>
           )}
           {data.slot === "ad_hoc" && (
