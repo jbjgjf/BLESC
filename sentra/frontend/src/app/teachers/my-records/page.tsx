@@ -45,7 +45,7 @@ function HistoryFor() {
 }
 
 function History({ persona }: { persona: Persona }) {
-  const me = staffById(persona.staffId ?? "");
+  const me = staffById(persona.staffId);
   const written = useWrittenRecords(persona.id);
   const byDate = useMemo(() => {
     const map = new Map<string, TeacherRecord>((me?.records ?? []).map((r) => [r.date, r]));

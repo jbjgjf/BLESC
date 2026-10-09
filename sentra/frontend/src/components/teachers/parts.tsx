@@ -9,7 +9,7 @@
 
 import type { ReactNode } from "react";
 import { Icon } from "@/components/ui/Icon";
-import { CATEGORY_BY_VALUE, MOOD_BY_VALUE, formatDate, relativeDays } from "@/lib/blesc/labels";
+import { MOOD_BY_VALUE, formatDate, relativeDays } from "@/lib/blesc/labels";
 import type { Mood } from "@/lib/blesc/types";
 import { AS_OF, WORK_TAGS } from "@/lib/teachers/fixtures";
 import { schoolDaysUntil } from "@/lib/teachers/records";
@@ -21,9 +21,9 @@ export { styles };
 
 const WORK_LABEL = Object.fromEntries(WORK_TAGS.map((t) => [t.value, t.label])) as Record<string, string>;
 
-/** 生徒のタグも先生のタグも、日本語の名前にする。 */
+/** 先生の記録のタグを、日本語の名前にする。 */
 export function tagLabel(tag: string): string {
-  return WORK_LABEL[tag] ?? (CATEGORY_BY_VALUE as Record<string, { label: string } | undefined>)[tag]?.label ?? tag;
+  return WORK_LABEL[tag] ?? tag;
 }
 
 export function PageHead({ kicker, title, children }: { kicker?: ReactNode; title: ReactNode; children?: ReactNode }) {

@@ -66,8 +66,9 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="bl-page bl-app" data-bl-context={context}>
       <a className="bl-skip" href="#bl-main">本文へスキップ</a>
-      {context === "educator" ? (
-        // 先生の画面は、サイドバーとタブの並びが権限で変わる外枠を持つ（UI仕様書 2章）。
+      {context === "teachers" ? (
+        // Blesc for Teachers は別のサービスで、サイドバーとタブの並びが権限で
+        // 変わる外枠を持つ（UI仕様書 2章）。
         <TeacherShell>{children}</TeacherShell>
       ) : (
         <>
@@ -78,10 +79,10 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
         </>
       )}
       <RouteAnnouncer />
-      {/* 案内役は生徒と教員の画面に置く（保護者の画面にはまだ置かない）。
-          どちら向けかで、行き先・画面の説明・つらさへの返事が変わる。
+      {/* 案内役は生徒・教員・Blesc for Teachers の画面に置く（保護者の画面には
+          まだ置かない）。どれ向けかで、行き先・画面の説明・つらさへの返事が変わる。
           側を切り替えたら会話を持ち越さないよう、key で作り直す。 */}
-      {(context === "student" || context === "educator") && <Assistant key={context} audience={context} />}
+      {context !== "guardian" && <Assistant key={context} audience={context} />}
     </div>
   );
 }

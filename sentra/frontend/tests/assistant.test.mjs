@@ -11,6 +11,7 @@ import {
   normalize,
   PAGE_GUIDES,
   routeIntent,
+  TEACHERS_DESTINATIONS,
 } from "../src/lib/assistant/intents.ts";
 import {
   applyBlink,
@@ -45,16 +46,15 @@ const context = (text, overrides = {}) => ({
 
 const ask = (text, overrides = {}) => routeIntent(text, context(text, overrides));
 const teacher = (text, overrides = {}) => ask(text, { audience: "educator", pathname: "/educator", ...overrides });
+/** Blesc for Teachers（/teachers）。先生自身の記録のための、別のサービス。 */
+const forTeachers = (text, overrides = {}) => ask(text, { audience: "teachers", pathname: "/teachers", ...overrides });
 
-/** 権限の組み合わせ（UI仕様書 6-3）。 */
+/** Blesc for Teachers の権限の組み合わせ（UI仕様書 6-3）。生徒を読む権限はここには無い。 */
 const AS = {
-  homeroom: { write: true, students: true, teachers: false, studentTab: "クラス" },
-  noHomeroom: { write: true, students: false, teachers: false },
-  gradeHead: { write: true, students: true, teachers: true, studentTab: "クラス" },
-  vicePrincipal: { write: true, students: false, teachers: true },
-  principal: { write: false, students: false, teachers: true },
-  nurse: { write: true, students: true, teachers: false, studentTab: "生徒" },
-  counselor: { write: false, students: true, teachers: false, studentTab: "生徒" },
+  homeroom: { write: true, teachers: false },
+  gradeHead: { write: true, teachers: true },
+  vicePrincipal: { write: true, teachers: true },
+  principal: { write: false, teachers: true },
 };
 
 const navigated = (reply) => reply.actions.find((action) => action.kind === "navigate")?.href ?? null;
@@ -119,11 +119,12 @@ describe("routeIntent — 移動", () => {
 
 describe("routeIntent — 教員の画面", () => {
   const cases = [
-    ["今日の記録", "/educator"],
-    ["これまで", "/educator/my-records"],
+    ["アラート", "/educator/alerts"],
+    ["生徒一覧", "/educator/roster"],
+    ["クラスの生徒を見たい", "/educator/roster"],
     ["クラス", "/educator/class"],
-    ["生徒一覧", "/educator/class"],
-    ["設定", "/educator/settings"],
+    ["面談", "/educator/meetings"],
+    ["学校全体", "/school"],
   ];
 
   for (const [text, href] of cases) {
@@ -132,40 +133,8 @@ describe("routeIntent — 教員の画面", () => {
     });
   }
 
-  it("権限のある画面へ案内する", () => {
-    assert.equal(navigated(teacher("先生の一覧", { access: AS.vicePrincipal })), "/educator/staff");
-    assert.equal(navigated(teacher("教職員", { access: AS.gradeHead })), "/educator/staff");
-    assert.equal(navigated(teacher("生徒一覧", { access: AS.counselor, pathname: "/educator/settings" })), "/educator/class");
-  });
-
-  it("権限の無い画面には動かず、どの権限の画面かを伝える", () => {
-    const reply = teacher("先生の一覧", { pathname: "/educator" });
-    assert.equal(navigated(reply), null);
-    assert.match(reply.say, /先生の記録を読む権限/);
-    assert.notEqual(reply.expression, "oops");
-    assert.equal(navigated(teacher("クラス", { access: AS.noHomeroom })), null);
-    assert.equal(navigated(teacher("今日の記録", { access: AS.principal, pathname: "/educator/staff" })), null);
-  });
-
-  it("養護教諭・SCには、生徒の画面を「生徒」と呼ぶ", () => {
-    assert.match(teacher("クラス", { access: AS.nurse, pathname: "/educator" }).say, /生徒の画面/);
-  });
-
-  it("ホームは、書く人は自分の記録、読むだけの人は先生か生徒の画面", () => {
-    assert.equal(navigated(teacher("ホーム", { pathname: "/educator/class" })), "/educator");
-    assert.equal(navigated(teacher("ホーム", { access: AS.principal, pathname: "/educator/settings" })), "/educator/staff");
-    assert.equal(navigated(teacher("ホーム", { access: AS.counselor, pathname: "/educator/settings" })), "/educator/class");
-  });
-
-  it("面談のことは、ひとりずつの画面ではその場の「面談」タブを示す", () => {
-    const here = teacher("面談メモを書きたい", { pathname: "/educator/class", detail: true });
-    assert.equal(navigated(here), null);
-    assert.deepEqual(here.offers[0].action, { kind: "show", heading: "面談", href: null });
-    assert.equal(navigated(teacher("面談メモ", { pathname: "/educator" })), "/educator/class");
-    assert.equal(navigated(teacher("要約", { access: AS.vicePrincipal, pathname: "/educator" })), "/educator/staff");
-    const none = teacher("面談", { access: AS.noHomeroom });
-    assert.equal(navigated(none), null);
-    assert.match(none.say, /読む人の画面/);
+  it("ホームは教員のホームへ", () => {
+    assert.equal(navigated(teacher("ホーム", { pathname: "/educator/roster" })), "/educator");
   });
 
   it("生徒向けの行き先は教員の画面では拾わない", () => {
@@ -173,7 +142,7 @@ describe("routeIntent — 教員の画面", () => {
     assert.equal(navigated(teacher("相談したい")), null);
   });
 
-  it("つらさが混じった言葉には、学校の緊急対応フローを示す（生徒向けの文や相談ページは出さない）", () => {
+  it("つらさが混じった言葉には、アラートと緊急対応フローを示す（生徒向けの文や相談ページは出さない）", () => {
     const text = "生徒が死にたいと言っていた";
     const reply = teacher(text);
     assert.equal(reply.calm, true);
@@ -181,8 +150,7 @@ describe("routeIntent — 教員の画面", () => {
     assert.match(reply.say, /緊急対応フロー/);
     assert.notEqual(reply.say, assessSafety(text).safe_response);
     assert.ok(!reply.offers.some((offer) => offer.action.kind === "handoff"));
-    // 自動の判定や警告の画面は持たない（設計原則 1）。どこかへ連れて行かない。
-    assert.equal(reply.offers.length, 0);
+    assert.equal(reply.offers[0].action.href, "/educator/alerts");
   });
 
   it("気分が沈んだ言葉は受け止めるだけで、生徒の相談ページには渡さない", () => {
@@ -191,30 +159,164 @@ describe("routeIntent — 教員の画面", () => {
     assert.equal(reply.offers.length, 0);
   });
 
-  it("あいさつの続きには、その人の最初の画面を出す", () => {
-    const homeroom = teacher("こんにちは", { pathname: "/educator/class" });
-    assert.ok(homeroom.offers.some((offer) => offer.label === "今日の記録を書く" && offer.action.href === "/educator"));
-    const principal = teacher("こんにちは", { access: AS.principal, pathname: "/educator/settings" });
-    assert.ok(principal.offers.some((offer) => offer.action.href === "/educator/staff"));
+  it("あいさつの続きにはアラートを出す", () => {
+    const reply = teacher("こんにちは", { pathname: "/educator" });
+    assert.ok(reply.offers.some((offer) => offer.action.href === "/educator/alerts"));
   });
 
-  it("使い方の例は、その人が開ける画面にする", () => {
-    for (const [access, href] of [[AS.homeroom, "/educator/class"], [AS.vicePrincipal, "/educator/staff"], [AS.noHomeroom, "/educator"]]) {
-      assert.equal(teacher("使い方", { access }).offers[0].action.href, href);
+  it("カレンダーは教員のホームで示す", () => {
+    const calendar = teacher("あと何日？", { pathname: "/educator/class" }).offers[0].action;
+    assert.equal(calendar.kind, "show");
+    assert.equal(calendar.href, "/educator");
+  });
+});
+
+describe("routeIntent — Blesc for Teachers", () => {
+  const cases = [
+    ["今日の記録", "/teachers"],
+    ["これまで", "/teachers/my-records"],
+    ["設定", "/teachers/settings"],
+  ];
+
+  for (const [text, href] of cases) {
+    it(`「${text}」→ ${href}`, () => {
+      assert.equal(navigated(forTeachers(text, { pathname: "/elsewhere" })), href);
+    });
+  }
+
+  it("権限のある画面へ案内する", () => {
+    assert.equal(navigated(forTeachers("先生の一覧", { access: AS.vicePrincipal })), "/teachers/staff");
+    assert.equal(navigated(forTeachers("教職員", { access: AS.gradeHead })), "/teachers/staff");
+  });
+
+  it("権限の無い画面には動かず、どの権限の画面かを伝える", () => {
+    const reply = forTeachers("先生の一覧");
+    assert.equal(navigated(reply), null);
+    assert.match(reply.say, /先生の記録を読む権限/);
+    assert.notEqual(reply.expression, "oops");
+    assert.equal(navigated(forTeachers("今日の記録", { access: AS.principal, pathname: "/teachers/staff" })), null);
+  });
+
+  it("生徒の記録は扱わず、Blesc の教員の画面を案内する", () => {
+    for (const text of ["クラス", "生徒一覧"]) {
+      const reply = forTeachers(text);
+      assert.equal(navigated(reply), null);
+      assert.match(reply.say, /教員の画面/);
+      assert.equal(reply.offers[0].action.href, "/educator");
     }
   });
 
-  it("教員の画面にはカレンダーが無いので、日数だけを答える", () => {
-    const reply = teacher("あと何日？", { pathname: "/educator/class" });
+  it("ホームは、書く人は自分の記録、読むだけの人は先生の画面", () => {
+    assert.equal(navigated(forTeachers("ホーム", { pathname: "/teachers/settings" })), "/teachers");
+    assert.equal(navigated(forTeachers("ホーム", { access: AS.principal, pathname: "/teachers/settings" })), "/teachers/staff");
+  });
+
+  it("面談のことは、ひとりずつの画面ではその場の「面談」タブを示す", () => {
+    const here = forTeachers("面談メモを書きたい", { access: AS.gradeHead, pathname: "/teachers/staff", detail: true });
+    assert.equal(navigated(here), null);
+    assert.deepEqual(here.offers[0].action, { kind: "show", heading: "面談", href: null });
+    assert.equal(navigated(forTeachers("要約", { access: AS.vicePrincipal })), "/teachers/staff");
+    const none = forTeachers("面談");
+    assert.equal(navigated(none), null);
+    assert.match(none.say, /読む人の画面/);
+  });
+
+  it("生徒向けの行き先は拾わない", () => {
+    assert.equal(navigated(forTeachers("日記を書きたい")), null);
+    assert.equal(navigated(forTeachers("相談したい")), null);
+  });
+
+  it("つらさが混じった言葉は、まずご本人のこととして受け取る（どこにも連れて行かない）", () => {
+    const text = "もう死にたい";
+    const reply = forTeachers(text);
+    assert.equal(reply.calm, true);
+    assert.equal(navigated(reply), null);
+    assert.match(reply.say, /ご自身のことであれば/);
+    assert.ok(reply.say.indexOf("ご自身") < reply.say.indexOf("生徒"));
+    assert.notEqual(reply.say, assessSafety(text).safe_response);
+    assert.equal(reply.offers.length, 0);
+  });
+
+  it("気分が沈んだ言葉は受け止めるだけで、生徒の相談ページには渡さない", () => {
+    const reply = forTeachers("疲れた");
+    assert.equal(reply.calm, true);
+    assert.equal(reply.offers.length, 0);
+  });
+
+  it("あいさつの続きには、その人の最初の画面を出す", () => {
+    const homeroom = forTeachers("こんにちは", { pathname: "/teachers/settings" });
+    assert.ok(homeroom.offers.some((offer) => offer.label === "今日の記録を書く" && offer.action.href === "/teachers"));
+    const principal = forTeachers("こんにちは", { access: AS.principal, pathname: "/teachers/settings" });
+    assert.ok(principal.offers.some((offer) => offer.action.href === "/teachers/staff"));
+  });
+
+  it("使い方の例は、その人が開ける画面にする", () => {
+    for (const [access, href] of [[AS.homeroom, "/teachers"], [AS.vicePrincipal, "/teachers/staff"]]) {
+      assert.equal(forTeachers("使い方", { access }).offers[0].action.href, href);
+    }
+  });
+
+  it("カレンダーは無いので、日数だけを答える", () => {
+    const reply = forTeachers("あと何日？", { pathname: "/teachers/staff" });
     assert.match(reply.say, /あと24日/);
     assert.equal(reply.offers.length, 0);
   });
 
-  it("教員の行き先は、どれも実在するページ", () => {
-    for (const destination of Object.values(EDUCATOR_DESTINATIONS)) {
+  it("行き先は、教員の画面も Blesc for Teachers も、どれも実在するページ", () => {
+    for (const destination of [...Object.values(EDUCATOR_DESTINATIONS), ...Object.values(TEACHERS_DESTINATIONS)]) {
       const file = new URL(`../src/app${destination.href}/page.tsx`, import.meta.url);
       assert.ok(existsSync(file), `${destination.href} のページが無い`);
     }
+  });
+
+  it("見出しの言葉だけでも説明する", () => {
+    assert.equal(forTeachers("書き忘れた").say, entry("backfill").say);
+  });
+
+  it("ひとりずつの画面にある項目は、そこにいれば示し、いなければその人を選ぶ一覧へ", () => {
+    assert.equal(forTeachers("推移って何？", { access: AS.gradeHead, pathname: "/teachers/staff", detail: true }).offers[0].label, "画面で見る");
+    const away = forTeachers("本人の言葉って何？", { access: AS.vicePrincipal }).offers[0];
+    assert.deepEqual(away.action, { kind: "navigate", href: "/teachers/staff" });
+    assert.equal(forTeachers("推移って何？", { access: AS.homeroom }).offers.length, 0);
+  });
+
+  it("「変化があった」の説明は、比べ方と、五十音順・良い方向も同じ扱いであることを伝える", () => {
+    const reply = forTeachers("変化があったって何？");
+    assert.match(reply.say, /直近2週間/);
+    assert.match(reply.say, /五十音順/);
+    assert.match(reply.say, /良い方向の変化も同じ/);
+    assert.match(reply.say, /仮置き/);
+  });
+
+  it("一覧の言葉は、一覧の画面で示す（ひとりずつの画面からは出さない）", () => {
+    assert.deepEqual(forTeachers("変化があったって何？", { access: AS.gradeHead }).offers[0].action, { kind: "show", heading: "変化があった", href: "/teachers/staff" });
+    assert.equal(forTeachers("変化があったって何？", { access: AS.gradeHead, pathname: "/teachers/staff" }).offers[0].label, "画面で見る");
+  });
+
+  it("いまの権限で開けない画面にしか無い言葉は、説明だけをする", () => {
+    const reply = forTeachers("直近7日の気分って何？", { access: AS.homeroom });
+    assert.equal(reply.say, entry("strip").say);
+    assert.equal(reply.offers.length, 0);
+  });
+
+  it("点数や順位を聞かれたら、出さないことを答える", () => {
+    assert.equal(forTeachers("危険度の順に並べたい", { access: AS.gradeHead, pathname: "/teachers/staff" }).say, entry("no-scores").say);
+  });
+
+  it("説明に、リスクや段階づけの言葉を使わない", () => {
+    const banned = /高リスク|要注意|危険|リスク|悪化|アラート|警告|優先度|深刻/;
+    const says = [
+      ...GLOSSARY.filter((item) => item.audience === "teachers").map((item) => item.say),
+      ...PAGE_GUIDES.filter((guide) => guide.audience === "teachers").map((guide) => guide.say),
+      ASSISTANT_COPY.teachers.placeholder,
+      ...ASSISTANT_COPY.teachers.suggestions.map((suggestion) => suggestion.label),
+    ];
+    for (const say of says) assert.doesNotMatch(say, banned);
+  });
+
+  it("教員の画面（生徒を読む）の言葉と取り違えない", () => {
+    assert.notEqual(forTeachers("高リスクって何？").say, entry("band").say);
+    assert.notEqual(teacher("変化があったって何？").say, entry("changes").say);
   });
 });
 
@@ -302,10 +404,10 @@ describe("routeIntent — 画面の説明", () => {
   });
 
   it("意味を聞いていれば、ページ名でも開かずに説明する", () => {
-    assert.equal(navigated(teacher("クラス", { pathname: "/educator" })), "/educator/class");
-    const reply = teacher("クラスって何？", { pathname: "/educator" });
+    assert.equal(navigated(teacher("アラート", { pathname: "/educator" })), "/educator/alerts");
+    const reply = teacher("アラートって何？", { pathname: "/educator" });
     assert.equal(navigated(reply), null);
-    assert.match(reply.say, /変化があった生徒/);
+    assert.match(reply.say, /優先度の高いアラート/);
   });
 
   it("「この画面は何？」には、いまのページの説明と、続けて聞ける言葉を出す", () => {
@@ -329,50 +431,19 @@ describe("routeIntent — 画面の説明", () => {
   });
 
   it("見出しの言葉だけでも説明する", () => {
-    assert.equal(teacher("書き忘れた").say, entry("backfill").say);
+    assert.equal(teacher("日記の未提出").say, entry("missing-alerts").say);
   });
 
-  it("ひとりずつの画面にある項目は、そこにいれば示し、いなければその人を選ぶ一覧へ", () => {
-    assert.equal(teacher("推移って何？", { pathname: "/educator/class", detail: true }).offers[0].label, "画面で見る");
-    const away = teacher("推移って何？", { pathname: "/educator" }).offers[0];
-    assert.deepEqual(away.action, { kind: "navigate", href: "/educator/class" });
-    const vicePrincipal = teacher("本人の言葉って何？", { access: AS.vicePrincipal, pathname: "/educator" }).offers[0];
-    assert.deepEqual(vicePrincipal.action, { kind: "navigate", href: "/educator/staff" });
+  it("生徒ごとの画面にある項目は、そこにいれば示し、いなければ生徒一覧へ", () => {
+    assert.equal(teacher("AIタイムラインって何？", { pathname: "/educator/student/s1" }).offers[0].label, "画面で見る");
+    const away = teacher("AIタイムラインって何？", { pathname: "/educator" }).offers[0];
+    assert.deepEqual(away.action, { kind: "navigate", href: "/educator/roster" });
   });
 
-  it("「変化があった」の説明は、比べ方と、名簿順・良い方向も同じ扱いであることを伝える", () => {
-    const reply = teacher("変化があったって何？");
-    assert.match(reply.say, /直近2週間/);
-    assert.match(reply.say, /名簿順/);
-    assert.match(reply.say, /良い方向の変化も同じ/);
-    assert.match(reply.say, /仮置き/);
-  });
-
-  it("一覧の言葉は、一覧の画面で示す（ひとりずつの画面からは出さない）", () => {
-    assert.deepEqual(teacher("変化があったって何？", { pathname: "/educator" }).offers[0].action, { kind: "show", heading: "変化があった", href: "/educator/class" });
-    assert.equal(teacher("変化があったって何？", { pathname: "/educator/class" }).offers[0].label, "画面で見る");
-    assert.equal(teacher("変化があったって何？", { access: AS.vicePrincipal, pathname: "/educator/staff" }).offers[0].label, "画面で見る");
-  });
-
-  it("いまの権限で開けない画面にしか無い言葉は、説明だけをする", () => {
-    const reply = teacher("直近7日の気分って何？", { access: AS.noHomeroom, pathname: "/educator" });
-    assert.equal(reply.say, entry("strip").say);
-    assert.equal(reply.offers.length, 0);
-  });
-
-  it("点数や順位を聞かれたら、出さないことを答える", () => {
-    assert.equal(teacher("危険度の順に並べたい", { pathname: "/educator/class" }).say, entry("no-scores").say);
-  });
-
-  it("教員向けの説明に、リスクや段階づけの言葉を使わない", () => {
-    const banned = /高リスク|要注意|危険|リスク|悪化|アラート|警告|優先度|深刻/;
-    const educator = [
-      ...GLOSSARY.filter((item) => item.audience === "educator").map((item) => item.say),
-      ...PAGE_GUIDES.filter((guide) => guide.audience === "educator").map((guide) => guide.say),
-      ASSISTANT_COPY.educator.placeholder,
-      ...ASSISTANT_COPY.educator.suggestions.map((suggestion) => suggestion.label),
-    ];
-    for (const say of educator) assert.doesNotMatch(say, banned);
+  it("状態の区分の説明は、AIの算出した傾向で診断ではないと伝える", () => {
+    const reply = teacher("高リスクって何？");
+    assert.match(reply.say, /AIが算出した傾向/);
+    assert.match(reply.say, /診断ではありません/);
   });
 
   it("説明の行き先は、どれも実在するページ", () => {
@@ -384,7 +455,7 @@ describe("routeIntent — 画面の説明", () => {
   });
 
   it("生徒の画面では教員向けの言葉を説明しない（逆も同じ）", () => {
-    assert.notEqual(ask("変化があったって何？").say, entry("changes").say);
+    assert.notEqual(ask("高リスクって何？").say, entry("band").say);
     assert.notEqual(teacher("気分の内訳って何？").say, entry("mood-bloom").say);
   });
 
@@ -515,7 +586,7 @@ describe("routeIntent — 雑談", () => {
 describe("候補", () => {
   it("表に載っている言葉はすべて実際に一致する（死んだ見出し語を作らない）", () => {
     for (const { word, audience } of INTENT_WORDS) {
-      for (const who of audience ? [audience] : ["student", "educator"]) {
+      for (const who of audience ? [audience] : ["student", "educator", "teachers"]) {
         const reply = ask(word, { audience: who });
         assert.ok(
           reply.expression !== "oops" || reply.actions.length > 0,
@@ -525,9 +596,9 @@ describe("候補", () => {
     }
   });
 
-  it("出している候補はすべて実際に反応する（生徒・教員とも）", () => {
+  it("出している候補はすべて実際に反応する（生徒・教員・Blesc for Teachers とも）", () => {
     for (const [audience, copy] of Object.entries(ASSISTANT_COPY)) {
-      const home = audience === "educator" ? "/educator" : "/";
+      const home = { student: "/", educator: "/educator", teachers: "/teachers" }[audience];
       for (const suggestion of copy.suggestions) {
         const reply = ask(suggestion.label, { audience, pathname: home });
         assert.notEqual(reply.expression, "oops", `「${suggestion.label}」（${audience}）が拾われない`);
@@ -904,7 +975,7 @@ describe("返事までの間", () => {
 describe("名前", () => {
   const ctx = (audience = "student") => ({
     audience,
-    pathname: audience === "educator" ? "/educator" : "/",
+    pathname: { student: "/", educator: "/educator", teachers: "/teachers" }[audience],
     settings: { text: "m", line: "normal", contrast: "normal", motion: "system", face: "default" },
     pilot: null,
     safety: { level: "none" },
@@ -920,7 +991,7 @@ describe("名前", () => {
   });
 
   it("自分には「くん」を付けない（名乗りは呼び名と違う）", () => {
-    for (const audience of ["student", "educator"]) {
+    for (const audience of ["student", "educator", "teachers"]) {
       const reply = routeIntent("あなたは誰？", ctx(audience));
       assert.ok(!reply.say.includes("ラスクくん"), `${audience}: 自分を「くん」付けで呼んでいる`);
       assert.match(reply.say, /ラスク/);

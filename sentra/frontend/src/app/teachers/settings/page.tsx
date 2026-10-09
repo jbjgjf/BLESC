@@ -8,26 +8,17 @@
 
 import { useAuth } from "@/lib/auth";
 import { Icon } from "@/components/ui/Icon";
-import { CLASSES, classById, readersOfStaff, staffById } from "@/lib/teachers/fixtures";
+import { readersOfStaff, staffById } from "@/lib/teachers/fixtures";
 import { setNoticePrefs, useNoticePrefs, usePersona } from "@/lib/teachers/store";
-import type { Persona } from "@/lib/teachers/types";
 import { PageHead, styles } from "@/components/teachers/parts";
 
 const WEEKDAYS = ["月", "火", "水", "木", "金"];
-
-function studentScope(persona: Persona): string {
-  const scope = persona.access.students;
-  if (!scope) return "なし";
-  if (scope.classIds.length === CLASSES.length) return `全生徒（${scope.classIds.length * 38}名）`;
-  if (scope.grade !== null) return `${scope.grade}年全体（${scope.classIds.length}クラス・${scope.classIds.length * 38}名）`;
-  return scope.classIds.map((id) => `${classById(id)?.name}（38名）`).join("、");
-}
 
 export default function SettingsPage() {
   const persona = usePersona();
   const { signOut } = useAuth();
   const prefs = useNoticePrefs(persona.id);
-  const me = persona.staffId ? staffById(persona.staffId) : null;
+  const me = staffById(persona.staffId);
   const readers = me && persona.access.write ? readersOfStaff(me.id) : null;
 
   return (
@@ -47,9 +38,7 @@ export default function SettingsPage() {
         )}
         <dt>私が読める範囲</dt>
         <dd data-bl-term="私が読める範囲">
-          生徒：{studentScope(persona)}
-          <br />
-          先生：{persona.access.teachers ? `${persona.access.teachers.label}（${persona.access.teachers.staffIds.length}名）` : "なし"}
+          {persona.access.teachers ? `${persona.access.teachers.label}（${persona.access.teachers.staffIds.length}名）` : "自分の記録だけ"}
         </dd>
       </dl>
       <p className={styles.note}>名前・担当・読める範囲は、学校からの依頼をもとに Blesc が設定しています。変えたいときは学校の担当の先生にご相談ください。</p>
@@ -58,7 +47,7 @@ export default function SettingsPage() {
         <h2 id="notice-title" className={styles.h2}>
           お知らせ
         </h2>
-        {(persona.access.students || persona.access.teachers) && (
+        {persona.access.teachers && (
           <>
             <label className={styles.toggle}>
               <input type="checkbox" checked={prefs.beforeMeeting} onChange={(e) => setNoticePrefs(persona.id, { ...prefs, beforeMeeting: e.target.checked })} />

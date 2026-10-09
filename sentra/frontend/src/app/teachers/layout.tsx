@@ -5,17 +5,18 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useDemoMode } from "@/lib/demo";
 import { useIsHydrated } from "@/lib/hydration";
-import { Icon } from "@/components/ui/Icon";
 
 /**
- * 教員向け画面の入口。
+ * Blesc for Teachers（先生自身の記録のためのサービス）の入口。
  *
  * ここでの制御は表示上のものにすぎない。実際のアクセス制御は Supabase の
  * RLS 側にあり、教員でないユーザーがこの URL に到達してもデータは返らない。
  * デモモードでは固定データしか読まないため、この判定を通す。
+ *
+ * 外枠（サイドバー・タブ）は components/teachers/TeacherShell が持つ。
  */
-export default function EducatorLayout({ children }: { children: React.ReactNode }) {
-  const { user, isEducator, isLoading, educatorMemberships } = useAuth();
+export default function TeachersLayout({ children }: { children: React.ReactNode }) {
+  const { user, isEducator, isLoading } = useAuth();
   const router = useRouter();
 
   // Reads false until hydration completes; `isLoading` only clears after the
@@ -36,28 +37,11 @@ export default function EducatorLayout({ children }: { children: React.ReactNode
 
   if (!hydrated || isLoading || !allowed) {
     return (
-      <div className="bl-wrap" style={{ display: "grid", placeItems: "center", minHeight: "50vh" }}>
+      <div style={{ display: "grid", placeItems: "center", minHeight: "50vh" }}>
         <span className="bl-loader" aria-label="読み込み中" />
       </div>
     );
   }
 
-  const orgName = educatorMemberships.map((m) => m.org_name).join(" ・ ") || "広尾学園 中学校・高等学校";
-
-  return (
-    <div className="bl-wrap bl-wrap--wide bl-stack">
-      <div className="bl-orgbar">
-        <span className="bl-row" style={{ gap: 9 }}>
-          <Icon name="apartment" size={19} />
-          <span className="bl-meta" style={{ fontWeight: 600 }}>{orgName}</span>
-        </span>
-        <span className="bl-disclaimer">
-          <Icon name="medical_information" size={15} />
-          blescは医療的な診断を行いません。最終的な判断は学校の支援体制が行います。
-        </span>
-      </div>
-
-      {children}
-    </div>
-  );
+  return <>{children}</>;
 }

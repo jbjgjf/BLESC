@@ -39,10 +39,10 @@
   --bl-hue: 206;
 }
 
-/* 先生の画面（Blesc for Teachers）はラベンダー、生徒の画面は青。
+/* Blesc for Teachers（/teachers）はラベンダー、生徒・教員の Blesc は青。
    色相だけを変え、彩度と明るさは同じにする。花のロゴも同じだけ回してある
    （/flower-teachers.png）。 */
-.bl-app[data-bl-context="educator"] {
+.bl-app[data-bl-context="teachers"] {
   --bl-hue: 262;
 }
 
@@ -1162,7 +1162,7 @@ html[data-bl-motion="reduced"] *::after {
    画面の種類ではなく「小石がいるかどうか」で判定する。生徒テーマの層に
    置かないのはそのため。 */
 
-/* 保存ボタンが画面の下に固定されている画面（先生の「今日を書く」）。スマホでは
+/* 保存ボタンが画面の下に固定されている画面（Blesc for Teachers の「今日を書く」）。スマホでは
    帯が横幅いっぱいなので、案内役をその上へ持ち上げる。PC・タブレットでは
    帯が案内役の席の左で終わるので、そのままでよい。 */
 @media (max-width: 640px) {

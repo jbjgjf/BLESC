@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 一人ぶんの画面（UI仕様書 5-2 / 5-3 / 6-2）。タブは「記録」「推移」「面談」。
+ * 先生一人ぶんの画面（UI仕様書 6-2）。タブは「記録」「推移」「面談」。
  *
  *  - 記録：新しい日が上。本文はそのまま全文を出し、要約やハイライトはしない。
  *  - 推移：気分は折れ線ではなく、日ごとの顔を並べた帯。タグは回数。
@@ -17,7 +17,7 @@ import type { Mood } from "@/lib/blesc/types";
 import { AS_OF, WORK_RELATED } from "@/lib/teachers/fixtures";
 import { SUMMARY_RULE, addDays, buildSummary, summaryViolations, weekStart } from "@/lib/teachers/records";
 import { addMemo, setMeetingPlan, useMeetingPlans, useMemos, usePersona } from "@/lib/teachers/store";
-import type { Kind, Person } from "./PeopleScreen";
+import type { Person } from "./PeopleScreen";
 import { MoodMark, PageHead, RecordItem, styles, tagLabel } from "./parts";
 
 type Href = (next: Record<string, string | null>) => string;
@@ -28,7 +28,7 @@ const TABS = [
   { value: "meeting", label: "面談" },
 ] as const;
 
-export function PersonDetail({ kind, person, tab, focusDate, hrefWith }: { kind: Kind; person: Person; tab: string; focusDate: string | null; hrefWith: Href }) {
+export function PersonDetail({ person, tab, focusDate, hrefWith }: { person: Person; tab: string; focusDate: string | null; hrefWith: Href }) {
   const current = TABS.some((t) => t.value === tab) ? tab : "records";
   return (
     <>
@@ -51,7 +51,7 @@ export function PersonDetail({ kind, person, tab, focusDate, hrefWith }: { kind:
       </nav>
       {current === "records" && <RecordsTab person={person} focusDate={focusDate} />}
       {current === "trend" && <TrendTab person={person} />}
-      {current === "meeting" && <MeetingTab kind={kind} person={person} hrefWith={hrefWith} />}
+      {current === "meeting" && <MeetingTab person={person} hrefWith={hrefWith} />}
     </>
   );
 }
@@ -173,13 +173,12 @@ function BandRow({ monday, byDate }: { monday: string; byDate: Map<string, Mood>
 
 /* ── 面談 ─────────────────────────────────────────── */
 
-function MeetingTab({ kind, person, hrefWith }: { kind: Kind; person: Person; hrefWith: Href }) {
+function MeetingTab({ person, hrefWith }: { person: Person; hrefWith: Href }) {
   const persona = usePersona();
   const plans = useMeetingPlans(persona.id);
   const memos = useMemos(persona.id, person.id);
   const [made, setMade] = useState(false);
   const [writing, setWriting] = useState(false);
-  const who = kind === "student" ? "生徒" : "先生";
 
   return (
     <>
@@ -188,7 +187,7 @@ function MeetingTab({ kind, person, hrefWith }: { kind: Kind; person: Person; hr
           面談前の要約
         </h2>
         {made ? (
-          <SummaryBlock kind={kind} person={person} hrefWith={hrefWith} />
+          <SummaryBlock person={person} hrefWith={hrefWith} />
         ) : (
           <div className={styles.row}>
             <button type="button" className={`${styles.button} ${styles.primary}`} onClick={() => setMade(true)}>
@@ -235,10 +234,7 @@ function MeetingTab({ kind, person, hrefWith }: { kind: Kind; person: Person; hr
             </button>
           )}
         </div>
-        <p className={styles.note}>
-          面談メモは{who}本人には見えません。
-          {kind === "student" ? "担任が替わるときは、新しい担任に引き継がれます（学校の設定）。" : ""}
-        </p>
+        <p className={styles.note}>面談メモは先生本人には見えません。</p>
         {writing && <MemoForm subjectId={person.id} onDone={() => setWriting(false)} />}
         {memos.length === 0 ? (
           <p className={styles.note}>まだ面談メモはありません。</p>
@@ -264,15 +260,15 @@ function MeetingTab({ kind, person, hrefWith }: { kind: Kind; person: Person; hr
   );
 }
 
-function SummaryBlock({ kind, person, hrefWith }: { kind: Kind; person: Person; hrefWith: Href }) {
+function SummaryBlock({ person, hrefWith }: { person: Person; hrefWith: Href }) {
   const summary = useMemo(
     () =>
       buildSummary(person.records, {
         asOf: AS_OF,
         moodLabel: (mood) => MOOD_BY_VALUE[mood].label,
-        workTags: kind === "teacher" ? (WORK_RELATED as readonly string[]) : [],
+        workTags: WORK_RELATED as readonly string[],
       }),
-    [person.records, kind],
+    [person.records],
   );
   if (!summary) return <p className={styles.lede}>記録が{SUMMARY_RULE.minRecords}日分未満のため要約できません。記録をそのままご覧ください。</p>;
 
@@ -309,26 +305,24 @@ function SummaryBlock({ kind, person, hrefWith }: { kind: Kind; person: Person; 
         )}
       </div>
 
-      {kind === "teacher" && (
-        <div className={styles.head}>
-          <h3 className={styles.h3}>業務に関する記述</h3>
-          {summary.work.length === 0 ? (
-            <p className={styles.note}>業務量・校務・保護者対応のタグが付いた記述はありません。</p>
-          ) : (
-            <ol className={styles.records}>
-              {summary.work.map((item) => (
-                <li key={item.date} className={styles.record}>
-                  <span className={styles.recordDate}>{formatDate(item.date)}</span>
-                  <div className={styles.recordBody}>
-                    <span className={styles.tag}>{item.tags.map((t) => `#${tagLabel(t)}`).join(" ")}</span>
-                    <p className={styles.recordText}>{item.text}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
-      )}
+      <div className={styles.head}>
+        <h3 className={styles.h3}>業務に関する記述</h3>
+        {summary.work.length === 0 ? (
+          <p className={styles.note}>業務量・校務・保護者対応のタグが付いた記述はありません。</p>
+        ) : (
+          <ol className={styles.records}>
+            {summary.work.map((item) => (
+              <li key={item.date} className={styles.record}>
+                <span className={styles.recordDate}>{formatDate(item.date)}</span>
+                <div className={styles.recordBody}>
+                  <span className={styles.tag}>{item.tags.map((t) => `#${tagLabel(t)}`).join(" ")}</span>
+                  <p className={styles.recordText}>{item.text}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
 
       <p className={styles.note}>デモでは、AIの代わりに決まった形の文で作っています。</p>
     </div>

@@ -31,7 +31,7 @@ import styles from "./Assistant.module.css";
  * 画面の隅にいる案内役。
  *
  * できることは 3 つ — ページを開く、見え方を変える、画面に出ている言葉を
- * 説明してその場所を示す。生徒と教員のどちらの画面にも置き、audience で
+ * 説明してその場所を示す。生徒・教員・Blesc for Teachers の画面に置き、audience で
  * 行き先・言葉の説明・つらさへの返事を切り替える。
  *
  * 悩みを聞く役は持たせていない。それは /chat が同意と記録の仕組みごと
@@ -420,17 +420,9 @@ export function Assistant({ audience }: { audience: Audience }) {
       pilot: today ? pilotProgress(today) : null,
       safety: assessSafety(text),
       turn,
-      // 教員の画面では、権限で開ける画面が違う。一人ぶんの画面かどうかも渡す。
-      access:
-        audience === "educator"
-          ? {
-              write: persona.access.write,
-              students: Boolean(persona.access.students),
-              teachers: Boolean(persona.access.teachers),
-              studentTab: persona.access.students?.tab,
-            }
-          : undefined,
-      detail: audience === "educator" ? detail : undefined,
+      // Blesc for Teachers では、権限で開ける画面が違う。一人ぶんの画面かどうかも渡す。
+      access: audience === "teachers" ? { write: persona.access.write, teachers: Boolean(persona.access.teachers) } : undefined,
+      detail: audience === "teachers" ? detail : undefined,
     }),
     [audience, pathname, settings, today, persona, detail],
   );

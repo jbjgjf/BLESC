@@ -1,0 +1,152 @@
+/* 生徒一覧・リスク状況 — 企画書 5-1 */
+
+.head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 2px 2px 0;
+}
+
+.head p { margin-top: 3px; }
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 17px;
+  border-radius: var(--bl-pill);
+  border: 1px solid var(--bl-line);
+  background: #ffffff;
+  min-width: 15rem;
+  transition: border-color 0.16s var(--bl-ease);
+}
+
+.search:focus-within { border-color: var(--bl-blue); }
+.search :global(.blesc-icon) { color: var(--bl-ink-3); }
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: var(--bl-ink);
+}
+
+.searchInput::placeholder { color: hsl(var(--bl-hue) 28% 62%); }
+.searchInput::-webkit-search-cancel-button { cursor: pointer; }
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filterCount {
+  margin-left: 3px;
+  padding: 1px 7px;
+  border-radius: var(--bl-pill);
+  background: hsl(var(--bl-hue) 40% 100% / 0.5);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.filters :global(.bl-choice)[aria-pressed="true"] .filterCount {
+  background: hsl(0 0% 100% / 0.55);
+}
+
+/* ── 表 ─────────────────────────────────────────────── */
+.tableScroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.87rem;
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 12px 14px;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--bl-ink-3);
+  background: var(--bl-mist);
+  border-bottom: 1px solid var(--bl-line);
+}
+
+.table tbody tr {
+  border-bottom: 1px solid var(--bl-line-soft);
+  transition: background 0.14s var(--bl-ease);
+}
+
+.table tbody tr:last-child { border-bottom: 0; }
+.table tbody tr:hover { background: var(--bl-mist); }
+
+/* 状態を行の左端にも出す — 色だけに頼らずチップと併記している */
+.table tbody tr[data-band="alert"] { box-shadow: inset 3px 0 0 var(--bl-alert); }
+.table tbody tr[data-band="watch"] { box-shadow: inset 3px 0 0 var(--bl-watch); }
+.table tbody tr[data-band="calm"]  { box-shadow: inset 3px 0 0 var(--bl-calm); }
+
+.table td,
+.table tbody th {
+  padding: 11px 14px;
+  vertical-align: middle;
+  text-align: left;
+  font-weight: 400;
+}
+
+.name {
+  display: block;
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--bl-ink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.name:hover { text-decoration: underline; }
+.name:focus-visible { outline: 2px solid var(--bl-blue); outline-offset: 2px; border-radius: 4px; }
+
+.klass {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--bl-ink-3);
+}
+
+.num {
+  white-space: nowrap;
+  color: var(--bl-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.hasFollowUp {
+  display: inline-flex;
+  color: var(--bl-blue);
+}
+
+.themes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 15rem;
+}
+
+/* ── カード（モバイル） ─────────────────────────────── */
+.cards { display: none; }
+
+@media (max-width: 900px) {
+  .tableScroll { display: none; }
+  .cards { display: flex; flex-direction: column; gap: 10px; }
+  .card { display: block; }
+}

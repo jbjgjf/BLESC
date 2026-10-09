@@ -1,29 +1,21 @@
 /**
  * Blesc for Teachers のデモ用の学校。UI仕様書の 7章の例に合わせてある。
  *
- * 3学年×4クラス（1クラス38人）と、教職員50人。記録は8週間ぶん、登校日だけ。
- * 乱数は名簿の位置を種にしているので、何度読み込んでも同じ記録になる。
+ * 教職員50人。記録は8週間ぶん、登校日だけ。乱数は名簿の位置を種にして
+ * いるので、何度読み込んでも同じ記録になる。
  *
  * 何人かは「変化があった」ように作ってある（記録の間・気分・話題・
- * 記述の長さ・記録の時間）。どれも同じ扱いで、重さの違いは作らない。
+ * 記録の時間）。どれも同じ扱いで、重さの違いは作らない。
+ *
+ * Blesc for Teachers は先生自身の記録のためのサービスで、生徒の記録は
+ * 扱わない（生徒を読むのは Blesc の教員の画面 /educator）。
  *
  * 値の import を持たない（node のテストからそのまま読めるように）。
  * 日付の基準 AS_OF は、生徒側の TODAY（lib/blesc/labels.ts）と同じ日。
  */
 
-import type { EventCategory, Mood } from "@/lib/blesc/types";
-import type {
-  Access,
-  MeetingMemo,
-  Persona,
-  PersonaId,
-  SchoolClass,
-  StaffMember,
-  Student,
-  StudentRecord,
-  TeacherRecord,
-  WorkTag,
-} from "./types";
+import type { Mood } from "@/lib/blesc/types";
+import type { Access, MeetingMemo, Persona, PersonaId, SchoolClass, StaffMember, TeacherRecord, WorkTag } from "./types";
 
 export const AS_OF = "2026-08-07";
 export const SCHOOL_NAME = "広尾学園 中学校・高等学校";
@@ -139,177 +131,13 @@ function makeRecords<Tag extends string>(
   return out;
 }
 
-/* ── 生徒 ─────────────────────────────────────────────────── */
-
-export const STUDENT_QUESTIONS = [
-  "今日いちばん長かった時間は？",
-  "今日いちばん笑ったのはいつ？",
-  "明日、楽しみにしていることは？",
-  "今日、だれとよく話した？",
-  "最近ちょっと気になっていることは？",
-] as const;
-
-const STUDENT_TEXTS: Record<EventCategory, Pools> = {
-  club: {
-    up: ["部活で新しいメニューをやった。きつかったけど楽しかった。", "先輩にフォームをほめられた。", "練習試合で点が取れた。"],
-    flat: ["試合に向けて練習が増えてきた。", "部活のミーティングがあった。"],
-    down: ["部活のあと、足がだるい。", "後輩に教える番がまわってきて、うまく説明できなかった。", "部活でミスが続いて、少しへこんだ。"],
-  },
-  friends: {
-    up: ["昼休みに友だちと話していて、ずっと笑っていた。", "友だちと帰り道に寄り道した。"],
-    flat: ["友だちと次の行事の話をした。", "友だちに相談したら少し楽になった。"],
-    down: ["グループの話についていけないときがある。", "友だちと少し気まずくなった。"],
-  },
-  study: {
-    up: ["数学の小テストがあった。思ったよりできた。", "授業で発表した。緊張したけど言いたいことは言えた。"],
-    flat: ["夏期講習の宿題を進めた。", "図書室で勉強した。"],
-    down: ["英語の単語を覚えるのが追いつかない。", "テストの点が思ったより低くて落ちこんだ。"],
-  },
-  family: {
-    up: ["週末は家族で出かけた。", "夕飯の手伝いをした。"],
-    flat: ["家でゆっくりした。"],
-    down: ["家で弟とけんかした。", "家に帰っても、なんとなく落ち着かない。"],
-  },
-  future: {
-    up: ["オープンキャンパスの案内をもらって、行ってみたい大学ができた。"],
-    flat: ["進路のことを少し考えた。", "三者面談の日が決まった。"],
-    down: ["進路のことを考えると、少し不安になる。"],
-  },
-  health: {
-    up: ["よく寝られて、すっきりしている。"],
-    flat: ["少し寝不足。"],
-    down: ["あまり眠れなかった。", "朝起きるのがつらかった。", "少し頭が痛かった。"],
-  },
-  other: {
-    up: ["好きな曲を見つけた。"],
-    flat: ["特に何もない一日だった。", "雨で外に出られなかった。"],
-    down: ["なんとなく疲れた一日だった。"],
-  },
-};
-const STUDENT_FILLERS: Pools = {
-  up: ["明日もがんばる。", "少しほっとした。"],
-  flat: ["また明日。", "今日はわりと早く寝たい。"],
-  down: ["今日は早く寝たい。", "少し疲れた。"],
-};
-
-const STUDENT_FAVORITES: ReadonlyArray<readonly EventCategory[]> = [
-  ["club", "friends", "study"],
-  ["study", "friends", "future"],
-  ["friends", "club", "other"],
-  ["study", "family", "health"],
-  ["club", "study", "health"],
-];
-
-const STEADY_MOOD = [2, 5, 4, 1, 0.3] as const;
-const HR = 15 * 60 + 40;
-
-/** 生徒の「変化」の作り。どれも同じ扱いで、重さの違いは無い。 */
-const STUDENT_CHANGES: Record<string, (favorites: readonly EventCategory[]) => Partial<Plan<EventCategory>>> = {
-  moodDown: () => ({ mood: [[2, 6, 3, 0.5, 0], [0, 1, 3, 5, 2]] }),
-  moodUp: () => ({ mood: [[0, 1, 4, 4, 1], [3, 6, 2, 0, 0]] }),
-  club: () => ({ tags: [["study", "friends", "family"], ["club", "study", "friends"]], always: undefined }),
-  shorter: () => ({ short: true, long: true }),
-  gap: () => ({ silentDays: 7 }),
-  transfer: () => ({ startsDaysAgo: 9 }),
-};
-
-/* 名簿。学年・組ごとに、この中から決まった並びで38人を選ぶ。 */
-const SURNAMES: ReadonlyArray<[string, string]> = [
-  ["青木", "あおき"], ["石川", "いしかわ"], ["井上", "いのうえ"], ["上田", "うえだ"], ["内田", "うちだ"],
-  ["遠藤", "えんどう"], ["大西", "おおにし"], ["岡本", "おかもと"], ["小野", "おの"], ["加藤", "かとう"],
-  ["川口", "かわぐち"], ["木村", "きむら"], ["工藤", "くどう"], ["小林", "こばやし"], ["斎藤", "さいとう"],
-  ["坂本", "さかもと"], ["佐々木", "ささき"], ["清水", "しみず"], ["杉山", "すぎやま"], ["鈴木", "すずき"],
-  ["高木", "たかぎ"], ["竹内", "たけうち"], ["田村", "たむら"], ["中島", "なかじま"], ["中村", "なかむら"],
-  ["西田", "にしだ"], ["野口", "のぐち"], ["長谷川", "はせがわ"], ["林", "はやし"], ["原田", "はらだ"],
-  ["藤井", "ふじい"], ["前田", "まえだ"], ["松本", "まつもと"], ["宮崎", "みやざき"], ["村上", "むらかみ"],
-  ["森", "もり"], ["山口", "やまぐち"], ["山田", "やまだ"], ["吉田", "よしだ"], ["渡辺", "わたなべ"],
-];
-const GIVEN = [
-  "結衣", "大和", "陽向", "芽依", "蓮", "咲希", "悠斗", "陽菜", "心春", "湊", "莉子", "颯太", "澪", "千尋",
-  "岳", "結菜", "大翔", "海斗", "芽衣", "美咲", "陸", "花音", "翔", "涼", "蒼", "彩葉", "健太", "奏太",
-  "玲奈", "蓮司", "陽太", "詩織", "桜", "樹", "楓", "葵", "律", "紬", "晴", "琴音",
-];
-
-/**
- * 2年3組（田中先生のクラス）の「変化」。名字で指定する。
- * 野口さんは転入して間もないので、比べる元がまだ無い。
- */
-const CLASS_2_3_CHANGES: Record<string, keyof typeof STUDENT_CHANGES> = {
-  上田: "moodDown",
-  木村: "club",
-  清水: "shorter",
-  中島: "gap",
-  前田: "moodUp",
-  野口: "transfer",
-};
+/* ── クラス（担任の担当を書くためだけ。生徒の名簿は持たない） ── */
 
 export const CLASSES: SchoolClass[] = [1, 2, 3].flatMap((grade) =>
   [1, 2, 3, 4].map((room) => ({ id: `c-${grade}-${room}`, grade, room, name: `${grade}年${room}組` })),
 );
 
 export const classById = (id: string) => CLASSES.find((c) => c.id === id) ?? null;
-
-const rosterCache = new Map<string, Student[]>();
-
-/** そのクラスの名簿（出席番号順＝名字の五十音順）と記録。初めて開いたときに作る。 */
-export function studentsOf(classId: string): Student[] {
-  const cached = rosterCache.get(classId);
-  if (cached) return cached;
-  const klass = classById(classId);
-  if (!klass) return [];
-  const seed = klass.grade * 100 + klass.room;
-  const random = seeded(seed * 7919);
-
-  // 40の名字から2つを外して38人。2年3組は山田さん（仕様書の例）が必ず入るように選ぶ。
-  const dropped = new Set<number>();
-  while (dropped.size < 2) {
-    const index = Math.floor(random() * SURNAMES.length);
-    if (classId === "c-2-3" && ["山田", ...Object.keys(CLASS_2_3_CHANGES)].includes(SURNAMES[index][0])) continue;
-    dropped.add(index);
-  }
-  const given = [...GIVEN];
-  for (let i = given.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(random() * (i + 1));
-    [given[i], given[j]] = [given[j], given[i]];
-  }
-  const surnames = SURNAMES.filter((_, i) => !dropped.has(i));
-
-  // ほかのクラスにも、2〜3人だけ変化のある生徒を置く（学年・全生徒で見たときのため）。
-  const otherChanges: Record<number, keyof typeof STUDENT_CHANGES> = {};
-  if (classId !== "c-2-3") {
-    const kinds: Array<keyof typeof STUDENT_CHANGES> = ["moodDown", "club", "gap", "moodUp", "shorter"];
-    const count = 2 + Math.floor(random() * 2);
-    for (let i = 0; i < count; i += 1) otherChanges[Math.floor(random() * 38)] = pick(random, kinds);
-  }
-
-  const students = surnames.map(([surname], index) => {
-    const favorites = STUDENT_FAVORITES[(seed + index) % STUDENT_FAVORITES.length];
-    const change = classId === "c-2-3" ? CLASS_2_3_CHANGES[surname] : otherChanges[index];
-    const plan: Plan<EventCategory> = {
-      rate: [0.88, 0.86],
-      mood: [STEADY_MOOD, STEADY_MOOD],
-      tags: [favorites, favorites],
-      minutes: [HR, HR],
-      ...(change ? STUDENT_CHANGES[change](favorites) : {}),
-    };
-    return {
-      id: `s-${klass.grade}${klass.room}-${String(index + 1).padStart(2, "0")}`,
-      classId,
-      number: index + 1,
-      name: `${surname} ${given[index]}`,
-      records: makeRecords(seed * 1000 + index, plan, STUDENT_TEXTS, STUDENT_FILLERS, STUDENT_QUESTIONS) as StudentRecord[],
-    };
-  });
-  rosterCache.set(classId, students);
-  return students;
-}
-
-/** 生徒を id から探す（見る権限の確認は画面の側でする）。 */
-export function findStudent(id: string): Student | null {
-  const match = /^s-(\d)(\d)-\d+$/.exec(id);
-  if (!match) return null;
-  return studentsOf(`c-${match[1]}-${match[2]}`).find((s) => s.id === id) ?? null;
-}
 
 /* ── 教職員 ───────────────────────────────────────────────── */
 
@@ -506,9 +334,6 @@ export function dutyOf(member: StaffMember): string {
 
 /* ── 立場（権限の組み合わせ） ─────────────────────────────── */
 
-const gradeClasses = (grade: number) => CLASSES.filter((c) => c.grade === grade).map((c) => c.id);
-const ALL_CLASSES = CLASSES.map((c) => c.id);
-
 /** 先生を読む範囲。学年主任は自分の学年の先生（自分を除く）、教頭は校長と自分を除く全員、校長は自分を除く全員。 */
 function staffScope(staffId: string): string[] {
   const me = staffById(staffId);
@@ -521,7 +346,7 @@ function staffScope(staffId: string): string[] {
 
 const access = (a: Access) => a;
 
-/** デモで切り替えられる7人。7章の例の5人に、養護教諭とスクールカウンセラーを足した。 */
+/** デモで切り替えられる6人。7章の例の5人に、養護教諭を足した。 */
 export const PERSONAS: Record<PersonaId, Persona> = {
   tanaka: {
     id: "tanaka",
@@ -529,7 +354,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     name: "田中 美咲",
     title: "2年3組担任・英語",
     role: "担任",
-    access: access({ write: true, students: { tab: "クラス", classIds: ["c-2-3"], grade: null }, teachers: null }),
+    access: access({ write: true, teachers: null }),
   },
   takahashi: {
     id: "takahashi",
@@ -537,7 +362,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     name: "高橋 健一",
     title: "数学・担任なし",
     role: "担任なしの先生",
-    access: access({ write: true, students: null, teachers: null }),
+    access: access({ write: true, teachers: null }),
   },
   sato: {
     id: "sato",
@@ -545,11 +370,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     name: "佐藤 恵子",
     title: "2年 学年主任・国語",
     role: "学年主任",
-    access: access({
-      write: true,
-      students: { tab: "クラス", classIds: gradeClasses(2), grade: 2 },
-      teachers: { label: "2年の先生", staffIds: staffScope("t-sato") },
-    }),
+    access: access({ write: true, teachers: { label: "2年の先生", staffIds: staffScope("t-sato") } }),
   },
   suzuki: {
     id: "suzuki",
@@ -557,7 +378,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     name: "鈴木 一郎",
     title: "教頭",
     role: "教頭",
-    access: access({ write: true, students: null, teachers: { label: "全教職員", staffIds: staffScope("t-suzuki") } }),
+    access: access({ write: true, teachers: { label: "全教職員", staffIds: staffScope("t-suzuki") } }),
   },
   ito: {
     id: "ito",
@@ -566,7 +387,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     title: "校長",
     role: "校長",
     // 校長が書くかは未決（9章）。デモでは書かず、読むだけにしている。
-    access: access({ write: false, students: null, teachers: { label: "全教職員", staffIds: staffScope("t-ito") } }),
+    access: access({ write: false, teachers: { label: "全教職員", staffIds: staffScope("t-ito") } }),
   },
   endo: {
     id: "endo",
@@ -574,26 +395,17 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     name: "遠藤 由紀",
     title: "養護教諭",
     role: "養護教諭",
-    access: access({ write: true, students: { tab: "生徒", classIds: ALL_CLASSES, grade: null }, teachers: null }),
-  },
-  yamashita: {
-    id: "yamashita",
-    staffId: null,
-    name: "山下 遥",
-    title: "スクールカウンセラー（外部）",
-    role: "スクールカウンセラー",
-    access: access({ write: false, students: { tab: "生徒", classIds: ALL_CLASSES, grade: null }, teachers: null }),
+    access: access({ write: true, teachers: null }),
   },
 };
 
-export const PERSONA_ORDER: PersonaId[] = ["tanaka", "takahashi", "sato", "suzuki", "ito", "endo", "yamashita"];
+export const PERSONA_ORDER: PersonaId[] = ["tanaka", "takahashi", "sato", "suzuki", "ito", "endo"];
 
-/** ログイン直後に開く画面（2章）。書く人は「自分の記録」、読むだけの人は「先生」か「生徒」。 */
+/** ログイン直後に開く画面（2章）。書く人は「自分の記録」、読むだけの人は「先生」。 */
 export function landingOf(persona: Persona): string {
-  if (persona.access.write) return "/educator";
-  if (persona.access.teachers) return "/educator/staff";
-  if (persona.access.students) return "/educator/class";
-  return "/educator/settings";
+  if (persona.access.write) return "/teachers";
+  if (persona.access.teachers) return "/teachers/staff";
+  return "/teachers/settings";
 }
 
 type Reader = { name: string; title: string };
@@ -608,55 +420,29 @@ export function readersOfStaff(staffId: string): Reader[] {
 }
 const rank = (member: StaffMember) => ({ 学年主任: 0, 教頭: 1, 校長: 2 })[member.position ?? ""] ?? 3;
 
-/** その生徒の記録を読める人。担任と、学校が許可した学年主任・養護教諭・スクールカウンセラー。 */
-export function readersOfStudent(classId: string): Reader[] {
-  const homeroom = STAFF.find((s) => s.homeroom === classId);
-  const grade = classById(classId)?.grade;
-  const head = STAFF.find((s) => s.position === "学年主任" && s.grade === grade);
-  const nurse = STAFF.find((s) => s.position === "養護教諭");
-  return [
-    homeroom ? { name: `${surnameOf(homeroom.name)}先生`, title: "担任" } : null,
-    head ? { name: `${surnameOf(head.name)}先生`, title: "学年主任" } : null,
-    nurse ? { name: `${surnameOf(nurse.name)}先生`, title: "養護教諭" } : null,
-    { name: `${surnameOf(PERSONAS.yamashita.name)}さん`, title: "スクールカウンセラー" },
-  ].filter((r): r is Reader => r !== null);
-}
-
 /* ── 面談（5-3） ──────────────────────────────────────────── */
 
-/** 2年3組の生徒を名字から引く（面談の例を、名簿の並びに左右されずに置くため）。 */
-const in23 = (surname: string) => studentsOf("c-2-3").find((s) => s.name.startsWith(`${surname} `))?.id ?? "";
-
-/** 次の面談予定日。書いた先生だけのもの。 */
+/** 次の面談予定日。書いた先生だけのもの。岡本先生の面談は次の登校日（前日のお知らせが出る）。 */
 export const MEETING_PLANS: Array<{ subjectId: string; date: string; author: PersonaId }> = [
-  { subjectId: in23("上田"), date: "2026-08-10", author: "tanaka" },
-  { subjectId: in23("山田"), date: "2026-08-21", author: "tanaka" },
-  { subjectId: "t-okamoto", date: "2026-08-12", author: "sato" },
+  { subjectId: "t-okamoto", date: "2026-08-10", author: "sato" },
+  { subjectId: "t-mori", date: "2026-08-19", author: "sato" },
 ];
 
 export const MEETING_MEMOS: MeetingMemo[] = [
   {
     id: "m-1",
-    subjectId: in23("上田"),
-    date: "2026-07-27",
-    body: "部活の人間関係のことを少し話してくれた。本人は「自分で何とかしたい」とのこと。こちらからは急がせず、聞くだけにした。",
-    nextCheck: "部活の雰囲気がその後どうか、本人のペースで聞く。",
-    author: "tanaka",
-  },
-  {
-    id: "m-2",
-    subjectId: in23("山田"),
-    date: "2026-07-14",
-    body: "進路の話。行ってみたい大学ができたとのこと。オープンキャンパスの日程を一緒に確認した。",
-    nextCheck: "オープンキャンパスに行けたか。",
-    author: "tanaka",
-  },
-  {
-    id: "m-3",
     subjectId: "t-okamoto",
     date: "2026-07-24",
     body: "行事の準備と学年の会計が重なっている時期。仕事の分け方を相談したいとのこと。",
     nextCheck: "行事のあとに、担当している仕事を一緒に書き出す。",
+    author: "sato",
+  },
+  {
+    id: "m-2",
+    subjectId: "t-mori",
+    date: "2026-07-17",
+    body: "保護者対応が続いている件。一人で抱えず、学年で分担できるところを一緒に確認した。",
+    nextCheck: "対応の記録を学年で共有できているか。",
     author: "sato",
   },
 ];

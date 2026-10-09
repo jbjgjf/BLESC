@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * 先生の画面の外枠（2章）。PC は左のサイドバー、タブレットは細い縦の帯、
- * スマホは下のタブバー。
+ * Blesc for Teachers（/teachers）の外枠（2章）。先生自身の記録のための
+ * サービスで、生徒の Blesc とは別のもの。PC は左のサイドバー、タブレットは
+ * 細い縦の帯、スマホは下のタブバー。
  *
- * タブは最大で「自分の記録」「クラス（生徒）」「先生」「設定」の4つで、
- * 持っている権限の分だけ出す。権限のないタブは出さない（グレーアウトもしない）。
+ * タブは最大で「自分の記録」「先生」「設定」の3つで、持っている権限の分
+ * だけ出す。権限のないタブは出さない（グレーアウトもしない）。
  *
  * デモでだけ、立場（権限の組み合わせ）を切り替えられる。本番では立場は
  * アカウントで決まり、切り替えは出さない。
@@ -29,15 +30,12 @@ type Tab = { href: string; label: string; icon: IconName; active: (pathname: str
 export function tabsFor(persona: Persona): Tab[] {
   const tabs: Tab[] = [];
   if (persona.access.write) {
-    tabs.push({ href: "/educator", label: "自分の記録", icon: "edit_note", active: (p) => p === "/educator" || p.startsWith("/educator/my-records") });
-  }
-  if (persona.access.students) {
-    tabs.push({ href: "/educator/class", label: persona.access.students.tab, icon: "groups", active: (p) => p.startsWith("/educator/class") });
+    tabs.push({ href: "/teachers", label: "自分の記録", icon: "edit_note", active: (p) => p === "/teachers" || p.startsWith("/teachers/my-records") });
   }
   if (persona.access.teachers) {
-    tabs.push({ href: "/educator/staff", label: "先生", icon: "group", active: (p) => p.startsWith("/educator/staff") });
+    tabs.push({ href: "/teachers/staff", label: "先生", icon: "group", active: (p) => p.startsWith("/teachers/staff") });
   }
-  tabs.push({ href: "/educator/settings", label: "設定", icon: "settings", active: (p) => p.startsWith("/educator/settings") });
+  tabs.push({ href: "/teachers/settings", label: "設定", icon: "settings", active: (p) => p.startsWith("/teachers/settings") });
   return tabs;
 }
 
@@ -165,8 +163,8 @@ export function TeacherShell({ children }: { children: ReactNode }) {
             </button>
             {demo && (
               <TransitionLink href="/" className={styles.sideLink}>
-                <Icon name="person" size={18} />
-                <span>生徒の画面へ（デモ）</span>
+                <Icon name="arrow_back" size={18} />
+                <span>生徒・教員の Blesc へ（デモ）</span>
               </TransitionLink>
             )}
           </div>
@@ -202,8 +200,8 @@ export function TeacherShell({ children }: { children: ReactNode }) {
               </button>
               {demo && (
                 <TransitionLink href="/" className={styles.switchItem}>
-                  <Icon name="person" size={19} />
-                  生徒の画面へ（デモ）
+                  <Icon name="arrow_back" size={19} />
+                  生徒・教員の Blesc へ（デモ）
                 </TransitionLink>
               )}
             </div>

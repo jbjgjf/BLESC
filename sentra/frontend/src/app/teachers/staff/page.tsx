@@ -2,8 +2,8 @@
 
 /**
  * 先生画面（UI仕様書 6章）。「先生を読む」権限を持つ学年主任・教頭・校長だけに出る。
- * 組み立てはクラス画面と同じで、対象が先生になる。担任の先生を開いても、
- * その先生のクラスの生徒の記録はここからは見られない。
+ * 担任の先生を開いても、その先生のクラスの生徒の記録はここからは見られない
+ * （生徒の記録は Blesc の教員の画面 /educator のもの）。
  */
 
 import { Suspense } from "react";
@@ -14,7 +14,7 @@ export default function StaffPage() {
   return (
     <AccessGate need="teachers">
       <Suspense>
-        <PeopleScreen kind="teacher" />
+        <PeopleScreen />
       </Suspense>
     </AccessGate>
   );

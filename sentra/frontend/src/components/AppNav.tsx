@@ -21,6 +21,15 @@ const STUDENT_NAV: NavItem[] = [
   { href: "/chat",     label: "相談",     icon: "chat_bubble" },
 ];
 
+const EDUCATOR_NAV: NavItem[] = [
+  { href: "/educator",          label: "ホーム",   icon: "dashboard", exact: true },
+  { href: "/educator/roster",   label: "生徒",     icon: "groups" },
+  { href: "/educator/alerts",   label: "アラート", icon: "notifications_active" },
+  { href: "/educator/class",    label: "クラス",   icon: "grid_view" },
+  { href: "/educator/meetings", label: "面談",     icon: "event_note" },
+  { href: "/school",            label: "学校全体", icon: "apartment" },
+];
+
 const GUARDIAN_NAV: NavItem[] = [
   { href: "/guardian", label: "ホーム", icon: "home", exact: true },
 ];
@@ -53,11 +62,13 @@ export function AppNav() {
   const menuOpen = openedAt === pathname;
   const setMenuOpen = (open: boolean) => setOpenedAt(open ? pathname : null);
 
-  // 先生の画面は components/teachers/TeacherShell が持つ。ここは生徒と保護者の画面だけ。
+  // Blesc for Teachers（/teachers）の外枠は components/teachers/TeacherShell が持つ。
+  // ここは生徒・教員・保護者の画面。
   const context = contextForPath(pathname);
   const persona = usePersona();
 
-  const items = context === "guardian" ? GUARDIAN_NAV : STUDENT_NAV;
+  const items =
+    context === "educator" ? EDUCATOR_NAV : context === "guardian" ? GUARDIAN_NAV : STUDENT_NAV;
 
   // 少しでも動いたらバーを締める。閾値を置くのは、慣性スクロールの
   // 揺り戻しで境界を何度もまたがないようにするため。
@@ -90,9 +101,10 @@ export function AppNav() {
     <>
       <header className="bl-nav" data-scrolled={scrolled}>
         <div className="bl-nav__inner">
-          <TransitionLink href="/" className="bl-nav__brand">
+          <TransitionLink href={context === "educator" ? "/educator" : "/"} className="bl-nav__brand">
             <Image src="/flower.png" alt="" width={30} height={30} priority />
             <span className="bl-nav__wordmark">blesc</span>
+            {context === "educator" && <span className="bl-nav__role">教員</span>}
             {context === "guardian" && <span className="bl-nav__role">保護者</span>}
           </TransitionLink>
 
@@ -152,16 +164,23 @@ export function AppNav() {
                     生徒画面
                   </TransitionLink>
                 )}
-                <TransitionLink href={landingOf(persona)} className="bl-menu__item" role="menuitem">
-                  <Icon name="dashboard" size={19} />
-                  先生の画面（Blesc for Teachers）
-                </TransitionLink>
+                {context !== "educator" && (
+                  <TransitionLink href="/educator" className="bl-menu__item" role="menuitem">
+                    <Icon name="dashboard" size={19} />
+                    教員ダッシュボード
+                  </TransitionLink>
+                )}
                 {context !== "guardian" && (
                   <TransitionLink href="/guardian" className="bl-menu__item" role="menuitem">
                     <Icon name="escalator_warning" size={19} />
                     保護者ダッシュボード
                   </TransitionLink>
                 )}
+                {/* 先生自身の記録のための、別のサービス。 */}
+                <TransitionLink href={landingOf(persona)} className="bl-menu__item" role="menuitem">
+                  <Icon name="edit_note" size={19} />
+                  Blesc for Teachers
+                </TransitionLink>
 
                 <div className="bl-menu__group">その他</div>
                 {MORE_LINKS.map((link) => (

@@ -4,12 +4,12 @@ import { usePathname } from "next/navigation";
 import { TransitionLink } from "@/components/ui/Transition";
 import { styles } from "./parts";
 
-/** 「自分の記録」の中の2つの画面（今日を書く・これまで）。生徒版と同じ並び。 */
+/** 「自分の記録」の中の2つの画面（今日を書く・これまで）。生徒の日記と同じ並び。 */
 export function OwnTabs() {
   const pathname = usePathname();
   const items = [
-    { href: "/educator", label: "今日を書く", active: pathname === "/educator" },
-    { href: "/educator/my-records", label: "これまで", active: pathname.startsWith("/educator/my-records") },
+    { href: "/teachers", label: "今日を書く", active: pathname === "/teachers" },
+    { href: "/teachers/my-records", label: "これまで", active: pathname.startsWith("/teachers/my-records") },
   ];
   return (
     <nav className={`${styles.tabs} ${styles.ownTabs}`} aria-label="自分の記録">
