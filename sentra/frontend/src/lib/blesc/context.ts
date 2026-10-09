@@ -9,7 +9,7 @@ export type AppContext = "student" | "educator" | "guardian" | "teachers";
  * あるので、この判定を通さない限り生徒向けの装飾は適用されない。
  *
  * "teachers" は Blesc for Teachers（/teachers）。先生自身の記録のための
- * 別のサービスで、外枠も色（ラベンダー）も生徒・教員の Blesc とは別に持つ。
+ * 別のサービスで、外枠も色（藤色）も生徒・教員の Blesc とは別に持つ。
  */
 export function contextForPath(pathname: string): AppContext {
   if (pathname.startsWith("/educator") || pathname.startsWith("/school")) return "educator";

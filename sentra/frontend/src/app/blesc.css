@@ -39,16 +39,30 @@
   --bl-hue: 206;
 }
 
-/* Blesc for Teachers（/teachers）はラベンダー、生徒・教員の Blesc は青。
-   色相だけを変え、彩度と明るさは同じにする。花のロゴも同じだけ回してある
-   （/flower-teachers.png）。 */
+/* Blesc for Teachers（/teachers）は藤色、生徒・教員の Blesc は青。
+   藤色は淡い色なので、生徒の青より彩度を落とし、塗りは淡く、文字と細い線と
+   フォーカスにだけ濃い藤を使う。ボタンは生徒の画面と同じく、淡い塗りに濃い
+   文字。花のロゴも藤色にしてある（/flower-teachers.png）。案内役の小石の色
+   （--bl-pebble-*）は変えない。 */
 .bl-app[data-bl-context="teachers"] {
-  --bl-hue: 262;
+  --bl-hue: 252;
+  --bl-blue: hsl(var(--bl-hue) 40% 80%);
+  --bl-blue-hover: hsl(var(--bl-hue) 40% 84%);
+  --bl-blue-press: hsl(var(--bl-hue) 34% 75%);
+  --bl-blue-strong: hsl(var(--bl-hue) 30% 52%);
+  --bl-mist: hsl(var(--bl-hue) 40% 96.5%);
+  --bl-veil: hsl(var(--bl-hue) 36% 92%);
+  --bl-line: hsl(var(--bl-hue) 30% 87%);
+  --bl-line-soft: hsl(var(--bl-hue) 32% 93%);
+  --bl-ink: hsl(var(--bl-hue) 32% 20%);
+  --bl-ink-2: hsl(var(--bl-hue) 20% 33%);
+  --bl-ink-3: hsl(var(--bl-hue) 13% 41%);
 }
 
 /* 色相から作る色。:root だけでなく .bl-app でも作り直すのは、
    var() が宣言した要素の --bl-hue で決まるため（:root で作った色は、
-   下の要素で --bl-hue を変えても青のまま受け継がれる）。 */
+   下の要素で --bl-hue を変えても青のまま受け継がれる）。高コントラストの
+   濃い色も、これで Blesc for Teachers では藤の色みになる。 */
 :root,
 .bl-app {
   --bl-blue: hsl(var(--bl-hue) 74% 72%);

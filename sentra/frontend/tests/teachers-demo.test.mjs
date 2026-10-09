@@ -194,10 +194,10 @@ describe("画面の言葉（仕様書の文言と、使わない言葉）", () =
     assert.doesNotMatch(css, /--bl-(alert|watch)/);
   });
 
-  it("Blesc for Teachers はラベンダー、生徒・教員の Blesc は青（色相だけが違う）", () => {
+  it("Blesc for Teachers は藤色、生徒・教員の Blesc は青", () => {
     const css = read("src/app/blesc.css");
     assert.match(css, /:root \{\s*--bl-hue: 206;/);
-    assert.match(css, /\.bl-app\[data-bl-context="teachers"\] \{\s*--bl-hue: 262;/);
+    assert.match(css, /\.bl-app\[data-bl-context="teachers"\] \{\s*--bl-hue: 252;\s*--bl-blue: hsl\(var\(--bl-hue\) 40% 80%\);/);
     assert.doesNotMatch(read("src/components/teachers/teachers.module.css"), /#[0-9a-f]{6}.*(blue|accent|button)|t-blue/i);
     assert.ok(read("src/components/teachers/TeacherShell.tsx").includes('src="/flower-teachers.png"'));
   });
