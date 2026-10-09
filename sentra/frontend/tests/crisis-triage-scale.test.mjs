@@ -359,7 +359,9 @@ describe("worst first means worst first", () => {
     // and a sort applied afterwards cannot put back what the cut removed.
     const entries = seedEntries(251);
     const older = reviewsFor(entries.slice(0, 250));
-    const newest = reviewsFor(entries.slice(250), () => ({ assessed_risk: "crisis" }));
+    // Its own id: `reviewsFor` numbers from 0 on each call, and review ids are
+    // unique in the real table.
+    const newest = reviewsFor(entries.slice(250), () => ({ id: "seeded-newest", assessed_risk: "crisis" }));
 
     const db = fakeDb({
       entries,
@@ -526,6 +528,36 @@ describe("showing decided rows does not hide pending ones (#380)", () => {
     // Decided rows keep the same worst-first order among themselves.
     assert.equal(queue[10].assessed_risk, "crisis");
     assert.equal(queue[12].assessed_risk, "low");
+  });
+
+  it("does not list a row twice when it is decided between the two passes", async () => {
+    const entries = seedEntries(5);
+    const db = fakeDb({
+      entries,
+      reviews: reviewsFor(entries),
+      enrollments: entries.map((entry) => ({
+        participant_id: entry.participant_id,
+        research_code: `P-${entry.participant_id}`,
+      })),
+    });
+
+    // Another reviewer decides the first row right after the pending pass has
+    // read it, before the decided pass runs.
+    let reviewReads = 0;
+    const racing = {
+      ...db,
+      from(table) {
+        if (table === "pilot_crisis_reviews" && ++reviewReads === 5) {
+          db.tables.pilot_crisis_reviews[0].status = "no_concern";
+        }
+        return db.from(table);
+      },
+    };
+
+    const queue = await loadQueue(racing, { includeDecided: true });
+    const ids = queue.map((row) => row.review_id);
+    assert.equal(new Set(ids).size, ids.length, "a review_id must appear once");
+    assert.equal(queue.length, 5);
   });
 
   it("leaves the default (pending only) queue unchanged", async () => {

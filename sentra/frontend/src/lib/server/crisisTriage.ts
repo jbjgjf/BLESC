@@ -326,6 +326,7 @@ export async function loadQueue(
   // queue of today's entries without saying so — the #247 truncation again,
   // through a different door.
   const rows: Row[] = [];
+  const seen = new Set<string>();
   const passes: Array<"pending" | "decided"> = options.includeDecided
     ? ["pending", "decided"]
     : ["pending"];
@@ -345,7 +346,15 @@ export async function loadQueue(
       // one that has been waiting longer is the one §4.4 is later on.
       const band = await query.order("created_at", { ascending: true }).limit(limit - rows.length);
       if (band.error) throw new Error(band.error.message);
-      rows.push(...((band.data ?? []) as Row[]));
+      // The passes are separate requests. A row decided by another reviewer
+      // between them is returned twice — once as pending, once as decided —
+      // which would put one review_id on the page twice and spend a slot on
+      // it. The first sighting wins; it is the one that was still pending.
+      for (const row of (band.data ?? []) as Row[]) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        rows.push(row);
+      }
     }
   }
 
