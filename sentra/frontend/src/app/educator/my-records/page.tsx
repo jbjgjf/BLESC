@@ -1,187 +1,126 @@
 "use client";
 
 /**
- * 自分の記録の振り返り（A-4）。
+ * 自分の記録・これまで（UI仕様書 4-3 / 3-2）。
  *
- * カレンダーと一覧の2つの見方と、気分の推移のグラフ。過去の記録は読むだけで、
- * 書き直した記録には、いつ書き直したかを並べて出す。
+ * 月のカレンダーに、記録した日の気分の顔が入る。日を選ぶと、その日の記録
+ * （気分・タグ・本文・答えた質問）が下に出る。この画面は本人だけのもので、
+ * 管理職が読んだかどうかは出さない。
  */
 
-import { useMemo, useState, useSyncExternalStore } from "react";
-import { MoodTrend } from "@/components/blesc/MoodTrend";
-import { MOOD_BY_VALUE, formatDate } from "@/lib/blesc/labels";
-import { AS_OF, MY_RECORDS, PROMPTS, readersOfTeacherRecords } from "@/lib/teachers/fixtures";
-import { useSchoolSettings } from "@/lib/teachers/store";
-import type { TeacherRecord } from "@/lib/teachers/types";
-import { MoodLabel, PageHead, ReadersLine, RoleGate, styles, tagLabel } from "@/components/teachers/parts";
-
-const SAVED_KEY = `blesc:my-record:${AS_OF}`;
-const subscribe = (notify: () => void) => {
-  window.addEventListener("blesc:my-record", notify);
-  return () => window.removeEventListener("blesc:my-record", notify);
-};
-let raw: string | null | undefined;
-let today: TeacherRecord | null = null;
-const readToday = () => {
-  let next: string | null = null;
-  try {
-    next = window.sessionStorage.getItem(SAVED_KEY);
-  } catch {
-    next = null;
-  }
-  if (next === raw) return today;
-  raw = next;
-  try {
-    today = next ? (JSON.parse(next) as TeacherRecord) : null;
-  } catch {
-    today = null;
-  }
-  return today;
-};
+import { useMemo, useState } from "react";
+import { Icon } from "@/components/ui/Icon";
+import { formatDate } from "@/lib/blesc/labels";
+import { AS_OF, staffById } from "@/lib/teachers/fixtures";
+import { usePersona, useWrittenRecords } from "@/lib/teachers/store";
+import type { Persona, TeacherRecord } from "@/lib/teachers/types";
+import { AccessGate, MoodMark, RecordItem, styles } from "@/components/teachers/parts";
+import { OwnTabs } from "@/components/teachers/OwnTabs";
 
 const WEEK = ["日", "月", "火", "水", "木", "金", "土"];
+const DAY = 86_400_000;
 
 function monthGrid(year: number, month: number) {
   const first = new Date(Date.UTC(year, month, 1));
-  const start = new Date(first.getTime() - first.getUTCDay() * 86_400_000);
-  return Array.from({ length: 42 }, (_, i) => {
-    const date = new Date(start.getTime() + i * 86_400_000);
+  const start = first.getTime() - first.getUTCDay() * DAY;
+  const last = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const cells = Math.ceil((first.getUTCDay() + last) / 7) * 7;
+  return Array.from({ length: cells }, (_, i) => {
+    const date = new Date(start + i * DAY);
     return { iso: date.toISOString().slice(0, 10), day: date.getUTCDate(), inMonth: date.getUTCMonth() === month };
   });
 }
 
-export default function MyRecordsPage() {
+export default function HistoryPage() {
   return (
-    <RoleGate allow={["homeroom", "manager"]}>
-      <MyRecords />
-    </RoleGate>
+    <AccessGate need="write">
+      <HistoryFor />
+    </AccessGate>
   );
 }
 
-function MyRecords() {
-  const settings = useSchoolSettings();
-  const saved = useSyncExternalStore(subscribe, readToday, () => null);
-  const records = useMemo(
-    () => [...MY_RECORDS, ...(saved ? [saved] : [])].sort((a, b) => b.date.localeCompare(a.date)),
-    [saved],
-  );
-  const byDate = useMemo(() => new Map(records.map((r) => [r.date, r])), [records]);
-
-  const [view, setView] = useState<"calendar" | "list">("calendar");
-  const [month, setMonth] = useState(() => ({ year: Number(AS_OF.slice(0, 4)), month: Number(AS_OF.slice(5, 7)) - 1 }));
-  const [selected, setSelected] = useState<string | null>(records[0]?.date ?? null);
-  const picked = selected ? byDate.get(selected) ?? null : null;
-
-  const series = [...records].reverse().filter((r) => r.date > "2026-06-12").map(({ date, mood }) => ({ date, mood }));
-
-  return (
-    <div className={styles.page}>
-      <PageHead kicker="先生自身の記録" title="振り返り" lede="過去の記録は読むだけになっています。書き直した日は、その履歴も見られます。">
-        <ReadersLine readers={readersOfTeacherRecords(settings)} subject="これらの記録" />
-      </PageHead>
-
-      <section className={styles.section}>
-        <h2 className={styles.h2}>気分の推移（直近8週）</h2>
-        <MoodTrend series={series} />
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sectionHead}>
-          <h2 className={styles.h2}>記録</h2>
-          <span className={styles.spacer} />
-          <div className={styles.segmented} role="tablist" aria-label="見方">
-            <button type="button" role="tab" aria-selected={view === "calendar"} onClick={() => setView("calendar")}>
-              カレンダー
-            </button>
-            <button type="button" role="tab" aria-selected={view === "list"} onClick={() => setView("list")}>
-              一覧
-            </button>
-          </div>
-        </div>
-
-        {view === "calendar" ? (
-          <>
-            <div className={styles.saveRow}>
-              <button type="button" className={styles.linkButton} onClick={() => setMonth((m) => (m.month === 0 ? { year: m.year - 1, month: 11 } : { ...m, month: m.month - 1 }))}>
-                前の月
-              </button>
-              <strong style={{ fontWeight: 500 }}>
-                {month.year}年{month.month + 1}月
-              </strong>
-              <button
-                type="button"
-                className={styles.linkButton}
-                disabled={month.year === Number(AS_OF.slice(0, 4)) && month.month === Number(AS_OF.slice(5, 7)) - 1}
-                onClick={() => setMonth((m) => (m.month === 11 ? { year: m.year + 1, month: 0 } : { ...m, month: m.month + 1 }))}
-              >
-                次の月
-              </button>
-            </div>
-            <div className={styles.calendar}>
-              {WEEK.map((w) => (
-                <span key={w} className={styles.calendarHead}>
-                  {w}
-                </span>
-              ))}
-              {monthGrid(month.year, month.month).map((cell) => {
-                const record = byDate.get(cell.iso);
-                return (
-                  <button
-                    key={cell.iso}
-                    type="button"
-                    className={styles.calendarDay}
-                    data-has={record ? "" : undefined}
-                    data-outside={cell.inMonth ? undefined : ""}
-                    data-selected={selected === cell.iso ? "" : undefined}
-                    disabled={!record}
-                    onClick={() => setSelected(cell.iso)}
-                    aria-label={record ? `${formatDate(cell.iso)}・${MOOD_BY_VALUE[record.mood].label}` : `${formatDate(cell.iso)}・記録なし`}
-                  >
-                    {cell.day}
-                    {record && <span className={styles.calendarMood} style={{ background: MOOD_BY_VALUE[record.mood].color }} />}
-                  </button>
-                );
-              })}
-            </div>
-            {picked && <RecordDetail record={picked} />}
-          </>
-        ) : (
-          <ol className={styles.records}>
-            {records.map((record) => (
-              <li key={record.date}>
-                <RecordDetail record={record} />
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
-    </div>
-  );
+function HistoryFor() {
+  const persona = usePersona();
+  return <History key={persona.id} persona={persona} />;
 }
 
-function RecordDetail({ record }: { record: TeacherRecord }) {
-  const prompt = record.promptId ? PROMPTS.find((p) => p.id === record.promptId) : null;
+function History({ persona }: { persona: Persona }) {
+  const me = staffById(persona.staffId ?? "");
+  const written = useWrittenRecords(persona.id);
+  const byDate = useMemo(() => {
+    const map = new Map<string, TeacherRecord>((me?.records ?? []).map((r) => [r.date, r]));
+    for (const record of Object.values(written)) map.set(record.date, record);
+    return map;
+  }, [me, written]);
+
+  const [month, setMonth] = useState({ year: Number(AS_OF.slice(0, 4)), month: Number(AS_OF.slice(5, 7)) - 1 });
+  const latest = [...byDate.keys()].sort().at(-1) ?? null;
+  const [selected, setSelected] = useState<string | null>(latest);
+  const picked = selected ? (byDate.get(selected) ?? null) : null;
+  const isCurrentMonth = month.year === Number(AS_OF.slice(0, 4)) && month.month === Number(AS_OF.slice(5, 7)) - 1;
+
   return (
-    <article className={styles.record}>
-      <span className={styles.recordDate}>{formatDate(record.date)}</span>
-      <div className={styles.recordBody}>
-        <div className={styles.recordMeta}>
-          <MoodLabel mood={record.mood} />
-          {record.tags.map((tag) => (
-            <span key={tag} className={styles.tag}>
-              #{tagLabel(tag)}
-            </span>
-          ))}
-        </div>
-        {prompt && <p className={styles.note}>質問「{prompt.text}」への回答</p>}
-        {record.text ? <p className={styles.recordText}>{record.text}</p> : <p className={styles.note}>（気分だけの記録）</p>}
-        <p className={styles.note}>
-          {record.edits.length > 1
-            ? `保存 ${record.edits[0]} → 書き直し ${record.edits.slice(1).join("・")}`
-            : `保存 ${record.edits[0]}`}
-          {record.date === AS_OF ? "（今日のうちは書き直せます）" : "（読むだけ）"}
-        </p>
+    <div className={`${styles.page} ${styles.narrow}`}>
+      <OwnTabs />
+
+      <div className={styles.row}>
+        <button
+          type="button"
+          className={styles.iconButton}
+          aria-label="前の月"
+          onClick={() => setMonth((m) => (m.month === 0 ? { year: m.year - 1, month: 11 } : { ...m, month: m.month - 1 }))}
+        >
+          <Icon name="chevron_left" size={24} />
+        </button>
+        <h1 className={styles.h2} style={{ minWidth: "7em", textAlign: "center" }}>
+          {month.year}年{month.month + 1}月
+        </h1>
+        <button
+          type="button"
+          className={styles.iconButton}
+          aria-label="次の月"
+          disabled={isCurrentMonth}
+          style={isCurrentMonth ? { opacity: 0.3 } : undefined}
+          onClick={() => setMonth((m) => (m.month === 11 ? { year: m.year + 1, month: 0 } : { ...m, month: m.month + 1 }))}
+        >
+          <Icon name="chevron_right" size={24} />
+        </button>
       </div>
-    </article>
+
+      <div className={styles.calendar}>
+        {WEEK.map((w) => (
+          <span key={w} className={styles.calendarHead}>
+            {w}
+          </span>
+        ))}
+        {monthGrid(month.year, month.month).map((cell) => {
+          const record = byDate.get(cell.iso);
+          return (
+            <button
+              key={cell.iso}
+              type="button"
+              className={styles.calendarDay}
+              data-outside={cell.inMonth ? undefined : "true"}
+              data-selected={selected === cell.iso ? "true" : undefined}
+              data-today={cell.iso === AS_OF ? "true" : undefined}
+              disabled={!record}
+              onClick={() => setSelected(cell.iso)}
+              aria-label={`${formatDate(cell.iso)}${record ? "" : "・記録なし"}`}
+            >
+              <span>{cell.day}</span>
+              {record && <MoodMark mood={record.mood} size={22} label={false} />}
+            </button>
+          );
+        })}
+      </div>
+
+      {picked ? (
+        <ol className={styles.records}>
+          <RecordItem record={picked} />
+        </ol>
+      ) : (
+        <p className={styles.note}>記録した日を選ぶと、その日の記録が出ます。</p>
+      )}
+    </div>
   );
 }

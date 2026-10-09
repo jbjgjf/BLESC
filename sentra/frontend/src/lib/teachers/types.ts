@@ -1,65 +1,98 @@
 /**
- * Blesc for Teachers のデータの形。
+ * Blesc for Teachers の型。UI仕様書（役割別・全画面）に沿う。
  *
- * 生徒の記録も先生の記録も、同じ「自己申告の記録」として扱う。気分・本文・
- * 本人が選んだタグの3つだけで、ここに AI の判定やリスクの段階は入らない
- * （設計原則 1）。画面に出る「変化あり」も、この3つの推移から決まる。
+ * 記録は生徒も先生も同じ形（気分・タグ・本文・答えた質問）。違うのは
+ * タグの種類だけ。ここに点数や判定の欄は無い。
  */
 
 import type { EventCategory, Mood } from "@/lib/blesc/types";
 
-/** 先生の業務タグ（A-3）。本人が選ぶ。自動で分類はしない。 */
-export type WorkTag = "lesson" | "admin" | "students" | "club" | "parents" | "other";
+/** 先生の記録のテーマのタグ（4-1）。 */
+export type WorkTag = "lesson" | "admin" | "students" | "parents" | "club" | "workload" | "health" | "other";
 
-/** 1日1件の記録。生徒は話題、先生は業務をタグに持つ。 */
+/** 1日1件の記録。 */
 export interface SelfRecord<Tag extends string = string> {
   /** YYYY-MM-DD */
   date: string;
+  /** 保存した時刻 HH:MM */
+  time: string;
   mood: Mood;
-  /** 任意。気分だけの日もある。 */
-  text: string;
   tags: Tag[];
+  /** 自由記述。空なら気分だけの記録。 */
+  text: string;
+  /** 「書くことが思いつかないとき」の質問に答えたなら、その質問。読む人にも見える。 */
+  question?: string;
 }
 
-/** 先生自身の記録（A-1）。どの質問に答えたか（A-2）と、編集の履歴を持つ。 */
-export interface TeacherRecord extends SelfRecord<WorkTag> {
-  /** 質問プロンプトに答えた場合、その質問の id。 */
-  promptId?: string;
-  /** 保存した時刻（HH:MM）。同じ日のうちの書き直しも1つずつ残す。 */
-  edits: string[];
-}
+export type StudentRecord = SelfRecord<EventCategory>;
+export type TeacherRecord = SelfRecord<WorkTag>;
 
-/** クラスの生徒（B-1）。並びの既定は出席番号。 */
-export interface ClassStudent {
+export interface SchoolClass {
   id: string;
+  grade: number;
+  room: number;
+  /** 「2年3組」 */
+  name: string;
+}
+
+export interface Student {
+  id: string;
+  classId: string;
   /** 出席番号 */
   number: number;
   name: string;
-  records: Array<SelfRecord<EventCategory>>;
+  records: StudentRecord[];
 }
 
-/** 教職員（C-1）。並びの既定は五十音順。 */
 export interface StaffMember {
   id: string;
   name: string;
-  /** 五十音順に並べるための読み */
   kana: string;
-  /** 例: 2年A組 担任 */
-  duty: string;
-  records: Array<SelfRecord<WorkTag>>;
+  /** 所属する学年。管理職・養護教諭などは null。 */
+  grade: number | null;
+  /** 担任しているクラス。担任なしは null。 */
+  homeroom: string | null;
+  /** 教科。無い人は null。 */
+  subject: string | null;
+  /** 役職（学年主任・教頭・校長・養護教諭）。ふつうの先生は null。 */
+  position: string | null;
+  records: TeacherRecord[];
 }
 
-/** 面談メモ（B-4 / C-4）。書いた側だけが読む。 */
+/**
+ * 権限（1章）。役割はこの組み合わせのプリセットにすぎない。
+ * 持っている権限の分だけ、タブが出る。
+ */
+export interface Access {
+  /** 自分の記録を書く */
+  write: boolean;
+  /** 生徒を読む：見られるクラス。タブの名前は、担任・学年主任は「クラス」、それ以外は「生徒」。 */
+  students: { tab: "クラス" | "生徒"; classIds: string[]; grade: number | null } | null;
+  /** 先生を読む：見られる先生 */
+  teachers: { label: string; staffIds: string[] } | null;
+}
+
+export type PersonaId = "tanaka" | "takahashi" | "sato" | "suzuki" | "ito" | "endo" | "yamashita";
+
+export interface Persona {
+  id: PersonaId;
+  /** 教職員としての記録があれば、その id。外部のスクールカウンセラーは null。 */
+  staffId: string | null;
+  name: string;
+  /** 「2年3組 担任・英語」 */
+  title: string;
+  /** 「担任」「学年主任」など、切り替えの一覧に出す役割名 */
+  role: string;
+  access: Access;
+}
+
+/** 面談メモ（5-3）。書いた本人だけが読む。 */
 export interface MeetingMemo {
   id: string;
-  subject: { kind: "student" | "staff"; id: string; name: string };
-  /** 面談日 YYYY-MM-DD */
+  subjectId: string;
   date: string;
   body: string;
-  /** 次回の面談で確かめたいこと */
+  /** 次回確認すること */
   nextCheck: string;
-  author: string;
+  author: PersonaId;
 }
-
-/** 画面を見ている人の立場。デモでは切り替えて見られる。 */
-export type TeacherRole = "homeroom" | "manager" | "admin";

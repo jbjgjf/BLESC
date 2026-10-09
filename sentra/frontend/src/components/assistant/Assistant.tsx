@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
 import { DisplaySettings } from "@/components/a11y/DisplaySettings";
 import { useTransitionNavigate } from "@/components/ui/Transition";
@@ -9,7 +9,7 @@ import { resetA11y, setA11y, useA11y } from "@/lib/a11y";
 import { useReducedMotion } from "@/lib/motion";
 import { assessSafety } from "@/lib/safety-assessment";
 import { pilotProgress, usePilotToday } from "@/lib/blesc/pilot";
-import { useTeacherRole } from "@/lib/teachers/store";
+import { usePersona } from "@/lib/teachers/store";
 import {
   ASSISTANT_COPY,
   routeIntent,
@@ -212,7 +212,8 @@ export function Assistant({ audience }: { audience: Audience }) {
   const settings = useA11y();
   const reduced = useReducedMotion();
   const today = usePilotToday();
-  const role = useTeacherRole();
+  const persona = usePersona();
+  const detail = useSearchParams().has("p");
   const copy = ASSISTANT_COPY[audience];
 
   const [open, setOpen] = useState(false);
@@ -419,10 +420,19 @@ export function Assistant({ audience }: { audience: Audience }) {
       pilot: today ? pilotProgress(today) : null,
       safety: assessSafety(text),
       turn,
-      // 教員の画面では、立場で開ける画面が違う。
-      role: audience === "educator" ? role : undefined,
+      // 教員の画面では、権限で開ける画面が違う。一人ぶんの画面かどうかも渡す。
+      access:
+        audience === "educator"
+          ? {
+              write: persona.access.write,
+              students: Boolean(persona.access.students),
+              teachers: Boolean(persona.access.teachers),
+              studentTab: persona.access.students?.tab,
+            }
+          : undefined,
+      detail: audience === "educator" ? detail : undefined,
     }),
-    [audience, pathname, settings, today, role],
+    [audience, pathname, settings, today, persona, detail],
   );
 
   const ask = useCallback(

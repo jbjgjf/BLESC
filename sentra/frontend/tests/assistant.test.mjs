@@ -46,6 +46,17 @@ const context = (text, overrides = {}) => ({
 const ask = (text, overrides = {}) => routeIntent(text, context(text, overrides));
 const teacher = (text, overrides = {}) => ask(text, { audience: "educator", pathname: "/educator", ...overrides });
 
+/** 権限の組み合わせ（UI仕様書 6-3）。 */
+const AS = {
+  homeroom: { write: true, students: true, teachers: false, studentTab: "クラス" },
+  noHomeroom: { write: true, students: false, teachers: false },
+  gradeHead: { write: true, students: true, teachers: true, studentTab: "クラス" },
+  vicePrincipal: { write: true, students: false, teachers: true },
+  principal: { write: false, students: false, teachers: true },
+  nurse: { write: true, students: true, teachers: false, studentTab: "生徒" },
+  counselor: { write: false, students: true, teachers: false, studentTab: "生徒" },
+};
+
 const navigated = (reply) => reply.actions.find((action) => action.kind === "navigate")?.href ?? null;
 const patched = (reply) => reply.actions.find((action) => action.kind === "display")?.patch ?? null;
 const entry = (id) => GLOSSARY.find((item) => item.id === id);
@@ -109,10 +120,10 @@ describe("routeIntent — 移動", () => {
 describe("routeIntent — 教員の画面", () => {
   const cases = [
     ["今日の記録", "/educator"],
-    ["振り返り", "/educator/my-records"],
+    ["これまで", "/educator/my-records"],
     ["クラス", "/educator/class"],
     ["生徒一覧", "/educator/class"],
-    ["面談", "/educator/meetings"],
+    ["設定", "/educator/settings"],
   ];
 
   for (const [text, href] of cases) {
@@ -121,39 +132,40 @@ describe("routeIntent — 教員の画面", () => {
     });
   }
 
-  it("立場ごとの画面へ案内する", () => {
-    assert.equal(navigated(teacher("教職員", { role: "manager", pathname: "/educator" })), "/educator/staff");
-    assert.equal(navigated(teacher("学校の設定", { role: "admin", pathname: "/educator/usage" })), "/educator/settings");
-    assert.equal(navigated(teacher("利用状況", { role: "admin", pathname: "/educator/settings" })), "/educator/usage");
+  it("権限のある画面へ案内する", () => {
+    assert.equal(navigated(teacher("先生の一覧", { access: AS.vicePrincipal })), "/educator/staff");
+    assert.equal(navigated(teacher("教職員", { access: AS.gradeHead })), "/educator/staff");
+    assert.equal(navigated(teacher("生徒一覧", { access: AS.counselor, pathname: "/educator/settings" })), "/educator/class");
   });
 
-  it("開けない立場では動かず、どの立場の画面かを伝える", () => {
-    const reply = teacher("教職員", { pathname: "/educator" });
+  it("権限の無い画面には動かず、どの権限の画面かを伝える", () => {
+    const reply = teacher("先生の一覧", { pathname: "/educator" });
     assert.equal(navigated(reply), null);
-    assert.match(reply.say, /管理職の立場/);
+    assert.match(reply.say, /先生の記録を読む権限/);
     assert.notEqual(reply.expression, "oops");
-    assert.equal(navigated(teacher("クラス", { role: "manager" })), null);
-    assert.equal(navigated(teacher("今日の記録", { role: "admin", pathname: "/educator/settings" })), null);
+    assert.equal(navigated(teacher("クラス", { access: AS.noHomeroom })), null);
+    assert.equal(navigated(teacher("今日の記録", { access: AS.principal, pathname: "/educator/staff" })), null);
   });
 
-  it("ホームは立場ごとの最初の画面へ", () => {
+  it("養護教諭・SCには、生徒の画面を「生徒」と呼ぶ", () => {
+    assert.match(teacher("クラス", { access: AS.nurse, pathname: "/educator" }).say, /生徒の画面/);
+  });
+
+  it("ホームは、書く人は自分の記録、読むだけの人は先生か生徒の画面", () => {
     assert.equal(navigated(teacher("ホーム", { pathname: "/educator/class" })), "/educator");
-    assert.equal(navigated(teacher("ホーム", { role: "manager", pathname: "/educator/staff" })), "/educator");
-    assert.equal(navigated(teacher("ホーム", { role: "admin", pathname: "/educator/usage" })), "/educator/settings");
+    assert.equal(navigated(teacher("ホーム", { access: AS.principal, pathname: "/educator/settings" })), "/educator/staff");
+    assert.equal(navigated(teacher("ホーム", { access: AS.counselor, pathname: "/educator/settings" })), "/educator/class");
   });
 
-  it("面談メモは、ひとりずつの画面ではその場のタブを示す（一覧の画面ではメモを書けない）", () => {
-    const here = teacher("面談メモを書きたい", { pathname: "/educator/student/s-01" });
+  it("面談のことは、ひとりずつの画面ではその場の「面談」タブを示す", () => {
+    const here = teacher("面談メモを書きたい", { pathname: "/educator/class", detail: true });
     assert.equal(navigated(here), null);
-    assert.deepEqual(here.offers[0].action, { kind: "show", heading: "面談メモ", href: null });
-    assert.equal(navigated(teacher("面談メモ", { pathname: "/educator/class" })), "/educator/meetings");
-  });
-
-  it("面談前サマリーは、ひとりずつの画面へ導く", () => {
-    const here = teacher("サマリー", { role: "manager", pathname: "/educator/staff/t-aoki" });
-    assert.deepEqual(here.offers[0].action, { kind: "show", heading: "面談前サマリー", href: null });
-    assert.equal(navigated(teacher("サマリー", { pathname: "/educator" })), "/educator/class");
-    assert.equal(navigated(teacher("サマリー", { role: "manager", pathname: "/educator" })), "/educator/staff");
+    assert.deepEqual(here.offers[0].action, { kind: "show", heading: "面談", href: null });
+    assert.equal(navigated(teacher("面談メモ", { pathname: "/educator" })), "/educator/class");
+    assert.equal(navigated(teacher("要約", { access: AS.vicePrincipal, pathname: "/educator" })), "/educator/staff");
+    const none = teacher("面談", { access: AS.noHomeroom });
+    assert.equal(navigated(none), null);
+    assert.match(none.say, /読む人の画面/);
   });
 
   it("生徒向けの行き先は教員の画面では拾わない", () => {
@@ -179,17 +191,16 @@ describe("routeIntent — 教員の画面", () => {
     assert.equal(reply.offers.length, 0);
   });
 
-  it("あいさつの続きには、立場ごとの最初の画面を出す", () => {
+  it("あいさつの続きには、その人の最初の画面を出す", () => {
     const homeroom = teacher("こんにちは", { pathname: "/educator/class" });
     assert.ok(homeroom.offers.some((offer) => offer.label === "今日の記録を書く" && offer.action.href === "/educator"));
-    const admin = teacher("こんにちは", { role: "admin", pathname: "/educator/usage" });
-    assert.ok(admin.offers.some((offer) => offer.action.href === "/educator/settings"));
+    const principal = teacher("こんにちは", { access: AS.principal, pathname: "/educator/settings" });
+    assert.ok(principal.offers.some((offer) => offer.action.href === "/educator/staff"));
   });
 
-  it("使い方の例は、その立場で開ける画面にする", () => {
-    for (const [role, href] of [["homeroom", "/educator/class"], ["manager", "/educator/staff"], ["admin", "/educator/usage"]]) {
-      const reply = teacher("使い方", { role });
-      assert.equal(reply.offers[0].action.href, href, role);
+  it("使い方の例は、その人が開ける画面にする", () => {
+    for (const [access, href] of [[AS.homeroom, "/educator/class"], [AS.vicePrincipal, "/educator/staff"], [AS.noHomeroom, "/educator"]]) {
+      assert.equal(teacher("使い方", { access }).offers[0].action.href, href);
     }
   });
 
@@ -294,7 +305,7 @@ describe("routeIntent — 画面の説明", () => {
     assert.equal(navigated(teacher("クラス", { pathname: "/educator" })), "/educator/class");
     const reply = teacher("クラスって何？", { pathname: "/educator" });
     assert.equal(navigated(reply), null);
-    assert.match(reply.say, /出席番号順/);
+    assert.match(reply.say, /変化があった生徒/);
   });
 
   it("「この画面は何？」には、いまのページの説明と、続けて聞ける言葉を出す", () => {
@@ -318,45 +329,43 @@ describe("routeIntent — 画面の説明", () => {
   });
 
   it("見出しの言葉だけでも説明する", () => {
-    assert.equal(teacher("判定なし").say, entry("insufficient").say);
+    assert.equal(teacher("書き忘れた").say, entry("backfill").say);
   });
 
   it("ひとりずつの画面にある項目は、そこにいれば示し、いなければその人を選ぶ一覧へ", () => {
-    assert.equal(teacher("話題の推移って何？", { pathname: "/educator/student/s-01" }).offers[0].label, "画面で見る");
-    const away = teacher("話題の推移って何？", { pathname: "/educator" }).offers[0];
+    assert.equal(teacher("推移って何？", { pathname: "/educator/class", detail: true }).offers[0].label, "画面で見る");
+    const away = teacher("推移って何？", { pathname: "/educator" }).offers[0];
     assert.deepEqual(away.action, { kind: "navigate", href: "/educator/class" });
-    const manager = teacher("直近4週の変化って何？", { role: "manager", pathname: "/educator" }).offers[0];
-    assert.deepEqual(manager.action, { kind: "navigate", href: "/educator/staff" });
+    const vicePrincipal = teacher("本人の言葉って何？", { access: AS.vicePrincipal, pathname: "/educator" }).offers[0];
+    assert.deepEqual(vicePrincipal.action, { kind: "navigate", href: "/educator/staff" });
   });
 
-  it("「変化あり」の説明は、本人の記録の比べ方と、段階や順位が無いことを伝える", () => {
-    const reply = teacher("変化ありって何？");
-    assert.match(reply.say, /直近4週とその前の4週/);
-    assert.match(reply.say, /本人が書いた・選んだものだけ/);
-    assert.match(reply.say, /重さの段階や順位はありません/);
+  it("「変化があった」の説明は、比べ方と、名簿順・良い方向も同じ扱いであることを伝える", () => {
+    const reply = teacher("変化があったって何？");
+    assert.match(reply.say, /直近2週間/);
+    assert.match(reply.say, /名簿順/);
+    assert.match(reply.say, /良い方向の変化も同じ/);
+    assert.match(reply.say, /仮置き/);
   });
 
-  it("立場で場所が違う言葉は、その立場の画面で示す", () => {
-    assert.deepEqual(teacher("変化ありって何？", { pathname: "/educator" }).offers[0].action, { kind: "show", heading: "変化", href: "/educator/class" });
-    assert.deepEqual(
-      teacher("変化ありって何？", { role: "manager", pathname: "/educator" }).offers[0].action,
-      { kind: "show", heading: "変化", href: "/educator/staff" },
-    );
+  it("一覧の言葉は、一覧の画面で示す（ひとりずつの画面からは出さない）", () => {
+    assert.deepEqual(teacher("変化があったって何？", { pathname: "/educator" }).offers[0].action, { kind: "show", heading: "変化があった", href: "/educator/class" });
+    assert.equal(teacher("変化があったって何？", { pathname: "/educator/class" }).offers[0].label, "画面で見る");
+    assert.equal(teacher("変化があったって何？", { access: AS.vicePrincipal, pathname: "/educator/staff" }).offers[0].label, "画面で見る");
   });
 
-  it("いまの立場で開けない画面にしか無い言葉は、説明だけをする", () => {
-    const reply = teacher("記録率って何？", { pathname: "/educator" });
-    assert.equal(reply.say, entry("record-rate").say);
+  it("いまの権限で開けない画面にしか無い言葉は、説明だけをする", () => {
+    const reply = teacher("直近7日の気分って何？", { access: AS.noHomeroom, pathname: "/educator" });
+    assert.equal(reply.say, entry("strip").say);
     assert.equal(reply.offers.length, 0);
-    assert.equal(teacher("記録率って何？", { role: "admin", pathname: "/educator/settings" }).offers[0].label, "利用状況で見る");
   });
 
-  it("危険度の順に並べられるかを聞かれたら、できない理由を答える", () => {
-    assert.equal(teacher("危険度の順に並べたい", { pathname: "/educator/class" }).say, entry("sort").say);
+  it("点数や順位を聞かれたら、出さないことを答える", () => {
+    assert.equal(teacher("危険度の順に並べたい", { pathname: "/educator/class" }).say, entry("no-scores").say);
   });
 
   it("教員向けの説明に、リスクや段階づけの言葉を使わない", () => {
-    const banned = /高リスク|要注意|危険|リスク|悪化|アラート|警告|優先度/;
+    const banned = /高リスク|要注意|危険|リスク|悪化|アラート|警告|優先度|深刻/;
     const educator = [
       ...GLOSSARY.filter((item) => item.audience === "educator").map((item) => item.say),
       ...PAGE_GUIDES.filter((guide) => guide.audience === "educator").map((guide) => guide.say),
@@ -367,10 +376,7 @@ describe("routeIntent — 画面の説明", () => {
   });
 
   it("説明の行き先は、どれも実在するページ", () => {
-    const hrefs = GLOSSARY.flatMap((item) => [
-      ...(item.href === null ? [] : typeof item.href === "string" ? [item.href] : Object.values(item.href)),
-      ...Object.values(item.pick ?? {}),
-    ]);
+    const hrefs = GLOSSARY.map((item) => item.href).filter((href) => href !== null);
     for (const href of new Set(hrefs)) {
       const file = new URL(`../src/app${href === "/" ? "" : href}/page.tsx`, import.meta.url);
       assert.ok(existsSync(file), `${href} のページが無い`);
@@ -378,7 +384,7 @@ describe("routeIntent — 画面の説明", () => {
   });
 
   it("生徒の画面では教員向けの言葉を説明しない（逆も同じ）", () => {
-    assert.notEqual(ask("変化ありって何？").say, entry("change").say);
+    assert.notEqual(ask("変化があったって何？").say, entry("changes").say);
     assert.notEqual(teacher("気分の内訳って何？").say, entry("mood-bloom").say);
   });
 

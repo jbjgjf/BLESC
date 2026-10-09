@@ -577,7 +577,8 @@ fieldset {
 .bl-wave--3 { animation: bl-drift 17s linear infinite; opacity: 0.3; }
 
 /* ── Demo badge ─────────────────────────────────────────────── */
-/* デモ表示の札。上のバーの中に置く（固定のバーなので、いつも見えている）。 */
+/* デモ表示の札。上のバーの中に置く（固定のバーなので、いつも見えている）。
+   警告ではないので、警告の色（黄・赤）は使わない。 */
 .bl-nav__demo {
   display: inline-flex;
   align-items: center;
@@ -585,9 +586,9 @@ fieldset {
   flex-shrink: 0;
   padding: 4px 11px;
   border-radius: var(--bl-pill);
-  background: var(--bl-watch-bg);
-  border: 1px solid var(--bl-watch-line);
-  color: var(--bl-watch-ink);
+  background: var(--bl-mist);
+  border: 1px solid var(--bl-line);
+  color: var(--bl-ink-2);
   font-size: 0.7rem;
   font-weight: 700;
   white-space: nowrap;
@@ -1144,6 +1145,15 @@ html[data-bl-motion="reduced"] *::after {
    右下の角は案内役の小石が使う。生徒と教員のどちらの画面にも出るので、
    画面の種類ではなく「小石がいるかどうか」で判定する。生徒テーマの層に
    置かないのはそのため。 */
+
+/* 保存ボタンが画面の下に固定されている画面（先生の「今日を書く」）。スマホでは
+   帯が横幅いっぱいなので、案内役をその上へ持ち上げる。PC・タブレットでは
+   帯が案内役の席の左で終わるので、そのままでよい。 */
+@media (max-width: 640px) {
+  .bl-app:has([data-bl-fixed-action]) {
+    --bl-assistant-lift: 150px;
+  }
+}
 
 /* 最後の行まで小石の上へスクロールできるように、下に逃げ場を足す。 */
 .bl-app:has([data-bl-assistant]) .bl-app__main {

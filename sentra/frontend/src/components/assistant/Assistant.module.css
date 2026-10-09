@@ -13,7 +13,8 @@
 .launcher {
   position: fixed;
   right: 14px;
-  bottom: 14px;
+  /* 画面の下に固定の帯がある画面では、--bl-assistant-lift ぶん持ち上げる（blesc.css）。 */
+  bottom: calc(14px + var(--bl-assistant-lift, 0px));
   z-index: 95;
   width: 84px;
   height: 84px;
@@ -58,7 +59,7 @@
 
   position: fixed;
   right: 14px;
-  bottom: 90px;
+  bottom: calc(90px + var(--bl-assistant-lift, 0px));
   z-index: 96;
   width: min(372px, calc(100vw - 28px));
   max-height: min(580px, calc(100dvh - 160px));
@@ -367,7 +368,7 @@
 @media (max-width: 640px) {
   .launcher {
     right: 10px;
-    bottom: calc(74px + env(safe-area-inset-bottom));
+    bottom: calc(74px + env(safe-area-inset-bottom) + var(--bl-assistant-lift, 0px));
     width: 68px;
     height: 68px;
   }
@@ -376,8 +377,8 @@
     left: 10px;
     right: 10px;
     width: auto;
-    bottom: calc(140px + env(safe-area-inset-bottom));
-    max-height: calc(100dvh - 140px - 70px - env(safe-area-inset-bottom));
+    bottom: calc(140px + env(safe-area-inset-bottom) + var(--bl-assistant-lift, 0px));
+    max-height: calc(100dvh - 140px - 70px - env(safe-area-inset-bottom) - var(--bl-assistant-lift, 0px));
   }
 }
 

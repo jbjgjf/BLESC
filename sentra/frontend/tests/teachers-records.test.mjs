@@ -3,159 +3,197 @@ import { describe, it } from "node:test";
 
 import {
   CHANGE_RULE,
+  SUMMARY_RULE,
+  addDays,
   buildSummary,
-  compareRecentWindows,
+  describeChange,
+  detectChanges,
+  isSchoolDay,
+  missedSchoolDays,
+  schoolDaysUntil,
   summaryViolations,
-  textLength,
-  topTags,
+  weekStart,
 } from "../src/lib/teachers/records.ts";
 
-/**
- * Blesc for Teachers の「変化あり」と面談前サマリー。
- *
- * 決め方そのもの（4週と前の4週、数値のしきい値）を固定する。ここが
- * ぶれると、画面の「変化あり」が実質的なリスク検知に変わっていく。
- */
+const AS_OF = "2026-08-07"; // 金曜日
 
-const AS_OF = "2026-08-07";
-const DAY = 86_400_000;
-const back = (days) => new Date(Date.parse(`${AS_OF}T00:00:00Z`) - days * DAY).toISOString().slice(0, 10);
-
-/** asOf から数えて、前の4週（28〜55日前）と直近4週（0〜27日前）に記録を置く。 */
-function records({ previous, recent }) {
-  const make = (offsetStart, list) =>
-    list.map((r, i) => ({ date: back(offsetStart + i), mood: r.mood ?? "good", text: r.text ?? "部活で走った。", tags: r.tags ?? ["club"] }));
-  return [...make(28, previous), ...make(0, recent)];
+/** 登校日ごとに記録を作る。make(ago, i) が null を返した日は書かない。 */
+function series(make, span = 42) {
+  const records = [];
+  for (let ago = span - 1; ago >= 0; ago -= 1) {
+    const date = addDays(AS_OF, -ago);
+    if (!isSchoolDay(date)) continue;
+    const record = make(ago, records.length);
+    if (record) records.push({ date, time: "16:30", mood: "good", tags: ["study"], text: "今日はふつうの一日だった。", ...record });
+  }
+  return records;
 }
-const many = (n, record = {}) => Array.from({ length: n }, () => ({ ...record }));
 
-describe("変化あり — 4週と前の4週を比べる", () => {
-  it("比べる期間は28日、記録は各期間4件から", () => {
-    assert.equal(CHANGE_RULE.windowDays, 28);
-    assert.equal(CHANGE_RULE.minRecords, 4);
+const steady = () => series(() => ({}));
+const label = (tag) => ({ study: "授業・勉強", club: "部活動", workload: "業務量", parents: "保護者対応" })[tag] ?? tag;
+
+describe("日付", () => {
+  it("土日は登校日に数えない", () => {
+    assert.equal(isSchoolDay("2026-08-07"), true);
+    assert.equal(isSchoolDay("2026-08-08"), false);
+    assert.equal(isSchoolDay("2026-08-09"), false);
   });
 
-  it("前の4週に記録が4件未満なら、判定しない（比べる元が無い）", () => {
-    const result = compareRecentWindows(records({ previous: many(3), recent: many(12) }), AS_OF);
-    assert.equal(result.status, "insufficient");
+  it("登校日だけをさかのぼって並べる（古い順）", () => {
+    assert.deepEqual(schoolDaysUntil(AS_OF, 7), ["2026-07-30", "2026-07-31", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07"]);
   });
 
-  it("同じような記録が続いていれば、変化なし", () => {
-    const result = compareRecentWindows(records({ previous: many(16), recent: many(15) }), AS_OF);
-    assert.equal(result.status, "steady");
+  it("週の区切りは月曜日", () => {
+    assert.equal(weekStart(AS_OF), "2026-08-03");
+    assert.equal(weekStart("2026-08-03"), "2026-08-03");
+    assert.equal(weekStart("2026-08-09"), "2026-08-03");
   });
 
-  it("気分の平均が1段階以上動けば、変化あり — 上がっても下がっても同じ札", () => {
-    const down = compareRecentWindows(records({ previous: many(14, { mood: "good" }), recent: many(14, { mood: "neutral" }) }), AS_OF);
-    const up = compareRecentWindows(records({ previous: many(14, { mood: "neutral" }), recent: many(14, { mood: "good" }) }), AS_OF);
-    for (const result of [down, up]) {
-      assert.equal(result.status, "changed");
-      assert.ok(result.signals.some((s) => s.kind === "mood"));
-    }
-  });
-
-  it("気分の差が1段階に届かなければ、変化なし", () => {
-    // 4.0 → 3.5（半分が「ふつう」）
-    const recent = [...many(7, { mood: "good" }), ...many(7, { mood: "neutral" })];
-    const result = compareRecentWindows(records({ previous: many(14, { mood: "good" }), recent }), AS_OF);
-    assert.equal(result.status, "steady");
-  });
-
-  it("記録した日数が半分以下になり、差が3日以上なら、変化あり", () => {
-    const result = compareRecentWindows(records({ previous: many(16), recent: many(6) }), AS_OF);
-    assert.equal(result.status, "changed");
-    assert.deepEqual(result.signals.find((s) => s.kind === "frequency"), { kind: "frequency", before: 16, after: 6 });
-  });
-
-  it("直近の記録が少なくても、減ったこと自体は変化として出す", () => {
-    const result = compareRecentWindows(records({ previous: many(14), recent: many(1) }), AS_OF);
-    assert.equal(result.status, "changed");
-    assert.deepEqual(result.signals.map((s) => s.kind), ["frequency"], "直近が少ないときは日数だけを比べる");
-  });
-
-  it("差が3日に届かない増減は、比が大きくても変化にしない（数が少ないときのぶれ）", () => {
-    const result = compareRecentWindows(records({ previous: many(4), recent: many(2) }), AS_OF);
-    assert.notEqual(result.status, "changed");
-  });
-
-  it("1件あたりの文字数が半分以下になり、差が40字以上なら、変化あり", () => {
-    const long = "今日は部活のあとに友だちと帰って、明日の小テストのことを話した。".repeat(3);
-    const result = compareRecentWindows(
-      records({ previous: many(12, { text: long }), recent: many(12, { text: "疲れた。" }) }),
-      AS_OF,
-    );
-    assert.ok(result.status === "changed" && result.signals.some((s) => s.kind === "length"));
-  });
-
-  it("よく選ぶ話題の上位3つのうち2つ以上が入れ替われば、変化あり", () => {
-    const before = [...many(6, { tags: ["club"] }), ...many(5, { tags: ["friends"] }), ...many(4, { tags: ["study"] })];
-    const after = [...many(6, { tags: ["family"] }), ...many(5, { tags: ["health"] }), ...many(4, { tags: ["club"] })];
-    const result = compareRecentWindows(records({ previous: before, recent: after }), AS_OF);
-    assert.ok(result.status === "changed" && result.signals.some((s) => s.kind === "tags"));
-  });
-
-  it("結果は3つのどれかだけ。重さの段階は持たない", () => {
-    const result = compareRecentWindows(records({ previous: many(16, { mood: "very_good" }), recent: many(6, { mood: "hard" }) }), AS_OF);
-    assert.ok(["insufficient", "steady", "changed"].includes(result.status));
-    for (const key of Object.keys(result)) {
-      assert.ok(!/severity|level|risk|score|band/i.test(key), `結果に段階を表す項目がある: ${key}`);
-    }
-  });
-
-  it("文字数は空白を数えない。上位の話題は、同数なら先に出た順", () => {
-    assert.equal(textLength("今日は\n  よく 寝た。"), 8);
-    assert.deepEqual(topTags([{ tags: ["b"] }, { tags: ["a"] }, { tags: ["c", "a"] }]), ["a", "b", "c"]);
+  it("記録の空いた登校日を数える（今日と土日は数えない）", () => {
+    const records = series((ago) => (ago <= 6 ? null : {}));
+    assert.equal(missedSchoolDays(records, AS_OF), 4);
   });
 });
 
-describe("面談前サマリー", () => {
-  const from = back(20);
-  const to = AS_OF;
-  const data = [
-    { date: back(19), mood: "good", text: "部活で新しいメニューをやった。きつかったけど楽しかった。", tags: ["club"] },
-    { date: back(12), mood: "neutral", text: "", tags: ["study"] },
-    { date: back(5), mood: "low", text: "テストの点が思ったより低くて落ちこんだ。", tags: ["study", "club"] },
-    { date: back(1), mood: "neutral", text: "友だちに相談したら少し楽になった。", tags: ["friends"] },
-  ];
+describe("変化があった（直近2週間 対 それまで）", () => {
+  it("ふだんどおりなら変化なし", () => {
+    assert.equal(detectChanges(steady(), AS_OF).status, "steady");
+  });
 
-  it("話題・気分の推移・本人の記述の抜粋を、記録から集計する", () => {
-    const summary = buildSummary(data, { from, to });
-    assert.deepEqual(summary.topics[0], { tag: "club", count: 2 });
-    assert.deepEqual(summary.moods.map((m) => m.date), [back(19), back(12), back(5), back(1)], "気分は古い順");
-    assert.equal(summary.excerpts[0].date, back(1), "抜粋は新しい順");
-    assert.equal(summary.excerpts.length, 3, "本文の無い記録は抜粋にしない");
-    for (const excerpt of summary.excerpts) {
-      const source = data.find((r) => r.date === excerpt.date);
-      assert.ok(source.text.startsWith(excerpt.text.replace(/…$/, "")), "抜粋は言葉を変えない");
+  it("比べる元が足りなければ判定しない", () => {
+    const records = series((ago) => (ago > 9 ? null : {}));
+    assert.equal(detectChanges(records, AS_OF).status, "insufficient");
+  });
+
+  it("記録の間は、比べる元が足りなくても言える", () => {
+    const records = series((ago) => (ago > 20 || ago <= 6 ? null : {}));
+    const result = detectChanges(records, AS_OF);
+    assert.equal(result.status, "changed");
+    assert.deepEqual(result.changes, [{ kind: "gap", days: 4 }]);
+  });
+
+  it("記録の間は、登校日で3日から", () => {
+    // 今日（金）はまだ書いていない。最後が火曜なら水・木の2日、月曜なら3日。
+    const two = series((ago) => (ago <= 2 ? null : {}));
+    assert.equal(missedSchoolDays(two, AS_OF), 2);
+    assert.equal(detectChanges(two, AS_OF).status, "steady", "2日の間は変化にしない");
+    const three = series((ago) => (ago <= 3 ? null : {}));
+    assert.deepEqual(detectChanges(three, AS_OF).changes?.[0], { kind: "gap", days: 3 });
+  });
+
+  it("気分が下がった・上がった（どちらも同じ扱い）", () => {
+    const down = series((ago) => ({ mood: ago < CHANGE_RULE.recentDays ? "low" : "good" }));
+    assert.deepEqual(detectChanges(down, AS_OF).changes, [{ kind: "mood", direction: "down" }]);
+    const up = series((ago) => ({ mood: ago < CHANGE_RULE.recentDays ? "very_good" : "neutral" }));
+    assert.deepEqual(detectChanges(up, AS_OF).changes, [{ kind: "mood", direction: "up" }]);
+  });
+
+  it("気分の小さな揺れは変化にしない", () => {
+    const records = series((ago, i) => ({ mood: ago < CHANGE_RULE.recentDays ? (i % 2 ? "good" : "neutral") : "good" }));
+    assert.equal(detectChanges(records, AS_OF).status, "steady");
+  });
+
+  it("それまで少なかった話題が、直近で半分以上になった", () => {
+    const records = series((ago, i) => ({ tags: ago < CHANGE_RULE.recentDays && i % 3 !== 0 ? ["club"] : ["study"] }));
+    assert.deepEqual(detectChanges(records, AS_OF).changes, [{ kind: "topic", tag: "club" }]);
+  });
+
+  it("いつも多い話題が少し増えただけでは変化にしない", () => {
+    const records = series((ago, i) => ({ tags: i % 2 === 0 || ago < CHANGE_RULE.recentDays ? ["club"] : ["study"] }));
+    assert.ok(!detectChanges(records, AS_OF).changes?.some((c) => c.kind === "topic"));
+  });
+
+  it("同じ話題が続いている", () => {
+    const records = series((ago) => ({ tags: ago < 8 ? ["parents", "study"] : ["study"] }));
+    assert.deepEqual(detectChanges(records, AS_OF).changes, [{ kind: "streak", tag: "parents" }]);
+  });
+
+  it("記述が短くなった・長くなった", () => {
+    const long = "今日は授業で発表した。緊張したけど、言いたいことはだいたい言えたと思う。";
+    const shorter = series((ago) => ({ text: ago < CHANGE_RULE.recentDays ? "ふつう。" : long }));
+    assert.deepEqual(detectChanges(shorter, AS_OF).changes, [{ kind: "length", direction: "shorter" }]);
+    const longer = series((ago) => ({ text: ago < CHANGE_RULE.recentDays ? long : "ふつう。" }));
+    assert.deepEqual(detectChanges(longer, AS_OF).changes, [{ kind: "length", direction: "longer" }]);
+  });
+
+  it("記録の時間は、先生の記録のときだけ見る", () => {
+    const records = series((ago) => ({ time: ago < CHANGE_RULE.recentDays ? "19:10" : "16:20" }));
+    assert.equal(detectChanges(records, AS_OF).status, "steady");
+    assert.deepEqual(detectChanges(records, AS_OF, { time: true }).changes, [{ kind: "time", direction: "later" }]);
+  });
+
+  it("段階・点数・順位を持たない", () => {
+    const result = detectChanges(series((ago) => ({ mood: ago < 14 ? "hard" : "good" })), AS_OF);
+    for (const change of result.changes) {
+      for (const key of Object.keys(change)) assert.ok(!/score|level|severity|rank|risk/i.test(key), key);
     }
   });
 
-  describe("AI に書かせた要約の検査", () => {
-    const ok = "この期間は部活動と勉強の話題が多く書かれています。最近の記録には「友だちに相談したら少し楽になった」とあります。";
+  it("一文にする（先生の話題は『』で括る）", () => {
+    assert.equal(describeChange({ kind: "topic", tag: "club" }, label, "student"), "部活動の話題が増えています");
+    assert.equal(describeChange({ kind: "topic", tag: "workload" }, label, "teacher"), "『業務量』の話題が増えています");
+    assert.equal(describeChange({ kind: "streak", tag: "parents" }, label, "teacher"), "『保護者対応』が続いています");
+    assert.equal(describeChange({ kind: "gap", days: 4 }, label, "student"), "記録が4日空いています");
+    assert.equal(describeChange({ kind: "time", direction: "later" }, label, "teacher"), "記録の時間が遅くなっています");
+    assert.equal(describeChange({ kind: "mood", direction: "down" }, label, "student"), "この2週間、気分が下がり気味です");
+  });
+});
 
-    it("引用があり、評価や推測の言い回しが無ければ通る", () => {
-      assert.deepEqual(summaryViolations(ok, data), []);
-    });
+describe("面談前の要約", () => {
+  const moodLabel = (m) => ({ very_good: "とても良い", good: "良い", neutral: "ふつう", low: "少しつらい", hard: "つらい" })[m];
 
-    it("診断・推測・評価の言い回しは止める", () => {
-      for (const phrase of ["勉強に不安を抱える傾向があります。", "少し心配です。", "抑うつの可能性があります。", "疲れていると思われます。"]) {
-        const problems = summaryViolations(`${phrase}「友だちに相談したら少し楽になった」`, data);
-        assert.ok(problems.some((p) => p.kind === "forbidden"), `通ってしまった: ${phrase}`);
-      }
-    });
+  it("記録が5日分未満なら作らない", () => {
+    const few = series((ago) => (ago < 4 ? {} : null));
+    assert.ok(few.length < SUMMARY_RULE.minRecords);
+    assert.equal(buildSummary(few, { asOf: AS_OF, moodLabel }), null);
+  });
 
-    it("本人の言葉の中にあるぶんは止めない（書いたのは本人）", () => {
-      const quoting = [...data, { date: back(0), mood: "hard", text: "最近ずっと心配で眠れない。", tags: ["health"] }];
-      assert.deepEqual(summaryViolations("最近の記録には「最近ずっと心配で眠れない」とあります。", quoting), []);
-    });
+  it("話題は上位3つと回数", () => {
+    const records = series((ago, i) => ({ tags: [["club"], ["club", "study"], ["future"], ["club"], ["family"]][i % 5] }));
+    const summary = buildSummary(records, { asOf: AS_OF, moodLabel });
+    assert.equal(summary.topics.length, 3);
+    assert.equal(summary.topics[0].tag, "club");
+    assert.ok(summary.topics.every((t, i, all) => i === 0 || all[i - 1].count >= t.count));
+  });
 
-    it("引用が1つも無ければ出さない", () => {
-      assert.ok(summaryViolations("部活動の話題が多い期間でした。", data).some((p) => p.kind === "no-quote"));
-    });
+  it("気分の流れは前半と後半の比べ方だけで、判断の言葉を持たない", () => {
+    const records = series((ago) => ({ mood: ago < 14 ? "low" : "good" }));
+    const summary = buildSummary(records, { asOf: AS_OF, moodLabel });
+    assert.equal(summary.moodFlow, "前半は『良い』の日が多く、後半は『少しつらい』の日が多くなっています。");
+    assert.deepEqual(summaryViolations(summary.moodFlow, records), []);
+  });
 
-    it("記録に無い言葉を引用の形で書いたら出さない", () => {
-      const problems = summaryViolations("記録には「毎日がつらい」とあります。", data);
-      assert.ok(problems.some((p) => p.kind === "unfaithful-quote" && p.quote === "毎日がつらい"));
-    });
+  it("本人の言葉は、記録の本文からそのまま（新しい順に3件まで）", () => {
+    const records = series((ago) => ({ text: `${ago}日前のこと。ほかにも書いた。` }));
+    const summary = buildSummary(records, { asOf: AS_OF, moodLabel });
+    assert.equal(summary.quotes.length, SUMMARY_RULE.quotes);
+    for (const quote of summary.quotes) assert.ok(records.some((r) => r.date === quote.date && r.text.startsWith(quote.text)), quote.text);
+    assert.ok(summary.quotes[0].date > summary.quotes[1].date);
+  });
+
+  it("業務に関する記述は、指定したタグの記録だけ", () => {
+    const records = series((ago, i) => ({ tags: i % 2 ? ["workload"] : ["lesson"], text: i % 2 ? "仕事が終わらず、持ち帰りになった。" : "授業がうまくまとまった。" }));
+    const summary = buildSummary(records, { asOf: AS_OF, moodLabel, workTags: ["workload", "admin", "parents"] });
+    assert.ok(summary.work.length > 0);
+    assert.ok(summary.work.every((w) => w.tags.includes("workload") && !w.tags.includes("lesson")));
+    assert.deepEqual(buildSummary(records, { asOf: AS_OF, moodLabel }).work, []);
+  });
+});
+
+describe("AI に書かせた要約の検査", () => {
+  const records = [{ date: AS_OF, time: "16:00", mood: "low", tags: ["club"], text: "部活がつらくて、心配なことがある。" }];
+
+  it("診断・推測・評価・助言の言い回しは止める", () => {
+    for (const text of ["抑うつの傾向があります。", "ストレスを抱えている可能性があります。", "注意が必要です。", "明日、声をかけましょう。"]) {
+      assert.ok(summaryViolations(text, records).some((p) => p.kind === "forbidden"), text);
+    }
+  });
+
+  it("本人の言葉の中にあるぶんは止めない（書いたのは本人）", () => {
+    assert.deepEqual(summaryViolations("記録には「部活がつらくて、心配なことがある。」とあります。", records), []);
+  });
+
+  it("記録に無い言葉を引用の形で書いたら出さない", () => {
+    assert.deepEqual(summaryViolations("記録には「部活をやめたい」とあります。", records), [{ kind: "unfaithful-quote", quote: "部活をやめたい" }]);
   });
 });

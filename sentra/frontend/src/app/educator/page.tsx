@@ -1,215 +1,266 @@
 "use client";
 
 /**
- * 先生自身の記録（A-1 / A-2 / A-3 / A-5 / A-6）。
+ * 自分の記録・今日を書く（UI仕様書 4-1 / 4-2）。
  *
- * 気分だけで保存できる。本文は任意で、思いつかないときは質問を1つ出す。
- * 1日1件で、その日のうちは書き直せる。翌日からは読むだけになり、書き直した
- * 履歴は残る。打っているあいだは下書きを端末に残しておく（通信が切れても
- * 書いたものが消えないように）。
+ * 生徒版（3-1）と同じ組み立てで、違うのは問いかけ・タグ・言葉づかいだけ。
+ * 「同じものを書いている」実感を作るため。必須は気分だけで、記録を
+ * 読める人は保存ボタンのすぐ上にいつも出しておく。
  *
- * 誰がこの記録を読めるかは、画面のいちばん上に常に出しておく（設計原則 3）。
+ * 保存後は「記録しました。また明日」を1.5秒出し、今日の記録の表示に
+ * 切り替える。その日のうちは「編集」で書き直せる。継続日数・バッジは出さない。
+ * 書き忘れた日は2日前までさかのぼれる。催促のお知らせは送らない。
  */
 
-import Link from "next/link";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Icon } from "@/components/ui/Icon";
+import { TransitionLink } from "@/components/ui/Transition";
 import { MOODS, formatDate } from "@/lib/blesc/labels";
 import type { Mood } from "@/lib/blesc/types";
-import { AS_OF, PROMPTS, TEXT_LIMIT, WORK_TAGS, readersOfTeacherRecords } from "@/lib/teachers/fixtures";
-import { useSchoolSettings } from "@/lib/teachers/store";
-import type { TeacherRecord, WorkTag } from "@/lib/teachers/types";
-import { PageHead, ReadersLine, RoleGate, styles } from "@/components/teachers/parts";
+import { AS_OF, TEACHER_QUESTIONS, WORK_TAGS, classById, readersOfStaff, staffById, studentsOf } from "@/lib/teachers/fixtures";
+import { addDays, isSchoolDay } from "@/lib/teachers/records";
+import { draftKey, readRaw, saveWrittenRecord, usePersona, useWrittenRecords, writeRaw } from "@/lib/teachers/store";
+import type { Persona, TeacherRecord, WorkTag } from "@/lib/teachers/types";
+import { AccessGate, MoodWithLabel, ReadersLine, styles, tagLabel } from "@/components/teachers/parts";
+import { OwnTabs } from "@/components/teachers/OwnTabs";
 
-const SAVED_KEY = `blesc:my-record:${AS_OF}`;
-const DRAFT_KEY = `blesc:my-draft:${AS_OF}`;
-const EVENT = "blesc:my-record";
-
-type Draft = { mood: Mood | null; text: string; tags: WorkTag[]; promptId?: string };
-const EMPTY_DRAFT: Draft = { mood: null, text: "", tags: [] };
+const LIMIT = 400;
+const SHOW_REST_AFTER = 350;
+const PROMISE = "人事評価・勤務評定には使われません";
 
 const now = () => {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
-/* 今日の記録は、このタブの中（sessionStorage）に。下書きは端末（localStorage）に。 */
-let savedRaw: string | null | undefined;
-let savedValue: TeacherRecord | null = null;
-function readSaved(): TeacherRecord | null {
-  let raw: string | null = null;
-  try {
-    raw = window.sessionStorage.getItem(SAVED_KEY);
-  } catch {
-    raw = null;
-  }
-  if (raw === savedRaw) return savedValue;
-  savedRaw = raw;
-  try {
-    savedValue = raw ? (JSON.parse(raw) as TeacherRecord) : null;
-  } catch {
-    savedValue = null;
-  }
-  return savedValue;
-}
-const subscribe = (notify: () => void) => {
-  window.addEventListener(EVENT, notify);
-  return () => window.removeEventListener(EVENT, notify);
-};
-
-function readDraft(): Draft {
-  try {
-    const raw = window.localStorage.getItem(DRAFT_KEY);
-    return raw ? { ...EMPTY_DRAFT, ...(JSON.parse(raw) as Draft) } : EMPTY_DRAFT;
-  } catch {
-    return EMPTY_DRAFT;
-  }
-}
-
-export default function MyRecordTodayPage() {
+export default function TodayPage() {
   return (
-    <RoleGate allow={["homeroom", "manager"]}>
-      <MyRecordToday />
-    </RoleGate>
+    <AccessGate need="write">
+      <Today />
+    </AccessGate>
   );
 }
 
-function MyRecordToday() {
-  const settings = useSchoolSettings();
-  const readers = readersOfTeacherRecords(settings);
-  const saved = useSyncExternalStore(subscribe, readSaved, () => null);
+function Today() {
+  const persona = usePersona();
+  // 立場を切り替えたら、書きかけの状態ごと作り直す。
+  return <Writer key={persona.id} persona={persona} />;
+}
 
-  // 下書きは最初の描画のあとで読む（サーバーの HTML と食い違わないように）。
-  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
-  const [loaded, setLoaded] = useState(false);
-  const [draftAt, setDraftAt] = useState<string | null>(null);
-  const [promptIndex, setPromptIndex] = useState(0);
+function Writer({ persona }: { persona: Persona }) {
+  const me = staffById(persona.staffId ?? "");
+  const written = useWrittenRecords(persona.id);
+  const [date, setDate] = useState(AS_OF);
+  const [editing, setEditing] = useState(false);
+  const [flash, setFlash] = useState(false);
 
+  const recorded = useMemo(() => new Set([...(me?.records ?? []).map((r) => r.date), ...Object.keys(written)]), [me, written]);
+  // さかのぼれるのは2日前まで（登校日だけ）。それより前は空白のまま。
+  const backfill = [1, 2].map((n) => addDays(AS_OF, -n)).filter((d) => isSchoolDay(d) && !recorded.has(d));
+  const firstDay = (me?.records.length ?? 0) === 0 && Object.keys(written).length === 0;
+
+  if (!me) return null;
+  const readers = readersOfStaff(me.id);
+  const saved = written[date] ?? null;
+  const showForm = flash || !saved || editing;
+
+  const homeroom = me.homeroom && persona.access.students?.classIds.includes(me.homeroom) ? me.homeroom : null;
+
+  return (
+    <div className={`${styles.page} ${styles.narrow}`}>
+      <OwnTabs />
+
+      {homeroom && <ClassToday classId={homeroom} />}
+
+      {firstDay && (
+        <p className={styles.lede}>
+          はじめまして。毎日の帰りのHRで、今日のことを一言だけ書きます。生徒と同じ時間に、先生もご自身の記録を書きます。
+        </p>
+      )}
+
+      {date === AS_OF && backfill.length > 0 && (
+        <div className={styles.backfill}>
+          {backfill.map((d) => (
+            <span key={d} className={styles.row} style={{ gap: 10 }}>
+              {d === addDays(AS_OF, -1) ? "昨日" : formatDate(d)}の分も書けます
+              <button type="button" className={styles.linkButton} onClick={() => setDate(d)}>
+                書く
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {date !== AS_OF && (
+        <button type="button" className={styles.linkButton} style={{ alignSelf: "flex-start" }} onClick={() => setDate(AS_OF)}>
+          <Icon name="arrow_back" size={18} />
+          今日の記録に戻る
+        </button>
+      )}
+
+      {showForm ? (
+        <Form
+          key={`${date}-${editing ? "edit" : "new"}`}
+          persona={persona}
+          date={date}
+          readers={readers}
+          existing={saved}
+          onSaved={() => {
+            setFlash(true);
+            window.setTimeout(() => {
+              setFlash(false);
+              setEditing(false);
+            }, 1500);
+          }}
+        />
+      ) : (
+        <ReadView record={saved} readers={readers} onEdit={() => setEditing(true)} />
+      )}
+
+      {flash && (
+        <div className={styles.saved} role="status">
+          <span className={styles.savedText}>記録しました。また明日</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 担任だけに出る一行（4-2）。誰が未記録かはここでは出さない。 */
+function ClassToday({ classId }: { classId: string }) {
+  const students = studentsOf(classId);
+  const done = students.filter((s) => s.records.some((r) => r.date === AS_OF)).length;
+  return (
+    <TransitionLink href="/educator/class" className={styles.classLine}>
+      {classById(classId)?.name}：今日の記録
+      <strong>
+        {done} / {students.length}人
+      </strong>
+      <Icon name="chevron_right" size={18} />
+    </TransitionLink>
+  );
+}
+
+type Draft = { mood: Mood | null; tags: WorkTag[]; text: string; question: number | null };
+
+function Form({
+  persona,
+  date,
+  readers,
+  existing,
+  onSaved,
+}: {
+  persona: Persona;
+  date: string;
+  readers: Array<{ name: string; title: string }>;
+  existing: TeacherRecord | null;
+  onSaved: () => void;
+}) {
+  const initial: Draft = existing
+    ? {
+        mood: existing.mood,
+        tags: existing.tags,
+        text: existing.text,
+        question: existing.question ? Math.max(0, TEACHER_QUESTIONS.indexOf(existing.question as (typeof TEACHER_QUESTIONS)[number])) : null,
+      }
+    : { mood: null, tags: [], text: "", question: null };
+  const [draft, setDraft] = useState<Draft>(initial);
+  const [restored, setRestored] = useState(existing !== null);
+  // 開いたときに書き直しだったかどうか。保存した直後に呼び名が変わらないように。
+  const [rewriting] = useState(existing !== null);
+  const [failed, setFailed] = useState(false);
+  const key = draftKey(persona.id, date);
+
+  // 書きかけを戻す（最初の描画のあとで。サーバーの HTML と食い違わないように）。
   useEffect(() => {
-    const restored = saved ? { mood: saved.mood, text: saved.text, tags: saved.tags, promptId: saved.promptId } : readDraft();
-    const timer = window.setTimeout(() => {
-      setDraft(restored);
-      setLoaded(true);
-    }, 0);
-    return () => window.clearTimeout(timer);
-    // 開いたときに一度だけ戻す。保存のたびに打ちかけを上書きしない。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // 打つたびに下書きを残す（少し待ってからまとめて）。
-  useEffect(() => {
-    if (!loaded) return;
+    if (existing) return;
     const timer = window.setTimeout(() => {
       try {
-        window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-        setDraftAt(now());
+        const raw = readRaw("local", key);
+        if (raw) setDraft((d) => ({ ...d, ...(JSON.parse(raw) as Draft) }));
       } catch {
-        // 端末に残せない環境では、下書きの表示を出さないだけ。
+        // 読めない下書きは捨てる。
       }
-    }, 600);
+      setRestored(true);
+    }, 0);
     return () => window.clearTimeout(timer);
-  }, [draft, loaded]);
+  }, [existing, key]);
 
-  const prompt = PROMPTS[promptIndex % PROMPTS.length];
+  // 打つたびに端末へ残す（通信が切れても消えないように）。
+  useEffect(() => {
+    if (!restored || existing) return;
+    const timer = window.setTimeout(() => writeRaw("local", key, JSON.stringify(draft)), 500);
+    return () => window.clearTimeout(timer);
+  }, [draft, restored, existing, key]);
+
   const length = [...draft.text].length;
-  const over = length > TEXT_LIMIT;
-  const changed = useMemo(
-    () => !saved || saved.mood !== draft.mood || saved.text !== draft.text || saved.tags.join() !== draft.tags.join(),
-    [saved, draft],
-  );
+  const today = date === AS_OF;
 
   const save = () => {
-    if (!draft.mood || over) return;
+    if (!draft.mood) return;
+    const text = draft.text.trim();
     const record: TeacherRecord = {
-      date: AS_OF,
+      date,
+      time: now(),
       mood: draft.mood,
-      text: draft.text.trim(),
       tags: draft.tags,
-      promptId: draft.text.trim() ? draft.promptId : undefined,
-      edits: [...(saved?.edits ?? []), now()],
+      text,
+      ...(draft.question !== null && text ? { question: TEACHER_QUESTIONS[draft.question] } : {}),
     };
-    try {
-      window.sessionStorage.setItem(SAVED_KEY, JSON.stringify(record));
-      window.localStorage.removeItem(DRAFT_KEY);
-    } catch {
-      // 保存できない環境でも、画面の上では保存した状態にする。
+    if (!saveWrittenRecord(persona.id, record)) {
+      setFailed(true);
+      return;
     }
-    window.dispatchEvent(new Event(EVENT));
+    setFailed(false);
+    writeRaw("local", key, null);
+    onSaved();
   };
 
   return (
-    <div className={styles.page}>
-      <PageHead
-        kicker="先生自身の記録"
-        title={`${formatDate(AS_OF)}の記録`}
-        lede="気分を選ぶだけでも保存できます。書きたいことがあれば、ひとことでも。"
-      >
-        <ReadersLine readers={readers} />
-      </PageHead>
+    <>
+      <header className={styles.head}>
+        <div className={styles.row}>
+          <p className={styles.date}>{formatDate(date)}</p>
+          <span className={styles.spacer} />
+          {/* スマホでは上のタブを畳むので、これまでへの入口をここに置く。 */}
+          <TransitionLink href="/educator/my-records" className={`${styles.linkButton} ${styles.mobileOnly}`}>
+            これまで
+            <Icon name="chevron_right" size={18} />
+          </TransitionLink>
+        </div>
+        <h1 className={styles.ask}>{today ? "今日はいかがでしたか" : `${formatDate(date)}はいかがでしたか`}</h1>
+      </header>
 
-      <section className={styles.section} aria-labelledby="mood-label">
-        <h2 id="mood-label" className={styles.fieldLabel}>
-          今日の気分<span className={styles.required}>必須</span>
-        </h2>
-        <div className={styles.moodRow} role="group" aria-labelledby="mood-label">
-          {MOODS.map((mood) => (
+      <div className={styles.moodRow} role="group" aria-label="気分（必須）">
+        {MOODS.map((mood) => {
+          const selected = draft.mood === mood.value;
+          return (
             <button
               key={mood.value}
               type="button"
               className={styles.moodOption}
-              aria-pressed={draft.mood === mood.value}
+              aria-pressed={selected}
               onClick={() => setDraft((d) => ({ ...d, mood: mood.value }))}
             >
-              <span className={styles.moodDot} style={{ background: mood.color }} aria-hidden="true" />
+              <span className={styles.moodFace} style={selected ? { background: mood.color } : undefined}>
+                <Icon name={mood.icon} size={32} fill={selected} weight={selected ? 500 : 400} />
+              </span>
               {mood.label}
             </button>
-          ))}
-        </div>
-      </section>
-
-      <section className={styles.section} data-bl-term="今日のこと">
-        <label htmlFor="body" className={styles.fieldLabel}>
-          今日のこと<span className={styles.required}>任意・{TEXT_LIMIT.toLocaleString()}字まで</span>
-        </label>
-        {draft.text.trim() === "" && (
-          <p className={styles.prompt}>
-            <span>{prompt.text}</span>
-            <button type="button" className={styles.linkButton} onClick={() => setPromptIndex((i) => i + 1)}>
-              別の質問にする
-            </button>
-          </p>
-        )}
-        <textarea
-          id="body"
-          className={styles.textarea}
-          value={draft.text}
-          placeholder={draft.text.trim() === "" ? "質問に答えてもいいし、ほかのことでも。" : undefined}
-          onChange={(event) => {
-            const text = event.target.value;
-            // 書き始めた瞬間に出ていた質問を、その回答の紐づけとして持っておく（A-2）。
-            setDraft((d) => ({ ...d, text, promptId: d.text.trim() === "" && text.trim() !== "" ? prompt.id : d.promptId }));
-          }}
-          aria-describedby="body-count"
-        />
-        <span id="body-count" className={styles.counter} style={over ? { color: "var(--bl-alert-ink)" } : undefined}>
-          {length.toLocaleString()} / {TEXT_LIMIT.toLocaleString()}字{over ? "（多すぎます）" : ""}
-        </span>
-        {draft.promptId && draft.text.trim() && (
-          <p className={styles.note}>
-            質問「{PROMPTS.find((p) => p.id === draft.promptId)?.text}」への回答として保存します。
-          </p>
-        )}
-      </section>
+          );
+        })}
+      </div>
 
       <section className={styles.section} aria-labelledby="tags-label">
         <h2 id="tags-label" className={styles.fieldLabel}>
-          今日の業務<span className={styles.required}>任意・いくつでも</span>
+          テーマ<span className={styles.optional}>任意・いくつでも</span>
         </h2>
-        <div className={styles.tagRow} role="group" aria-labelledby="tags-label">
+        <div className={styles.tagRow}>
           {WORK_TAGS.map((tag) => (
             <button
               key={tag.value}
               type="button"
-              className={styles.tagOption}
+              className={styles.chip}
               aria-pressed={draft.tags.includes(tag.value)}
               onClick={() =>
                 setDraft((d) => ({
@@ -222,42 +273,94 @@ function MyRecordToday() {
             </button>
           ))}
         </div>
-        <p className={styles.note}>選んだ業務は、管理職が業務の偏りを本人の申告どおりに見るためだけに使います。自動で分類はしません。</p>
       </section>
 
-      <section className={styles.section}>
-        <div className={styles.saveRow}>
-          <button type="button" className="bl-btn bl-btn--primary" onClick={save} disabled={!draft.mood || over || !changed}>
-            {saved ? "書き直して保存" : "保存"}
-          </button>
-          <span className={styles.status} aria-live="polite">
-            {saved
-              ? `保存済み（${saved.edits.at(-1)}）。今日のうちは書き直せます。${saved.edits.length > 1 ? `書き直し ${saved.edits.length - 1}回。` : ""}`
-              : draft.mood === null
-                ? "気分を選ぶと保存できます。"
-                : draftAt
-                  ? `下書きを端末に保存しました（${draftAt}）`
-                  : ""}
-          </span>
+      <section className={styles.section} data-bl-term="今日のこと">
+        <div className={styles.row} style={{ justifyContent: "space-between", rowGap: 0 }}>
+          <label htmlFor="body" className={styles.fieldLabel}>
+            今日のこと<span className={styles.optional}>任意</span>
+          </label>
+          {draft.question === null && (
+            <button type="button" className={styles.linkButton} onClick={() => setDraft((d) => ({ ...d, question: 0 }))}>
+              書くことが思いつかないとき
+            </button>
+          )}
         </div>
-        <p className={styles.note}>
-          明日からは読むだけになり、書き直した履歴が残ります。過去の記録は
-          <Link href="/educator/my-records" className={styles.linkButton} style={{ marginLeft: 4 }}>
-            振り返り
-          </Link>
-          で見られます。
-        </p>
+        {draft.question === null ? null : (
+          <p className={styles.question}>
+            {TEACHER_QUESTIONS[draft.question]}
+            <button
+              type="button"
+              className={styles.linkButton}
+              onClick={() => setDraft((d) => ({ ...d, question: ((d.question ?? 0) + 1) % TEACHER_QUESTIONS.length }))}
+            >
+              別の質問
+            </button>
+          </p>
+        )}
+        <textarea
+          id="body"
+          className={styles.textarea}
+          value={draft.text}
+          maxLength={LIMIT}
+          placeholder="一言でも構いません。今日あったこと、感じたこと"
+          onChange={(event) => setDraft((d) => ({ ...d, text: event.target.value }))}
+        />
+        {length > SHOW_REST_AFTER && <span className={styles.counter}>残り{LIMIT - length}字</span>}
+        {draft.question !== null && draft.text.trim() && <p className={styles.note}>質問は記録と一緒に保存され、記録を読める人にも見えます。</p>}
       </section>
 
-      <section className={styles.section}>
-        <h2 className={styles.h2}>お知らせ</h2>
-        <p className={styles.note}>
-          {settings.reminder.enabled
-            ? `帰りのHRの時間（${settings.reminder.time}）に、1日1回だけお知らせします。`
-            : "記録のお知らせは、学校の設定で止めてあります。"}
-          記録しない日が続いても、管理職に知らせることはありません。
-        </p>
-      </section>
-    </div>
+      {/* 保存ボタンの帯。ボタンのすぐ上に、読める人をいつも出す。 */}
+      <div className={styles.saveBar} data-bl-fixed-action="">
+        <div className={styles.saveInner}>
+          <ReadersLine readers={readers} />
+          <p className={styles.promise}>{PROMISE}</p>
+          {failed && (
+            <p className={styles.note} role="alert">
+              保存できませんでした。内容はこの端末に残っています。
+              <button type="button" className={styles.linkButton} onClick={save} style={{ marginLeft: 8 }}>
+                もう一度
+              </button>
+            </p>
+          )}
+          <button type="button" className={`${styles.button} ${styles.primary} ${styles.saveButton}`} disabled={!draft.mood} onClick={save}>
+            {rewriting ? "書き直して保存" : "保存"}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ReadView({ record, readers, onEdit }: { record: TeacherRecord; readers: Array<{ name: string; title: string }>; onEdit: () => void }) {
+  const today = record.date === AS_OF;
+  return (
+    <section className={styles.head} aria-labelledby="saved-title">
+      <p className={styles.date}>{formatDate(record.date)}</p>
+      <h1 id="saved-title" className={styles.title}>
+        {today ? "今日の記録" : `${formatDate(record.date)}の記録`}
+      </h1>
+      <div className={styles.recordBody} style={{ gap: 14, marginTop: 10 }}>
+        <div className={styles.recordMeta}>
+          <MoodWithLabel mood={record.mood} />
+          {record.tags.map((tag) => (
+            <span key={tag} className={styles.tag}>
+              #{tagLabel(tag)}
+            </span>
+          ))}
+        </div>
+        {record.question && record.text && <p className={styles.recordQuestion}>質問「{record.question}」に答えて</p>}
+        {record.text ? <p className={styles.recordText}>{record.text}</p> : <p className={styles.note}>（気分だけの記録）</p>}
+        <div className={styles.row}>
+          <button type="button" className={styles.button} onClick={onEdit}>
+            <Icon name="edit" size={18} />
+            編集
+          </button>
+          <span className={styles.note}>{today ? "今日の23:59まで書き直せます。" : "この記録は今日の23:59まで書き直せます。"}</span>
+        </div>
+        <ReadersLine readers={readers} />
+        <p className={styles.promise}>{PROMISE}</p>
+      </div>
+    </section>
   );
 }

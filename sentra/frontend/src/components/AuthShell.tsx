@@ -9,6 +9,7 @@ import { useIsHydrated } from "@/lib/hydration";
 import { AppNav } from "@/components/AppNav";
 import { RouteAnnouncer } from "@/components/a11y/RouteAnnouncer";
 import { Assistant } from "@/components/assistant/Assistant";
+import { TeacherShell } from "@/components/teachers/TeacherShell";
 
 export function AuthShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -27,14 +28,17 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   const authed = Boolean(user) || demo;
 
   useEffect(() => {
-    if (isLoading) return;
+    // The commit that ends hydration still sees `demo` as false, so deciding
+    // here would bounce every demo visitor through /login — and the round trip
+    // drops the query string (?p= on the teacher screens). Wait one render.
+    if (!hydrated || isLoading) return;
     if (!authed && !isLoginRoute) {
-      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+      router.replace(`/login?next=${encodeURIComponent(`${pathname}${window.location.search}`)}`);
     }
     if (authed && isLoginRoute) {
       router.replace(searchParams.get("next") || "/");
     }
-  }, [authed, isLoading, isLoginRoute, pathname, router, searchParams]);
+  }, [authed, hydrated, isLoading, isLoginRoute, pathname, router, searchParams]);
 
   if (!hydrated || isLoading || (!authed && !isLoginRoute) || (authed && isLoginRoute)) {
     return (
@@ -62,10 +66,17 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="bl-page bl-app" data-bl-context={context}>
       <a className="bl-skip" href="#bl-main">本文へスキップ</a>
-      <AppNav />
-      <main id="bl-main" className="bl-app__main" tabIndex={-1}>
-        {children}
-      </main>
+      {context === "educator" ? (
+        // 先生の画面は、サイドバーとタブの並びが権限で変わる外枠を持つ（UI仕様書 2章）。
+        <TeacherShell>{children}</TeacherShell>
+      ) : (
+        <>
+          <AppNav />
+          <main id="bl-main" className="bl-app__main" tabIndex={-1}>
+            {children}
+          </main>
+        </>
+      )}
       <RouteAnnouncer />
       {/* 案内役は生徒と教員の画面に置く（保護者の画面にはまだ置かない）。
           どちら向けかで、行き先・画面の説明・つらさへの返事が変わる。
