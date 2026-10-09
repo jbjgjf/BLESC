@@ -85,7 +85,7 @@ python3 - "$WORK/out" <<'PY'
 import pathlib, re, sys
 out = pathlib.Path(sys.argv[1])
 base = "/demo-view"
-assets = ("/flower.png", "/fonts/material-symbols-rounded.woff2")
+assets = ("/flower.png", "/flower-teachers.png", "/fonts/material-symbols-rounded.woff2")
 prefixed = noindex = 0
 for path in out.rglob("*"):
     if not path.is_file() or path.suffix not in (".html", ".js", ".css", ".txt"):
