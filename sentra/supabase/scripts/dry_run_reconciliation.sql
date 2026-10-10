@@ -90,7 +90,7 @@ having count(*) > 1;
 select
   sf.owner_user_id,
   count(*) as failures,
-  max(sf.occurred_at) as last_failure,
+  max(sf.created_at) as last_failure,
   (select count(*) from public.entries e where e.owner_user_id = sf.owner_user_id) as entries_now
 from public.submission_failures sf
 group by sf.owner_user_id
