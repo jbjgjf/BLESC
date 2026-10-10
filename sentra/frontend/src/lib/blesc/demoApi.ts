@@ -693,6 +693,10 @@ export function demoChatReply(message: string): ChatResponse {
     chat_session_id: "demo-chat-session",
     message_id: `demo-chat-${Date.now()}`,
     answer,
+    // Carried like the real route does, so a caller deciding what follows the
+    // reply (the recall workspace stops its interview after a crisis, #343)
+    // sees the same signal in demo mode.
+    safety_assessment: assessment,
     evidence_refs: {},
     retrieval_context: { demo: true },
     // `mock_mode` in everything but name: a consumer reading `status` sees that
