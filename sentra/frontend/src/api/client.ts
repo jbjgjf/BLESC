@@ -33,6 +33,7 @@ import { generateCounselorSummary, type CounselorTimelineEvent } from "@/lib/cou
 import { buildAuditTrails, type ModelRunRecord } from "@/lib/audit-trail";
 import { t } from "@/lib/i18n";
 import { readDemoFlag } from "@/lib/demo";
+import { acknowledgedAlertKeys, readAlertEscalations } from "@/lib/cohortAlertReads";
 import * as demo from "@/lib/blesc/demoApi";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
@@ -1272,27 +1273,19 @@ export class ApiClient {
     // the acknowledgement log, so nothing is acknowledged yet.
     if (readDemoFlag()) return this.alertsFromRoster(roster, new Set<string>());
 
-    const ackResult = await supabase
-      .from("educator_access_log")
-      .select("metadata")
-      .eq("view_type", "alert_ack")
-      .limit(500);
+    // Derived first, so the acknowledgement log can be asked about exactly
+    // these keys instead of whichever 500 rows came back (#364).
+    const unacknowledged = this.alertsFromRoster(roster, new Set<string>());
+    const ackResult = await acknowledgedAlertKeys(supabase, unacknowledged.map((alert) => alert.alert_key));
     if (ackResult.error) throwSupabaseError(t.apiError.loadAlertAcknowledgements, ackResult.error);
-    const acked = new Set(
-      ((ackResult.data ?? []) as Array<{ metadata: Record<string, JsonValue> | null }>)
-        .map((row) => String(row.metadata?.alert_key ?? ""))
-        .filter(Boolean),
-    );
-
-    const derived = this.alertsFromRoster(roster, acked);
+    const derived = unacknowledged.map((alert) => ({ ...alert, acknowledged: ackResult.acked.has(alert.alert_key) }));
 
     // Escalations are RLS-scoped to participants this educator oversees, so no
     // filtering is needed here; the database has already done it.
-    const escalationResult = await supabase
-      .from("safety_escalations")
-      .select("id, participant_id, risk_level, surface, detected_at, status, delivered_at, acknowledged_at")
-      .order("detected_at", { ascending: false })
-      .limit(200);
+    const escalationResult = await readAlertEscalations<EscalationAlertRow>(
+      supabase,
+      "id, participant_id, risk_level, surface, detected_at, status, delivered_at, acknowledged_at",
+    );
     if (escalationResult.error) {
       // A read failure must not blank the alert list: the derived alerts are
       // still true, and an empty dashboard is the most dangerous thing this
@@ -1303,7 +1296,7 @@ export class ApiClient {
 
     const byParticipant = new Map(roster.map((student) => [student.participant_id, student]));
     const escalated: CohortAlert[] = [];
-    for (const row of (escalationResult.data ?? []) as EscalationAlertRow[]) {
+    for (const row of escalationResult.rows) {
       const student = byParticipant.get(row.participant_id);
       if (!student) continue;
       escalated.push({
