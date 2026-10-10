@@ -27,8 +27,11 @@ import {
   GUARDIAN_TOKEN_TTL_HOURS,
   type RequestedGrants,
   normalizeRequestedGrants,
-} from "@/lib/guardianVerification";
-import { generateGuardianToken, guardianTokenPrefix, hashGuardianToken } from "./guardianTokens";
+} from "../guardianVerification.ts";
+// Relative, with `.ts`, so `node --test` can load this file as it is
+// (tests/pilot-guardian-store.test.mjs): Node resolves neither `@/` nor a
+// missing extension.
+import { generateGuardianToken, guardianTokenPrefix, hashGuardianToken } from "./guardianTokens.ts";
 
 export type GuardianVerificationRecord = {
   id: string;
