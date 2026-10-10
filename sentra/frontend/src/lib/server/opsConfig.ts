@@ -29,6 +29,8 @@
  * about them — `scripts/pilot/check-ops-config.mjs` does, with `gh`.
  */
 
+import { KEY_RULES, base64KeyAdvice, readBase64Key, type Base64KeyRule } from "./base64Key.ts";
+
 export type Severity = "blocking" | "degraded";
 
 export type ConfigCheck = {
@@ -48,22 +50,30 @@ export type ConfigCheck = {
 };
 
 /**
- * A base64 key that has to decode to at least 32 bytes.
+ * A base64 key, checked against the rule the code that reads it actually
+ * applies (#255).
  *
- * The same rule `recipientHashKey()` and `rawTextKey()` apply, restated here
- * rather than imported: those return null on a bad value and the caller cannot
- * tell "absent" from "malformed". For an operator that difference is the whole
- * message — one means nobody set it, the other means somebody set it wrong.
+ * The rule used to be restated here as "at least 32 bytes" for everything,
+ * which was wrong twice over. `Buffer.from(value, "base64")` does not throw on
+ * a value that is not base64 — it drops the offending characters — so the
+ * `try`/`catch` this replaced never ran; and `rawTextKeyMaterial()` wants
+ * *exactly* 32 bytes, so a 48-byte value was reported valid by a diagnostic
+ * whose own header promises to tell "absent" from "malformed", while retention
+ * was silently off. The rule now lives in `base64Key.ts` and each row below
+ * names the same rule its loader uses.
  */
-function base64KeyValid(value: string | undefined, minBytes = 32): boolean {
-  if (!value) return false;
-  let bytes: Buffer;
-  try {
-    bytes = Buffer.from(value, "base64");
-  } catch {
-    return false;
-  }
-  return bytes.length >= minBytes;
+function base64Key(value: string | undefined, rule: Base64KeyRule, consequence: string) {
+  const result = readBase64Key(value, rule);
+  return {
+    // "Somebody put something here", which whitespace is not. Reporting
+    // `configured: true` alongside advice that reads 「未設定。」 would be the
+    // report contradicting itself in the same row.
+    configured: result.ok || result.problem !== "absent",
+    valid: result.ok,
+    // The advice is about the shape, never the value: `base64KeyAdvice` cannot
+    // return anything derived from what was configured.
+    consequence: result.ok ? consequence : `${consequence} ${base64KeyAdvice(result.problem)}`,
+  };
 }
 
 function idListSize(value: string | undefined): number {
@@ -126,19 +136,24 @@ export function configChecks(): ConfigCheck[] {
     },
     {
       name: "SAFETY_RECIPIENT_HASH_KEY",
-      configured: Boolean(process.env.SAFETY_RECIPIENT_HASH_KEY),
-      valid: base64KeyValid(process.env.SAFETY_RECIPIENT_HASH_KEY),
-      severity: "degraded",
-      consequence:
+      // `recipientHashKey()` — 32 バイト以上。
+      ...base64Key(
+        process.env.SAFETY_RECIPIENT_HASH_KEY,
+        KEY_RULES.SAFETY_RECIPIENT_HASH_KEY,
         "通知ログの recipient hash が null。通知は届くが「誰に伝えたか」の記録が残らない。base64で32バイト以上。",
+      ),
+      severity: "degraded",
     },
     {
       name: "RESEARCH_RAW_TEXT_KEY",
-      configured: Boolean(process.env.RESEARCH_RAW_TEXT_KEY),
-      valid: base64KeyValid(process.env.RESEARCH_RAW_TEXT_KEY),
+      // `rawTextKeyMaterial()` — AES-256-GCM なので**ちょうど** 32 バイト。
+      // ここを「32以上」と書いていたのが #255 の誤報の半分だった。
+      ...base64Key(
+        process.env.RESEARCH_RAW_TEXT_KEY,
+        KEY_RULES.RESEARCH_RAW_TEXT_KEY,
+        "日記原文を保持しない(平文保存は起きない)。人手評価が必要なら必須。base64でちょうど32バイト。",
+      ),
       severity: "degraded",
-      consequence:
-        "日記原文を保持しない(平文保存は起きない)。人手評価が必要なら必須。base64で32バイト以上。",
     },
     {
       name: "PILOT_OPERATOR_USER_IDS",
@@ -156,10 +171,16 @@ export function configChecks(): ConfigCheck[] {
     },
     {
       name: "PILOT_INVITE_HMAC_KEY",
-      configured: Boolean(process.env.PILOT_INVITE_HMAC_KEY),
-      valid: Boolean(process.env.PILOT_INVITE_HMAC_KEY),
+      // `inviteHmacKey()` — 32 バイト以上。ここは「設定されているか」しか
+      // 見ていなかったので、`inviteHmacKey()` が null を返す値でも blocking に
+      // 上がらなかった。発行も引き換えもできない状態が、blocking gap の一覧に
+      // 出てこない状態だった。
+      ...base64Key(
+        process.env.PILOT_INVITE_HMAC_KEY,
+        KEY_RULES.PILOT_INVITE_HMAC_KEY,
+        "招待コードのhash化ができず、発行も引き換えもできない。base64で32バイト以上。",
+      ),
       severity: "blocking",
-      consequence: "招待コードのhash化ができず、発行も引き換えもできない。",
     },
   ];
 }

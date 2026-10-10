@@ -18,6 +18,8 @@
  * "plaintext".
  */
 
+import { KEY_RULES, readBase64Key } from "./base64Key.ts";
+
 const KEY_VERSION = "raw-text-aesgcm-v1";
 const IV_BYTES = 12;
 
@@ -34,22 +36,28 @@ function encodeBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
 }
 
-/** The configured key, or null when the deployment has none. */
+/**
+ * The configured key, or null when the deployment has none.
+ *
+ * The decoding rule is `base64Key.ts`'s, not a local one (#255). The version
+ * this replaced wrapped `Buffer.from(…, "base64")` in a `try`/`catch` that
+ * could not run — that call drops characters outside the alphabet rather than
+ * throwing — so "somebody pasted 64 hex characters" arrived here as 48 clean
+ * bytes and was refused by the length check alone, with a message about a
+ * length rather than about the format. It is the format that is wrong, and the
+ * operator's self-check was reporting the same value as healthy.
+ */
 export function rawTextKeyMaterial(): Uint8Array | null {
-  const configured = process.env.RESEARCH_RAW_TEXT_KEY;
-  if (!configured) return null;
-  let bytes: Uint8Array;
-  try {
-    bytes = decodeBase64(configured);
-  } catch {
-    console.warn("[raw-text] RESEARCH_RAW_TEXT_KEY is not valid base64; raw text will not be retained");
+  const result = readBase64Key(process.env.RESEARCH_RAW_TEXT_KEY, KEY_RULES.RESEARCH_RAW_TEXT_KEY);
+  if (!result.ok) {
+    if (result.problem !== "absent") {
+      console.warn(
+        `[raw-text] RESEARCH_RAW_TEXT_KEY is unusable (${result.problem}); raw text will not be retained`,
+      );
+    }
     return null;
   }
-  if (bytes.length !== 32) {
-    console.warn("[raw-text] RESEARCH_RAW_TEXT_KEY must decode to 32 bytes; raw text will not be retained");
-    return null;
-  }
-  return bytes;
+  return Uint8Array.from(result.bytes);
 }
 
 export function rawTextRetentionConfigured(): boolean {
