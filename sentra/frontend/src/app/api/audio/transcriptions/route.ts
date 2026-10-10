@@ -3,12 +3,13 @@ import { openAIKey, requireUser } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { COLLECTION_ONLY_MESSAGE, collectionOnlyForUser } from "@/lib/server/collectionMode";
 import { RULES, consumeRateLimit, rateLimitHeaders, rateLimitSubject } from "@/lib/server/rateLimit";
+import { envPositiveInt } from "@/lib/server/envNumber";
 import { DeadlineExceeded, transcriptionTimeoutMs, withDeadline } from "@/lib/server/modelDeadline";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const AUDIO_MAX_BYTES = Number(process.env.OPENAI_TRANSCRIPTION_MAX_BYTES ?? 24 * 1024 * 1024);
+const AUDIO_MAX_BYTES = envPositiveInt("OPENAI_TRANSCRIPTION_MAX_BYTES", 24 * 1024 * 1024);
 const AUDIO_EXTENSIONS = new Set(["webm", "wav", "mp3", "m4a", "mp4", "mpeg", "mpga"]);
 const AUDIO_CONTENT_TYPES = new Set([
   "audio/webm",

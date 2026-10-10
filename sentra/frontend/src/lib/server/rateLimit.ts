@@ -33,6 +33,7 @@
 import type { NextRequest } from "next/server";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { envPositiveInt } from "./envNumber.ts";
 
 export type RateLimitRule = {
   /** Namespace for the counter. Appears in the bucket key. */
@@ -71,10 +72,12 @@ export const RULES = {
   externalModel: rule("external-model", "EXTERNAL_MODEL_LIMIT", 60, 3600),
 } as const;
 
+// The validation this used to do inline now lives in `envNumber.ts` (#269),
+// because three other call sites were reading numbers out of the environment
+// without it and turning a typo into an aborted request or a missing size cap.
+// One copy of the rule, so there cannot be two versions of it.
 function rule(route: string, envVar: string, fallback: number, windowSeconds: number): RateLimitRule {
-  const configured = Number(process.env[envVar]);
-  const limit = Number.isSafeInteger(configured) && configured > 0 ? configured : fallback;
-  return { route, limit, windowSeconds };
+  return { route, limit: envPositiveInt(envVar, fallback), windowSeconds };
 }
 
 /**
