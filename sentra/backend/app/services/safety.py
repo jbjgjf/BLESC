@@ -1,31 +1,41 @@
+import hashlib
+import json
+import re
 import unicodedata
+from pathlib import Path
 
 from app.models.safety import SafetyAssessmentInput, SafetyAssessmentReturn
+
+#: The same string `frontend/src/lib/safety-assessment.ts` writes. One name must
+#: mean one behaviour (#374): the two are held to the same answers by
+#: `sentra/shared/safety_assessment_conformance.json`, which both test suites run.
+SAFETY_ASSESSMENT_VERSION = "safety-assessment-v2"
+
+_CONFORMANCE_PATH = Path(__file__).resolve().parents[3] / "shared" / "safety_assessment_conformance.json"
 
 SAFETY_POLICY_REFS = [
     "docs/safety_escalation_policy.md",
     "docs/static_safety_school_support_reference.md",
 ]
 
-CRISIS_RESPONSE = (
-    "Your immediate safety comes first. BLESC cannot provide emergency or crisis care. "
-    "If you may act now or are in immediate danger, call your local emergency service now. "
-    "Move toward a trusted adult or another safe person and tell them clearly that you need immediate help."
-)
-
-ELEVATED_RESPONSE = (
-    "This may need support from a real person. Consider telling a trusted adult, counselor, guardian, "
-    "or another safe person what is happening. If the danger becomes immediate, contact local emergency services."
-)
+# What the student reads on the first card of a crisis. Read from the shared
+# contract rather than written here a second time: this used to be an English
+# paragraph next to an extraction prompt that asks for Japanese, and the copy in
+# the Next.js path is pinned to the same file by its own test.
+_RESPONSES = json.loads(_CONFORMANCE_PATH.read_text(encoding="utf-8"))["responses"]
+CRISIS_RESPONSE: str = _RESPONSES["crisis"]
+ELEVATED_RESPONSE: str = _RESPONSES["elevated"]
 
 SELF_HARM_TERMS = (
-    "hurt myself", "harm myself", "self-harm", "self harm", "kill myself",
-    "end my life", "want to die", "suicide", "suicidal", "overdose",
+    "hurt myself", "hurting myself", "harm myself", "harming myself", "self-harm", "self harm",
+    "kill myself", "killing myself", "end my life", "ending my life", "want to die",
+    "suicide", "suicidal", "overdose",
     "自殺", "死にたい", "消えたい", "自分を傷つけ", "自傷",
 )
 IMMINENCE_TERMS = (
     "tonight", "tomorrow", "right now", "now", "today", "have a plan", "made a plan",
     "cannot stay safe", "can't stay safe", "do not feel safe", "don't feel safe",
+    "not safe tonight", "not safe right now",
     "今すぐ", "今夜", "今日", "計画がある", "安全でいられない",
 )
 VIOLENCE_TERMS = (
@@ -45,8 +55,17 @@ PASSIVE_RISK_TERMS = (
     "wish i were dead", "no reason to live", "everyone would be better without me",
     "生きていたくない", "生きる意味がない",
 )
+# Language that may describe withdrawal from life without naming self-harm.
+# Kept apart from ordinary distress because ambiguity must err toward support.
+AMBIGUOUS_RISK_TERMS = (
+    "disappear", "disappearing", "disappeared", "vanish", "stop existing", "not be here",
+    "tired of everything", "tired of being here", "everything is grey", "everything is gray",
+    "what's the point", "what is the point", "no point in anything", "give up on everything",
+    "can't go on", "cannot go on", "not safe", "not be safe",
+    "いなくなりたい", "消えてしまいたい", "全部どうでもいい", "もう限界",
+)
 DISTRESS_TERMS = (
-    "panic", "panicking", "hopeless", "worthless", "trapped", "overwhelmed", "disappear",
+    "panic", "panicking", "hopeless", "worthless", "trapped", "overwhelmed",
     "パニック", "絶望", "つらい", "苦しい",
 )
 
@@ -112,6 +131,9 @@ KANA_SPELLINGS = {
     "秘密にして": ("ひみつにして",),
     "生きていたくない": ("いきていたくない",),
     "生きる意味がない": ("いきるいみがない",),
+    "消えてしまいたい": ("きえてしまいたい",),
+    "全部どうでもいい": ("ぜんぶどうでもいい",),
+    "もう限界": ("もうげんかい",),
     "絶望": ("ぜつぼう",),
     "苦しい": ("くるしい",),
     "安全でいられない": ("あんぜんでいられない",),
@@ -120,7 +142,7 @@ KANA_SPELLINGS = {
 #: Every lexicon's terms, for the test that keeps ``KANA_SPELLINGS`` honest.
 ALL_SAFETY_TERMS = (
     SELF_HARM_TERMS + IMMINENCE_TERMS + VIOLENCE_TERMS + ABUSE_TERMS
-    + CONCEALMENT_TERMS + PASSIVE_RISK_TERMS + DISTRESS_TERMS
+    + CONCEALMENT_TERMS + PASSIVE_RISK_TERMS + AMBIGUOUS_RISK_TERMS + DISTRESS_TERMS
 )
 
 
@@ -141,27 +163,64 @@ def spellings(
     return tuple(dict.fromkeys(folded))
 
 
-#: What the assessment actually compares against. Built once, folded, so the
-#: text and the terms meet in one spelling.
-_SELF_HARM = spellings(SELF_HARM_TERMS)
-#: Folded like the rest, but given no readings: see ``KANA_SPELLINGS`` on #290.
-#: Every term stays — 安全でいられない is still an imminence signal, it just does
-#: not gain あんぜんでいられない here. The reading reaches `_CANNOT_STAY_SAFE`,
-#: which is the check that term exists for.
-_IMMINENCE = tuple(dict.fromkeys(fold_writing(term) for term in IMMINENCE_TERMS))
-_VIOLENCE = spellings(VIOLENCE_TERMS)
-_ABUSE = spellings(ABUSE_TERMS)
-_CONCEALMENT = spellings(CONCEALMENT_TERMS)
-_PASSIVE_RISK = spellings(PASSIVE_RISK_TERMS)
-_DISTRESS = spellings(DISTRESS_TERMS)
-_EXPLICIT_LETHAL = spellings(
-    ("kill myself", "end my life", "want to die", "suicide", "自殺", "死にたい")
-)
-_CANNOT_STAY_SAFE = spellings(("cannot stay safe", "can't stay safe", "安全でいられない"))
+#: What the assessment actually compares against, under the names the shared
+#: contract uses. Built once, folded, so the text and the terms meet in one
+#: spelling.
+#:
+#: ``imminent`` is folded like the rest but given no readings: see
+#: ``KANA_SPELLINGS`` on #290. 安全でいられない is still an imminence signal; its
+#: reading reaches ``cannot_stay_safe``, which is the check that term exists for.
+LEXICON_SPELLINGS: dict[str, tuple[str, ...]] = {
+    "self_harm": spellings(SELF_HARM_TERMS),
+    "imminent": tuple(dict.fromkeys(fold_writing(term) for term in IMMINENCE_TERMS)),
+    "violence": spellings(VIOLENCE_TERMS),
+    "abuse": spellings(ABUSE_TERMS),
+    "concealment": spellings(CONCEALMENT_TERMS),
+    "passive": spellings(PASSIVE_RISK_TERMS),
+    "ambiguous": spellings(AMBIGUOUS_RISK_TERMS),
+    "distress": spellings(DISTRESS_TERMS),
+    "explicit_lethal": spellings((
+        "kill myself", "killing myself", "end my life", "ending my life",
+        "want to die", "suicide", "自殺", "死にたい",
+    )),
+    "cannot_stay_safe": spellings(("cannot stay safe", "can't stay safe", "安全でいられない")),
+}
 
 
-def _matches(content: str, terms: tuple[str, ...]) -> list[str]:
-    return [term for term in terms if term in content]
+def lexicon_fingerprint() -> str:
+    """SHA-256 over every spelling the assessment matches.
+
+    The shared contract records this value and the Next.js path computes the
+    same digest over its own lexicons, so a term added to one side alone fails
+    both test suites instead of quietly changing one deployment's answers.
+    """
+    lines = [f"{name}={'|'.join(sorted(terms))}" for name, terms in sorted(LEXICON_SPELLINGS.items())]
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+_ASCII_TERM = re.compile(r"[\x20-\x7e]+")
+
+
+def _lexicon(terms: tuple[str, ...]) -> re.Pattern[str]:
+    """ASCII terms match on word boundaries so "now" cannot fire on "know" or
+    "nowhere"; Japanese has no word boundaries, so those terms stay substrings.
+
+    ``re.ASCII`` makes ``\\b`` mean what it means in JavaScript, where only
+    ``[A-Za-z0-9_]`` are word characters: without it 「nowだ」 has no boundary
+    after "now" here and has one in the Next.js path.
+    """
+    alternatives = [
+        rf"\b{re.escape(term)}\b" if _ASCII_TERM.fullmatch(term) else re.escape(term)
+        for term in terms
+    ]
+    return re.compile("|".join(alternatives), re.ASCII)
+
+
+_LEXICONS = {name: _lexicon(terms) for name, terms in LEXICON_SPELLINGS.items()}
+
+
+def _matches(content: str, name: str) -> bool:
+    return _LEXICONS[name].search(content) is not None
 
 
 def assess_safety(payload: SafetyAssessmentInput) -> SafetyAssessmentReturn:
@@ -174,25 +233,28 @@ def assess_safety(payload: SafetyAssessmentInput) -> SafetyAssessmentReturn:
             reasons=[], safe_response="", policy_refs=[],
         )
 
-    self_harm = _matches(content, _SELF_HARM)
-    imminent = _matches(content, _IMMINENCE)
-    violence = _matches(content, _VIOLENCE)
-    abuse = _matches(content, _ABUSE)
-    concealment = _matches(content, _CONCEALMENT)
-    passive = _matches(content, _PASSIVE_RISK)
-    distress = _matches(content, _DISTRESS)
+    self_harm = _matches(content, "self_harm")
+    imminent = _matches(content, "imminent")
+    violence = _matches(content, "violence")
+    abuse = _matches(content, "abuse")
+    concealment = _matches(content, "concealment")
+    passive = _matches(content, "passive")
+    ambiguous = _matches(content, "ambiguous")
+    distress = _matches(content, "distress")
 
+    # Reasons are appended in the order the Next.js path appends them; the
+    # shared contract compares the lists, not sets.
     crisis_reasons = []
-    if self_harm and (imminent or _matches(content, _EXPLICIT_LETHAL)):
+    if self_harm and (imminent or _matches(content, "explicit_lethal")):
         crisis_reasons.append("self_harm_or_suicide_risk")
     if violence and imminent:
         crisis_reasons.append("imminent_violence_risk")
     if abuse:
         crisis_reasons.append("abuse_or_violence_disclosure")
+    if _matches(content, "cannot_stay_safe"):
+        crisis_reasons.append("inability_to_stay_safe")
     if passive:
         crisis_reasons.append("possible_suicide_risk")
-    if _matches(content, _CANNOT_STAY_SAFE):
-        crisis_reasons.append("inability_to_stay_safe")
 
     if crisis_reasons:
         return SafetyAssessmentReturn(
@@ -204,18 +266,23 @@ def assess_safety(payload: SafetyAssessmentInput) -> SafetyAssessmentReturn:
             policy_refs=SAFETY_POLICY_REFS,
         )
 
+    # Abuse and passive risk never reach here: either one is a crisis above.
     elevated_reasons = []
-    if self_harm or passive:
+    if self_harm:
         elevated_reasons.append("possible_self_harm_or_suicide_risk")
-    if abuse:
-        elevated_reasons.append("abuse_or_violence_disclosure")
-    if concealment and (self_harm or passive or abuse or violence):
+    if concealment and (self_harm or violence):
         elevated_reasons.append("concealment_request_related_to_harm")
     if violence:
         elevated_reasons.append("possible_violence_risk")
+    # Ambiguity about wanting to be gone is graded as elevated rather than
+    # crisis: it earns a supportive response with real-person routes, but not
+    # the reflection-card suppression that escalation_required drives.
+    if ambiguous:
+        elevated_reasons.append("ambiguous_withdrawal_signal")
     if elevated_reasons:
+        ambiguous_only = elevated_reasons == ["ambiguous_withdrawal_signal"]
         return SafetyAssessmentReturn(
-            risk_level="elevated", confidence=0.85, escalation_required=False,
+            risk_level="elevated", confidence=0.6 if ambiguous_only else 0.85, escalation_required=False,
             reasons=list(dict.fromkeys(elevated_reasons)), safe_response=ELEVATED_RESPONSE,
             policy_refs=SAFETY_POLICY_REFS,
         )
