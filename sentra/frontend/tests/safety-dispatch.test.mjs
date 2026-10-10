@@ -18,7 +18,7 @@ import { BATCH, MAX_ATTEMPTS, dispatchPendingEscalations } from "../src/lib/serv
  * The builder is a thenable that resolves to whatever the table was seeded
  * with, so `await`ing the chain works the way the real client's does.
  */
-function fakeClient({ escalations = [], participants = [], counts = {} } = {}) {
+function fakeClient({ escalations = [], participants = [], counts = {}, errors = {} } = {}) {
   const queries = [];
 
   function builder(table, options = {}) {
@@ -53,7 +53,12 @@ function fakeClient({ escalations = [], participants = [], counts = {} } = {}) {
       then(onFulfilled) {
         if (record.head) {
           const key = record.filters.some((f) => f.op === "gte") ? "exhausted" : "other";
-          return Promise.resolve({ count: counts[key] ?? 0, error: null }).then(onFulfilled);
+          if (errors[key]) return Promise.resolve({ count: null, error: { message: errors[key] } }).then(onFulfilled);
+          const count = key in counts ? counts[key] : 0;
+          return Promise.resolve({ count, error: null }).then(onFulfilled);
+        }
+        if (record.table === "participants" && errors.participants) {
+          return Promise.resolve({ data: null, error: { message: errors.participants } }).then(onFulfilled);
         }
         const data = record.table === "participants" ? participants : escalations;
         return Promise.resolve({ data, error: null }).then(onFulfilled);
@@ -154,5 +159,111 @@ describe("which escalations a run picks up", () => {
     };
     const result = await dispatchPendingEscalations(client);
     assert.deepEqual(result, { error: "permission denied" });
+  });
+});
+
+/**
+ * The two lookups around the queue read (#377). Only the queue read used to be
+ * checked, so a failed code lookup sent every alert in the batch naming nobody
+ * and marked it delivered, and a failed count reported no standing failures.
+ */
+describe("when a lookup beside the queue fails", () => {
+  const row = (id, participant) => ({
+    id,
+    owner_user_id: "owner-1",
+    participant_id: participant,
+    risk_level: "crisis",
+    reasons: ["self_harm_or_suicide_risk"],
+    surface: "chat",
+    detected_at: "2026-10-08T17:14:03.000Z",
+    status: "pending",
+    attempts: 0,
+  });
+
+  /** Stands in for `deliverEscalation`, recording who each alert would name. */
+  function recordingDeliver() {
+    const sent = [];
+    const deliver = async (_service, escalation, code) => {
+      sent.push({ id: escalation.id, code });
+      return "delivered";
+    };
+    return { sent, deliver };
+  }
+
+  async function quietly(run) {
+    const saved = { error: console.error, warn: console.warn };
+    const logged = { error: [], warn: [] };
+    console.error = (...args) => logged.error.push(args.join(" "));
+    console.warn = (...args) => logged.warn.push(args.map(String).join(" "));
+    try {
+      return { result: await run(), logged };
+    } finally {
+      Object.assign(console, saved);
+    }
+  }
+
+  it("sends nothing when the participant codes cannot be read", async () => {
+    const client = fakeClient({
+      escalations: [row("esc-1", "p-1"), row("esc-2", "p-2")],
+      errors: { participants: "connection reset" },
+    });
+    const { sent, deliver } = recordingDeliver();
+    const { result, logged } = await quietly(() => dispatchPendingEscalations(client, deliver));
+
+    assert.deepEqual(sent, [], "an alert naming nobody must not go out and be marked delivered");
+    assert.deepEqual(result, { error: "connection reset" });
+    assert.equal(logged.error.length, 1);
+  });
+
+  it("names each participant when the lookup works", async () => {
+    const client = fakeClient({
+      escalations: [row("esc-1", "p-1"), row("esc-2", "p-2")],
+      participants: [{ id: "p-1", code: "BL-001" }, { id: "p-2", code: "BL-002" }],
+    });
+    const { sent, deliver } = recordingDeliver();
+    const { result, logged } = await quietly(() => dispatchPendingEscalations(client, deliver));
+
+    assert.deepEqual(sent, [{ id: "esc-1", code: "BL-001" }, { id: "esc-2", code: "BL-002" }]);
+    assert.equal(result.delivered, 2);
+    assert.deepEqual(logged.warn, []);
+  });
+
+  it("still sends a row whose participant the lookup did not return, and says so", async () => {
+    const client = fakeClient({
+      escalations: [row("esc-1", "p-1"), row("esc-2", "p-gone")],
+      participants: [{ id: "p-1", code: "BL-001" }],
+    });
+    const { sent, deliver } = recordingDeliver();
+    const { result, logged } = await quietly(() => dispatchPendingEscalations(client, deliver));
+
+    assert.deepEqual(sent, [{ id: "esc-1", code: "BL-001" }, { id: "esc-2", code: null }]);
+    assert.equal(result.delivered, 2);
+    assert.equal(logged.warn.length, 1);
+    assert.ok(logged.warn[0].includes("1 escalation(s)"));
+  });
+
+  it("does not report zero stuck when the count cannot be read", async () => {
+    const client = fakeClient({
+      escalations: [row("esc-1", "p-1")],
+      participants: [{ id: "p-1", code: "BL-001" }],
+      errors: { exhausted: "statement timeout" },
+    });
+    const { sent, deliver } = recordingDeliver();
+    const { result, logged } = await quietly(() => dispatchPendingEscalations(client, deliver));
+
+    // The sends happened and are reported; only the standing count is unknown.
+    assert.equal(sent.length, 1);
+    assert.equal(result.delivered, 1);
+    assert.equal(result.stuck, null);
+    assert.equal(result.stuck_error, "statement timeout");
+    assert.notEqual(result.stuck, 0);
+    assert.equal(logged.error.length, 1);
+  });
+
+  it("does not report zero stuck when the count comes back without a number", async () => {
+    const client = fakeClient({ counts: { exhausted: null } });
+    const { result } = await quietly(() => dispatchPendingEscalations(client));
+    assert.equal(result.stuck, null);
+    assert.ok(result.stuck_error);
   });
 });
