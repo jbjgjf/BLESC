@@ -12,7 +12,9 @@
  *   1. **施行の判定を自前で持たない。** 押せるかどうかは、Server Component
  *      が `legalEnactment.ts` の `legalEnacted()` から読んで渡す `enacted` だけで
  *      決まる。この画面が別の根拠で「施行済み」を名乗ると、記録される版と
- *      読んだ書類がずれる。
+ *      読んだ書類がずれる。`enacted` は施行日が「到来している」ときだけ true
+ *      で、施行日が未来（施行予定）のあいだはボタンを出さない（#282）。
+ *      `scheduledDate` は、その理由を表示するためだけに使う。
  *
  *   2. **版はサーバーが決める。** 送るのは文書の種類だけで、版は送らない。
  *      「現在の版に同意済みか」も、GET が返す `current_version` と照らして
@@ -53,6 +55,7 @@ type LoadState =
 
 type ContextValue = {
   enacted: boolean;
+  scheduledDate: string | null;
   state: LoadState;
   accessToken: string | null;
   reload: () => Promise<void>;
@@ -80,9 +83,12 @@ async function fetchStatus(accessToken: string): Promise<LoadState> {
  */
 export function LegalAcceptanceProvider({
   enacted,
+  scheduledDate = null,
   children,
 }: {
   enacted: boolean;
+  /** 施行日が決まっていて、まだ来ていないときの施行予定日（#282）。表示専用。 */
+  scheduledDate?: string | null;
   children: React.ReactNode;
 }) {
   const { session, isLoading } = useAuth();
@@ -116,8 +122,8 @@ export function LegalAcceptanceProvider({
         : loaded && loaded.token === accessToken
           ? loaded.state
           : { kind: "loading" };
-    return { enacted, state, accessToken, reload };
-  }, [enacted, isLoading, loaded, accessToken, reload]);
+    return { enacted, scheduledDate, state, accessToken, reload };
+  }, [enacted, scheduledDate, isLoading, loaded, accessToken, reload]);
   return <LegalAcceptanceContext.Provider value={value}>{children}</LegalAcceptanceContext.Provider>;
 }
 
@@ -134,7 +140,7 @@ function formatAcceptedAt(iso: string): string {
   });
 }
 
-type SubmitResult = "recorded" | "already_accepted" | "not_enacted" | "failed";
+type SubmitResult = "recorded" | "already_accepted" | "not_enacted" | "not_yet_effective" | "failed";
 
 /** 文書ひとつ分の同意欄。 */
 export function LegalAcceptanceControl({ documentId }: { documentId: LegalAcceptableDocument }) {
@@ -143,7 +149,7 @@ export function LegalAcceptanceControl({ documentId }: { documentId: LegalAccept
   const [result, setResult] = useState<SubmitResult | null>(null);
 
   if (!context) return null;
-  const { enacted, state, accessToken, reload } = context;
+  const { enacted, scheduledDate, state, accessToken, reload } = context;
   const name = t.legalAcceptance.documentName[documentId];
 
   const submit = async () => {
@@ -160,6 +166,7 @@ export function LegalAcceptanceControl({ documentId }: { documentId: LegalAccept
       if (response.ok && body.status === "recorded") outcome = "recorded";
       else if (response.ok && body.status === "already_accepted") outcome = "already_accepted";
       else if (response.status === 409 && body.code === "not_enacted") outcome = "not_enacted";
+      else if (response.status === 409 && body.code === "not_yet_effective") outcome = "not_yet_effective";
     } catch {
       outcome = "failed";
     }
@@ -171,7 +178,11 @@ export function LegalAcceptanceControl({ documentId }: { documentId: LegalAccept
   let status: React.ReactNode = null;
   let canAccept = false;
   if (!enacted) {
-    status = <p className="bl-body">{t.legalAcceptance.notEnacted}</p>;
+    status = (
+      <p className="bl-body">
+        {scheduledDate ? t.legalAcceptance.notYetEffective(scheduledDate) : t.legalAcceptance.notEnacted}
+      </p>
+    );
   } else if (state.kind === "signed_out") {
     status = <p className="bl-meta">{t.legalAcceptance.signInToSeeStatus}</p>;
   } else if (state.kind === "loading") {
@@ -197,6 +208,7 @@ export function LegalAcceptanceControl({ documentId }: { documentId: LegalAccept
     recorded: t.legalAcceptance.recorded,
     already_accepted: t.legalAcceptance.alreadyAccepted,
     not_enacted: t.legalAcceptance.rejectedNotEnacted,
+    not_yet_effective: t.legalAcceptance.rejectedNotYetEffective,
     failed: t.legalAcceptance.submitFailed,
   };
 

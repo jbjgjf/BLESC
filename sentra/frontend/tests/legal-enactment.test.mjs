@@ -10,6 +10,10 @@
  *
  * The prerequisite is this pair: a declared effective date, and a record. The
  * approval itself is a human decision and stays one.
+ *
+ * Every clock-dependent assertion below passes its own `Date`. A suite that
+ * read the wall clock would start failing on 2026-10-01 for reasons that have
+ * nothing to do with the code (#282).
  */
 
 import assert from "node:assert/strict";
@@ -25,12 +29,15 @@ import {
   legalDisplayVersion,
   legalDocumentLabel,
   legalEffectiveDate,
+  legalEffectiveDateLabel,
   legalEnacted,
+  legalEnactmentState,
 } from "../src/lib/legalEnactment.ts";
 import {
   LEGAL_DOCUMENTS,
   LEGAL_DRAFT_VERSION,
   RESEARCH_DRAFT_VERSION,
+  documentEffectiveDateLabel,
   documentHeading,
   documentVersion,
 } from "../src/lib/legalDocuments.ts";
@@ -73,11 +80,21 @@ function withEnv(values, run) {
   }
 }
 
+/** The day before `legal-2026-10-01-v1` takes effect, and the day of. */
+const DAY_BEFORE = new Date("2026-09-30T12:00:00Z");
+const EFFECTIVE_DAY = new Date("2026-10-01T12:00:00Z");
+
+const enactedEnv = {
+  NEXT_PUBLIC_LEGAL_ENACTED: LEGAL_ENACTED_VERSION,
+  NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: "2026-10-01",
+};
+
 describe("enactment needs both halves", () => {
   it("is off by default", () => {
     withEnv({ NEXT_PUBLIC_LEGAL_ENACTED: undefined, NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: undefined }, () => {
-      assert.equal(legalEnacted(), false);
-      assert.match(currentLegalVersion(), /-draft$/);
+      assert.equal(legalEnactmentState(EFFECTIVE_DAY), "draft");
+      assert.equal(legalEnacted(EFFECTIVE_DAY), false);
+      assert.match(currentLegalVersion(EFFECTIVE_DAY), /-draft$/);
     });
   });
 
@@ -85,7 +102,7 @@ describe("enactment needs both halves", () => {
     // Nothing can be shown to anyone as binding without saying from when.
     withEnv(
       { NEXT_PUBLIC_LEGAL_ENACTED: LEGAL_ENACTED_VERSION, NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: undefined },
-      () => assert.equal(legalEnacted(), false),
+      () => assert.equal(legalEnacted(EFFECTIVE_DAY), false),
     );
   });
 
@@ -93,14 +110,14 @@ describe("enactment needs both halves", () => {
     // A date does not say binding *to what*.
     withEnv(
       { NEXT_PUBLIC_LEGAL_ENACTED: undefined, NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: "2026-10-01" },
-      () => assert.equal(legalEnacted(), false),
+      () => assert.equal(legalEnacted(EFFECTIVE_DAY), false),
     );
   });
 
   it("a wrong version string does not enact", () => {
     withEnv(
       { NEXT_PUBLIC_LEGAL_ENACTED: "true", NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: "2026-10-01" },
-      () => assert.equal(legalEnacted(), false),
+      () => assert.equal(legalEnacted(EFFECTIVE_DAY), false),
     );
   });
 
@@ -109,19 +126,91 @@ describe("enactment needs both halves", () => {
       { NEXT_PUBLIC_LEGAL_ENACTED: LEGAL_ENACTED_VERSION, NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: "2026/10/01" },
       () => {
         assert.equal(legalEffectiveDate(), null);
-        assert.equal(legalEnacted(), false);
+        assert.equal(legalEnacted(EFFECTIVE_DAY), false);
       },
     );
   });
 
-  it("both together enact, and drop the draft suffix", () => {
-    withEnv(
-      { NEXT_PUBLIC_LEGAL_ENACTED: LEGAL_ENACTED_VERSION, NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: "2026-10-01" },
-      () => {
-        assert.equal(legalEnacted(), true);
-        assert.equal(currentLegalVersion(), LEGAL_ENACTED_VERSION);
-      },
-    );
+  it("a date that is not a day does not enact (#282)", () => {
+    // `\d{4}-\d{2}-\d{2}` matches these. The calendar does not, and an
+    // unchecked one reached the page as 「施行日：2026-13-45」.
+    for (const impossible of ["2026-13-45", "2026-02-31", "2026-00-10", "2026-04-31"]) {
+      withEnv(
+        { ...enactedEnv, NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: impossible },
+        () => {
+          assert.equal(legalEffectiveDate(), null, impossible);
+          assert.equal(legalEnactmentState(EFFECTIVE_DAY), "draft", impossible);
+        },
+      );
+    }
+  });
+
+  it("accepts a real leap day", () => {
+    withEnv({ ...enactedEnv, NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: "2028-02-29" }, () => {
+      assert.equal(legalEffectiveDate(), "2028-02-29");
+    });
+  });
+
+  it("both together enact on the effective day, and drop the draft suffix", () => {
+    withEnv(enactedEnv, () => {
+      assert.equal(legalEnactmentState(EFFECTIVE_DAY), "in_force");
+      assert.equal(legalEnacted(EFFECTIVE_DAY), true);
+      assert.equal(currentLegalVersion(EFFECTIVE_DAY), LEGAL_ENACTED_VERSION);
+      assert.equal(legalDocumentLabel("利用規約", EFFECTIVE_DAY), "利用規約");
+    });
+  });
+});
+
+describe("a date in the future is scheduled, not in force (#282)", () => {
+  it("does not enact the day before", () => {
+    // The failure this replaces: `legalEnacted()` asked whether a date existed,
+    // not whether it had arrived, so a deployment configured ahead of its own
+    // effective date accepted binding agreements early — into a table with no
+    // UPDATE and no DELETE policy, so the rows could not be taken back.
+    withEnv(enactedEnv, () => {
+      assert.equal(legalEnactmentState(DAY_BEFORE), "scheduled");
+      assert.equal(legalEnacted(DAY_BEFORE), false);
+    });
+  });
+
+  it("stamps a draft version on anything written before the day", () => {
+    withEnv(enactedEnv, () => {
+      assert.match(currentLegalVersion(DAY_BEFORE), /-draft$/);
+      assert.equal(legalDocumentLabel("利用規約", DAY_BEFORE), "利用規約（案）");
+    });
+  });
+
+  it("is a different state from draft, because the fix differs", () => {
+    // 「まだ決まっていない」 and 「決まっているが、まだその日ではない」 are not the
+    // same thing to tell a participant, and only the second has a date to show.
+    withEnv({ NEXT_PUBLIC_LEGAL_ENACTED: undefined, NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: undefined }, () => {
+      assert.equal(legalEnactmentState(DAY_BEFORE), "draft");
+    });
+    withEnv(enactedEnv, () => {
+      assert.notEqual(legalEnactmentState(DAY_BEFORE), "draft");
+    });
+  });
+
+  it("turns over in JST, not UTC", () => {
+    // 2026-10-01 00:30 JST is 2026-09-30 15:30 UTC. The documents are Japanese
+    // and the date is a Japanese effective date, so this instant is in force.
+    withEnv(enactedEnv, () => {
+      assert.equal(legalEnacted(new Date("2026-09-30T15:30:00Z")), true);
+      // ...and 2026-09-30 23:30 JST is not.
+      assert.equal(legalEnacted(new Date("2026-09-30T14:30:00Z")), false);
+    });
+  });
+
+  it("names the scheduled day rather than saying 未設定", () => {
+    // A deployment that has decided its effective date should not tell
+    // participants that nothing has been decided.
+    withEnv(enactedEnv, () => {
+      assert.equal(legalEffectiveDateLabel(DAY_BEFORE), "2026-10-01（施行予定）");
+      assert.equal(legalEffectiveDateLabel(EFFECTIVE_DAY), "2026-10-01");
+    });
+    withEnv({ NEXT_PUBLIC_LEGAL_ENACTED: undefined, NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: undefined }, () => {
+      assert.equal(legalEffectiveDateLabel(DAY_BEFORE), "未設定");
+    });
   });
 });
 
@@ -133,8 +222,17 @@ describe("an acceptance is a record of something that happened", () => {
   });
 
   it("is refused while the documents are drafts", () => {
-    assert.match(code(route), /if \(!legalEnacted\(\)\)/);
+    assert.match(code(route), /state !== "in_force"/);
     assert.match(route, /まだ施行されていないため、同意を記録できません/);
+  });
+
+  it("is refused before the effective day, and says so differently (#282)", () => {
+    // Separate code because the fix differs and neither is the client's:
+    // `not_enacted` means nobody decided, `not_yet_effective` means somebody
+    // did and the day has not come.
+    assert.match(code(route), /state === "scheduled"/);
+    assert.match(code(route), /code: "not_yet_effective"/);
+    assert.match(route, /施行日より前に同意を記録することはできません/);
   });
 
   it("is written through the caller's own client, not service role", () => {
@@ -174,8 +272,25 @@ describe("the page tells the truth in both states", () => {
     assert.match(page, /閲覧しても同意した扱いにはなりません/);
   });
 
-  it("shows the effective date once enacted", () => {
-    assert.match(code(page), /enacted \? effectiveDate : "未設定"/);
+  it("gets the effective-date line from one tested function", () => {
+    // The states are asserted by calling `documentEffectiveDateLabel` (below).
+    // What is checked here is only that the page uses it, per document, rather
+    // than deciding again — a second copy of the rule is a second place to get
+    // it wrong.
+    assert.match(code(page), /\{documentEffectiveDateLabel\(document, now\)\}/);
+    assert.doesNotMatch(code(page), /"未設定"/);
+  });
+
+  it("is not prerendered, because the clock is not a build-time value (#282)", () => {
+    // Checked statically because it is a build-time declaration: there is no
+    // runtime call that can be made to observe it from this suite. A
+    // prerendered page would keep saying 「施行予定」 after the day arrived.
+    assert.match(code(page), /export const dynamic = "force-dynamic"/);
+  });
+
+  it("says a scheduled document is not yet in force (#282)", () => {
+    assert.match(code(page), /state === "scheduled"/);
+    assert.match(page, /施行予定の案です。施行日まではまだ効力がなく/);
   });
 
   it("does not let the legal acceptance read as research consent", () => {
@@ -187,8 +302,20 @@ describe("the page has somewhere to accept (#251)", () => {
   it("takes enactment from legalEnactment.ts and hands the same value to the control", () => {
     // One source for "in force". A screen that decided it on its own grounds
     // could offer a button for a version the server would stamp differently.
-    assert.match(code(page), /const enacted = legalEnacted\(\)/);
-    assert.match(code(page), /<LegalAcceptanceProvider enacted=\{enacted\}>/);
+    // Judged once per request, at one instant shared with the notice (#282).
+    assert.match(code(page), /const now = new Date\(\)/);
+    assert.match(code(page), /const enacted = legalEnacted\(now\)/);
+    assert.match(code(page), /const state = legalEnactmentState\(now\)/);
+    assert.match(code(page), /<LegalAcceptanceProvider enacted=\{enacted\}/);
+  });
+
+  it("hands the control the scheduled day for display only, never as permission (#282)", () => {
+    // `enacted` is false while scheduled, so no button; the date only explains why.
+    assert.match(code(page), /scheduledDate=\{state === "scheduled" \? effectiveDate : null\}/);
+    assert.match(code(control), /scheduledDate \? t\.legalAcceptance\.notYetEffective\(scheduledDate\) : t\.legalAcceptance\.notEnacted/);
+    assert.doesNotMatch(code(control), /scheduledDate[^\n]*canAccept = true/);
+    assert.match(ja.legalAcceptance.notYetEffective("2026-10-01"), /2026-10-01 に施行される予定です/);
+    assert.doesNotMatch(ja.legalAcceptance.notYetEffective("2026-10-01"), /施行日が決まり/);
   });
 
   it("offers acceptance only beneath a document showing the version the route will stamp", () => {
@@ -214,7 +341,8 @@ describe("the page has somewhere to accept (#251)", () => {
   });
 
   it("offers the button only when enacted", () => {
-    assert.match(code(control), /if \(!enacted\) \{\s*status = <p className="bl-body">\{t\.legalAcceptance\.notEnacted\}/);
+    // #282: the not-enacted branch now also covers "scheduled", naming the day.
+    assert.match(code(control), /if \(!enacted\) \{\s*status = \(\s*<p className="bl-body">\s*\{scheduledDate \? t\.legalAcceptance\.notYetEffective\(scheduledDate\) : t\.legalAcceptance\.notEnacted\}/);
     assert.match(code(control), /canAccept \? \(/);
   });
 
@@ -233,6 +361,13 @@ describe("the page has somewhere to accept (#251)", () => {
     assert.match(code(control), /already_accepted: t\.legalAcceptance\.alreadyAccepted/);
     assert.match(code(control), /not_enacted: t\.legalAcceptance\.rejectedNotEnacted/);
     assert.notEqual(ja.legalAcceptance.alreadyAccepted, ja.legalAcceptance.rejectedNotEnacted);
+  });
+
+  it("answers not_yet_effective as its own refusal, not as a generic failure (#282)", () => {
+    assert.match(code(control), /response\.status === 409 && body\.code === "not_yet_effective"/);
+    assert.match(code(control), /not_yet_effective: t\.legalAcceptance\.rejectedNotYetEffective/);
+    assert.notEqual(ja.legalAcceptance.rejectedNotYetEffective, ja.legalAcceptance.rejectedNotEnacted);
+    assert.match(ja.legalAcceptance.rejectedNotYetEffective, /施行日を迎えていない/);
   });
 
   it("says, next to the button, that this is not research consent", () => {
@@ -314,6 +449,43 @@ describe("what the page names and what a row records are the same document", () 
     });
   });
 
+  it("the legal date labels only the legal documents (#282)", () => {
+    // The per-article meta line used to print one label for all four documents,
+    // so scheduling the terms printed 「2026-10-01（施行予定）」 under the consent
+    // pack, and once in force gave it a date its own switch never declared.
+    withEnv(ENACTED, () => {
+      for (const [now, expected] of [
+        [DAY_BEFORE, "2026-10-01（施行予定）"],
+        [EFFECTIVE_DAY, "2026-10-01"],
+      ]) {
+        for (const id of ["terms", "privacy"]) {
+          assert.equal(documentEffectiveDateLabel(byId(id), now), expected, id);
+        }
+        for (const id of ["research", "guardian"]) {
+          const label = documentEffectiveDateLabel(byId(id), now);
+          assert.equal(label, "未設定", id);
+          assert.doesNotMatch(label, /2026-10-01|施行予定/, id);
+        }
+      }
+    });
+    withEnv(UNENACTED, () => {
+      for (const document of LEGAL_DOCUMENTS) {
+        assert.equal(documentEffectiveDateLabel(document, EFFECTIVE_DAY), "未設定", document.id);
+      }
+    });
+  });
+
+  it("enacting the research documents does not borrow the legal date", () => {
+    // The research switch carries a version and no date; there is nothing for
+    // those documents to show but 「未設定」, whatever the legal switch says.
+    withEnv({ ...ENACTED, NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED: "research-consent-doc-v2" }, () => {
+      for (const id of ["research", "guardian"]) {
+        assert.equal(documentEffectiveDateLabel(byId(id), EFFECTIVE_DAY), "未設定", id);
+      }
+      assert.equal(documentEffectiveDateLabel(byId("terms"), EFFECTIVE_DAY), "2026-10-01");
+    });
+  });
+
   it("every document declares which switch governs it", () => {
     for (const document of LEGAL_DOCUMENTS) {
       assert.ok(
@@ -341,6 +513,16 @@ describe("what the page names and what a row records are the same document", () 
     withEnv(ENACTED, () => {
       assert.equal(legalDocumentLabel("利用規約"), "利用規約");
       assert.equal(legalDisplayVersion(LEGAL_DRAFT_VERSION), LEGAL_ENACTED_VERSION);
+    });
+  });
+
+  it("before the effective day the helpers still name the draft (#282)", () => {
+    // A declared future date is not in force: the heading keeps 「（案）」 and the
+    // displayed version stays the draft the page is actually showing.
+    withEnv(ENACTED, () => {
+      assert.equal(legalDocumentLabel("利用規約", DAY_BEFORE), "利用規約（案）");
+      assert.equal(legalDisplayVersion(LEGAL_DRAFT_VERSION, DAY_BEFORE), LEGAL_DRAFT_VERSION);
+      assert.equal(legalDisplayVersion(LEGAL_DRAFT_VERSION, EFFECTIVE_DAY), LEGAL_ENACTED_VERSION);
     });
   });
 

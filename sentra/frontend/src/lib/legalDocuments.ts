@@ -1,6 +1,6 @@
 /** Review-only documents. Never substitute these drafts for an accepted consent version. */
 import { consentDocumentLabel, researchDocumentLabel } from "./consentDocument.ts";
-import { legalDisplayVersion, legalDocumentLabel } from "./legalEnactment.ts";
+import { legalDisplayVersion, legalDocumentLabel, legalEffectiveDateLabel } from "./legalEnactment.ts";
 
 export const LEGAL_DRAFT_VERSION = "legal-review-2026-09-14-v1";
 /**
@@ -195,4 +195,22 @@ export function documentHeading(document: LegalDocument): string {
  */
 export function documentVersion(document: LegalDocument): string {
   return document.enactment === "legal" ? legalDisplayVersion(document.version) : document.version;
+}
+
+/**
+ * The effective date a document names on screen.
+ *
+ * Per document, for the same reason as the heading and the version: the terms
+ * and the privacy policy answer to `NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE`, and the
+ * research and guardian documents do not. Rendering the legal label under every
+ * article meant scheduling the terms for 2026-10-01 printed
+ * 「2026-10-01（施行予定）」 under the consent pack too — and, once in force,
+ * gave the research documents a date nobody had declared for them.
+ *
+ * The research switch (`consentDocument.ts`) carries a version and no date, so
+ * there is no effective date to show for those documents. 「未設定」 is what that
+ * switch honestly supports; a date belongs here only once it declares one.
+ */
+export function documentEffectiveDateLabel(document: LegalDocument, now: Date = new Date()): string {
+  return document.enactment === "legal" ? legalEffectiveDateLabel(now) : "未設定";
 }
