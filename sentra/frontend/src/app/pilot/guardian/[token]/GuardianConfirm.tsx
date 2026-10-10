@@ -31,8 +31,7 @@ export type GuardianContext = {
   research_code: string | null;
   study_title: string | null;
   document_version: string | null;
-  baseline_days: number | null;
-  observation_days: number | null;
+  study_days: number | null;
   optional_grants: readonly string[];
   expires_at: string | null;
 };
@@ -150,9 +149,9 @@ export function GuardianConfirm({
           お子さまご本人は、この研究への参加に同意されています。保護者の方のご確認をもって、参加の登録が
           完了します。
         </p>
-        {context.baseline_days && context.observation_days ? (
+        {context.study_days ? (
           <p className="bl-meta">
-            期間は{context.baseline_days + context.observation_days}日間です。毎日5分ほど、その日の出来事を
+            期間は{context.study_days}日間です。毎日5分ほど、その日の出来事を
             記録していただきます。研究期間中はAIの応答機能を停止しており、書かれた内容が外部のサービスに
             送られることはありません。
           </p>

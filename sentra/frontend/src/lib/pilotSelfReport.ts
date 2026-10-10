@@ -6,7 +6,7 @@
  * switched off during collection (`lib/server/collectionMode.ts`). That leaves
  * the study with no numeric series at all unless the participant is asked
  * directly — so these five items are the only quantitative measurement the
- * pilot takes, and they have to survive being asked 21 times without drifting.
+ * pilot takes, and they have to survive being asked 28 times without drifting.
  *
  * Three properties make that possible, and all three are enforced here rather
  * than left to the screen that renders them:

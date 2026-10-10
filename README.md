@@ -16,7 +16,7 @@ The working application is [blesc.online](https://blesc.online). The source of t
 
 ## Pilot status
 
-The intended pilot is **50 students × 21 days**: 14 baseline days followed by 7 days of post-baseline observation, for at most 1,050 diary entries.
+The intended pilot is **50 students × 28 days** (one month): a single collection period with no baseline/observation split, for at most 1,400 diary entries ([#315](https://github.com/jbjgjf/BLESC/issues/315)).
 
 Enrollment must not begin until every [pilot blocker](https://github.com/jbjgjf/BLESC/issues?q=is%3Aopen%20label%3Apilot-blocker) is resolved and verified in a dry run. The five defects that blocked it first — consent, durable storage, telemetry, follow-up answers and research text retention — were fixed in [#138](https://github.com/jbjgjf/BLESC/pull/138) and are closed.
 

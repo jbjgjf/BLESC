@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 import { SELF_REPORT_ITEMS, SELF_REPORT_SCHEMA_VERSION } from "../src/lib/pilotSelfReport.ts";
-import { DEFAULT_PHASES, studyPhase } from "../src/lib/researchExport.ts";
+import { DEFAULT_STUDY_DAYS, withinStudy } from "../src/lib/researchExport.ts";
 
 const read = (relative) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
@@ -140,15 +140,21 @@ describe("the identity fields describe the export that exists", () => {
     assert.match(entry.description, /1起点/);
   });
 
-  it("study_phase is implemented and derived from the study, not from 14/21", () => {
-    const entry = dictionary.identity.study_phase;
-    assert.equal(entry.implementation, "implemented");
-    assert.deepEqual(entry.values, ["baseline", "observation"]);
-    assert.match(entry.description, /baseline_days/);
-    assert.match(exportRoute, /baseline_days/, "the route must read the study's own split");
+  it("has no study_phase, because the protocol has no halves (#315)", () => {
+    // 14 baseline + 7 observation became one 28-day period. A dictionary that
+    // still promised the field would send an analyst looking for a split the
+    // participant was never told about.
+    assert.equal(dictionary.identity.study_phase, undefined);
+    assert.doesNotMatch(code(exportSource), /study_phase/);
+  });
 
-    assert.equal(studyPhase(DEFAULT_PHASES.baselineDays, DEFAULT_PHASES), "baseline");
-    assert.equal(studyPhase(DEFAULT_PHASES.baselineDays + 1, DEFAULT_PHASES), "observation");
+  it("relative_day ends at the study's own study_days", () => {
+    const entry = dictionary.identity.relative_day;
+    assert.match(entry.description, /study_days/);
+    assert.match(exportRoute, /study_days/, "the route must read the study's own length");
+
+    assert.equal(withinStudy(DEFAULT_STUDY_DAYS, DEFAULT_STUDY_DAYS), true);
+    assert.equal(withinStudy(DEFAULT_STUDY_DAYS + 1, DEFAULT_STUDY_DAYS), false);
   });
 });
 

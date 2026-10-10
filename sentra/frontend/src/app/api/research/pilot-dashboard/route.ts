@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
 
   const studyResult = await service
     .from("pilot_studies")
-    .select("id, slug, status, protocol_version, baseline_days, observation_days, is_dry_run")
+    .select("id, slug, status, protocol_version, study_days, is_dry_run")
     .eq("slug", studySlug)
     .maybeSingle();
   if (studyResult.error) return jsonError(studyResult.error.message, 502);
@@ -81,8 +81,7 @@ export async function GET(request: NextRequest) {
         slug: string;
         status: string;
         protocol_version: string;
-        baseline_days: number;
-        observation_days: number;
+        study_days: number;
         is_dry_run: boolean;
       }
     | null;
@@ -172,8 +171,7 @@ export async function GET(request: NextRequest) {
         collectionStartedAt: enrollment.collection_started_at,
         withdrawnAt: enrollment.withdrawn_at,
         completedAt: enrollment.completed_at,
-        baselineDays: study.baseline_days,
-        observationDays: study.observation_days,
+        studyDays: study.study_days,
         now,
       }),
       submittedDayNumbers: own.map((entry) => studyDaysElapsed(enrollment.collection_started_at, entry.created_at)),
@@ -190,7 +188,7 @@ export async function GET(request: NextRequest) {
       status: study.status,
       protocol_version: study.protocol_version,
       is_dry_run: study.is_dry_run,
-      protocol_days: study.baseline_days + study.observation_days,
+      protocol_days: study.study_days,
     },
     generated_at: now,
 
@@ -345,7 +343,7 @@ function collectionOnlyGate(serviceClientAvailable: boolean) {
 }
 
 function emptyDashboard(
-  study: { slug: string; status: string; protocol_version: string; baseline_days: number; observation_days: number; is_dry_run: boolean },
+  study: { slug: string; status: string; protocol_version: string; study_days: number; is_dry_run: boolean },
   now: string,
 ) {
   return {
@@ -354,7 +352,7 @@ function emptyDashboard(
       status: study.status,
       protocol_version: study.protocol_version,
       is_dry_run: study.is_dry_run,
-      protocol_days: study.baseline_days + study.observation_days,
+      protocol_days: study.study_days,
     },
     generated_at: now,
     // Present here too, and deliberately. A study with no participants yet is

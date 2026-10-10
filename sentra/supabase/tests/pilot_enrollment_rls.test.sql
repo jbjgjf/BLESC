@@ -35,8 +35,8 @@ values
   ('00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000e2', 'PILOT_B'),
   ('00000000-0000-0000-0000-0000000000a3', '00000000-0000-0000-0000-0000000000e3', 'PILOT_C');
 
-insert into public.pilot_studies (id, slug, title, status, baseline_days, observation_days)
-values ('00000000-0000-0000-0000-0000000000b1', 'dry-run-2026-09', 'Dry run', 'recruiting', 3, 0);
+insert into public.pilot_studies (id, slug, title, status, study_days)
+values ('00000000-0000-0000-0000-0000000000b1', 'dry-run-2026-09', 'Dry run', 'recruiting', 3);
 
 insert into public.pilot_studies (id, slug, title, status)
 values ('00000000-0000-0000-0000-0000000000b2', 'not-open-yet', 'Draft study', 'draft');

@@ -148,6 +148,16 @@ step 3  20260906000100_restrict_entries_raw_text_columns.sql        （SELECTの
 
 **step 3 を step 2 より先に打たない。** step 3 は `entries` の table-wide SELECT を落とす。`raw_text` を明示的に選ぶ旧clientが動いている間に打つと、すべての記録閲覧が `permission denied for table entries` になる。migration の先頭にこの順序が書いてあり、[migration_smoke.sh](../../sentra/supabase/scripts/migration_smoke.sh) の step 4 がその記載の有無を検査する。
 
+#315（研究期間を28日の1区間に変更）の migration も同じ3段階で入れる。
+
+```
+step 1  20261004000000_pilot_study_days.sql          （study_days の追加と既存行の引き継ぎ。旧コードのまま安全）
+step 2  アプリのデプロイ                               （study_days だけを読む版）
+step 3  20261004000100_drop_pilot_study_split.sql    （#315 以前の baseline_days / observation_days を落とす）
+```
+
+step 3 を step 2 より先に打つと、保護者確認画面・パイロットダッシュボード・研究エクスポートが旧列を選んで 42703 で失敗する。既存の研究行は元の長さを保つ（v2で設定した研究は21日のまま）。v3で運用する研究は、`study_days`・`protocol_version`・`consent_document_version` を設定し直す。
+
 ### 4.1 rollback
 
 | 適用したもの | 戻し方 |
