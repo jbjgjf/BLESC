@@ -191,6 +191,11 @@ describe("POST /api/legal/acceptance (#253)", () => {
     assert.equal(response.status, 200);
     assert.equal((await response.json()).status, "recorded");
     assert.equal(own.tables.legal_acceptances[0].document_version, LEGAL_ENACTED_VERSION);
+    assert.equal(own.tables.legal_acceptances[0].user_id, "user-alice");
+    // The service-role client counted the attempt and did nothing else: the
+    // row went through the caller's own client, where row-level security is.
+    assert.deepEqual(service.calls, []);
+    assert.deepEqual(service.rpcCalls.map((call) => call.name), ["bump_rate_limit"]);
   });
 
   it("answers 429 past the limit and stops writing", async () => {
