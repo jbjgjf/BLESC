@@ -6,10 +6,12 @@
 -- Usage (LOCAL or the dedicated pilot environment — never production):
 --   supabase db reset
 --   psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed/pilot_dry_run.seed.sql
+--   node frontend/scripts/dry-run-invitations.mjs | psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1
 --
 -- What this seed does and does not do:
 --
---   * It creates the study, the invitations and the accounts. It does NOT walk
+--   * It creates the study and the accounts. The invitations come from
+--     frontend/scripts/dry-run-invitations.mjs, run after this file. It does NOT walk
 --     the enrollment state machine — that is the point of the dry run. An
 --     account arrives here at `account_bound` at most, and every transition
 --     after that has to happen through the real routes, driven by a person or
@@ -17,7 +19,8 @@
 --   * Journal text is synthetic and written for this file. Account 10 carries a
 --     crisis-shaped passage so the runbook exercise has something to run on;
 --     it describes no one.
---   * Re-runnable: fixed uuids are deleted first.
+--   * Re-runnable: fixed uuids are deleted first. CI applies it twice to a
+--     freshly reset database (scripts/dry_run_sql_smoke.sh, #384).
 
 begin;
 
@@ -87,29 +90,16 @@ select
 from generate_series(1, 10) as n;
 
 -- ---------------------------------------------------------------------------
--- Invitations. Codes are stored as a hash, never in the clear — the same rule
--- as production, because a dry run that relaxes it does not test the thing.
+-- Invitations are NOT created here. The stored value is HMAC-SHA256(code)
+-- under PILOT_INVITE_HMAC_KEY, which SQL does not have and must not be given.
+-- Run, with the key of the deployment under test:
 --
--- The plaintext codes are derived from the row number so the operator running
--- the exercise can reproduce them without a stored list:
---     DRYRUN-0001 .. DRYRUN-0010
--- Account 3's expires in the past and account 4's allows one redemption.
+--     node frontend/scripts/dry-run-invitations.mjs | psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1
+--
+-- This file used to insert sha256(code) for codes shaped `DRYRUN-0001`. The
+-- redeem route computes neither that hash nor accepts that shape, so no
+-- account could get past the first step.
 -- ---------------------------------------------------------------------------
-
-insert into public.pilot_invitations (
-  study_id, code_hash, code_prefix, cohort, max_redemptions, redeemed_count,
-  expires_at, note
-)
-select
-  '22222222-1111-0000-0000-000000000000',
-  encode(digest('DRYRUN-' || lpad(n::text, 4, '0'), 'sha256'), 'hex'),
-  'DRYRUN',
-  case when n in (2, 6, 10) then 'minor' else 'adult' end,
-  1,
-  0,
-  case when n = 3 then now() - interval '1 day' else now() + interval '14 days' end,
-  'dry-run scenario ' || n
-from generate_series(1, 10) as n;
 
 -- ---------------------------------------------------------------------------
 -- Synthetic journal text, held here rather than in the smoke suite so the
@@ -117,13 +107,21 @@ from generate_series(1, 10) as n;
 -- reviewable in one place before anybody sees it.
 -- ---------------------------------------------------------------------------
 
-create table if not exists public.dry_run_fixture_text (
-  scenario_id integer primary key,
+-- Dropped and recreated rather than `create if not exists`, so a change to
+-- its shape here reaches a database that already has the old one.
+drop table if exists public.dry_run_fixture_text;
+
+create table public.dry_run_fixture_text (
+  scenario_id integer not null,
   day integer not null,
-  body text not null
+  body text not null,
+  primary key (scenario_id, day)
 );
 
-delete from public.dry_run_fixture_text;
+-- Read by the operator and the smoke suite through the service role only. A
+-- table in `public` is otherwise reachable through the Data API.
+alter table public.dry_run_fixture_text enable row level security;
+revoke all on public.dry_run_fixture_text from public, anon, authenticated;
 
 insert into public.dry_run_fixture_text (scenario_id, day, body) values
   (1, 1, '朝は普通だった。授業のあと、部活で先輩に少し注意された。帰りにコンビニで買い食いした。'),

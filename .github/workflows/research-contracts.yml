@@ -260,3 +260,43 @@ jobs:
           name: playwright-report
           path: sentra/frontend/playwright-report
           if-no-files-found: ignore
+
+  dry-run-sql:
+    name: Pilot dry-run SQL
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sentra
+    steps:
+      # The 10-account dry run (#168) is the last gate before enrollment opens,
+      # and it starts by applying a seed and ends by running thirteen
+      # reconciliation queries. Neither had ever been executed (#384): the one
+      # test that touched the seed read it as a string. Run for the first time,
+      # the seed failed on a primary key, its invitations could not be redeemed
+      # by the application, and one query named a column that does not exist.
+      # A separate job rather than a step of `supabase-rls`, because this one
+      # leaves seed rows behind and the RLS scripts assume a database that has
+      # only migrations in it.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The invitation script imports the application's own hashing module. It
+      # has no dependencies beyond Node, so there is no `npm ci`.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Set up the Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start the local stack
+        run: supabase start
+
+      - name: Apply all migrations
+        run: supabase db reset --no-seed
+
+      - name: Apply the dry-run seed and run the reconciliation queries
+        run: ./supabase/scripts/dry_run_sql_smoke.sh
