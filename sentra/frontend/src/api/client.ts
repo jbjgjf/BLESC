@@ -34,8 +34,18 @@ import { buildAuditTrails, type ModelRunRecord } from "@/lib/audit-trail";
 import { t } from "@/lib/i18n";
 import { readDemoFlag } from "@/lib/demo";
 import * as demo from "@/lib/blesc/demoApi";
+import { resolveApiBaseUrl } from "@/lib/apiBaseUrl";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
+const apiBase = resolveApiBaseUrl({
+  pilotMode: process.env.NEXT_PUBLIC_PILOT_MODE,
+  apiUrl: process.env.NEXT_PUBLIC_API_URL,
+});
+const API_BASE_URL = apiBase.baseUrl;
+// Said once, at load, rather than ignored silently: someone set this and
+// should learn here — not from a missing FastAPI log — that it did nothing.
+if (apiBase.ignoredApiUrl) {
+  console.warn("[api] NEXT_PUBLIC_API_URL is ignored on a pilot build; requests go to /api (#345)");
+}
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 
 function shouldAttachAuthorizationHeader() {

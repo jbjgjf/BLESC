@@ -32,6 +32,7 @@ const TOUCHED = [
   "SAFETY_RECIPIENT_HASH_KEY",
   "RESEARCH_RAW_TEXT_KEY",
   "NEXT_PUBLIC_PILOT_MODE",
+  "NEXT_PUBLIC_API_URL",
   "PILOT_OPERATOR_USER_IDS",
   "RESEARCH_EXPORT_USER_IDS",
   "PILOT_INVITE_HMAC_KEY",
@@ -117,6 +118,22 @@ describe("configChecks", () => {
     }
     process.env.NEXT_PUBLIC_PILOT_MODE = "1";
     assert.equal(byName("NEXT_PUBLIC_PILOT_MODE").valid, true);
+  });
+
+  it("blocks a deployment that points the browser at FastAPI", () => {
+    // FastAPI has no collection-only gate: journal text sent there leaves
+    // without #165 ever being consulted (#345). This is the one setting that
+    // has to be absent.
+    clearAll();
+    assert.equal(byName("NEXT_PUBLIC_API_URL").valid, true);
+    assert.ok(!blockingGaps().some((gap) => gap.name === "NEXT_PUBLIC_API_URL"));
+
+    process.env.NEXT_PUBLIC_API_URL = "https://sentra-backend.example.com";
+    const check = byName("NEXT_PUBLIC_API_URL");
+    assert.equal(check.configured, true);
+    assert.equal(check.valid, false);
+    assert.equal(check.severity, "blocking");
+    assert.ok(blockingGaps().some((gap) => gap.name === "NEXT_PUBLIC_API_URL"));
   });
 
   it("never carries a configured value into the report", () => {

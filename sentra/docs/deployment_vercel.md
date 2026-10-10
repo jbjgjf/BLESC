@@ -28,8 +28,18 @@ Vercel のプロジェクト作成画面で以下のように設定してくだ�
 ### 3. Environment Variables (環境変数)
 フロントエンドがバックエンドと通信するために、以下の設定が必要です。
 
-- **`NEXT_PUBLIC_API_URL`**: バックエンドの URL（例: `https://sentra-backend.example.com`）
-  - デフォルトでは `http://localhost:8000` を見に行くようになっている場合があります。
+- **`NEXT_PUBLIC_API_URL`**: **パイロット配備（本番）では設定しない。** 未設定なら
+  画面は同じオリジンの `/api`（`src/app/api` の route handler）に送ります。
+  `production_baseline_path.md` が前提にしているのもこの構成です。
+  - 設定すると、日記の送信（`POST /entries`）と音声の文字起こしが FastAPI に直接
+    向かいます。FastAPI には収集専用ゲート（#165）が無いので、**収集期間中の
+    日記本文がゲートを通らずに外部のモデル提供者へ出ます**（#345）。
+  - `NEXT_PUBLIC_PILOT_MODE=1` のビルドは、設定されていてもこの値を無視して
+    `/api` に固定し、ブラウザの console に警告を1行出します。`/api/pilot/admin/ops`
+    は設定されていること自体を blocking として報告します。値を消して再デプロイ
+    してください（`NEXT_PUBLIC_` の値はビルド時に焼き込まれます）。
+  - ローカル開発と評価用の構成では、バックエンドの URL
+    （例: `http://localhost:8000/api`）を設定します。
 - **`CRON_SECRET`**: `/api/cron/*` の定期実行を認証する共有シークレット。
   **未設定だとすべての定期実行が 403 で拒否されます** — 保持期限の purge も、
   危機エスカレーションの再送も走りません。設定すると Vercel が cron の
