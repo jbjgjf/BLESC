@@ -129,8 +129,7 @@ export async function dispatchPendingEscalations(
     const unnamed = rows.filter((row) => !codes.has(row.participant_id));
     if (unnamed.length > 0) {
       console.warn(
-        `[safety-dispatch] ${unnamed.length} escalation(s) name a participant the lookup did not return; ` +
-          "they will be sent without a participant code",
+        `[safety-dispatch] ${unnamed.length} escalation(s) name a participant the lookup did not return; sending them without a participant code`,
         { escalations: unnamed.map((row) => row.id) },
       );
     }
@@ -156,7 +155,7 @@ export async function dispatchPendingEscalations(
   // A number is the count; anything else is "not known", never a quiet zero
   // (the rule `retentionPurge.ts` applies to `purgedCount`).
   if (exhausted.error || typeof exhausted.count !== "number") {
-    const reason = exhausted.error?.message ?? "the count query returned no count";
+    const reason = exhausted.error?.message ?? "no_count_returned";
     console.error(
       "[safety-dispatch] could not count exhausted escalations; reporting stuck as unknown, not 0",
       reason,
