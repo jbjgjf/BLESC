@@ -299,7 +299,16 @@ export async function peekVerification(
   return row && !row.revoked_at ? row : null;
 }
 
-/** Record the answer on a claimed row. */
+/**
+ * Record the answer on a claimed row. True only if a row was actually updated.
+ *
+ * An UPDATE whose filter matches nothing is not an error to PostgREST, so
+ * "no error" used to be reported as "recorded" (#298). A guardian who declined
+ * was then told the answer was stored while the row still had no decision —
+ * and the link, already claimed, could not be used to say it again. The update
+ * returns the row it changed; no row means nothing was recorded, whether
+ * because the verification is gone or because it already carries a decision.
+ */
 export async function recordDecision(
   client: SupabaseClient,
   verificationId: string,
@@ -309,17 +318,19 @@ export async function recordDecision(
     .from("pilot_guardian_verifications")
     .update({ decision, decided_at: new Date().toISOString() })
     .eq("id", verificationId)
-    .is("decision", null);
+    .is("decision", null)
+    .select("id")
+    .maybeSingle();
 
   if (result.error) {
     console.warn("[pilot-guardian] recording the decision failed", result.error.message);
     return false;
   }
-  return true;
+  return Boolean(result.data);
 }
 
 /**
- * Put a claimed token back.
+ * Put a claimed token back. True if the claim was actually released.
  *
  * Called when the consent write or the state transition after a claim fails.
  * Without it, a guardian who hit a database error would be holding a link that
@@ -327,16 +338,24 @@ export async function recordDecision(
  * only way forward would be an operator reissuing one. Releasing is safe
  * because the decision is what makes a row terminal, and this only runs on rows
  * that have none.
+ *
+ * False means the link is still claimed — or was decided in the meantime, in
+ * which case there is nothing to release. Either way the caller is the one who
+ * knows what was being attempted, so it does the logging.
  */
-export async function releaseClaim(client: SupabaseClient, verificationId: string): Promise<void> {
+export async function releaseClaim(client: SupabaseClient, verificationId: string): Promise<boolean> {
   const result = await client
     .from("pilot_guardian_verifications")
     .update({ claimed_at: null })
     .eq("id", verificationId)
-    .is("decision", null);
+    .is("decision", null)
+    .select("id")
+    .maybeSingle();
   if (result.error) {
     console.warn("[pilot-guardian] releasing the claim failed", result.error.message);
+    return false;
   }
+  return Boolean(result.data);
 }
 
 /** Normalise whatever the row carried, against the study's current document. */
