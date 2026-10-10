@@ -29,6 +29,8 @@
 - [ ] Vercelでパイロット専用projectを作り、本番と別のドメインを割り当てる
 - [ ] `RESEARCH_RAW_TEXT_KEY` を生成し、Vercelのserver-side環境変数へ入れる（値はどこにも貼らない）
 - [ ] `PILOT_INVITE_HMAC_KEY` を生成し、同上
+- [ ] `PILOT_GUARDIAN_HMAC_KEY` を生成し、同上（招待の鍵とは**別の値**。base64で32バイト以上）
+- [ ] `NEXT_PUBLIC_SITE_URL` にパイロットの https の origin を入れ、**そのあとで再デプロイする**
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` をパイロットprojectのものに設定する
 - [ ] `PILOT_OPERATOR_USER_IDS` と `RESEARCH_EXPORT_USER_IDS` に、実在する運営者のuser idを入れる
 - [ ] Supabaseのallowed originsを、パイロットのURLだけに絞る
@@ -61,6 +63,7 @@
 | `RESEARCH_RAW_TEXT_KEY` | 本文のAES-GCM封緘 | 本文の保持を**行わない**（平文では保持しない） |
 | `RESEARCH_RAW_TEXT_RETENTION_DAYS` | 保持期限 | 既定90日。**上限も90日**で、超える値は90に丸める。protocol D5 の決定は90日以内で行う |
 | `PILOT_INVITE_HMAC_KEY` | 招待コードのhash | 招待の検証ができない |
+| `PILOT_GUARDIAN_HMAC_KEY` | 保護者確認トークンのhash | 保護者確認リンクの発行も検証もできない。未成年の参加登録が成立しない（#289） |
 | `PILOT_OPERATOR_USER_IDS` | 運営者の許可リスト | 運営操作が誰にもできない（安全側） |
 | `RESEARCH_EXPORT_USER_IDS` | exportの許可リスト | exportが誰にもできない（安全側） |
 | `RESEARCH_API_TOKEN` | 研究APIの資格情報 | 研究APIが503を返す（安全側） |
@@ -77,6 +80,7 @@
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | 公開してよい |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 公開してよい。RLSが前提 |
+| `NEXT_PUBLIC_SITE_URL` | https の origin だけ（パス・クエリ無し）。保護者確認リンクと危機通知のリンクの土台。**ビルド時に焼き込まれる**ので、足したら再デプロイする。無いと保護者リンクがパスだけになり、危機通知はリンク無しで出る（#289） |
 | `NEXT_PUBLIC_DEMO_MODE` | **パイロットでは設定しない** |
 | `NEXT_PUBLIC_API_URL` | FastAPIを使う場合のみ |
 
@@ -103,6 +107,9 @@
 | Vercel | `NEXT_PUBLIC_PILOT_MODE=1` | 専用デプロイで `/demo-view` とデモ上書きが生きたまま（#193）。**ビルド時に焼き込まれる** |
 | GitHub secrets | `PILOT_BASE_URL` | 5分ごとの再送workflowがskip（redにはせず、warningとrun summaryに出す） |
 | GitHub secrets | `SAFETY_DISPATCH_TOKEN` | 同上。**Vercel側と同じ値**でなければ403 |
+
+`PILOT_GUARDIAN_HMAC_KEY` と `NEXT_PUBLIC_SITE_URL` も `/api/pilot/admin/ops` の点検表に blocking として並ぶ（#289）。
+どちらかが欠けると `ready` は false になる。
 
 `NEXT_PUBLIC_PILOT_MODE` だけ性質が違う。Next.js がビルド時に bundle へ埋め込むので、
 **後から変数を足しても再デプロイするまで効かない。** 変数は `1` なのに `/demo-view` は生きている、
