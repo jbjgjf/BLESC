@@ -258,6 +258,8 @@ PILOT_BASE_URL=https://blesc-pilot.vercel.app CRON_SECRET=... \
 | `PILOT_INVITE_CHECK_LIMIT` | 20 | 1時間 | `/api/pilot/invite/check`。DBへの無料の往復 |
 | `PILOT_INVITE_REDEEM_LIMIT` | 10 | 1時間 | `/api/pilot/redeem`。成功すれば導線が終わるので低め |
 | `PILOT_GUARDIAN_ISSUE_LIMIT` | 20 | 1時間 | 保護者確認リンクの発行。1通=学校の連絡経路1回 |
+| `PILOT_GUARDIAN_CONFIRM_LIMIT` | 20 | 1時間 | `/api/pilot/guardian/confirm`。セッションの無い経路なので送信元単位。実在しないトークンでDBを引かせ続けられないようにする（#246） |
+| `LEGAL_ACCEPTANCE_LIMIT` | 10 | 1時間 | `/api/legal/acceptance`（POST）。アカウント単位。同意は押し直す操作ではない（#253） |
 | `EXTERNAL_MODEL_LIMIT` | 60 | 1時間 | `/api/chat`・`/api/audio/transcriptions`。OpenAIの費用 |
 
 既定値は**正規の参加者が普通に使って当たらない**よう、実利用の見積もりより大きく取っている。

@@ -16,6 +16,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/server/api";
+import { RULES, consumeRateLimit, rateLimitHeaders, rateLimitSubject } from "@/lib/server/rateLimit";
+import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import {
   currentLegalVersion,
   isLegalAcceptableDocument,
@@ -46,6 +48,22 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await requireUser(request);
   if ("error" in auth) return auth.error;
+
+  // After `requireUser`, so the count is per account and an unsigned caller
+  // cannot spend a real user's allowance (#253). The unique index keeps a
+  // repeated acceptance to one row, but it does not stop the attempts: each
+  // one is a write that fails on 23505 and was answered 200.
+  const limited = await consumeRateLimit(
+    serviceRoleClient(),
+    RULES.legalAcceptance,
+    rateLimitSubject(request, auth.user.id),
+  );
+  if (!limited.allowed) {
+    return NextResponse.json(
+      { detail: "試行回数が多すぎます。しばらく待ってからもう一度お試しください。", code: "rate_limited" },
+      { status: 429, headers: rateLimitHeaders(limited) },
+    );
+  }
 
   const body = (await request.json().catch(() => ({}))) as { document_id?: unknown };
   const documentId = body.document_id;

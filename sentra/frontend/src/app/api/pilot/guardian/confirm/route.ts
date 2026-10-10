@@ -36,6 +36,7 @@ import { loadConsentState, recordConsent } from "@/lib/server/consentStore";
 import { claimVerification, recordDecision, releaseClaim, requestedGrantsOf } from "@/lib/server/guardianStore";
 import { looksLikeGuardianToken } from "@/lib/server/guardianTokens";
 import { guardianConsentGrant } from "@/lib/guardianVerification";
+import { RULES, consumeRateLimit, rateLimitHeaders, rateLimitSubject } from "@/lib/server/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -65,6 +66,24 @@ export async function POST(request: NextRequest) {
 
   const service = serviceRoleClient();
   if (!service) return jsonError("Supabase is not configured.", 503);
+
+  // Counted before the token is looked up (#246): this route has no session,
+  // and without a limit anyone can make the database search for well-formed
+  // tokens that do not exist, as often as they like. Placed after the shape
+  // check so that malformed input is refused without any round trip at all,
+  // and before the lookup so the 429 is the same whether or not the token is
+  // real — it says nothing about the link.
+  //
+  // Fails open, like every other rule. The limit is not what protects a
+  // consent record; the 256-bit single-use token is. Failing closed would turn
+  // a slow counter table into guardians being unable to answer.
+  const limited = await consumeRateLimit(service, RULES.guardianConfirm, rateLimitSubject(request));
+  if (!limited.allowed) {
+    return NextResponse.json(
+      { detail: "試行回数が多すぎます。しばらく待ってからもう一度お試しください。", code: "rate_limited" },
+      { status: 429, headers: rateLimitHeaders(limited) },
+    );
+  }
 
   const claim = await claimVerification(service, token);
   if (claim.outcome !== "claimed" || !claim.record) {
