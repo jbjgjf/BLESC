@@ -31,6 +31,7 @@ import {
 } from "@/lib/consent";
 import { hasSelfReportContent, type NormalizedSelfReport } from "@/lib/pilotSelfReport";
 import { PII_SCANNER_VERSION, forStorage, scanForPii, summarizePii } from "@/lib/piiScanner";
+import { SAFETY_ASSESSMENT_VERSION } from "@/lib/safety-assessment";
 import { consentMismatch, loadConsentState } from "@/lib/server/consentStore";
 import { encryptRawText, rawTextExpiryFrom } from "@/lib/server/rawTextCrypto";
 import {
@@ -1038,9 +1039,11 @@ export async function writeEntryResult(
         artifact_type: "safety_assessment",
         artifact_id: entryId,
         provider: "rules",
-        model: "safety-assessment-v1",
-        prompt_version: "safety-assessment-v1",
-        schema_version: "safety-assessment-v1",
+        // The constant, not a copy of its value: three hardcoded literals are
+        // three places to forget when a detector changes (#388).
+        model: SAFETY_ASSESSMENT_VERSION,
+        prompt_version: SAFETY_ASSESSMENT_VERSION,
+        schema_version: SAFETY_ASSESSMENT_VERSION,
         pipeline_version: pipelineVersion,
         temperature: 0,
         retrieval_config_json: {

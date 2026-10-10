@@ -1,6 +1,20 @@
 import type { SafetyAssessment } from "@/api/models";
 
-export const SAFETY_ASSESSMENT_VERSION = "safety-assessment-v1";
+/**
+ * Bump when a detector is added, removed, or a verdict changes.
+ *
+ * Stored on every `model_runs` safety row and on `pilot_crisis_reviews
+ * .assessor_version`, so a reviewer can tell which lexicon cleared an entry —
+ * and so the rows to re-assess after a detector changes are exactly the ones
+ * whose version is behind. A clean assessment under an older version is not
+ * the same assurance as a clean one under this version. (The same argument
+ * `piiScanner.ts` makes for `PII_SCANNER_VERSION`.)
+ *
+ * v2 reads the spelling variants a Japanese keyboard produces (#388). Under v1
+ * only the kanji spelling of each Japanese term was matched, so 「しにたい」
+ * assessed as `none` where 「死にたい」 assessed as `crisis`.
+ */
+export const SAFETY_ASSESSMENT_VERSION = "safety-assessment-v2";
 export const SAFETY_POLICY_REFS = [
   "docs/safety_escalation_policy.md",
   "docs/static_safety_school_support_reference.md",
@@ -28,29 +42,126 @@ const passiveRiskTerms = ["don't want to be here anymore", "do not want to be he
 const ambiguousRiskTerms = ["disappear", "disappearing", "disappeared", "vanish", "stop existing", "not be here", "tired of everything", "tired of being here", "everything is grey", "everything is gray", "what's the point", "what is the point", "no point in anything", "give up on everything", "can't go on", "cannot go on", "not safe", "not be safe", "いなくなりたい", "消えてしまいたい", "全部どうでもいい", "もう限界"];
 const distressTerms = ["panic", "panicking", "hopeless", "worthless", "trapped", "overwhelmed", "パニック", "絶望", "つらい", "苦しい"];
 
+/** Every lexicon's terms, for the test that keeps `KANA_SPELLINGS` honest. */
+export const ALL_SAFETY_TERMS: readonly string[] = [
+  ...selfHarmTerms, ...imminentTerms, ...violenceTerms, ...abuseTerms,
+  ...concealmentTerms, ...passiveRiskTerms, ...ambiguousRiskTerms, ...distressTerms,
+];
+
+/**
+ * Writing-system folding, applied to the text and to every term alike.
+ *
+ * A Japanese keyboard offers more than one spelling of the same word, and the
+ * lexicons above were written in one of them. 「死にたい」 was matched;
+ * 「しにたい」 — the same sentence when the student does not press the
+ * conversion key — was not. `risk_level: "none"` is not a weaker answer than
+ * `"crisis"`: it is the absence of the whole escalation path, so the crisis
+ * card, the `safety_escalations` row, the educator notification and the §4.4
+ * review band all turned on whether a conversion key was pressed.
+ *
+ * NFKC folds the width variants — 全角英数 and ｶﾞ reach their canonical shapes.
+ * Katakana is then mapped onto hiragana, which is what carries 「シニタイ」 to
+ * 「しにたい」.
+ *
+ * **Terms are folded too, not only the text.** Without that, `パニック` —
+ * written in katakana in `distressTerms` — would stop matching the moment the
+ * text was folded. Folding both sides means a lexicon may be written in
+ * whichever spelling reads best.
+ *
+ * Unlike `piiScanner.ts`, nothing here records an offset into the text, so a
+ * fold that changes length (ﾊﾞ → バ) costs nothing.
+ */
+function foldWriting(value: string): string {
+  return value
+    .normalize("NFKC")
+    // Katakana ァ-ヶ onto hiragana ぁ-ゖ. ヷ-ヺ are left alone: they have no
+    // hiragana form, so there is nothing to fold them onto.
+    .replace(/[ァ-ヶ]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0x60))
+    .toLocaleLowerCase();
+}
+
+/**
+ * Kana spellings of the terms written with kanji.
+ *
+ * Folding cannot reach these: 「死」 and 「し」 are different characters, not two
+ * encodings of one. So each kanji term a student might send unconverted carries
+ * its reading here.
+ *
+ * **A reading is listed only when it is not also an ordinary word.** Two are
+ * deliberately absent:
+ *
+ *   `自傷` → じしょう   also 「自称」; a diary saying 自称 discloses nothing.
+ *   `襲う` → おそう     a prefix of 「おそうじ」(お掃除).
+ *
+ * Both would fire on sentences with nothing to do with danger, and a queue that
+ * cries wolf is one §4.4's reviewers learn to click past. The kanji spellings
+ * of those two stay matched; only the readings are left out.
+ *
+ * `imminentTerms` is deliberately not given readings. 「今日」 already raises a
+ * false imminence signal (#290), and widening it before that is settled would
+ * only make the same mistake louder.
+ */
+const KANA_SPELLINGS: Readonly<Record<string, readonly string[]>> = {
+  "自殺": ["じさつ"],
+  "死にたい": ["しにたい"],
+  "消えたい": ["きえたい"],
+  "自分を傷つけ": ["じぶんをきずつけ"],
+  "あいつを殺": ["あいつをころ"],
+  "相手を傷つけ": ["あいてをきずつけ"],
+  "暴力を受け": ["ぼうりょくをうけ"],
+  "殴られ": ["なぐられ"],
+  "虐待": ["ぎゃくたい"],
+  "性的暴力": ["せいてきぼうりょく"],
+  "誰にも言わないで": ["だれにもいわないで"],
+  "秘密にして": ["ひみつにして"],
+  "生きていたくない": ["いきていたくない"],
+  "生きる意味がない": ["いきるいみがない"],
+  "消えてしまいたい": ["きえてしまいたい"],
+  "全部どうでもいい": ["ぜんぶどうでもいい"],
+  "もう限界": ["もうげんかい"],
+  "絶望": ["ぜつぼう"],
+  "苦しい": ["くるしい"],
+  "安全でいられない": ["あんぜんでいられない"],
+};
+
+/** The keys above, so a test can check each one still names a live term. */
+export const KANA_SPELLING_KEYS: readonly string[] = Object.keys(KANA_SPELLINGS);
+
+/** Every spelling of `terms`: the written one, plus any reading listed above. */
+function spellings(terms: readonly string[]): string[] {
+  return terms.flatMap((term) => [term, ...(KANA_SPELLINGS[term] ?? [])]);
+}
+
 /**
  * ASCII terms match on word boundaries so "now" cannot fire on "know" or
  * "nowhere"; Japanese has no word boundaries, so those terms stay substrings.
+ *
+ * Terms arrive here folded by `foldWriting`, the same way the text is, so the
+ * two are compared in one spelling rather than in whichever each was written
+ * in. The ASCII test therefore runs on the folded form — which is still ASCII
+ * for an ASCII term, since NFKC and lowercasing leave it alone.
  */
-function lexicon(terms: string[]): RegExp {
+function lexicon(terms: readonly string[]): RegExp {
   const alternatives = terms.map((term) => {
-    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return /^[\x20-\x7e]+$/.test(term) ? `\\b${escaped}\\b` : escaped;
+    const folded = foldWriting(term);
+    const escaped = folded.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return /^[\x20-\x7e]+$/.test(folded) ? `\\b${escaped}\\b` : escaped;
   });
   return new RegExp(alternatives.join("|"), "i");
 }
 
 const LEXICONS = {
-  selfHarm: lexicon(selfHarmTerms),
+  selfHarm: lexicon(spellings(selfHarmTerms)),
+  // No readings: see KANA_SPELLINGS on #290.
   imminent: lexicon(imminentTerms),
-  violence: lexicon(violenceTerms),
-  abuse: lexicon(abuseTerms),
-  concealment: lexicon(concealmentTerms),
-  passive: lexicon(passiveRiskTerms),
-  ambiguous: lexicon(ambiguousRiskTerms),
-  distress: lexicon(distressTerms),
-  explicitLethal: lexicon(["kill myself", "killing myself", "end my life", "ending my life", "want to die", "suicide", "自殺", "死にたい"]),
-  cannotStaySafe: lexicon(["cannot stay safe", "can't stay safe", "安全でいられない"]),
+  violence: lexicon(spellings(violenceTerms)),
+  abuse: lexicon(spellings(abuseTerms)),
+  concealment: lexicon(spellings(concealmentTerms)),
+  passive: lexicon(spellings(passiveRiskTerms)),
+  ambiguous: lexicon(spellings(ambiguousRiskTerms)),
+  distress: lexicon(spellings(distressTerms)),
+  explicitLethal: lexicon(spellings(["kill myself", "killing myself", "end my life", "ending my life", "want to die", "suicide", "自殺", "死にたい"])),
+  cannotStaySafe: lexicon(spellings(["cannot stay safe", "can't stay safe", "安全でいられない"])),
 } as const;
 
 const RISK_ORDER: SafetyAssessment["risk_level"][] = ["none", "low", "elevated", "crisis"];
@@ -78,7 +189,9 @@ export function escalateAssessment(
 }
 
 export function assessSafety(rawContent: string): SafetyAssessment {
-  const content = rawContent.toLocaleLowerCase().replace(/\s+/g, " ").trim();
+  // Folded, not merely lowercased: the lexicons are compared in one spelling.
+  // See `foldWriting`.
+  const content = foldWriting(rawContent).replace(/\s+/g, " ").trim();
   if (!content) {
     return { risk_level: "none", confidence: 1, escalation_required: false, reasons: [], safe_response: "", policy_refs: [] };
   }

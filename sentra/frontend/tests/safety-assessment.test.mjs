@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { assessSafety, escalateAssessment, routesToRealPerson } from "../src/lib/safety-assessment.ts";
+import {
+  ALL_SAFETY_TERMS,
+  assessSafety,
+  escalateAssessment,
+  KANA_SPELLING_KEYS,
+  routesToRealPerson,
+} from "../src/lib/safety-assessment.ts";
 
 const ESCALATION_MARKERS = [
   "988",
@@ -82,6 +88,114 @@ describe("must-not-escalate cases", () => {
     const result = assessSafety("I'm so overwhelmed and panicking about the test.");
     assert.equal(result.risk_level, "low");
     assert.equal(result.safe_response, "");
+  });
+});
+
+/**
+ * The spelling a Japanese keyboard happens to produce must not change the
+ * answer (#388).
+ *
+ * Before this, every Japanese term was matched in its kanji spelling only, so
+ * 「しにたい」 — the same sentence when the student does not press the
+ * conversion key — assessed as `none`. `none` is not a milder verdict than
+ * `crisis`: it is the absence of the crisis card, the `safety_escalations`
+ * row, the educator notification and the §4.4 review band all at once.
+ *
+ * Each case is written as a pair so the kanji spelling is the expectation
+ * rather than a literal copied from the implementation: if the kanji form's
+ * verdict ever moves, the variant's moves with it and this still passes for
+ * the right reason.
+ */
+describe("spelling variants assess the same as the kanji form", () => {
+  const PAIRS = [
+    ["死にたい", ["もうしにたい", "もうシニタイ", "もう死ニタイ", "もうｼﾆﾀｲ"]],
+    ["消えたい", ["きえたい", "キエタイ"]],
+    ["自殺", ["じさつ", "ジサツ"]],
+    ["苦しい", ["くるしい", "クルシイ"]],
+    ["絶望", ["ぜつぼう"]],
+    ["虐待", ["ぎゃくたい"]],
+    ["殴られ", ["なぐられ"]],
+    ["生きていたくない", ["いきていたくない"]],
+    ["生きる意味がない", ["いきるいみがない"]],
+    ["消えてしまいたい", ["きえてしまいたい"]],
+    ["もう限界", ["もうげんかい"]],
+    ["自分を傷つけ", ["じぶんをきずつけ"]],
+    ["相手を傷つけ", ["あいてをきずつけ"]],
+    ["暴力を受け", ["ぼうりょくをうけ"]],
+    ["性的暴力", ["せいてきぼうりょく"]],
+    // The concealment terms carry no verdict on their own — they add a reason
+    // only alongside a harm signal — so they are paired inside one.
+    ["自傷してしまった。誰にも言わないで。", ["自傷してしまった。だれにもいわないで。"]],
+    ["自傷してしまった。秘密にして。", ["自傷してしまった。ひみつにして。"]],
+    ["全部どうでもいい", ["ぜんぶどうでもいい"]],
+    ["安全でいられない", ["あんぜんでいられない"]],
+  ];
+
+  for (const [written, variants] of PAIRS) {
+    it(`reads every spelling of ${written} the same way`, () => {
+      const expected = assessSafety(written);
+      // A pair is only meaningful if the written form is detected at all.
+      assert.notEqual(expected.risk_level, "none", written);
+      for (const variant of variants) {
+        const actual = assessSafety(variant);
+        assert.equal(actual.risk_level, expected.risk_level, variant);
+        assert.equal(actual.escalation_required, expected.escalation_required, variant);
+        // The reasons too: a variant that reached the same level by a different
+        // route would still be a spelling the lexicons read differently.
+        assert.deepEqual([...actual.reasons].sort(), [...expected.reasons].sort(), variant);
+      }
+    });
+  }
+
+  it("folds the width variants of an ASCII term too", () => {
+    assert.equal(assessSafety("ｉ　ｗａｎｔ　ｔｏ　ｄｉｅ").risk_level, assessSafety("i want to die").risk_level);
+  });
+});
+
+/**
+ * Two readings are deliberately absent from `KANA_SPELLINGS` because they are
+ * also ordinary words. A later edit that "completes the table" would make the
+ * §4.4 queue fire on お掃除, which is how a reviewer learns to click past it.
+ */
+describe("readings that are ordinary words stay out", () => {
+  it("does not read おそう as 襲う", () => {
+    assert.equal(assessSafety("今日は部屋のおそうじをした。").risk_level, "none");
+    // The kanji spelling is still matched; only the reading is left out.
+    assert.notEqual(assessSafety("あいつを襲うつもりだ。今すぐ。").risk_level, "none");
+  });
+
+  it("does not read じしょう as 自傷", () => {
+    assert.equal(assessSafety("あの子は自称ゲーマーらしい。").risk_level, "none");
+    assert.notEqual(assessSafety("自傷してしまった。").risk_level, "none");
+  });
+
+  it("leaves an ordinary diary entry alone", () => {
+    for (const text of [
+      "今日は体育祭の練習をして、すごく楽しかった。",
+      "ラーメンとカレーを食べた。",
+      "今日はつかれたけど、よく眠れそう。",
+    ]) {
+      assert.equal(assessSafety(text).risk_level, "none", text);
+    }
+  });
+});
+
+describe("the kana spelling table stays honest", () => {
+  // The same reasoning as scripts/ui-strings-allowlist.mjs: an entry that no
+  // longer names a live term is a claim about code that has since changed, and
+  // left in place it reads as coverage that is not there.
+  it("gives a reading only to terms the lexicons still carry", () => {
+    const live = new Set(ALL_SAFETY_TERMS);
+    const stale = KANA_SPELLING_KEYS.filter((key) => !live.has(key));
+    assert.deepEqual(stale, [], `KANA_SPELLINGS keys naming no live term:\n${stale.join("\n")}`);
+  });
+
+  // #290 is an open false positive on 「今日」. Giving the imminence terms
+  // readings before that is settled would make the same mistake louder.
+  it("gives no reading to an imminence term", () => {
+    for (const key of KANA_SPELLING_KEYS) {
+      assert.ok(!["今すぐ", "今夜", "今日", "計画がある"].includes(key), key);
+    }
   });
 });
 

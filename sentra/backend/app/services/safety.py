@@ -1,3 +1,5 @@
+import unicodedata
+
 from app.models.safety import SafetyAssessmentInput, SafetyAssessmentReturn
 
 SAFETY_POLICY_REFS = [
@@ -49,28 +51,131 @@ DISTRESS_TERMS = (
 )
 
 
+#: Katakana ァ-ヶ onto hiragana ぁ-ゖ. ヷ-ヺ are left out: they have no hiragana
+#: form, so there is nothing to fold them onto.
+_KATAKANA_TO_HIRAGANA = {codepoint: codepoint - 0x60 for codepoint in range(0x30A1, 0x30F7)}
+
+
+def _fold_writing(value: str) -> str:
+    """Writing-system folding, applied to the text and to every term alike (#388).
+
+    A Japanese keyboard offers more than one spelling of the same word, and the
+    lexicons above were written in one of them. 「死にたい」 was matched;
+    「しにたい」 — the same sentence when the student does not press the
+    conversion key — was not, and `risk_level="none"` is not a milder verdict
+    than `"crisis"` but the absence of the whole escalation path.
+
+    NFKC folds the width variants (全角英数, ｶﾞ); katakana is then mapped onto
+    hiragana, which is what carries 「シニタイ」 to 「しにたい」.
+
+    **Terms are folded too, not only the text.** Without that, `パニック` —
+    written in katakana in `DISTRESS_TERMS` — would stop matching the moment the
+    text was folded.
+
+    This is the same fold as `frontend/src/lib/safety-assessment.ts`
+    `foldWriting`. The two implementations of this assessment already differ in
+    other ways (#374); they must not also differ in which spellings they read.
+    """
+    return unicodedata.normalize("NFKC", value).translate(_KATAKANA_TO_HIRAGANA).casefold()
+
+
+#: Kana spellings of the terms written with kanji.
+#:
+#: Folding cannot reach these: 「死」 and 「し」 are different characters, not two
+#: encodings of one. So each kanji term a student might send unconverted carries
+#: its reading here.
+#:
+#: **A reading is listed only when it is not also an ordinary word.** Two are
+#: deliberately absent:
+#:
+#:   ``自傷`` → じしょう   also 「自称」; a diary saying 自称 discloses nothing.
+#:   ``襲う``  → おそう     a prefix of 「おそうじ」(お掃除).
+#:
+#: Both would fire on sentences with nothing to do with danger. The kanji
+#: spellings of those two stay matched; only the readings are left out.
+#:
+#: ``IMMINENCE_TERMS`` is deliberately given no readings. 「今日」 already raises
+#: a false imminence signal (#290), and widening it before that is settled would
+#: only make the same mistake louder.
+KANA_SPELLINGS = {
+    "自殺": ("じさつ",),
+    "死にたい": ("しにたい",),
+    "消えたい": ("きえたい",),
+    "自分を傷つけ": ("じぶんをきずつけ",),
+    "あいつを殺": ("あいつをころ",),
+    "相手を傷つけ": ("あいてをきずつけ",),
+    "暴力を受け": ("ぼうりょくをうけ",),
+    "殴られ": ("なぐられ",),
+    "虐待": ("ぎゃくたい",),
+    "性的暴力": ("せいてきぼうりょく",),
+    "誰にも言わないで": ("だれにもいわないで",),
+    "秘密にして": ("ひみつにして",),
+    "生きていたくない": ("いきていたくない",),
+    "生きる意味がない": ("いきるいみがない",),
+    "絶望": ("ぜつぼう",),
+    "苦しい": ("くるしい",),
+    "安全でいられない": ("あんぜんでいられない",),
+}
+
+#: Every lexicon's terms, for the test that keeps ``KANA_SPELLINGS`` honest.
+ALL_SAFETY_TERMS = (
+    SELF_HARM_TERMS + IMMINENCE_TERMS + VIOLENCE_TERMS + ABUSE_TERMS
+    + CONCEALMENT_TERMS + PASSIVE_RISK_TERMS + DISTRESS_TERMS
+)
+
+
+def _spellings(terms: tuple[str, ...]) -> tuple[str, ...]:
+    """Every spelling of ``terms``, folded: the written one plus any reading."""
+    folded: list[str] = []
+    for term in terms:
+        folded.append(_fold_writing(term))
+        folded.extend(_fold_writing(reading) for reading in KANA_SPELLINGS.get(term, ()))
+    return tuple(dict.fromkeys(folded))
+
+
+#: What the assessment actually compares against. Built once, folded, so the
+#: text and the terms meet in one spelling.
+_SELF_HARM = _spellings(SELF_HARM_TERMS)
+#: Folded like the rest, but given no readings: see ``KANA_SPELLINGS`` on #290.
+#: Every term stays — 安全でいられない is still an imminence signal, it just does
+#: not gain あんぜんでいられない here. The reading reaches `_CANNOT_STAY_SAFE`,
+#: which is the check that term exists for.
+_IMMINENCE = tuple(dict.fromkeys(_fold_writing(term) for term in IMMINENCE_TERMS))
+_VIOLENCE = _spellings(VIOLENCE_TERMS)
+_ABUSE = _spellings(ABUSE_TERMS)
+_CONCEALMENT = _spellings(CONCEALMENT_TERMS)
+_PASSIVE_RISK = _spellings(PASSIVE_RISK_TERMS)
+_DISTRESS = _spellings(DISTRESS_TERMS)
+_EXPLICIT_LETHAL = _spellings(
+    ("kill myself", "end my life", "want to die", "suicide", "自殺", "死にたい")
+)
+_CANNOT_STAY_SAFE = _spellings(("cannot stay safe", "can't stay safe", "安全でいられない"))
+
+
 def _matches(content: str, terms: tuple[str, ...]) -> list[str]:
     return [term for term in terms if term in content]
 
 
 def assess_safety(payload: SafetyAssessmentInput) -> SafetyAssessmentReturn:
-    content = " ".join(payload.content.casefold().split())
+    # Folded, not merely case-folded: the lexicons are compared in one
+    # spelling. See `_fold_writing`.
+    content = " ".join(_fold_writing(payload.content).split())
     if not content:
         return SafetyAssessmentReturn(
             risk_level="none", confidence=1.0, escalation_required=False,
             reasons=[], safe_response="", policy_refs=[],
         )
 
-    self_harm = _matches(content, SELF_HARM_TERMS)
-    imminent = _matches(content, IMMINENCE_TERMS)
-    violence = _matches(content, VIOLENCE_TERMS)
-    abuse = _matches(content, ABUSE_TERMS)
-    concealment = _matches(content, CONCEALMENT_TERMS)
-    passive = _matches(content, PASSIVE_RISK_TERMS)
-    distress = _matches(content, DISTRESS_TERMS)
+    self_harm = _matches(content, _SELF_HARM)
+    imminent = _matches(content, _IMMINENCE)
+    violence = _matches(content, _VIOLENCE)
+    abuse = _matches(content, _ABUSE)
+    concealment = _matches(content, _CONCEALMENT)
+    passive = _matches(content, _PASSIVE_RISK)
+    distress = _matches(content, _DISTRESS)
 
     crisis_reasons = []
-    if self_harm and (imminent or any(term in content for term in ("kill myself", "end my life", "want to die", "suicide", "自殺", "死にたい"))):
+    if self_harm and (imminent or _matches(content, _EXPLICIT_LETHAL)):
         crisis_reasons.append("self_harm_or_suicide_risk")
     if violence and imminent:
         crisis_reasons.append("imminent_violence_risk")
@@ -78,7 +183,7 @@ def assess_safety(payload: SafetyAssessmentInput) -> SafetyAssessmentReturn:
         crisis_reasons.append("abuse_or_violence_disclosure")
     if passive:
         crisis_reasons.append("possible_suicide_risk")
-    if any(term in content for term in ("cannot stay safe", "can't stay safe", "安全でいられない")):
+    if _matches(content, _CANNOT_STAY_SAFE):
         crisis_reasons.append("inability_to_stay_safe")
 
     if crisis_reasons:
