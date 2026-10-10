@@ -32,6 +32,7 @@ import { EMPTY_STATS, computeJournalStats, type JournalStats } from "@/lib/journ
 import { generateCounselorSummary, type CounselorTimelineEvent } from "@/lib/counselor-summary";
 import { buildAuditTrails, type ModelRunRecord } from "@/lib/audit-trail";
 import { t } from "@/lib/i18n";
+import { latestRowPerParticipant } from "@/lib/cohortLatestRows";
 import { readDemoFlag } from "@/lib/demo";
 import * as demo from "@/lib/blesc/demoApi";
 
@@ -1179,24 +1180,6 @@ export class ApiClient {
     if (!roster.length) return [];
     const ids = roster.map((row) => row.participant_id);
 
-    const [insightsResult, safetyResult] = await Promise.all([
-      supabase
-        .from("insights")
-        .select("participant_id, day, anomaly_score, baseline_deviation_json")
-        .in("participant_id", ids)
-        .order("day", { ascending: false })
-        .limit(400),
-      supabase
-        .from("model_runs")
-        .select("participant_id, retrieval_config_json, created_at")
-        .eq("artifact_type", "safety_assessment")
-        .in("participant_id", ids)
-        .order("created_at", { ascending: false })
-        .limit(400),
-    ]);
-    if (insightsResult.error) throwSupabaseError(t.apiError.loadCohortInsights, insightsResult.error);
-    if (safetyResult.error) throwSupabaseError(t.apiError.loadCohortSafety, safetyResult.error);
-
     type InsightRowLite = {
       participant_id: string;
       day: string;
@@ -1207,14 +1190,29 @@ export class ApiClient {
       } | null;
     };
     type SafetyRowLite = { participant_id: string; retrieval_config_json: Record<string, JsonValue> | null; created_at: string };
-    const latestInsight = new Map<string, InsightRowLite>();
-    for (const row of (insightsResult.data ?? []) as InsightRowLite[]) {
-      if (!latestInsight.has(row.participant_id)) latestInsight.set(row.participant_id, row);
-    }
-    const latestSafety = new Map<string, SafetyRowLite>();
-    for (const row of (safetyResult.data ?? []) as SafetyRowLite[]) {
-      if (!latestSafety.has(row.participant_id)) latestSafety.set(row.participant_id, row);
-    }
+
+    // Each student's newest row, however much the rest of the cohort wrote
+    // (#338). A read that could not be completed throws like any other failed
+    // read: a blank safety level reads as "nothing to see".
+    const [insightsResult, safetyResult] = await Promise.all([
+      latestRowPerParticipant<InsightRowLite>(supabase, {
+        table: "insights",
+        columns: "participant_id, day, anomaly_score, baseline_deviation_json",
+        participantIds: ids,
+        newestBy: "day",
+      }),
+      latestRowPerParticipant<SafetyRowLite>(supabase, {
+        table: "model_runs",
+        columns: "participant_id, retrieval_config_json, created_at",
+        participantIds: ids,
+        newestBy: "created_at",
+        where: { artifact_type: "safety_assessment" },
+      }),
+    ]);
+    if (insightsResult.error) throwSupabaseError(t.apiError.loadCohortInsights, insightsResult.error);
+    if (safetyResult.error) throwSupabaseError(t.apiError.loadCohortSafety, safetyResult.error);
+    const latestInsight = insightsResult.latest;
+    const latestSafety = safetyResult.latest;
 
     return roster.map((row) => {
       const insight = latestInsight.get(row.participant_id);
