@@ -30,6 +30,8 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
+import { dryRunInviteCode } from "./dry-run-codes.mjs";
+
 const MATRIX_PATH = fileURLToPath(
   new URL("../../../docs/pilot/dry-run/scenario-matrix.json", import.meta.url),
 );
@@ -69,7 +71,7 @@ function parseArgs(argv) {
 
 /** The path an account walks, as a list of steps the runner can execute. */
 function stepsFor(account) {
-  const steps = [{ kind: "redeem", code: `DRYRUN-${String(account.id).padStart(4, "0")}` }];
+  const steps = [{ kind: "redeem", code: dryRunInviteCode(account.id) }];
 
   if (account.expected_terminal_state === null) return steps; // refused at redeem
   if (account.expected_terminal_state === "account_bound") return steps;
