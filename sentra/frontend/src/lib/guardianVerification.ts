@@ -62,6 +62,55 @@ export function normalizeRequestedGrants(value: unknown, documentVersion: string
 }
 
 /**
+ * What a guardian answers, item by item (#316).
+ *
+ * `/legal` tells guardians they choose アプリ利用／研究データ利用／原文の保持
+ * separately, and that only what both they and the participant allow is used.
+ * These are those three. They are not the five stored grants: a guardian is not
+ * asked about export or model training as separate questions, and
+ * `guardianConsentGrant` below says what follows from that.
+ */
+export const GUARDIAN_CONSENT_ITEMS = ["app_use", "research_analysis", "raw_text_retention"] as const;
+
+export type GuardianConsentItem = (typeof GUARDIAN_CONSENT_ITEMS)[number];
+
+/** The guardian's own answer, stored as `pilot_guardian_verifications.guardian_grants`. */
+export type GuardianGrants = {
+  [K in GuardianConsentItem]: boolean;
+} & {
+  document_version: string;
+};
+
+/**
+ * Read whatever arrived as a guardian's answer.
+ *
+ * Every item is OFF unless it is exactly `true`. A missing key, `"true"`, `1`
+ * and `null` are all "not agreed": the screen starts with everything off, and a
+ * request that fails to say yes has not said yes.
+ */
+export function normalizeGuardianGrants(value: unknown, documentVersion: string): GuardianGrants {
+  const source = (value !== null && typeof value === "object" ? value : {}) as Record<string, unknown>;
+  const grants = { document_version: documentVersion } as GuardianGrants;
+  for (const key of GUARDIAN_CONSENT_ITEMS) {
+    grants[key] = source[key] === true;
+  }
+  return grants;
+}
+
+/**
+ * Whether an answer lets the participant into the study.
+ *
+ * Both the app and the research use have to be allowed: the study is the
+ * research use, and it happens in the app. Anything else is recorded as a
+ * decline — with the items kept, so "the app but not the research" stays
+ * distinguishable from "neither" — and the enrollment does not advance.
+ * Retaining journal text is optional and decides nothing here.
+ */
+export function guardianDecisionFor(grants: GuardianGrants): "confirmed" | "declined" {
+  return grants.app_use && grants.research_analysis ? "confirmed" : "declined";
+}
+
+/**
  * Whether this enrollment needs a guardian at all.
  *
  * `is_minor` comes from the enrollment row, which was set at redemption from
@@ -139,30 +188,61 @@ export function guardianTokenUsable(row: GuardianVerificationRow | null, now: Da
 }
 
 /**
- * The consent record written when a guardian confirms.
+ * The consent record written when a guardian answers: what the participant
+ * asked for, intersected with what the guardian allowed (#316).
  *
  * Built here rather than in the route so that the one place a
  * `guardian_consent: true` is ever produced is a function whose inputs are a
  * *token row* and the participant's stored record — never a request body.
+ *
+ * | stored grant         | is true only when                                         |
+ * | -------------------- | --------------------------------------------------------- |
+ * | `app_use`            | participant ∧ guardian「アプリ利用」                        |
+ * | `research_analysis`  | guardian「アプリ利用」∧ guardian「研究データ利用」            |
+ * | `anonymized_export`  | participant asked ∧ `research_analysis`                   |
+ * | `raw_text_retention` | participant asked ∧ guardian「原文の保持」∧ research         |
+ * | `model_training_use` | never, for a minor — a guardian is not asked about it     |
+ * | `guardian_consent`   | guardian「アプリ利用」∧ guardian「研究データ利用」            |
+ *
+ * Nothing the guardian turned on can add to what the participant asked for,
+ * and nothing the participant asked for survives the guardian turning it off.
  *
  * `minor_assent` is carried from the participant's own record rather than set:
  * the guardian is confirming their child's participation, not asserting that
  * the child assented. If the assent record is missing, this produces a row that
  * the enrollment gate will refuse, which is the correct outcome and a visible
  * one.
+ *
+ * `guardian` omitted or null is a bulk confirmation from before the answer was
+ * itemised: it approved everything that was asked, as it did then.
  */
 export function guardianConsentGrant(
   requested: RequestedGrants,
   participantRecord: ConsentState,
+  guardian: GuardianGrants | null = null,
 ): ConsentGrants & { minor_assent: boolean; guardian_consent: boolean; document_version: string } {
+  if (guardian === null) {
+    return {
+      app_use: participantRecord.app_use === true,
+      research_analysis: true,
+      anonymized_export: requested.anonymized_export === true,
+      raw_text_retention: requested.raw_text_retention === true,
+      model_training_use: requested.model_training_use === true,
+      minor_assent: participantRecord.minor_assent === true,
+      guardian_consent: true,
+      document_version: requested.document_version,
+    };
+  }
+
+  const research = guardian.app_use === true && guardian.research_analysis === true;
   return {
-    app_use: participantRecord.app_use === true,
-    research_analysis: true,
-    anonymized_export: requested.anonymized_export === true,
-    raw_text_retention: requested.raw_text_retention === true,
-    model_training_use: requested.model_training_use === true,
+    app_use: participantRecord.app_use === true && guardian.app_use === true,
+    research_analysis: research,
+    anonymized_export: research && requested.anonymized_export === true,
+    raw_text_retention: research && requested.raw_text_retention === true && guardian.raw_text_retention === true,
+    model_training_use: false,
     minor_assent: participantRecord.minor_assent === true,
-    guardian_consent: true,
+    guardian_consent: research,
     document_version: requested.document_version,
   };
 }
