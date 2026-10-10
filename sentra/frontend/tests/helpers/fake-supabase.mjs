@@ -19,7 +19,7 @@ class Query {
     this.payload = null;
     this.ordering = null;
     this.max = null;
-    this.single = false;
+    this.cardinality = null;
   }
 
   select(columns = "*") {
@@ -60,7 +60,11 @@ class Query {
     return this;
   }
   maybeSingle() {
-    this.single = true;
+    this.cardinality = "maybe";
+    return this;
+  }
+  single() {
+    this.cardinality = "exactly";
     return this;
   }
 
@@ -75,12 +79,14 @@ class Query {
 
     const rows = this.db.tables[this.table] ?? (this.db.tables[this.table] = []);
 
+    let matched;
     if (this.action === "insert") {
-      rows.push(...this.payload.map((row) => ({ ...row })));
-      return { data: null, error: null };
+      matched = this.payload.map((row) => ({ ...this.db.defaults[this.table]?.(rows.length), ...row }));
+      rows.push(...matched);
+      if (!this.columns) return { data: null, error: null };
+    } else {
+      matched = rows.filter((row) => this.filters.every((keep) => keep(row)));
     }
-
-    let matched = rows.filter((row) => this.filters.every((keep) => keep(row)));
     if (this.action === "update") matched.forEach((row) => Object.assign(row, this.payload));
 
     if (this.ordering) {
@@ -99,9 +105,9 @@ class Query {
       wanted ? Object.fromEntries(wanted.map((name) => [name, row[name] ?? null])) : { ...row },
     );
 
-    if (!this.single) return { data: projected, error: null };
-    if (projected.length > 1) {
-      return { data: null, error: { code: "PGRST116", message: "multiple rows returned" } };
+    if (!this.cardinality) return { data: projected, error: null };
+    if (projected.length > 1 || (this.cardinality === "exactly" && projected.length === 0)) {
+      return { data: null, error: { code: "PGRST116", message: "the result is not a single row" } };
     }
     return { data: projected[0] ?? null, error: null };
   }
@@ -110,9 +116,11 @@ class Query {
 /**
  * @param tables  `{ table_name: [row, …] }`, mutated by inserts and updates.
  * @param rpc     `{ function_name: (args, callIndex) => ({ data, error }) }`.
+ * @param defaults `{ table_name: (rowCount) => row }`, the column defaults an
+ *                 insert gets — an id, a timestamp.
  */
-export function fakeSupabase({ tables = {}, rpc = {} } = {}) {
-  const db = { tables, calls: [], rpcCalls: [], failures: new Map() };
+export function fakeSupabase({ tables = {}, rpc = {}, defaults = {} } = {}) {
+  const db = { tables, calls: [], rpcCalls: [], failures: new Map(), defaults };
 
   return {
     tables,
