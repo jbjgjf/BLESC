@@ -29,6 +29,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { jsonError } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { advanceEnrollment, loadEnrollmentById, loadStudyById } from "@/lib/server/pilotStore";
@@ -50,6 +51,20 @@ export const runtime = "nodejs";
  * reveals about a token they already hold.
  */
 const UNUSABLE = "この確認用リンクは使用できません。お子さまにご確認のうえ、新しいリンクをお受け取りください。";
+
+/**
+ * Give the link back after a failure, and say so when that did not work.
+ *
+ * A claim that could not be released leaves the guardian holding a link that
+ * answers "already answered" for an answer nobody recorded. They cannot fix
+ * that and neither can this request; an operator can, by issuing a new link,
+ * and only if something tells them (#298).
+ */
+async function release(service: SupabaseClient, verificationId: string): Promise<void> {
+  if (!(await releaseClaim(service, verificationId))) {
+    console.warn("[pilot-guardian] the claim could not be released; this link needs reissuing", verificationId);
+  }
+}
 
 type ConfirmBody = {
   token?: string;
@@ -115,7 +130,7 @@ export async function POST(request: NextRequest) {
     // is a conversation, and the operator has the record to start it from.
     const recorded = await recordDecision(service, verification.id, "declined");
     if (!recorded) {
-      await releaseClaim(service, verification.id);
+      await release(service, verification.id);
       return jsonError("回答を記録できませんでした。時間をおいて、もう一度お試しください。", 502);
     }
     return NextResponse.json({ status: "recorded", decision: "declined" });
@@ -124,7 +139,7 @@ export async function POST(request: NextRequest) {
   const enrollment = await loadEnrollmentById(service, verification.enrollment_id);
   const study = enrollment ? await loadStudyById(service, enrollment.study_id) : null;
   if (!enrollment || !study) {
-    await releaseClaim(service, verification.id);
+    await release(service, verification.id);
     return jsonError("参加登録を読み込めませんでした。時間をおいて、もう一度お試しください。", 502);
   }
 
@@ -138,7 +153,7 @@ export async function POST(request: NextRequest) {
   try {
     await recordConsent(service, enrollment.owner_user_id, enrollment.participant_id, grant, "guardian_link");
   } catch (err) {
-    await releaseClaim(service, verification.id);
+    await release(service, verification.id);
     console.warn("[pilot-guardian] consent write failed", err instanceof Error ? err.message : err);
     return jsonError("同意を記録できませんでした。時間をおいて、もう一度お試しください。", 502);
   }
@@ -157,7 +172,7 @@ export async function POST(request: NextRequest) {
     // The consent record stands — it is append-only and describes a decision
     // that was really made. What did not happen is the transition, and the
     // claim goes back so the guardian can retry once the cause is fixed.
-    await releaseClaim(service, verification.id);
+    await release(service, verification.id);
     console.warn("[pilot-guardian] transition after confirmation failed", advanced.outcome);
     return jsonError("確認は記録しましたが、登録の更新に失敗しました。研究担当にご連絡ください。", 502, {
       code: advanced.outcome,
