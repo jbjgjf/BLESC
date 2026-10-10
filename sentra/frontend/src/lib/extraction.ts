@@ -8,6 +8,7 @@
  */
 
 import { t } from "./i18n/index.ts";
+import { lexicon } from "./lexicon.ts";
 
 export type ExtractedNode = {
   id: string;
@@ -74,6 +75,23 @@ export function clamp01(value: unknown, fallback: number): number {
 }
 
 export function normalizeExtraction(candidate: Partial<ExtractionPayload>, sourceText: string): ExtractionPayload {
+  return normalizeModelExtraction(candidate, sourceText).extraction;
+}
+
+/**
+ * `normalizeExtraction`, plus the `extraction_status` its result deserves.
+ *
+ * A syntactically valid model response with fewer than three unique labels is
+ * replaced by `fallbackExtraction`'s nodes inside normalisation. Recording that
+ * as `completed` made `extractionFellBack()` read the placeholder graph as a
+ * measurement, so a thin response could report a protective decline (#310).
+ * Whether the fallback was used now travels with the result, rather than being
+ * inferred afterwards from a status the caller picked.
+ */
+export function normalizeModelExtraction(
+  candidate: Partial<ExtractionPayload>,
+  sourceText: string,
+): { extraction: ExtractionPayload; status: "completed" | "fallback" } {
   const sourceNodes = Array.isArray(candidate.nodes) ? candidate.nodes : [];
 
   // Model id -> stored id. Relations arrive in the model's id space and the
@@ -144,7 +162,7 @@ export function normalizeExtraction(candidate: Partial<ExtractionPayload>, sourc
       ? fallback.relations
       : [];
 
-  return {
+  const extraction: ExtractionPayload = {
     nodes: finalNodes,
     relations: finalRelations,
     temporal_summary: String(candidate.temporal_summary || fallback.temporal_summary).slice(0, 280),
@@ -154,20 +172,80 @@ export function normalizeExtraction(candidate: Partial<ExtractionPayload>, sourc
       : fallback.evidence_summaries
     ).map((item) => String(item).slice(0, 220)).slice(0, 8),
   };
+  return { extraction, status: usingFallbackNodes ? "fallback" : "completed" };
+}
+
+/**
+ * What the fallback graph counts as a sign of support, and as a sign of load.
+ *
+ * Bilingual, and that is the point. These lists were English-only, in a product
+ * whose journals are written in Japanese: no Japanese entry could match either
+ * one, so the fallback graph for a Japanese student was always
+ * `State, Behavior, Event, Event, Event` — no Protective node, ever. That shape
+ * puts `protective_ratio` at zero, which `checkRules` reads as a protective
+ * decline, so an entry got a weakened-support signal for being in Japanese
+ * rather than for anything it said.
+ *
+ * Built with `lexicon()` rather than a bare alternation so the ASCII terms
+ * carry word boundaries. The old pattern matched `help` inside `helpless` and
+ * `rest` inside `restless`, counting both as support.
+ *
+ * These are still keywords, not comprehension. 「よく寝た」 and 「寝不足」 are
+ * distinguished only because the term is `よく寝` and not `寝` — and `sleep`
+ * became `slept well` for the same reason, since the bare term counted "I
+ * couldn't sleep" as support. A sentence that negates its own keyword
+ * ("couldn't talk to anyone", 「相談できなかった」) is still read the wrong way,
+ * by both halves of this list equally. That is the accepted cost of a
+ * deterministic stand-in — what is not acceptable is paying it in one language
+ * and not the other.
+ */
+const SUPPORT_TERMS = [
+  "friend", "friends", "talked", "talk to", "help", "helped", "support", "supported",
+  "walk", "music", "slept well", "rested", "rest", "plan", "study", "studied",
+  "友だち", "友達", "話した", "話せた", "相談", "助け", "支え", "散歩", "音楽",
+  "よく寝", "眠れた", "休ん", "休め", "計画", "勉強",
+];
+
+const LOAD_TERMS = [
+  "anxious", "anxiety", "stress", "stressed", "tired", "deadline", "worry", "worried",
+  "sad", "angry", "fear", "afraid",
+  "不安", "ストレス", "疲れ", "締め切り", "心配", "悲し", "怒", "怖", "しんどい", "つらい",
+];
+
+/** 「とても」 and its neighbours, for the same intensity bump `very` carried. */
+const INTENSIFIER_TERMS = ["very", "really", "so much", "とても", "すごく", "かなり", "ものすごく"];
+
+const SUPPORT = lexicon(SUPPORT_TERMS);
+const LOAD = lexicon(LOAD_TERMS);
+const INTENSIFIER = lexicon(INTENSIFIER_TERMS);
+
+/**
+ * Whether an `extraction_status` says the graph is `fallbackExtraction`'s.
+ *
+ * The statuses the entries route writes when it falls back: `missing_key`,
+ * `failed_<status>`, `timeout` and `fallback` — the last also when a model
+ * response was replaced by the fallback during normalisation
+ * (`normalizeModelExtraction`). Anything else — `completed`,
+ * the collection-only status, or no status at all (FastAPI's response does not
+ * carry one; its fallback is an empty graph, which `checkRules` handles on its
+ * own) — is not a fallback.
+ */
+export function extractionFellBack(status: unknown): boolean {
+  if (typeof status !== "string") return false;
+  return status === "missing_key" || status === "timeout" || status === "fallback" || status.startsWith("failed_");
 }
 
 export function fallbackExtraction(sourceText: string): ExtractionPayload {
-  const lowered = sourceText.toLowerCase();
   const nodes: ExtractedNode[] = [
     { id: "current_reflection", category: "State", label: t.extraction.fallbackNode.currentReflection, intensity: 0.5, confidence: 0.55 },
     { id: "written_journal", category: "Behavior", label: t.extraction.fallbackNode.writtenJournal, intensity: 0.55, confidence: 0.8 },
     { id: "first_recall", category: "Event", label: t.extraction.fallbackNode.firstRecall, intensity: 0.45, confidence: 0.75 },
   ];
-  if (/(friend|talk|help|support|walk|music|sleep|rest|plan|study)/i.test(sourceText)) {
+  if (SUPPORT.test(sourceText)) {
     nodes.push({ id: "protective_signal", category: "Protective", label: t.extraction.fallbackNode.protectiveSignal, intensity: 0.58, confidence: 0.58 });
   }
-  if (/(anxious|stress|tired|deadline|worry|sad|angry|fear)/i.test(sourceText)) {
-    nodes.push({ id: "stress_signal", category: "Trigger", label: t.extraction.fallbackNode.stressSignal, intensity: lowered.includes("very") ? 0.75 : 0.58, confidence: 0.58 });
+  if (LOAD.test(sourceText)) {
+    nodes.push({ id: "stress_signal", category: "Trigger", label: t.extraction.fallbackNode.stressSignal, intensity: INTENSIFIER.test(sourceText) ? 0.75 : 0.58, confidence: 0.58 });
   }
   while (nodes.length < 5) {
     nodes.push({ id: `context_signal_${nodes.length}`, category: "Event", label: t.extraction.fallbackNode.contextSignal(nodes.length), intensity: 0.4, confidence: 0.45 });

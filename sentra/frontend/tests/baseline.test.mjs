@@ -267,6 +267,82 @@ describe("rule engine", () => {
     assert.equal(byRaw[0].rule, "isolation_spike");
   });
 
+  /**
+   * `protective_ratio` is `protective / max(1, state + trigger + behavior)`, so
+   * a day with no risk nodes reports 0 — the same number a day full of risk and
+   * no support reports. Reading the two alike fired a protective decline on a
+   * day where nothing had been extracted at all (#310).
+   */
+  it("does not report a protective decline when there was nothing to measure", () => {
+    const empty = aggregateDailyFeatures([{ nodes: [], relations: [] }]);
+    assert.equal(empty.protective_ratio, 0, "the ratio is still reported as 0");
+    assert.deepEqual(
+      checkRules(empty, {}, { event_count: 0 }, noDiff, noDecline).map((hit) => hit.rule),
+      [],
+    );
+  });
+
+  it("does not report a protective decline for a day of Event nodes alone", () => {
+    const eventsOnly = aggregateDailyFeatures([{
+      nodes: [
+        { id: "a", category: "Event", label: "文化祭", intensity: 0.5, confidence: 0.8 },
+        { id: "b", category: "Event", label: "部活の試合", intensity: 0.5, confidence: 0.8 },
+      ],
+      relations: [],
+    }]);
+    assert.equal(eventsOnly.protective_ratio, 0);
+    assert.deepEqual(
+      checkRules(eventsOnly, {}, { event_count: 2 }, noDiff, noDecline).map((hit) => hit.rule),
+      [],
+    );
+  });
+
+  it("does not report a protective decline for an empty graph after a day with support", () => {
+    // Yesterday's real graph had support; today's is empty. The drop is the
+    // extraction failing, not the entry (#310).
+    const empty = aggregateDailyFeatures([{ nodes: [], relations: [] }]);
+    const drop = { drop_in_protective_nodes: 2, current_protective_nodes: 0, previous_protective_nodes: 2 };
+    assert.deepEqual(checkRules(empty, {}, { event_count: 0 }, noDiff, drop).map((hit) => hit.rule), []);
+  });
+
+  it("does not report a protective decline for a graph that came from the fallback", () => {
+    // Risk without support, which fires on a model graph — but the fallback's
+    // State and Behavior nodes are placeholders.
+    const risky = aggregateDailyFeatures([{
+      nodes: [
+        { id: "a", category: "State", label: "x", intensity: 0.5, confidence: 0.55 },
+        { id: "b", category: "Behavior", label: "y", intensity: 0.55, confidence: 0.8 },
+      ],
+      relations: [],
+    }]);
+    const drop = { drop_in_protective_nodes: 1, current_protective_nodes: 0, previous_protective_nodes: 1 };
+    assert.deepEqual(
+      checkRules(risky, {}, { event_count: 0 }, noDiff, drop, { extractionFellBack: true }).map((hit) => hit.rule),
+      [],
+    );
+    assert.deepEqual(
+      checkRules(risky, {}, { event_count: 0 }, noDiff, drop).map((hit) => hit.rule),
+      ["protective_decline"],
+      "the same graph from the model still reports one",
+    );
+  });
+
+  it("still reports a protective decline when risk nodes were present and support was not", () => {
+    // The measurement the rule exists for, and the one the gate must not lose.
+    const risky = aggregateDailyFeatures([{
+      nodes: [
+        { id: "a", category: "State", label: "眠れない", intensity: 0.6, confidence: 0.8 },
+        { id: "b", category: "Trigger", label: "テスト", intensity: 0.6, confidence: 0.8 },
+      ],
+      relations: [],
+    }]);
+    assert.equal(risky.protective_ratio, 0);
+    assert.deepEqual(
+      checkRules(risky, {}, { event_count: 0 }, noDiff, noDecline).map((hit) => hit.rule),
+      ["protective_decline"],
+    );
+  });
+
   it("fires protective_decline on a drop even when the ratio is healthy", () => {
     const decline = { drop_in_protective_nodes: 2, current_protective_nodes: 1, previous_protective_nodes: 3 };
     const hits = checkRules({ protective_ratio: 0.9 }, {}, { event_count: 0 }, noDiff, decline);

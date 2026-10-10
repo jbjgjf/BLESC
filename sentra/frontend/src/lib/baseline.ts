@@ -297,6 +297,10 @@ export function checkRules(
   graphSummary: { event_count?: number },
   diff: Partial<TemporalDiff>,
   decline: ProtectiveDecline,
+  options: {
+    /** Today's graph came from `fallbackExtraction`, not the model (#310). */
+    extractionFellBack?: boolean;
+  } = {},
 ): RuleHit[] {
   const hits: RuleHit[] = [];
 
@@ -311,7 +315,46 @@ export function checkRules(
 
   const protectiveRatio = safeFloat(featureVector?.protective_ratio, 1);
   const protectiveDrop = safeFloat(decline?.drop_in_protective_nodes, 0);
-  if (protectiveRatio < 0.2 || protectiveDrop > 0) {
+  /**
+   * Whether `protective_ratio` was measured against anything.
+   *
+   * `aggregateDailyFeatures` divides by `max(1, state + trigger + behavior)`,
+   * so a day with no risk nodes at all reports a ratio of 0 — the same number
+   * a day full of risk and no support reports. The two were then read
+   * identically, and the first one fired a protective decline on a day where
+   * nothing had been extracted: an empty graph (the backend's fallback, and
+   * every collection-only submission) and, until the lists were made
+   * bilingual, every Japanese entry that fell back.
+   *
+   * The floor in the denominator is what made the ratio exist; this asks
+   * whether the numerator had anything to be a fraction of. Both
+   * implementations default a *missing* `protective_ratio` to 1.0 for exactly
+   * this reason — "not measured" is not "measured low" — but the key is always
+   * present, so that default was unreachable.
+   */
+  const riskNodeCount =
+    safeFloat(featureVector?.state_count, 0)
+    + safeFloat(featureVector?.trigger_count, 0)
+    + safeFloat(featureVector?.behavior_count, 0);
+  const ratioWasMeasured = riskNodeCount > 0;
+  /**
+   * Whether today's graph is a measurement at all.
+   *
+   * Two days are not: a day whose graph has no nodes, and a day whose graph is
+   * the deterministic fallback (`fallbackExtraction`) because the model could
+   * not be used. The fallback always carries a placeholder State and Behavior
+   * node, so the risk-node gate above does not catch it, and against yesterday's
+   * real graph its missing Protective nodes read as a drop. Either way the
+   * decline would be a fact about the extraction failing, not about the entry
+   * (#310). A vector that carries no counts at all says nothing about emptiness
+   * and is left to the ratio and the drop.
+   */
+  const countKeys = ["state_count", "trigger_count", "protective_count", "behavior_count", "event_count"];
+  const graphWasEmpty =
+    countKeys.some((key) => featureVector != null && key in featureVector)
+    && countKeys.reduce((sum, key) => sum + safeFloat(featureVector?.[key], 0), 0) === 0;
+  const graphIsAMeasurement = !options.extractionFellBack && !graphWasEmpty;
+  if (graphIsAMeasurement && ((ratioWasMeasured && protectiveRatio < 0.2) || protectiveDrop > 0)) {
     hits.push({
       rule: "protective_decline",
       evidence: t.signal.ruleEvidence.protective_decline,

@@ -1,4 +1,5 @@
 import type { SafetyAssessment } from "@/api/models";
+import { lexicon } from "./lexicon.ts";
 
 export const SAFETY_ASSESSMENT_VERSION = "safety-assessment-v1";
 export const SAFETY_POLICY_REFS = [
@@ -27,18 +28,6 @@ const passiveRiskTerms = ["don't want to be here anymore", "do not want to be he
 // Kept apart from ordinary distress because ambiguity must err toward support.
 const ambiguousRiskTerms = ["disappear", "disappearing", "disappeared", "vanish", "stop existing", "not be here", "tired of everything", "tired of being here", "everything is grey", "everything is gray", "what's the point", "what is the point", "no point in anything", "give up on everything", "can't go on", "cannot go on", "not safe", "not be safe", "いなくなりたい", "消えてしまいたい", "全部どうでもいい", "もう限界"];
 const distressTerms = ["panic", "panicking", "hopeless", "worthless", "trapped", "overwhelmed", "パニック", "絶望", "つらい", "苦しい"];
-
-/**
- * ASCII terms match on word boundaries so "now" cannot fire on "know" or
- * "nowhere"; Japanese has no word boundaries, so those terms stay substrings.
- */
-function lexicon(terms: string[]): RegExp {
-  const alternatives = terms.map((term) => {
-    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return /^[\x20-\x7e]+$/.test(term) ? `\\b${escaped}\\b` : escaped;
-  });
-  return new RegExp(alternatives.join("|"), "i");
-}
 
 const LEXICONS = {
   selfHarm: lexicon(selfHarmTerms),
