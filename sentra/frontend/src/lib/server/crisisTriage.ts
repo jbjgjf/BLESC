@@ -318,23 +318,44 @@ export async function loadQueue(
     created_at: string;
   };
 
+  // Pending rows always get the budget first; decided rows only fill what is
+  // left (#380). Letting both share one band query let decided rows push
+  // pending ones off the page: inside a band the order is oldest first, a
+  // decided row is always older than a pending one, and the `none` band alone
+  // outgrows 200 rows within a week. Ticking "show decided" then emptied the
+  // queue of today's entries without saying so — the #247 truncation again,
+  // through a different door.
   const rows: Row[] = [];
-  for (const risk of RISK_ORDER) {
-    if (rows.length >= limit) break;
+  const seen = new Set<string>();
+  const passes: Array<"pending" | "decided"> = options.includeDecided
+    ? ["pending", "decided"]
+    : ["pending"];
+  for (const pass of passes) {
+    for (const risk of RISK_ORDER) {
+      if (rows.length >= limit) break;
 
-    let query = service
-      .from("pilot_crisis_reviews")
-      .select(
-        "id, entry_id, participant_id, assessed_risk, assessed_reasons, status, reviewed_at, review_slot, created_at",
-      )
-      .eq("assessed_risk", risk);
-    if (!options.includeDecided) query = query.eq("status", "pending");
+      let query = service
+        .from("pilot_crisis_reviews")
+        .select(
+          "id, entry_id, participant_id, assessed_risk, assessed_reasons, status, reviewed_at, review_slot, created_at",
+        )
+        .eq("assessed_risk", risk);
+      query = pass === "pending" ? query.eq("status", "pending") : query.neq("status", "pending");
 
-    // Oldest first inside a band: of two rows the machine scored the same, the
-    // one that has been waiting longer is the one §4.4 is later on.
-    const band = await query.order("created_at", { ascending: true }).limit(limit - rows.length);
-    if (band.error) throw new Error(band.error.message);
-    rows.push(...((band.data ?? []) as Row[]));
+      // Oldest first inside a band: of two rows the machine scored the same, the
+      // one that has been waiting longer is the one §4.4 is later on.
+      const band = await query.order("created_at", { ascending: true }).limit(limit - rows.length);
+      if (band.error) throw new Error(band.error.message);
+      // The passes are separate requests. A row decided by another reviewer
+      // between them is returned twice — once as pending, once as decided —
+      // which would put one review_id on the page twice and spend a slot on
+      // it. The first sighting wins; it is the one that was still pending.
+      for (const row of (band.data ?? []) as Row[]) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        rows.push(row);
+      }
+    }
   }
 
   if (rows.length === 0) return [];
@@ -362,7 +383,8 @@ export async function loadQueue(
     for (const row of (entries.data ?? []) as Array<{ id: string }>) present.add(row.id);
   }
 
-  // Already worst-first, oldest-first within a band, from the loop above. No
+  // Already pending-before-decided, then worst-first, then oldest-first within
+  // a band, from the loops above. No
   // second sort here on purpose: a sort applied to a truncated list is what
   // made this wrong, and one that agrees with the query is one that can later
   // stop agreeing with it.
@@ -394,6 +416,39 @@ export async function countPending(service: SupabaseClient): Promise<number> {
     .eq("status", "pending");
   if (result.error) throw new Error(result.error.message);
   return result.count ?? 0;
+}
+
+export type QueueCounts = {
+  pending: number;
+  pending_total: number;
+  /**
+   * Pending rows that exist but are not on this page (#380). Reported as a
+   * number of its own so the screen can warn about it, rather than leaving the
+   * reviewer to notice that "pending: 0 / of 40" means "not shown", not "done".
+   */
+  pending_not_shown: number;
+  crisis: number;
+  elevated: number;
+  no_text: number;
+};
+
+/**
+ * The counts the console shows, from the page it got and the total it counted.
+ *
+ * Kept next to `loadQueue` so the two can be tested together: the number on
+ * the screen and the number in the table disagree exactly when the page was
+ * cut, and that is the case the screen has to say out loud.
+ */
+export function queueCounts(queue: QueueRow[], pendingTotal: number): QueueCounts {
+  const pending = queue.filter((row) => row.status === "pending");
+  return {
+    pending: pending.length,
+    pending_total: pendingTotal,
+    pending_not_shown: Math.max(0, pendingTotal - pending.length),
+    crisis: pending.filter((row) => row.assessed_risk === "crisis").length,
+    elevated: pending.filter((row) => row.assessed_risk === "elevated").length,
+    no_text: pending.filter((row) => !row.text_available).length,
+  };
 }
 
 /**
