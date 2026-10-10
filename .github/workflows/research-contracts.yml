@@ -186,22 +186,16 @@ jobs:
       - name: Apply all migrations
         run: supabase db reset --no-seed
 
-      - name: Run the RLS tests
-        run: |
-          set -euo pipefail
-          status=0
-          for file in supabase/tests/*.test.sql; do
-            echo "--- ${file}"
-            # Each script wraps itself in a transaction and rolls back, so they
-            # are independent and leave no rows behind. `ON_ERROR_STOP` is what
-            # turns a raised assertion into a non-zero exit.
-            if ! psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
-                 -v ON_ERROR_STOP=1 -q -f "${file}"; then
-              echo "FAILED: ${file}"
-              status=1
-            fi
-          done
-          exit "${status}"
+      # The reset above is the fresh apply. This runs the RLS and privilege
+      # scripts in supabase/tests against it, then adds what a single apply
+      # cannot show (#378): that every migration can be applied a second time
+      # (what a rollout that stopped halfway needs), that the scripts still pass
+      # afterwards, and that the deploy-gated migrations state their apply
+      # order. The script was documented in two runbooks and run by no job. It
+      # continues past a failure, so one run lists everything that is broken,
+      # each as an annotation and in the step summary.
+      - name: Run the RLS tests, re-apply the migrations, run them again
+        run: ./supabase/scripts/migration_smoke.sh --skip-fresh
 
   pilot-e2e:
     name: Pilot enrollment gate (E2E)

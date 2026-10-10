@@ -146,7 +146,7 @@ step 3  20260906000100_restrict_entries_raw_text_columns.sql        （SELECTの
         20260907000000_restrict_entries_raw_text_writes.sql         （INSERT/UPDATEの絞り込み）
 ```
 
-**step 3 を step 2 より先に打たない。** step 3 は `entries` の table-wide SELECT を落とす。`raw_text` を明示的に選ぶ旧clientが動いている間に打つと、すべての記録閲覧が `permission denied for table entries` になる。migration の先頭にこの順序が書いてあり、[migration_smoke.sh](../../sentra/supabase/scripts/migration_smoke.sh) の step 4 がその記載の有無を検査する。
+**step 3 を step 2 より先に打たない。** step 3 は `entries` の table-wide SELECT を落とす。`raw_text` を明示的に選ぶ旧clientが動いている間に打つと、すべての記録閲覧が `permission denied for table entries` になる。migration の先頭にこの順序が書いてあり、[migration_smoke.sh](../../sentra/supabase/scripts/migration_smoke.sh) の step 5 がその記載の有無を検査する。
 
 ### 4.1 rollback
 
@@ -168,7 +168,9 @@ supabase start
 ./supabase/scripts/migration_smoke.sh
 ```
 
-5つを見る。新規適用、再適用（冪等性）、RLS/権限テスト、順序の記載、`entries` の列権限。**冪等でない migration は落とす。** 部分適用から復旧できなくなる。
+5つを見る。新規適用（`supabase db reset`）、RLS/権限テスト、再適用（冪等性）、再適用後の RLS/権限テスト、順序の記載。`entries` の列権限は `supabase/tests/entries_column_privileges.test.sql` に移した。**冪等でない migration は落とす。** 部分適用から復旧できなくなる。このスクリプトより前に書かれた再適用できない10本は、スクリプト内の `LEGACY_NOT_IDEMPOTENT` に名前を挙げて2周目から外している。
+
+CI の `supabase-rls` job が同じスクリプトを `--skip-fresh` で走らせる（#378）。ローカル以外の `SUPABASE_DB_URL` は拒否する。
 
 ### 5.2 RLSテスト
 

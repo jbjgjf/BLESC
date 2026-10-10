@@ -45,10 +45,14 @@ grant select, insert on public.legal_acceptances to service_role;
 -- 自分の記録だけ読める。書けるのも自分の行だけ。
 -- **UPDATE も DELETE も無い。** 同意の記録は起きた出来事で、あとから
 -- 書き換えられる同意記録は記録ではない。
+-- `drop ... if exists` を先に置くのは、この migration を2回流せるようにするため
+-- （migration_smoke.sh の step 2）。
+drop policy if exists "legal_acceptances_select_own" on public.legal_acceptances;
 create policy "legal_acceptances_select_own" on public.legal_acceptances
 for select to authenticated
 using ((select auth.uid()) = user_id);
 
+drop policy if exists "legal_acceptances_insert_own" on public.legal_acceptances;
 create policy "legal_acceptances_insert_own" on public.legal_acceptances
 for insert to authenticated
 with check ((select auth.uid()) = user_id);
