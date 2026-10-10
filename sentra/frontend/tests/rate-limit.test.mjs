@@ -5,10 +5,12 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 import {
+  RULES,
   consumeRateLimit,
   rateLimitHeaders,
   rateLimitSubject,
 } from "../src/lib/server/rateLimit.ts";
+import { VOICE_TURN_LIMITED_MESSAGE, limitVoiceTurn } from "../src/lib/server/voiceTurnLimit.ts";
 
 /**
  * Attempt limits (#234), and the invite gate they exist alongside (#223).
@@ -85,6 +87,74 @@ describe("counting", () => {
     });
     assert.equal(result.retryAfterSeconds, 30);
     assert.equal(rateLimitHeaders(result)["retry-after"], "30");
+  });
+});
+
+/**
+ * `POST /api/voice/turn` (#369). The route hands its limit to `limitVoiceTurn`
+ * and writes nothing once that returns a response, so what is run here is what
+ * the route runs.
+ */
+describe("the voice turn limit", () => {
+  const VOICE_RULE = { route: "authenticated-write", limit: 3, windowSeconds: 3600 };
+  const turn = (store, message, escalated) =>
+    limitVoiceTurn(store, {
+      subject: "u:student-1",
+      message,
+      rule: VOICE_RULE,
+      escalateFloor: async (level, reasons) => { escalated.push({ level, reasons }); },
+    });
+
+  it("lets turns through up to the limit, then answers 429 with the headers a client needs", async () => {
+    const store = fakeStore();
+    const escalated = [];
+    for (let i = 0; i < 3; i += 1) assert.equal(await turn(store, "今日は部活だった", escalated), null);
+
+    const refused = await turn(store, "今日は部活だった", escalated);
+    assert.equal(refused.status, 429);
+    assert.equal(refused.headers.get("x-ratelimit-limit"), "3");
+    assert.equal(refused.headers.get("x-ratelimit-remaining"), "0");
+    assert.ok(Number(refused.headers.get("retry-after")) > 0);
+    assert.equal((await refused.json()).detail, VOICE_TURN_LIMITED_MESSAGE);
+    assert.deepEqual(escalated, []);
+  });
+
+  it("counts against the shared rule by default, per signed-in user", async () => {
+    const store = fakeStore();
+    await limitVoiceTurn(store, { subject: "u:student-1", message: "こんにちは", escalateFloor: async () => {} });
+    assert.deepEqual([...store.counts.keys()].map((key) => key.split("@")[0]), ["authenticated-write:u:student-1"]);
+    assert.ok(RULES.authenticatedWrite.limit >= 120, "a ten-minute session of five-second turns must fit");
+  });
+
+  it("still escalates a crisis said past the limit", async () => {
+    const store = fakeStore();
+    const escalated = [];
+    for (let i = 0; i < 3; i += 1) await turn(store, "今日は部活だった", escalated);
+
+    const refused = await turn(store, "もう死にたい", escalated);
+    assert.equal(refused.status, 429);
+    assert.equal(escalated.length, 1);
+    assert.equal(escalated[0].level, "crisis");
+    assert.ok(escalated[0].reasons.length > 0);
+  });
+
+  it("does not escalate from the limiter while turns are being admitted", async () => {
+    // An admitted turn is assessed and escalated by the route itself, with the
+    // conversation window; doing it here too would be a second alert path.
+    const store = fakeStore();
+    const escalated = [];
+    assert.equal(await turn(store, "もう死にたい", escalated), null);
+    assert.deepEqual(escalated, []);
+  });
+
+  it("admits the turn when the counter cannot be read", async () => {
+    const original = console.error;
+    console.error = () => {};
+    try {
+      assert.equal(await turn(fakeStore({ failing: true }), "こんにちは", []), null);
+    } finally {
+      console.error = original;
+    }
   });
 });
 
