@@ -43,11 +43,21 @@ export type DispatchResult = {
    * and the next run after somebody closes the gap will send them.
    */
   pending: number;
-  stuck: number;
+  /**
+   * Escalations that have exhausted their attempts and reached nobody — the
+   * number the five-minute workflow warns on. `null` when the count could not
+   * be read (#377): this run's sends are done and reported above, but nothing
+   * is known about the standing failures, and that must not arrive as `0`.
+   * `stuck_error` then says why.
+   */
+  stuck: number | null;
+  stuck_error?: string;
 };
 
 export async function dispatchPendingEscalations(
   service: SupabaseClient,
+  /** Replaceable so a test can see what a run would send, and to whom. */
+  deliver: typeof deliverEscalation = deliverEscalation,
 ): Promise<DispatchResult | { error: string }> {
   /*
    * Least-recently-attempted first, and only then oldest-first (#203).
@@ -95,8 +105,34 @@ export async function dispatchPendingEscalations(
       .from("participants")
       .select("id, code")
       .in("id", Array.from(new Set(rows.map((row) => row.participant_id))));
+    /*
+     * A failed lookup stops the run before anything is sent (#377). Without
+     * the code every message in the batch reads 「担当している生徒のひとり」 —
+     * a page at 02:00 that names nobody — and because the send itself
+     * succeeds, the row becomes `delivered` and is never retried. Leaving the
+     * batch queued costs five minutes; sending it costs the alert.
+     */
+    if (participants.error) {
+      console.error(
+        "[safety-dispatch] could not read participant codes; nothing was sent and the batch stays queued",
+        participants.error.message,
+      );
+      return { error: participants.error.message };
+    }
     for (const row of (participants.data ?? []) as Array<{ id: string; code: string | null }>) {
       codes.set(row.id, row.code);
+    }
+    // Not the same thing as the failure above: the lookup worked and these
+    // participants are not in it. Their rows are still owed, so they go out
+    // with the wording for a row that has no code — and it is said here,
+    // because a codeless alert should be traceable to a reason.
+    const unnamed = rows.filter((row) => !codes.has(row.participant_id));
+    if (unnamed.length > 0) {
+      console.warn(
+        `[safety-dispatch] ${unnamed.length} escalation(s) name a participant the lookup did not return; ` +
+          "they will be sent without a participant code",
+        { escalations: unnamed.map((row) => row.id) },
+      );
     }
   }
 
@@ -105,7 +141,7 @@ export async function dispatchPendingEscalations(
     // Sequential, not `Promise.all`. The batch is small, the providers are rate
     // limited, and a burst that trips a rate limit turns a recoverable delay
     // into a wall of failures.
-    const outcome = await deliverEscalation(service, row, codes.get(row.participant_id) ?? null);
+    const outcome = await deliver(service, row, codes.get(row.participant_id) ?? null);
     outcomes[outcome] += 1;
   }
 
@@ -117,7 +153,17 @@ export async function dispatchPendingEscalations(
     .select("id", { count: "exact", head: true })
     .in("status", ["pending", "failed"])
     .gte("attempts", MAX_ATTEMPTS);
-  const stuck = exhausted.count ?? 0;
+  // A number is the count; anything else is "not known", never a quiet zero
+  // (the rule `retentionPurge.ts` applies to `purgedCount`).
+  if (exhausted.error || typeof exhausted.count !== "number") {
+    const reason = exhausted.error?.message ?? "the count query returned no count";
+    console.error(
+      "[safety-dispatch] could not count exhausted escalations; reporting stuck as unknown, not 0",
+      reason,
+    );
+    return { attempted: rows.length, ...outcomes, stuck: null, stuck_error: reason };
+  }
+  const stuck = exhausted.count;
   if (stuck > 0) {
     console.error(
       `[safety-dispatch] ${stuck} escalation(s) have exhausted their attempts and nobody has been told. ` +
