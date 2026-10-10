@@ -56,7 +56,7 @@ DISTRESS_TERMS = (
 _KATAKANA_TO_HIRAGANA = {codepoint: codepoint - 0x60 for codepoint in range(0x30A1, 0x30F7)}
 
 
-def _fold_writing(value: str) -> str:
+def fold_writing(value: str) -> str:
     """Writing-system folding, applied to the text and to every term alike (#388).
 
     A Japanese keyboard offers more than one spelling of the same word, and the
@@ -124,32 +124,40 @@ ALL_SAFETY_TERMS = (
 )
 
 
-def _spellings(terms: tuple[str, ...]) -> tuple[str, ...]:
-    """Every spelling of ``terms``, folded: the written one plus any reading."""
+def spellings(
+    terms: tuple[str, ...], extra_readings: dict[str, tuple[str, ...]] | None = None,
+) -> tuple[str, ...]:
+    """Every spelling of ``terms``, folded: the written one plus any reading.
+
+    ``extra_readings`` is for a caller whose list carries a term the lexicons
+    above do not (``memory_objects.CRISIS_TERMS``, #392). A term both know is
+    read from ``KANA_SPELLINGS``, so its readings are kept in one place.
+    """
+    readings = {**(extra_readings or {}), **KANA_SPELLINGS}
     folded: list[str] = []
     for term in terms:
-        folded.append(_fold_writing(term))
-        folded.extend(_fold_writing(reading) for reading in KANA_SPELLINGS.get(term, ()))
+        folded.append(fold_writing(term))
+        folded.extend(fold_writing(reading) for reading in readings.get(term, ()))
     return tuple(dict.fromkeys(folded))
 
 
 #: What the assessment actually compares against. Built once, folded, so the
 #: text and the terms meet in one spelling.
-_SELF_HARM = _spellings(SELF_HARM_TERMS)
+_SELF_HARM = spellings(SELF_HARM_TERMS)
 #: Folded like the rest, but given no readings: see ``KANA_SPELLINGS`` on #290.
 #: Every term stays — 安全でいられない is still an imminence signal, it just does
 #: not gain あんぜんでいられない here. The reading reaches `_CANNOT_STAY_SAFE`,
 #: which is the check that term exists for.
-_IMMINENCE = tuple(dict.fromkeys(_fold_writing(term) for term in IMMINENCE_TERMS))
-_VIOLENCE = _spellings(VIOLENCE_TERMS)
-_ABUSE = _spellings(ABUSE_TERMS)
-_CONCEALMENT = _spellings(CONCEALMENT_TERMS)
-_PASSIVE_RISK = _spellings(PASSIVE_RISK_TERMS)
-_DISTRESS = _spellings(DISTRESS_TERMS)
-_EXPLICIT_LETHAL = _spellings(
+_IMMINENCE = tuple(dict.fromkeys(fold_writing(term) for term in IMMINENCE_TERMS))
+_VIOLENCE = spellings(VIOLENCE_TERMS)
+_ABUSE = spellings(ABUSE_TERMS)
+_CONCEALMENT = spellings(CONCEALMENT_TERMS)
+_PASSIVE_RISK = spellings(PASSIVE_RISK_TERMS)
+_DISTRESS = spellings(DISTRESS_TERMS)
+_EXPLICIT_LETHAL = spellings(
     ("kill myself", "end my life", "want to die", "suicide", "自殺", "死にたい")
 )
-_CANNOT_STAY_SAFE = _spellings(("cannot stay safe", "can't stay safe", "安全でいられない"))
+_CANNOT_STAY_SAFE = spellings(("cannot stay safe", "can't stay safe", "安全でいられない"))
 
 
 def _matches(content: str, terms: tuple[str, ...]) -> list[str]:
@@ -158,8 +166,8 @@ def _matches(content: str, terms: tuple[str, ...]) -> list[str]:
 
 def assess_safety(payload: SafetyAssessmentInput) -> SafetyAssessmentReturn:
     # Folded, not merely case-folded: the lexicons are compared in one
-    # spelling. See `_fold_writing`.
-    content = " ".join(_fold_writing(payload.content).split())
+    # spelling. See `fold_writing`.
+    content = " ".join(fold_writing(payload.content).split())
     if not content:
         return SafetyAssessmentReturn(
             risk_level="none", confidence=1.0, escalation_required=False,

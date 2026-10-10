@@ -30,6 +30,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from ..clock import utcnow
+from ..services.safety import fold_writing, spellings
 
 MEMORY_OBJECT_VERSION = "conversation-memory-object-v1"
 
@@ -69,6 +70,11 @@ CRISIS_TERMS = {
     "自殺", "死にたい", "消えたい", "殺したい", "傷つけたい",
     "suicide", "kill myself", "want to die", "self-harm", "hurt myself",
 }
+# The two terms above that the safety lexicons do not carry. Every other
+# reading comes from `app.services.safety.KANA_SPELLINGS`, so 「しにたい」 is
+# spelled out once for both the chat gate and this score (#392).
+_CRISIS_READINGS = {"殺したい": ("ころしたい",), "傷つけたい": ("きずつけたい",)}
+_CRISIS_SPELLINGS = spellings(tuple(sorted(CRISIS_TERMS)), _CRISIS_READINGS)
 
 IMPORTANCE_WEIGHTS = {
     "tone_intensity": 0.35,
@@ -141,8 +147,10 @@ def emotional_tone(text: str) -> Dict[str, Any]:
 
 
 def has_crisis_language(text: str) -> bool:
-    normalized = str(text or "").lower()
-    return any(term in normalized for term in CRISIS_TERMS)
+    # Folded the way the safety assessment folds, and compared against folded
+    # spellings: 「しにたい」「シニタイ」「ｼﾆﾀｲ」 are the same disclosure as 「死にたい」.
+    folded = fold_writing(str(text or ""))
+    return any(term in folded for term in _CRISIS_SPELLINGS)
 
 
 def jaccard(left: Set[str], right: Set[str]) -> float:

@@ -2,7 +2,11 @@
 
 from datetime import datetime
 
+import pytest
+
 from app.analytics.memory_objects import (
+    CRISIS_TERMS,
+    IMPORTANCE_WEIGHTS,
     PriorMemoryObject,
     RecallMessage,
     decay_factor,
@@ -78,6 +82,53 @@ def test_has_crisis_language_matches_ported_frontend_terms():
     assert has_crisis_language("I want to die honestly")
     assert has_crisis_language("self-harm crossed my mind")
     assert not has_crisis_language("I had a long day at school")
+
+
+# The spelling a Japanese keyboard happens to produce must not change the
+# crisis component (#392). Each kana form is checked against its kanji form
+# rather than against a literal, the way test_safety_assessment.py pairs them.
+@pytest.mark.parametrize(
+    ("written", "variant"),
+    [
+        ("もう死にたい", "もうしにたい"),
+        ("もう死にたい", "もうシニタイ"),
+        ("もう死にたい", "もうｼﾆﾀｲ"),
+        ("もう死にたい", "もう死ニタイ"),
+        ("消えたい", "きえたい"),
+        ("自殺を考えた", "じさつを考えた"),
+        ("あいつを殺したい", "あいつをころしたい"),
+        ("自分を傷つけたい", "自分をきずつけたい"),
+        ("i want to die", "Ｉ　ｗａｎｔ　ｔｏ　ｄｉｅ"),
+    ],
+)
+def test_crisis_flag_reads_every_spelling_like_the_written_form(written, variant):
+    assert has_crisis_language(written), written
+    assert has_crisis_language(variant), variant
+
+    written_score, written_breakdown = score_importance([_msg(1, "user", written)])
+    variant_score, variant_breakdown = score_importance([_msg(1, "user", variant)])
+    assert variant_breakdown["components"]["crisis_or_safety_flag"] == 1.0
+    assert variant_breakdown["components"]["crisis_or_safety_flag"] == written_breakdown["components"]["crisis_or_safety_flag"]
+    assert variant_score >= IMPORTANCE_WEIGHTS["crisis_or_safety_flag"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["今日は部屋のおそうじをした。", "あの子は自称ゲーマーらしい。", "きょうは体育祭でたのしかった"],
+)
+def test_crisis_flag_stays_down_for_ordinary_kana(text):
+    assert not has_crisis_language(text)
+    _, breakdown = score_importance([_msg(1, "user", text)])
+    assert breakdown["components"]["crisis_or_safety_flag"] == 0.0
+
+
+def test_crisis_readings_come_from_the_safety_lexicon():
+    """A reading added for the chat gate reaches this score without a second edit."""
+    from app.services import safety
+
+    for term in CRISIS_TERMS & set(safety.KANA_SPELLINGS):
+        for reading in safety.KANA_SPELLINGS[term]:
+            assert has_crisis_language(reading), reading
 
 
 def test_score_recurrence_counts_topic_or_embedding_matches_and_saturates():
