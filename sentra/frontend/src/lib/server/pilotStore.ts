@@ -16,7 +16,15 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { generateResearchCode, hashInviteCode, inviteCodePrefix, normalizeInviteCode } from "./inviteCodes";
+// `.ts` on the relative import so `node --test` can load this file as it is
+// (tests/pilot-store.test.mjs); Node's resolver does not guess extensions.
+import {
+  generateInviteCode,
+  generateResearchCode,
+  hashInviteCode,
+  inviteCodePrefix,
+  normalizeInviteCode,
+} from "./inviteCodes.ts";
 import type { PilotState } from "@/lib/pilotEnrollment";
 
 export type PilotStudy = {
@@ -364,7 +372,6 @@ export async function issueInvitations(
     isMinor?: boolean;
   },
 ): Promise<{ issued: IssuedInvitation[]; error?: string }> {
-  const { generateInviteCode } = await import("./inviteCodes");
   const issued: IssuedInvitation[] = [];
   const rows: Record<string, unknown>[] = [];
 
