@@ -44,6 +44,7 @@ from app.services.raw_text_crypto import encrypt_raw_text, expiry_from
 
 from ..analytics.graph_features import build_temporal_graph_diff
 from ..schemas.structured import EntrySubmissionResponse
+from .safety import SAFETY_ASSESSMENT_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -759,9 +760,9 @@ def _insert_model_runs_and_extraction(
                 "artifact_type": "safety_assessment",
                 "artifact_id": str(entry_id),
                 "provider": "rules",
-                "model": "safety-assessment-v1",
-                "prompt_version": "safety-assessment-v1",
-                "schema_version": "safety-assessment-v1",
+                "model": SAFETY_ASSESSMENT_VERSION,
+                "prompt_version": SAFETY_ASSESSMENT_VERSION,
+                "schema_version": SAFETY_ASSESSMENT_VERSION,
                 "pipeline_version": pipeline_version,
                 "temperature": 0,
                 "retrieval_config_json": {
