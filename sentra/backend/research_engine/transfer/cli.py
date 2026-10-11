@@ -6,6 +6,7 @@ python -m research_engine.transfer.cli prereg-status      # what still blocks th
 python -m research_engine.transfer.cli prereg-hash        # the hash a human copies into 凍結記録
 python -m research_engine.transfer.cli generate --seed 1 --missingness state_dependent --out /tmp/cohort
 python -m research_engine.transfer.cli consent-dry-run    # #212 refusals and exclusions, synthetic only
+python -m research_engine.transfer.cli audit --seed 1 --missingness state_dependent --out /tmp/audit
 ```
 
 `generate` needs `--seed` and `--missingness` spelled out: which seed and
@@ -25,6 +26,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
+from .audit import check_against_dictionary, public_view, run_audit
 from .consent_gate import consent_dry_run
 from .generator import MISSINGNESS_SCENARIOS, SyntheticCohortConfig, generate, manifest_hash, write_cohort
 from .preregistration import PREREGISTRATION_PATH, freeze_status, load_preregistration
@@ -69,6 +71,24 @@ def command_consent_dry_run(args: argparse.Namespace) -> int:
     return 0 if report["passed"] else 1
 
 
+def _write(path: Path, payload) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+
+
+def command_audit(args: argparse.Namespace) -> int:
+    cohort = generate(SyntheticCohortConfig(seed=args.seed, missingness=args.missingness, mnar_strength=args.mnar_strength))
+    report = run_audit(cohort.dataset, manifest=cohort.manifest, seed=args.seed)
+    checks = check_against_dictionary()
+    out = Path(args.out)
+    _write(out / "audit.json", report)
+    _write(out / "audit_public.json", public_view(report))
+    _write(out / "dictionary_check.json", checks)
+    agrees = all(row["agrees"] for row in checks)
+    print(json.dumps({"dictionary_agrees": agrees, "out": str(out)}, ensure_ascii=False))
+    return 0 if agrees else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="research_engine.transfer.cli", description="合成→実データ移転研究（#210）"
@@ -93,6 +113,13 @@ def build_parser() -> argparse.ArgumentParser:
     gate = subparsers.add_parser("consent-dry-run", help="同意・撤回ゲートを合成データだけで検証する（#212）")
     gate.add_argument("--seed", type=int, default=11)
     gate.set_defaults(handler=command_consent_dry_run)
+
+    audit = subparsers.add_parser("audit", help="測定・入力過程を参加者単位で監査する（#214、合成データ）")
+    audit.add_argument("--seed", type=int, required=True)
+    audit.add_argument("--missingness", choices=MISSINGNESS_SCENARIOS, required=True)
+    audit.add_argument("--mnar-strength", type=float, default=1.0)
+    audit.add_argument("--out", required=True)
+    audit.set_defaults(handler=command_audit)
     return parser
 
 
