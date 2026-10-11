@@ -88,6 +88,10 @@ npm run reset       # wipe synthetic-account content only (reset isolation)
 npm run smoke       # 12 stratified live cases (screenshots/video captured)
 npm run full -- --confirm-full          # full 300-conversation matrix
 npm run full -- --resume <runId> --confirm-full   # resume an aborted run
+# A resume must use the run's own command and selection: `--limit`, `smoke`
+# on a full run, or any case the run recorded that is not in the selection is
+# refused before anything runs (#376). The run is written `completed` only
+# when its verdict covers every case.
 npm test            # 21 unit tests (graders, matrix, cost, verdict, PDF)
 ```
 

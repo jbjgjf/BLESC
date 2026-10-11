@@ -148,6 +148,21 @@ export function liveRunnerDeps(env: EvalEnv): RunnerDeps {
   };
 }
 
+/**
+ * A resume that would not cover the run it resumes.
+ *
+ * #376 offered two answers to "a prior graded case is not in this selection":
+ * refuse, or record how many could not be restored and mark the run
+ * incomplete. This refuses. Every way into that state is an operator choosing a
+ * narrower selection than the run had — `smoke` on a `full` run, `--limit`, or
+ * a change to how case keys are built — and none of them produces a run whose
+ * verdict means anything. Refusing costs nothing (it happens before any case is
+ * driven); recording would spend money on a run that can only end incomplete.
+ * `summarizeRun` still checks coverage independently, so if a partial result
+ * set ever reached it the run would not be written as `completed`.
+ */
+export class ResumeSelectionMismatch extends Error {}
+
 export interface RunOptions {
   env: EvalEnv;
   admin: SupabaseClient;
@@ -177,14 +192,33 @@ export async function executeRun(
   let doneKeys = new Set<string>();
   let caseIdByKey = new Map<string, string>();
   let results: CaseResult[] = [];
+  let priorCaseKeys: string[] = [];
   if (runId) {
+    const runRow = await admin.from("evaluation_runs").select("id,mode,status").eq("id", runId).maybeSingle();
+    if (runRow.error) throw new Error(`resume ${runId}: ${runRow.error.message}`);
+    if (!runRow.data) throw new ResumeSelectionMismatch(`resume ${runId}: no such evaluation run`);
+    if (runRow.data.mode !== mode) {
+      throw new ResumeSelectionMismatch(
+        `resume ${runId}: the run is a ${runRow.data.mode} run; resuming it as ${mode} would grade a different set of cases`);
+    }
     // Restore graded cases into the result set so the resumed run's summary,
     // gates, and artifacts cover the WHOLE run, not just the re-run tail.
     const prior = await admin.from("evaluation_cases")
       .select("id,case_key,status,transcript_json,deterministic_json,judge_json,failure_kinds,human_review,human_review_reason,trace_ref")
       .eq("run_id", runId);
-    ({ results, doneKeys, caseIdByKey } = restorePriorCases((prior.data ?? []) as PriorCaseRow[], scenarios));
-    console.log(`[run] resuming ${runId}: ${doneKeys.size} cases already graded`);
+    if (prior.error) throw new Error(`resume ${runId}: ${prior.error.message}`);
+    const restored = restorePriorCases((prior.data ?? []) as PriorCaseRow[], scenarios);
+    if (restored.outsideSelection.length) {
+      throw new ResumeSelectionMismatch(
+        `resume ${runId}: ${restored.outsideSelection.length} of the run's cases are not in this selection `
+        + `(${scenarios.length} cases; e.g. ${restored.outsideSelection.slice(0, 3).join(", ")}). `
+        + "Resume with the selection the run started with — no --limit, same command.");
+    }
+    ({ results, doneKeys, caseIdByKey } = restored);
+    priorCaseKeys = [...caseIdByKey.keys()];
+    console.log(
+      `[run] resuming ${runId}: restored ${results.length} graded case(s) and treating ${doneKeys.size} as done; `
+      + `${restored.rerunKeys.length} prior case(s) will be re-run, ${scenarios.length - doneKeys.size} to run in all`);
   } else {
     const created = await admin.from("evaluation_runs").insert({
       label, mode, status: "running",
@@ -376,7 +410,11 @@ export async function executeRun(
     label, mode, results, reviewerCheckPassed,
     spentUsd: cost.total(),
     evalRefs: [evalRefsResult.evalId, evalRefsResult.runId].filter((ref): ref is string => Boolean(ref)),
+    expectedCaseKeys: [...new Set([...priorCaseKeys, ...scenarios.map((scenario) => scenario.caseKey)])],
   });
+  // `completed` claims the verdict covers the run. If it does not, the run is
+  // left resumable instead (#376).
+  const runStatus = summary.coverage.covered === summary.coverage.expected ? "completed" : "aborted";
   const { verdict, totals, gates, findings } = summary;
 
   // Artifacts: files + DB rows.
@@ -433,7 +471,7 @@ export async function executeRun(
   console.log(`[artifacts] ${artifactRows.length} rows · ${artifactRows.filter((row) => row.storage_path).length} objects in ${ARTIFACT_BUCKET}`);
 
   await admin.from("evaluation_runs").update({
-    status: "completed", verdict,
+    status: runStatus, verdict,
     totals_json: totals, gates_json: gates, findings_json: findings,
     recommended_actions_json: summary.recommendedActions,
     limitations: summary.limitations,

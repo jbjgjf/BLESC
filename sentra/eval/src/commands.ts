@@ -1,0 +1,144 @@
+// The CLI's decisions, separate from its entry point so they can be tested
+// without running anything (#385): argument parsing, case selection, the
+// pre-run cost gate, and which command does what. `cli.ts` only wires these to
+// the real environment.
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { COST_LIMITS, MATRIX, type EvalEnv } from "./config.ts";
+import type { ScenarioCase } from "./contracts.ts";
+import { estimateRunUsd } from "./cost.ts";
+import type { ProvisionedAccounts } from "./provision.ts";
+import type { RunOptions } from "./runner.ts";
+import type { RunSummary } from "./artifacts.ts";
+import { buildMatrix, smokeSelection } from "./scenarios.ts";
+
+export const USAGE =
+  "usage: cli.ts provision|reset|smoke|full [--confirm-full] [--resume <runId>] [--limit <n>] [--media]";
+
+/** A refusal before anything runs. The CLI exits 2 with the message. */
+export class UsageError extends Error {}
+
+export interface CliArgs {
+  command: string | undefined;
+  confirmFull: boolean;
+  resumeRunId?: string;
+  limit?: number;
+  media: boolean;
+}
+
+export function parseArgs(argv: string[]): CliArgs {
+  const valueOf = (name: string): string | undefined => {
+    const index = argv.indexOf(name);
+    if (index < 0) return undefined;
+    const value = argv[index + 1];
+    if (value === undefined || value.startsWith("--")) throw new UsageError(`${name} needs a value`);
+    return value;
+  };
+  const limitText = valueOf("--limit");
+  let limit: number | undefined;
+  if (limitText !== undefined) {
+    // `Number("abc") > 0` is false, which used to mean "no limit" — a typo
+    // silently ran the whole matrix.
+    limit = Number(limitText);
+    if (!Number.isInteger(limit) || limit <= 0) throw new UsageError(`--limit must be a positive integer (got ${limitText})`);
+  }
+  return {
+    command: argv[0],
+    confirmFull: argv.includes("--confirm-full"),
+    resumeRunId: valueOf("--resume"),
+    limit,
+    media: argv.includes("--media"),
+  };
+}
+
+/** The cases a smoke or full run will drive. */
+export function selectScenarios(args: CliArgs, all: ScenarioCase[] = buildMatrix()): ScenarioCase[] {
+  if (args.resumeRunId && args.limit !== undefined) {
+    // A resumed run must cover the run it resumes (#376); a limit can only
+    // narrow it. Refused here, before reset and provisioning, as well as in
+    // executeRun, which also catches `smoke --resume <a full run>`.
+    throw new UsageError("--resume cannot be combined with --limit: a resumed run must cover every case of the run it resumes");
+  }
+  const scenarios = args.command === "smoke" ? smokeSelection(all) : all;
+  return args.limit !== undefined ? scenarios.slice(0, args.limit) : scenarios;
+}
+
+/** What the CLI needs from the outside world. Tests pass fakes. */
+export interface CliDeps {
+  loadEnv(): EvalEnv;
+  provisionAccounts(env: EvalEnv): Promise<ProvisionedAccounts>;
+  resetSyntheticData(env: EvalEnv): Promise<{ wipedUsers: number }>;
+  adminClient(env: EvalEnv): SupabaseClient;
+  executeRun(options: RunOptions): Promise<{ runId: string; summary: RunSummary }>;
+  now(): Date;
+  log(message: string): void;
+  error(message: string): void;
+}
+
+/** Runs one CLI invocation and returns the exit code. */
+export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
+  let args: CliArgs;
+  try {
+    args = parseArgs(argv);
+  } catch (error) {
+    if (error instanceof UsageError) {
+      deps.error(`[plan] ${error.message}`);
+      return 2;
+    }
+    throw error;
+  }
+  const { command } = args;
+  if (command !== "provision" && command !== "reset" && command !== "smoke" && command !== "full") {
+    deps.error(USAGE);
+    return 2;
+  }
+
+  const env = deps.loadEnv();
+  if (command === "provision") {
+    const accounts = await deps.provisionAccounts(env);
+    deps.log(`[provision] ${accounts.passwords.size} synthetic accounts ready · org ${accounts.orgId}`);
+    deps.log("[provision] passwords generated in memory for this process only (not persisted)");
+    return 0;
+  }
+  if (command === "reset") {
+    const { wipedUsers } = await deps.resetSyntheticData(env);
+    deps.log(`[reset] wiped content for ${wipedUsers} synthetic accounts`);
+    return 0;
+  }
+
+  let scenarios: ScenarioCase[];
+  try {
+    scenarios = selectScenarios(args);
+  } catch (error) {
+    if (error instanceof UsageError) {
+      deps.error(`[plan] ${error.message}`);
+      return 2;
+    }
+    throw error;
+  }
+  const estimate = estimateRunUsd(scenarios.length, (MATRIX.minTurns + MATRIX.maxTurns) / 2);
+  deps.log(`[plan] ${scenarios.length} conversations · est ~${Math.round(estimate.tokens / 1000)}k tokens ≈ US$${estimate.usd.toFixed(2)} (warn $${COST_LIMITS.warnUsd} / stop $${COST_LIMITS.hardStopUsd})`);
+  if (command === "full" && !args.confirmFull) {
+    deps.error("[plan] full run requires --confirm-full");
+    return 2;
+  }
+  if (estimate.usd >= COST_LIMITS.hardStopUsd) {
+    deps.error("[plan] refusing to start: estimate exceeds the hard stop");
+    return 2;
+  }
+
+  await deps.resetSyntheticData(env);
+  const accounts = await deps.provisionAccounts(env);
+  const admin = deps.adminClient(env);
+  const stamp = deps.now().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const { runId, summary } = await deps.executeRun({
+    env, admin, accounts, scenarios,
+    mode: command,
+    label: `${command}-${stamp}`,
+    artifactsDir: `artifacts/${command}-${stamp}`,
+    captureMedia: command === "smoke" || args.media,
+    resumeRunId: args.resumeRunId,
+  });
+  deps.log(`[done] run ${runId}: ${summary.verdict} · artifacts in artifacts/${command}-${stamp}/`);
+  return 0;
+}

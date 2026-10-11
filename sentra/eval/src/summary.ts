@@ -62,23 +62,45 @@ export interface PriorCaseRow {
 export interface RestoredCases {
   /** Graded cases put back into the result set. */
   results: CaseResult[];
-  /** Case keys the run loop skips. */
+  /** Case keys the run loop skips — exactly the keys of `results`. */
   doneKeys: Set<string>;
   /** Every prior case's row id, so resumed runs can still link media to its case. */
   caseIdByKey: Map<string, string>;
+  /** Prior cases in the selection that are not graded (or cannot be read back); the run re-runs them. */
+  rerunKeys: string[];
+  /** Prior cases that are not in the current selection at all. */
+  outsideSelection: string[];
 }
 
-/** Puts a resumed run's already-graded cases back into the result set. */
+/**
+ * Puts a resumed run's already-graded cases back into the result set.
+ *
+ * A case is "done" only once it is in `results`. It used to be marked done
+ * first and dropped after, when its scenario was not in the selection or its
+ * grade could not be read: such a case was then neither re-run nor counted,
+ * and the run's verdict silently covered a subset of it (#376). Now a prior
+ * case lands in exactly one of `results`, `rerunKeys`, or `outsideSelection`,
+ * and the caller decides what an `outsideSelection` case means — the runner
+ * refuses to resume (see `executeRun`).
+ */
 export function restorePriorCases(rows: PriorCaseRow[], scenarios: ScenarioCase[]): RestoredCases {
+  const byKey = new Map(scenarios.map((scenario) => [scenario.caseKey, scenario]));
   const results: CaseResult[] = [];
   const doneKeys = new Set<string>();
   const caseIdByKey = new Map<string, string>();
+  const rerunKeys: string[] = [];
+  const outsideSelection: string[] = [];
   for (const row of rows) {
     caseIdByKey.set(row.case_key, row.id);
-    if (row.status !== "passed" && row.status !== "failed") continue;
-    doneKeys.add(row.case_key);
-    const scenario = scenarios.find((candidate) => candidate.caseKey === row.case_key);
-    if (!scenario || !row.deterministic_json) continue;
+    const scenario = byKey.get(row.case_key);
+    if (!scenario) {
+      outsideSelection.push(row.case_key);
+      continue;
+    }
+    if ((row.status !== "passed" && row.status !== "failed") || !row.deterministic_json) {
+      rerunKeys.push(row.case_key);
+      continue;
+    }
     results.push({
       scenario,
       transcript: (row.transcript_json ?? []) as TurnRecord[],
@@ -91,8 +113,9 @@ export function restorePriorCases(rows: PriorCaseRow[], scenarios: ScenarioCase[
       traceRef: row.trace_ref ?? undefined,
       usage: { inputTokens: 0, outputTokens: 0 },
     });
+    doneKeys.add(row.case_key);
   }
-  return { results, doneKeys, caseIdByKey };
+  return { results, doneKeys, caseIdByKey, rerunKeys, outsideSelection };
 }
 
 export interface SummaryInputs {
@@ -103,16 +126,33 @@ export interface SummaryInputs {
   reviewerCheckPassed: boolean;
   spentUsd: number;
   evalRefs: string[];
+  /**
+   * Every case this run is made of: the selection plus any case an earlier
+   * attempt of the same run recorded. The verdict covers the run only if
+   * `results` covers all of these.
+   */
+  expectedCaseKeys: string[];
 }
 
 export function summarizeRun(inputs: SummaryInputs): RunSummary {
   const { results } = inputs;
   const gates = computeGates(results);
+  const graded = new Set(results.map((result) => result.scenario.caseKey));
+  const expected = new Set(inputs.expectedCaseKeys);
+  const coverage = { expected: expected.size, covered: [...expected].filter((key) => graded.has(key)).length };
   const computed = computeVerdict(results);
   // A broken reviewer path means the report cannot be trusted to reach its
   // audience — never "ready" in that state.
-  const verdict = inputs.reviewerCheckPassed || computed !== "ready" ? computed : "needs_attention";
+  const reviewed = inputs.reviewerCheckPassed || computed !== "ready" ? computed : "needs_attention";
+  // A verdict over part of a run is not the run's verdict. The gates are
+  // absolute counts (critical violations = 0), so "0 of 12" and "0 of 420"
+  // would otherwise read the same. Red stays red: a failure in the part that
+  // was graded is still a failure.
+  const verdict = coverage.covered < coverage.expected && reviewed === "ready" ? "incomplete" : reviewed;
   const findings = buildFindings(results, gates);
+  if (coverage.covered < coverage.expected) {
+    findings.unshift(`Only ${coverage.covered} of ${coverage.expected} cases in this run were graded — the verdict does not cover the run.`);
+  }
   const totals = buildTotals(results);
   if (!inputs.reviewerCheckPassed) {
     findings.unshift("Reviewer could not open /evaluation through the normal frontend — the boss-facing dashboard is unreachable for this run.");
@@ -122,6 +162,7 @@ export function summarizeRun(inputs: SummaryInputs): RunSummary {
     mode: inputs.mode,
     verdict,
     totals,
+    coverage,
     gates,
     findings,
     byLanguage: computeByLanguage(results),
