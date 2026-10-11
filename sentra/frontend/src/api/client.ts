@@ -25,6 +25,7 @@ import {
   StudentAccessRecord,
 } from "./models";
 import { supabase } from "@/lib/supabase/client";
+import { attributableThemes } from "@/lib/educatorThemes";
 import { NO_CONSENT, consentSnapshot, normalizeConsent, type ConsentState } from "@/lib/consent";
 import type { PilotState } from "@/lib/pilotEnrollment";
 import type { GuardianVerificationStatus } from "@/lib/guardianVerification";
@@ -1462,7 +1463,7 @@ export class ApiClient {
     const [insightsResult, safetyResult] = await Promise.all([
       supabase
         .from("insights")
-        .select("day, graph_summary_json")
+        .select("day, entry_id, graph_summary_json")
         .eq("participant_id", participantId)
         .order("day", { ascending: false })
         .limit(30),
@@ -1477,20 +1478,14 @@ export class ApiClient {
     if (insightsResult.error) throwSupabaseError(t.apiError.loadStudentSignals, insightsResult.error);
     if (safetyResult.error) throwSupabaseError(t.apiError.loadStudentSafety, safetyResult.error);
 
-    type InsightRowLite = { day: string; graph_summary_json: Record<string, JsonValue> | null };
+    type InsightRowLite = { day: string; entry_id: string | null; graph_summary_json: Record<string, JsonValue> | null };
     const rows = (insightsResult.data ?? []) as InsightRowLite[];
-    const themeCounts = new Map<string, number>();
-    for (const row of rows) {
-      const keyNodes = Array.isArray(row.graph_summary_json?.key_nodes) ? row.graph_summary_json.key_nodes : [];
-      for (const node of keyNodes as Array<Record<string, JsonValue>>) {
-        const label = typeof node?.label === "string" ? node.label : null;
-        if (label) themeCounts.set(label, (themeCounts.get(label) ?? 0) + 1);
-      }
-    }
-    const themes = [...themeCounts.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .slice(0, 5)
-      .map(([label, count]) => ({ label, count }));
+    // Counted only from occurrences that trace back to an entry the student
+    // wrote (#100). Every label used to be counted, so on a day extraction fell
+    // back to its template, 「いまの気持ち」「日記を書いた」 became this student's
+    // recurring themes. `entry_id` is selected for that check alone; it is an id,
+    // and the educator RLS policy already covers the row.
+    const { themes } = attributableThemes(rows);
 
     void this.recordEducatorAccess(student, "student_overview");
 
