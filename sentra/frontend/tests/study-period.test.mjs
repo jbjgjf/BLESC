@@ -144,6 +144,16 @@ const HISTORY = /#315|issues\/315|v2/;
 const SCANNED = [
   "README.md",
   "docs/transfer_study_preregistration.md",
+  // The rest of the transfer study (#211-#216). Each describes the synthetic
+  // participants or the analysis in terms of the study period, and a stale
+  // period in any of them would put the synthetic shape out of step with the
+  // pilot's.
+  "docs/transfer_study_freeze_procedure.md",
+  "docs/transfer_study_synthetic_generator.md",
+  "docs/transfer_study_consent_matrix.md",
+  "docs/transfer_study_measurement_audit.md",
+  "docs/transfer_study_rank_transfer.md",
+  "docs/transfer_study_report_template.md",
   "docs/pilot",
   "docs/legal",
   "docs/rollout",
@@ -197,6 +207,7 @@ describe("no current description still states the old period", () => {
       "sentra/frontend/src/lib/server/crisisTriage.ts",
       "sentra/docs/world-model/math-dynamics.md",
       "docs/transfer_study_preregistration.md",
+      "docs/transfer_study_synthetic_generator.md",
     ]) {
       assert.ok(files.includes(expected), `${expected} is not scanned`);
     }
