@@ -1,10 +1,15 @@
-"""Entry gates for the learned stages of #102 — Stage 2 partial pooling (#99).
+"""Entry gates for the learned stages of #102 — Stage 2 partial pooling (#99)
+and Stage 3 relation-specific attention (#100).
 
 #99 forbids fitting a hierarchical model until four things are true: a
 data-sufficiency analysis has defined the required observations, enough real
 consented data exists, a governance/ethics review has approved the analysis,
-and the estimand and its non-diagnostic use are written down. This module is
-that sentence as code. **It fits nothing, reads no data, and estimates nothing.**
+and the estimand and its non-diagnostic use are written down. #100 forbids
+training relation-specific attention until the deterministic baseline is
+stable, training volume and label quality pass a documented sufficiency gate,
+and a #90-style pre-registration states the hypothesis and what would falsify
+it. This module is those sentences as code. **It fits nothing, trains nothing,
+reads no data, and estimates nothing.**
 
 **Nothing here opens a gate.** There is no flag, environment variable or
 argument that does. A gate opens only when all of these exist at once:
@@ -18,9 +23,10 @@ argument that does. A gate opens only when all of these exist at once:
 3. a pointer to a governance approval whose scope names this stage and this
    pre-registration version.
 
-Until then `evaluate_stage2_entry_gate()` returns `open=False` with every
-reason as a stable code, and the stage's output is its fallback,
-`not_enough_data` — never a fixed population default (#91).
+Until then each `evaluate_stage*_entry_gate()` returns `open=False` with every
+reason as a stable code, and the stage's output is its fallback: Stage 2's is
+`not_enough_data`, never a fixed population default (#91); Stage 3's is the
+deterministic relation-aware traversal (#96), which is what ships today.
 
 Three gates sit at three different moments and are not interchangeable:
 
@@ -36,7 +42,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from ..analytics.data_sufficiency import (
     REQUIREMENT_EXCEEDS_DESIGN,
@@ -46,6 +52,7 @@ from ..analytics.data_sufficiency import (
     SufficiencyAssessment,
     assess_observation_sufficiency,
 )
+from .schema import RELATIONS
 
 #: Reason codes this module adds to the sufficiency codes. Stable strings.
 PREREGISTRATION_INCOMPLETE = "preregistration_incomplete"
@@ -55,6 +62,15 @@ ESTIMAND_UNDECIDED = "estimand_undecided"
 INTENDED_USE_UNDECIDED = "intended_use_undecided"
 GOVERNANCE_APPROVAL_MISSING = "governance_approval_missing"
 GOVERNANCE_APPROVAL_OUT_OF_SCOPE = "governance_approval_out_of_scope"
+HYPOTHESIS_UNDECIDED = "hypothesis_undecided"
+FALSIFICATION_UNDECIDED = "falsification_undecided"
+BASELINE_NOT_PINNED = "deterministic_baseline_not_pinned"
+BASELINE_CHANGED_SINCE_PINNED = "deterministic_baseline_changed_since_pinned"
+LABEL_REQUIREMENT_UNDECIDED = "label_requirement_undecided"
+HUMAN_LABELS_UNCOUNTED = "human_labels_uncounted"
+TOO_FEW_HUMAN_LABELS = "too_few_human_labelled_cases"
+AGREEMENT_UNMEASURED = "inter_rater_agreement_unmeasured"
+AGREEMENT_BELOW_REQUIREMENT = "inter_rater_agreement_below_requirement"
 
 #: What a closed or rolled-back Stage 2 returns. The same string the
 #: orchestrator writes below the personal-baseline gate, so a consumer sees one
@@ -123,17 +139,28 @@ class StageEvidence:
 
     observed: Optional[ObservedCounts] = None
     approvals: Tuple[GovernanceApproval, ...] = ()
+    #: Stage 3 only. Benchmark cases whose evidence paths a human labelled (#88),
+    #: and the measured agreement between raters. `None` is "not counted" /
+    #: "not measured", which is not the same as zero.
+    human_labelled_cases: Optional[int] = None
+    inter_rater_agreement: Optional[float] = None
 
 
 def current_evidence() -> StageEvidence:
-    """The evidence this repository holds, as of this commit: none.
+    """The evidence this repository holds, as of this commit.
 
     No real data is read — there is no code path that could read it — and no
-    governance approval of either learned stage has been recorded. Written as a
-    function rather than left implicit so the closed state is something a test
-    asserts, not something a reader infers.
+    governance approval of either learned stage has been recorded. The one thing
+    the repository can count is how many #88 benchmark cases carry human labels;
+    no inter-rater agreement has been measured. Written as a function rather than
+    left implicit so the closed state is something a test asserts, not something
+    a reader infers.
     """
-    return StageEvidence()
+    # Imported here, not at module level: the benchmark belongs to another
+    # workstream, and the gates should not fail to import because it moved.
+    from ..services.benchmark_cases import CASE_COMPOSITION
+
+    return StageEvidence(human_labelled_cases=int(CASE_COMPOSITION["human_labelled"]))
 
 
 @dataclass(frozen=True)
@@ -264,6 +291,229 @@ def evaluate_stage2_entry_gate(evidence: Optional[StageEvidence] = None) -> Entr
         preregistration_version=prereg.version,
         sufficiency=sufficiency,
     )
+
+
+# ── Stage 3: relation-specific attention (#100) ──────────────────────────────
+
+STAGE3 = "stage3_relation_attention"
+
+#: What a closed Stage 3 leaves in place: the fixed-rule traversal of #96, the
+#: only path-producing output the product has.
+DETERMINISTIC_TRAVERSAL = "deterministic_traversal"
+
+#: Mirrors `sentra/docs/stage3_relation_attention_preregistration.md`.
+STAGE3_PREREGISTRATION = Preregistration(
+    stage=STAGE3,
+    issue="#100",
+    version="stage3-prereg-draft-0",
+    document="sentra/docs/stage3_relation_attention_preregistration.md",
+    items=(
+        PreregistrationItem("hypothesis", "仮説"),
+        PreregistrationItem("falsification", "反証条件"),
+        PreregistrationItem("primary_metric", "主要評価指標"),
+        PreregistrationItem("baseline_versions", "比較に固定する決定論的基準の版"),
+        PreregistrationItem("ablations", "ablation の組"),
+        PreregistrationItem("per_language_reporting", "言語別の報告と判定"),
+        PreregistrationItem("train_split", "版付きの学習分割"),
+        PreregistrationItem("seeds", "seed の数と分散の報告"),
+        PreregistrationItem("calibration", "較正の基準"),
+        PreregistrationItem("failure_families", "失敗ファミリー"),
+        PreregistrationItem("attribution_evaluation", "帰属の評価"),
+        PreregistrationItem("required_observations", "必要な観測量"),
+        PreregistrationItem("label_requirement", "人手ラベルの量と一致度"),
+        PreregistrationItem("consent_scope", "必要な同意の範囲"),
+        PreregistrationItem("governance_body", "承認の主体と記録の置き場所"),
+        PreregistrationItem(
+            "comparators",
+            "比較対象",
+            decided="keyword; deterministic traversal (#96); relation-agnostic GNN; type/provenance ablations",
+            fixed_by="#100 acceptance criteria",
+        ),
+        PreregistrationItem(
+            "educator_exposure",
+            "教職員向けの出力",
+            decided="outputs without an attributable observation path are excluded",
+            fixed_by="#100 acceptance criteria, #102",
+        ),
+        PreregistrationItem(
+            "online_learning", "参加者からのオンライン学習", decided="none", fixed_by="#100 acceptance criteria"
+        ),
+        PreregistrationItem(
+            "attention_as_explanation",
+            "注意重みの扱い",
+            decided="raw attention weights are model internals, not validated explanations",
+            fixed_by="#100 acceptance criteria, #102",
+        ),
+    ),
+)
+
+#: One learned parameter set per relation type, so each type needs its own data.
+STAGE3_OBSERVATION_REQUIREMENT = ObservationRequirement(
+    stage=STAGE3,
+    must_decide=(
+        "min_participants",
+        "min_days_per_participant",
+        "min_effective_sample_size",
+        "min_edges_per_relation_type",
+    ),
+    relation_types=tuple(RELATIONS),
+)
+
+
+@dataclass(frozen=True)
+class LabelRequirement:
+    """Label quality #100 needs. `None` is 未決定 — a pre-registration item."""
+
+    min_human_labelled_cases: Optional[int] = None
+    min_inter_rater_agreement: Optional[float] = None
+    #: Which statistic `min_inter_rater_agreement` is stated in (kappa, alpha, ...).
+    agreement_statistic: Optional[str] = None
+
+    def undecided(self) -> Tuple[str, ...]:
+        return tuple(
+            name
+            for name in ("min_human_labelled_cases", "min_inter_rater_agreement", "agreement_statistic")
+            if getattr(self, name) is None
+        )
+
+
+STAGE3_LABEL_REQUIREMENT = LabelRequirement()
+
+_BASELINE_STABLE = "deterministic_baseline_stable"
+_TRAINING_DATA_SUFFICIENT = "training_data_sufficient"
+_LABEL_QUALITY = "label_quality_sufficient"
+_HYPOTHESIS_PREREGISTERED = "hypothesis_and_falsification_preregistered"
+
+
+def current_baseline_versions() -> Dict[str, str]:
+    """The deterministic contract a Stage 3 model would be compared against."""
+    from ..temporal.model import CONTRACT_VERSION
+    from ..traversal.relations import RELATION_RULES_VERSION
+    from ..traversal.walk import GRAPH_TRAVERSAL_VERSION
+
+    return {
+        "temporal_graph": CONTRACT_VERSION,
+        "relation_rules": RELATION_RULES_VERSION,
+        "traversal": GRAPH_TRAVERSAL_VERSION,
+    }
+
+
+def evaluate_stage3_entry_gate(evidence: Optional[StageEvidence] = None) -> EntryGateDecision:
+    """#100's Entry Gate. Closed unless every condition holds; every failure is listed."""
+    evidence = evidence if evidence is not None else current_evidence()
+    prereg = STAGE3_PREREGISTRATION
+    requirement = STAGE3_OBSERVATION_REQUIREMENT
+
+    reasons = _baseline_reasons(prereg, current_baseline_versions())
+
+    sufficiency = assess_observation_sufficiency(requirement, evidence.observed)
+    reasons.extend(
+        GateReason(_TRAINING_DATA_SUFFICIENT, reason.code, reason.detail) for reason in sufficiency.reasons
+    )
+    reasons.extend(_requirement_provenance(requirement, prereg))
+    reasons.extend(_label_reasons(STAGE3_LABEL_REQUIREMENT, evidence))
+
+    for key, code in (("hypothesis", HYPOTHESIS_UNDECIDED), ("falsification", FALSIFICATION_UNDECIDED)):
+        if prereg.item(key).decided is None:
+            reasons.append(
+                GateReason(
+                    _HYPOTHESIS_PREREGISTERED,
+                    code,
+                    f"{prereg.item(key).title} ({key}) is 未決定 in {prereg.document}",
+                )
+            )
+    # Real data needs an approval whatever the claim; #100 makes no synthetic-only exception
+    # for anything that could reach a product surface.
+    reasons.extend(_approval_reasons(prereg, evidence.approvals))
+    reasons.extend(
+        _preregistration_reasons(prereg, exclude=("hypothesis", "falsification", "baseline_versions"))
+    )
+
+    return EntryGateDecision(
+        stage=prereg.stage,
+        issue=prereg.issue,
+        open=not reasons,
+        reasons=tuple(reasons),
+        fallback=DETERMINISTIC_TRAVERSAL,
+        preregistration_version=prereg.version,
+        sufficiency=sufficiency,
+    )
+
+
+def _baseline_reasons(prereg: Preregistration, versions: Mapping[str, str]) -> List[GateReason]:
+    """Whether the baseline is stable is a declaration, so the pre-registration pins it.
+
+    Pinned as `name=version` pairs separated by `;`. A pin that no longer matches
+    the code means the baseline moved after the comparison was registered.
+    """
+    current = "; ".join(f"{name}={version}" for name, version in sorted(versions.items()))
+    pinned = prereg.item("baseline_versions").decided
+    if pinned is None:
+        return [
+            GateReason(
+                _BASELINE_STABLE,
+                BASELINE_NOT_PINNED,
+                f"no deterministic baseline version is pinned in {prereg.document}; current: {current}",
+            )
+        ]
+    if pinned != current:
+        return [
+            GateReason(
+                _BASELINE_STABLE,
+                BASELINE_CHANGED_SINCE_PINNED,
+                f"pinned {pinned!r}, but the code is now {current!r}",
+            )
+        ]
+    return []
+
+
+def _label_reasons(requirement: LabelRequirement, evidence: StageEvidence) -> List[GateReason]:
+    reasons: List[GateReason] = []
+    count = evidence.human_labelled_cases
+    undecided = requirement.undecided()
+    if undecided:
+        reasons.append(
+            GateReason(
+                _LABEL_QUALITY,
+                LABEL_REQUIREMENT_UNDECIDED,
+                f"{', '.join(undecided)} 未決定 (label_requirement). #88 sized the case set at 60-100; "
+                "how many must be human-labelled, and at what agreement, is not decided",
+            )
+        )
+    if count is None:
+        reasons.append(GateReason(_LABEL_QUALITY, HUMAN_LABELS_UNCOUNTED, "human-labelled cases were not counted"))
+    elif requirement.min_human_labelled_cases is None or count < requirement.min_human_labelled_cases:
+        reasons.append(
+            GateReason(
+                _LABEL_QUALITY,
+                TOO_FEW_HUMAN_LABELS,
+                f"{count} benchmark case(s) carry human-labelled evidence paths"
+                + (
+                    f"; {requirement.min_human_labelled_cases} required"
+                    if requirement.min_human_labelled_cases is not None
+                    else "; the minimum is undecided, and no count clears an undecided minimum"
+                ),
+            )
+        )
+    agreement = evidence.inter_rater_agreement
+    if agreement is None:
+        reasons.append(
+            GateReason(_LABEL_QUALITY, AGREEMENT_UNMEASURED, "no inter-rater agreement has been measured")
+        )
+    elif requirement.min_inter_rater_agreement is None or agreement < requirement.min_inter_rater_agreement:
+        reasons.append(
+            GateReason(
+                _LABEL_QUALITY,
+                AGREEMENT_BELOW_REQUIREMENT,
+                f"agreement {agreement} does not clear "
+                + (
+                    str(requirement.min_inter_rater_agreement)
+                    if requirement.min_inter_rater_agreement is not None
+                    else "an undecided minimum"
+                ),
+            )
+        )
+    return reasons
 
 
 # ── shared condition checks ──────────────────────────────────────────────────

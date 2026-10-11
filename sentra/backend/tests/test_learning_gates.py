@@ -1,4 +1,4 @@
-"""The learned stages are closed, and say why (#99).
+"""The learned stages are closed, and say why (#99, #100).
 
 These tests pin the state of the repository rather than a behaviour someone
 might want: today there is no real data, no approval and no decided
@@ -15,6 +15,7 @@ from __future__ import annotations
 import inspect
 import json
 import re
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -30,21 +31,41 @@ from app.analytics.data_sufficiency import (
 from app.analytics.dynamics import MeasureStatus
 from app.ontology import learning_gates
 from app.ontology.learning_gates import (
+    AGREEMENT_BELOW_REQUIREMENT,
+    AGREEMENT_UNMEASURED,
+    BASELINE_CHANGED_SINCE_PINNED,
+    BASELINE_NOT_PINNED,
+    DETERMINISTIC_TRAVERSAL,
     ESTIMAND_UNDECIDED,
+    FALSIFICATION_UNDECIDED,
     GOVERNANCE_APPROVAL_MISSING,
     GOVERNANCE_APPROVAL_OUT_OF_SCOPE,
+    HYPOTHESIS_UNDECIDED,
     INTENDED_USE_UNDECIDED,
+    LABEL_REQUIREMENT_UNDECIDED,
     NOT_ENOUGH_DATA,
     PREREGISTRATION_INCOMPLETE,
     PREREGISTRATION_NOT_FROZEN,
     STAGE2,
     STAGE2_OBSERVATION_REQUIREMENT,
     STAGE2_PREREGISTRATION,
+    STAGE3,
+    STAGE3_LABEL_REQUIREMENT,
+    STAGE3_OBSERVATION_REQUIREMENT,
+    STAGE3_PREREGISTRATION,
+    TOO_FEW_HUMAN_LABELS,
     GovernanceApproval,
+    LabelRequirement,
     StageEvidence,
+    _baseline_reasons,
+    _label_reasons,
+    current_baseline_versions,
     current_evidence,
     evaluate_stage2_entry_gate,
+    evaluate_stage3_entry_gate,
 )
+from app.ontology.schema import RELATIONS
+from app.services.benchmark_cases import CASE_COMPOSITION
 
 _DOCS = Path(__file__).resolve().parents[2] / "docs"
 
@@ -90,8 +111,13 @@ def test_stage2_is_closed_today_on_all_four_entry_conditions():
 
 
 def test_the_repository_holds_no_evidence():
-    assert current_evidence() == StageEvidence(observed=None, approvals=())
-    assert evaluate_stage2_entry_gate(current_evidence()).codes == evaluate_stage2_entry_gate().codes
+    """No data, no approval, no measured agreement. Only the label count is read."""
+    evidence = current_evidence()
+    assert evidence.observed is None
+    assert evidence.approvals == ()
+    assert evidence.inter_rater_agreement is None
+    assert evidence.human_labelled_cases == CASE_COMPOSITION["human_labelled"]
+    assert evaluate_stage2_entry_gate(evidence).codes == evaluate_stage2_entry_gate().codes
 
 
 def test_closed_means_not_enough_data_never_a_population_default():
@@ -158,7 +184,8 @@ def test_everything_a_caller_can_supply_still_leaves_it_closed():
 
 def test_there_is_no_switch():
     """No argument, environment variable or setting reaches the decision."""
-    assert list(inspect.signature(evaluate_stage2_entry_gate).parameters) == ["evidence"]
+    for gate in (evaluate_stage2_entry_gate, evaluate_stage3_entry_gate):
+        assert list(inspect.signature(gate).parameters) == ["evidence"]
     source = inspect.getsource(learning_gates)
     for forbidden in ("os.environ", "getenv", "import os", "settings"):
         assert forbidden not in source
@@ -172,6 +199,100 @@ def test_the_decision_is_machine_readable():
     assert all(set(reason) == {"condition", "code", "detail"} for reason in payload["reasons"])
     assert payload["sufficiency"]["design"]["max_observations"] == 1400
     assert payload["sufficiency"]["design_ceiling_effective_n"] == pytest.approx(96.552, abs=1e-3)
+
+
+# ── Stage 3 (#100): closed today, on every condition ─────────────────────────
+
+
+def test_stage3_is_closed_today_on_every_entry_condition():
+    decision = evaluate_stage3_entry_gate()
+
+    assert decision.open is False
+    assert decision.stage == STAGE3 and decision.issue == "#100"
+    assert set(decision.conditions_failing) == {
+        "deterministic_baseline_stable",
+        "training_data_sufficient",
+        "label_quality_sufficient",
+        "hypothesis_and_falsification_preregistered",
+        "governance_approval",
+        "preregistration",
+    }
+    assert set(decision.codes) == {
+        BASELINE_NOT_PINNED,
+        REQUIREMENT_UNDECIDED,
+        NO_OBSERVED_DATA,
+        LABEL_REQUIREMENT_UNDECIDED,
+        TOO_FEW_HUMAN_LABELS,
+        AGREEMENT_UNMEASURED,
+        HYPOTHESIS_UNDECIDED,
+        FALSIFICATION_UNDECIDED,
+        GOVERNANCE_APPROVAL_MISSING,
+        PREREGISTRATION_INCOMPLETE,
+        PREREGISTRATION_NOT_FROZEN,
+    }
+
+
+def test_closed_stage3_leaves_the_deterministic_traversal_in_place():
+    decision = evaluate_stage3_entry_gate()
+    assert decision.fallback == DETERMINISTIC_TRAVERSAL
+
+    detail = next(r.detail for r in decision.reasons if r.code == BASELINE_NOT_PINNED)
+    for version in current_baseline_versions().values():
+        assert version in detail
+
+
+def test_stage3_needs_data_for_every_relation_type():
+    assert set(STAGE3_OBSERVATION_REQUIREMENT.relation_types) == set(RELATIONS)
+    assert "min_edges_per_relation_type" in STAGE3_OBSERVATION_REQUIREMENT.undecided()
+    assert STAGE3_LABEL_REQUIREMENT.undecided() == (
+        "min_human_labelled_cases",
+        "min_inter_rater_agreement",
+        "agreement_statistic",
+    )
+
+
+def test_the_label_count_is_reported_not_assumed():
+    decision = evaluate_stage3_entry_gate()
+    detail = next(r.detail for r in decision.reasons if r.code == TOO_FEW_HUMAN_LABELS)
+    assert detail.startswith(f"{CASE_COMPOSITION['human_labelled']} benchmark case(s)")
+
+
+def test_no_label_count_clears_an_undecided_minimum():
+    plenty = StageEvidence(human_labelled_cases=500, inter_rater_agreement=0.95)
+    codes = {reason.code for reason in _label_reasons(STAGE3_LABEL_REQUIREMENT, plenty)}
+    assert codes == {LABEL_REQUIREMENT_UNDECIDED, TOO_FEW_HUMAN_LABELS, AGREEMENT_BELOW_REQUIREMENT}
+
+
+def test_a_decided_label_requirement_is_checked_against_the_counts():
+    requirement = LabelRequirement(min_human_labelled_cases=60, min_inter_rater_agreement=0.6, agreement_statistic="kappa")
+
+    short = StageEvidence(human_labelled_cases=12, inter_rater_agreement=0.4)
+    assert {r.code for r in _label_reasons(requirement, short)} == {TOO_FEW_HUMAN_LABELS, AGREEMENT_BELOW_REQUIREMENT}
+
+    enough = StageEvidence(human_labelled_cases=60, inter_rater_agreement=0.6)
+    assert _label_reasons(requirement, enough) == []
+
+
+def test_a_pinned_baseline_must_still_match_the_code():
+    versions = current_baseline_versions()
+    pinned_now = "; ".join(f"{name}={version}" for name, version in sorted(versions.items()))
+
+    def pinned(value):
+        items = tuple(
+            replace(item, decided=value) if item.key == "baseline_versions" else item
+            for item in STAGE3_PREREGISTRATION.items
+        )
+        return replace(STAGE3_PREREGISTRATION, items=items)
+
+    assert _baseline_reasons(pinned(pinned_now), versions) == []
+    moved = {**versions, "traversal": "relation-aware-traversal-v2"}
+    assert [r.code for r in _baseline_reasons(pinned(pinned_now), moved)] == [BASELINE_CHANGED_SINCE_PINNED]
+
+
+def test_a_stage2_approval_does_not_approve_stage3():
+    stage2_approval = _fixture_approval()
+    decision = evaluate_stage3_entry_gate(StageEvidence(approvals=(stage2_approval,)))
+    assert GOVERNANCE_APPROVAL_OUT_OF_SCOPE in decision.codes
 
 
 # ── the document and the code describe the same pre-registration ─────────────
@@ -188,7 +309,7 @@ def _document_items(path: Path):
     return rows
 
 
-@pytest.mark.parametrize("prereg", [STAGE2_PREREGISTRATION], ids=lambda p: p.stage)
+@pytest.mark.parametrize("prereg", [STAGE2_PREREGISTRATION, STAGE3_PREREGISTRATION], ids=lambda p: p.stage)
 def test_document_and_code_agree_item_for_item(prereg):
     document = Path(__file__).resolve().parents[3] / prereg.document
     rows = _document_items(document)

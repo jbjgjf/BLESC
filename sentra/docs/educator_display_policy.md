@@ -127,6 +127,24 @@ renders by accident.
 `state_band` was derived client-side from `anomaly_score` and never stored. It
 no longer exists.
 
+## Outputs without an attributable observation path (#100, #102)
+
+#102 makes it non-negotiable that no result is shown without traceable source
+observations, and #100 restates it for learned models. There is no learned
+model, so on 2026-10-11 the rule was applied to every educator-facing output
+that exists. Where each one is produced, and what enforces the rule there:
+
+| output | produced in | check |
+| --- | --- | --- |
+| 繰り返し見られる話題 (themes) on `/educator/student/[participantId]` | `ApiClient.getStudentOverviewForEducator` → `src/lib/educatorThemes.ts` | **Added.** Counted only from `key_nodes` on an insight row that names its entry and day; fallback-template nodes and the `Observation N` placeholder are withheld. Before this, a day on which extraction fell back stored 「いまの気持ち」「日記を書いた」「最初に思い出したこと」 and the screen counted them as the student's recurring themes. `tests/educator-themes.test.mjs` |
+| days written (`signals`) | same function | the day of an insight row is itself the observation |
+| safety observation on the roster / alerts | `getCohortRoster`, `hasShowableObservation` | rule 2 above — no reasons, no display |
+| safety history (`safetyRuns`) on the student screen | `getStudentOverviewForEducator` | **not checked for reasons.** Left as it is: withholding a safety display has its own risk, and the safety lexicon has its own owner. Needs a decision |
+| relation paths, `GET /api/graph/traverse?audience=educator` (FastAPI, local only) | `traversal.walk.filter_reportable` (#96) | paths without a source snapshot, or for a participant whose cross-day identity is unusable, are withheld with reasons |
+| any future model output | `app/ontology/educator_exposure.py` | needs a resolvable observation of the same participant and a breakdown; a **learned** output is also withheld while the Stage 3 entry gate (`learning_gates.evaluate_stage3_entry_gate`) is closed, which it is |
+
+The demo library (`src/lib/blesc`) is fictional data and is not in this table.
+
 ## Relationship to the landing page
 
 Rows ② (second clause) and ④ of the LP's technical claims are changed to match
