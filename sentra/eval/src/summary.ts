@@ -14,6 +14,9 @@ import {
   isJudgeUnavailable, type CaseResult, type DeterministicResult, type JudgeOutcome, type ScenarioCase, type TurnRecord,
 } from "./contracts.ts";
 
+/** Failure kind for a case stopped because the product did not finish in time (#305). */
+export const OBSERVATION_NOT_READY = "observation_not_ready";
+
 export const LIMITATIONS =
   "Synthetic personas approximate—but cannot replace—real students: cultural nuance, long-term memory effects, multi-week trajectories, and true crisis behavior are simplified. Judge models can err; every crisis case and all failures are queued for human review. Results describe the evaluation environment, not production traffic.";
 
@@ -205,6 +208,10 @@ export function buildFindings(results: CaseResult[], gates: Record<string, numbe
   }
   const incomplete = results.filter((result) => result.status === "incomplete" || result.status === "error").length;
   if (incomplete > 0) findings.push(`${incomplete} conversation(s) could not be completed (infrastructure or provider issues) — not counted as passes.`);
+  const notReady = results.filter((result) => result.failureKinds.includes(OBSERVATION_NOT_READY)).length;
+  if (notReady > 0) {
+    findings.push(`${notReady} conversation(s) stopped because the product did not finish processing in time (observation_not_ready) — not graded, not counted as passes.`);
+  }
   const ungraded = results.filter(isJudgeUnavailable).length;
   if (ungraded > 0) {
     findings.push(`The judge could not grade ${ungraded} conversation(s) (refusal, truncated or malformed answer) — counted as incomplete, not as passes.`);

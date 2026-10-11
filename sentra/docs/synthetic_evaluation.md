@@ -123,6 +123,26 @@ Verdicts: **Ready** (all gates green) · **Needs attention** (any gate red) ·
 4. Human-review queue: every crisis case, every failure, stratified 10% of
    passes → `expert-review.csv`
 
+## Waiting for the product
+
+Observations are only taken once the product has finished the step they
+depend on (#305):
+
+- **Journal.** `submitJournal` waits for the `POST …/entries` response —
+  extraction runs inside that request — for up to 90 s, and fails if it times
+  out, returns non-2xx, or returns no saved entry id. It used to "wait" with
+  `isEnabled()` (an instant query) plus a fixed 1.5 s sleep, so later chat,
+  summary and oversight observations were taken before the journal existed in
+  the product. The reflection cards in that response also feed the
+  reflection-suppression check (#311).
+- **/sharing** is read only after its loading line has gone, and
+  **/oversight** only after one of its containers is visible; an oversight
+  page that never loads fails the case instead of passing the privacy checks
+  by containing nothing.
+
+A case stopped this way is recorded as `error` with failure kind
+`observation_not_ready`, and the run's findings count them.
+
 ## Costs
 
 Estimate is printed before anything is spent. Warn at US$60, hard stop at

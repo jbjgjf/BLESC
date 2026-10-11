@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/*.test.ts",
+    "test": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --test-timeout=30000 tests/*.test.ts",
     "smoke": "tsx src/cli.ts smoke",
     "full": "tsx src/cli.ts full",
     "provision": "tsx src/cli.ts provision",
