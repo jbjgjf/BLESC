@@ -1,0 +1,149 @@
+"""Command line for the transfer study.
+
+```bash
+cd sentra/backend
+python -m research_engine.transfer.cli prereg-status      # what still blocks the freeze
+python -m research_engine.transfer.cli prereg-hash        # the hash a human copies into 凍結記録
+python -m research_engine.transfer.cli generate --seed 1 --missingness state_dependent --out /tmp/cohort
+python -m research_engine.transfer.cli consent-dry-run    # #212 refusals and exclusions, synthetic only
+python -m research_engine.transfer.cli audit --seed 1 --missingness state_dependent --out /tmp/audit
+python -m research_engine.transfer.cli dry-run --seed 1 --out /tmp/transfer-dry-run   # #215 end to end, synthetic only
+```
+
+`dry-run` refuses an output directory that already holds a seal: the seal is
+write-once, and a second run is a different result, not a replacement.
+
+`generate` needs `--seed` and `--missingness` spelled out: which seed and
+scenario become the frozen synthetic set is P13 of the pre-registration, and a
+default would quietly make that choice.
+
+Nothing here writes to the pre-registration. `prereg-status` exits non-zero
+while the draft is not frozen, so a script that gates on it cannot mistake an
+open draft for a frozen one.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Optional, Sequence
+
+from .audit import check_against_dictionary, public_view, run_audit
+from .consent_gate import consent_dry_run
+from .generator import MISSINGNESS_SCENARIOS, SyntheticCohortConfig, generate, manifest_hash, write_cohort
+from .pipeline import run_transfer_dry_run
+from .preregistration import PREREGISTRATION_PATH, freeze_status, load_preregistration
+
+
+def command_prereg_status(args: argparse.Namespace) -> int:
+    prereg = load_preregistration(Path(args.path))
+    status = freeze_status(prereg)
+    print(json.dumps(status.as_dict(), ensure_ascii=False, indent=2))
+    return 0 if status.frozen else 1
+
+
+def command_prereg_hash(args: argparse.Namespace) -> int:
+    prereg = load_preregistration(Path(args.path))
+    print(prereg.content_hash())
+    return 0
+
+
+def command_generate(args: argparse.Namespace) -> int:
+    config = SyntheticCohortConfig(seed=args.seed, missingness=args.missingness, mnar_strength=args.mnar_strength)
+    cohort = generate(config)
+    paths = write_cohort(cohort, Path(args.out))
+    print(
+        json.dumps(
+            {
+                "status": cohort.manifest["status"],
+                "dataset_id": cohort.dataset.dataset_id,
+                "dataset_hash": cohort.manifest["hashes"]["dataset_hash"],
+                "manifest_hash": manifest_hash(cohort.manifest),
+                "paths": {name: str(path) for name, path in paths.items()},
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+def command_consent_dry_run(args: argparse.Namespace) -> int:
+    report = consent_dry_run(args.seed)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report["passed"] else 1
+
+
+def _write(path: Path, payload) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+
+
+def command_audit(args: argparse.Namespace) -> int:
+    cohort = generate(SyntheticCohortConfig(seed=args.seed, missingness=args.missingness, mnar_strength=args.mnar_strength))
+    report = run_audit(cohort.dataset, manifest=cohort.manifest, seed=args.seed)
+    checks = check_against_dictionary()
+    out = Path(args.out)
+    _write(out / "audit.json", report)
+    _write(out / "audit_public.json", public_view(report))
+    _write(out / "dictionary_check.json", checks)
+    agrees = all(row["agrees"] for row in checks)
+    print(json.dumps({"dictionary_agrees": agrees, "out": str(out)}, ensure_ascii=False))
+    return 0 if agrees else 1
+
+
+def command_dry_run(args: argparse.Namespace) -> int:
+    result = run_transfer_dry_run(args.seed, Path(args.out))
+    summary = result["summary"]
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0 if summary["leakage_checks_passed"] and summary["consent_dry_run_passed"] else 1
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="research_engine.transfer.cli", description="合成→実データ移転研究（#210）"
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    status = subparsers.add_parser("prereg-status", help="事前登録の凍結を妨げている項目を表示する")
+    status.add_argument("--path", default=str(PREREGISTRATION_PATH))
+    status.set_defaults(handler=command_prereg_status)
+
+    digest = subparsers.add_parser("prereg-hash", help="凍結記録に書く文書hashを表示する")
+    digest.add_argument("--path", default=str(PREREGISTRATION_PATH))
+    digest.set_defaults(handler=command_prereg_hash)
+
+    gen = subparsers.add_parser("generate", help="合成参加者（候補・未凍結）を生成する")
+    gen.add_argument("--seed", type=int, required=True)
+    gen.add_argument("--missingness", choices=MISSINGNESS_SCENARIOS, required=True)
+    gen.add_argument("--mnar-strength", type=float, default=1.0)
+    gen.add_argument("--out", required=True)
+    gen.set_defaults(handler=command_generate)
+
+    gate = subparsers.add_parser("consent-dry-run", help="同意・撤回ゲートを合成データだけで検証する（#212）")
+    gate.add_argument("--seed", type=int, default=11)
+    gate.set_defaults(handler=command_consent_dry_run)
+
+    audit = subparsers.add_parser("audit", help="測定・入力過程を参加者単位で監査する（#214、合成データ）")
+    audit.add_argument("--seed", type=int, required=True)
+    audit.add_argument("--missingness", choices=MISSINGNESS_SCENARIOS, required=True)
+    audit.add_argument("--mnar-strength", type=float, default=1.0)
+    audit.add_argument("--out", required=True)
+    audit.set_defaults(handler=command_audit)
+
+    dry = subparsers.add_parser("dry-run", help="移転研究の全経路を合成データだけで通す（#215・#216）")
+    dry.add_argument("--seed", type=int, required=True)
+    dry.add_argument("--out", required=True)
+    dry.set_defaults(handler=command_dry_run)
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args = build_parser().parse_args(argv)
+    return int(args.handler(args))
+
+
+if __name__ == "__main__":  # pragma: no cover - entry point
+    sys.exit(main())
