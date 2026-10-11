@@ -32,6 +32,12 @@ const MATCHED_AGAINST = [
   "rate limit",
   "too many",
   "not configured",
+  // The fallback extraction's support and load lists (lib/extraction.ts).
+  // Same reason as the crisis lexicon: each list carries both languages so a
+  // Japanese entry is read the same way an English one is.
+  "talk to",
+  "slept well",
+  "so much",
 ];
 
 /**

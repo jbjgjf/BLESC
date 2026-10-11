@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { canonicalNodeId, normalizeExtraction, sanitizeId } from "../src/lib/extraction.ts";
+import {
+  canonicalNodeId,
+  extractionFellBack,
+  fallbackExtraction,
+  normalizeExtraction,
+  normalizeModelExtraction,
+  sanitizeId,
+} from "../src/lib/extraction.ts";
+import { aggregateDailyFeatures, checkRules } from "../src/lib/baseline.ts";
 
 /**
  * These were written first as characterisation tests, asserting the broken
@@ -195,4 +203,139 @@ describe("invariant: the stored graph is never internally inconsistent", () => {
         `${name}: duplicate node ids`);
     });
   }
+});
+
+/**
+ * The fallback graph has to read both languages the same way (#310).
+ *
+ * Its support and load lists were English-only, so no Japanese entry could ever
+ * match them: the fallback graph for a Japanese student was always
+ * `State, Behavior, Event, Event, Event`, with `protective_ratio` at zero, and
+ * `checkRules` read that zero as a protective decline. The signal came from the
+ * entry being in Japanese, not from anything it said.
+ */
+describe("fallbackExtraction reads Japanese and English alike", () => {
+  const categories = (text) => fallbackExtraction(text).nodes.map((node) => node.category).sort();
+
+  const pairs = [
+    [
+      "support and load in one entry",
+      "今日は友だちと話して少し気が楽になった。音楽を聴いて寝る前に勉強もした。でもテスト前で不安。",
+      "Talked with a friend today, listened to music and studied before sleep. Still anxious about the exam.",
+    ],
+    [
+      "support only",
+      "友だちと話した。散歩して、よく寝た。",
+      "Talked to a friend. Went for a walk and slept well.",
+    ],
+    [
+      "load only",
+      "締め切りが近くて心配。疲れた。",
+      "The deadline is close and I am worried. Tired.",
+    ],
+  ];
+
+  for (const [name, japanese, english] of pairs) {
+    it(`produces the same categories for ${name}`, () => {
+      assert.deepEqual(categories(japanese), categories(english));
+    });
+  }
+
+  it("finds a protective signal in a Japanese entry that names support", () => {
+    // WAS: never — the list held only `friend|talk|help|support|walk|music|
+    // sleep|rest|plan|study`.
+    const nodes = fallbackExtraction("友だちと話して、少し楽になった。").nodes;
+    assert.ok(nodes.some((node) => node.category === "Protective"));
+  });
+
+  it("does not report a protective decline for a Japanese entry naming support", () => {
+    const payload = fallbackExtraction("友だちと話して、音楽を聴いて、よく寝た。");
+    const features = aggregateDailyFeatures([{ nodes: payload.nodes, relations: payload.relations }]);
+    const hits = checkRules(features, {}, { event_count: features.event_count }, {}, {
+      drop_in_protective_nodes: 0,
+      current_protective_nodes: 1,
+      previous_protective_nodes: 1,
+    });
+    assert.deepEqual(hits.map((hit) => hit.rule), []);
+  });
+
+  it("does not count a keyword buried in a longer English word as support", () => {
+    // WAS: `helpless` matched `help` and `restless` matched `rest`, so both
+    // pushed a Protective node. The alternation carried no word boundaries.
+    for (const text of ["I feel helpless about all of it.", "Another restless night."]) {
+      assert.ok(
+        !fallbackExtraction(text).nodes.some((node) => node.category === "Protective"),
+        `${text} was read as support`,
+      );
+    }
+  });
+
+  it("raises the load intensity on a Japanese intensifier, as `very` does in English", () => {
+    const load = (text) =>
+      fallbackExtraction(text).nodes.find((node) => node.category === "Trigger")?.intensity;
+    assert.equal(load("とても不安だった。"), load("I was very anxious."));
+    assert.ok(load("とても不安だった。") > load("不安だった。"));
+  });
+});
+
+describe("extractionFellBack", () => {
+  it("names every status the entries route writes when it falls back", () => {
+    for (const status of ["missing_key", "failed_500", "failed_429", "timeout", "fallback"]) {
+      assert.equal(extractionFellBack(status), true, status);
+    }
+  });
+
+  it("does not name a completed extraction, or a missing status, as a fallback", () => {
+    for (const status of ["completed", undefined, null, 0]) {
+      assert.equal(extractionFellBack(status), false, String(status));
+    }
+  });
+
+  it("keeps a fallback entry naming load but no support from reporting a protective decline", () => {
+    // The fallback graph here is State, Behavior, Trigger, Event, Event — risk
+    // nodes and no Protective node, in either language (#310).
+    for (const text of ["締め切りが近くて心配。疲れた。", "The deadline is close and I am worried. Tired."]) {
+      const payload = fallbackExtraction(text);
+      const features = aggregateDailyFeatures([{ nodes: payload.nodes, relations: payload.relations }]);
+      const decline = { drop_in_protective_nodes: 0, current_protective_nodes: 0, previous_protective_nodes: 0 };
+      const hits = checkRules(features, {}, { event_count: features.event_count }, {}, decline, {
+        extractionFellBack: extractionFellBack("failed_503"),
+      });
+      assert.ok(!hits.some((hit) => hit.rule === "protective_decline"), text);
+    }
+  });
+
+  it("reports a model response normalised into the fallback graph as a fallback", () => {
+    // A syntactically valid response with fewer than three unique labels is
+    // replaced by `fallbackExtraction` inside normalisation. The route used to
+    // record that as `completed`, so the placeholder graph was read as a
+    // measurement and could report a protective decline.
+    const text = "締め切りが近くて心配。疲れた。";
+    const thin = {
+      nodes: [
+        { id: "a", category: "Trigger", label: "締め切り", intensity: 0.7, confidence: 0.8 },
+        { id: "b", category: "Trigger", label: "締め切り", intensity: 0.7, confidence: 0.8 },
+        { id: "c", category: "State", label: "疲れ", intensity: 0.6, confidence: 0.7 },
+      ],
+      relations: [],
+    };
+    const { extraction, status } = normalizeModelExtraction(thin, text);
+    assert.deepEqual(extraction.nodes, fallbackExtraction(text).nodes);
+    assert.equal(status, "fallback");
+    assert.equal(extractionFellBack(status), true);
+
+    const features = aggregateDailyFeatures([{ nodes: extraction.nodes, relations: extraction.relations }]);
+    const decline = { drop_in_protective_nodes: 0, current_protective_nodes: 0, previous_protective_nodes: 0 };
+    const hits = checkRules(features, {}, { event_count: features.event_count }, {}, decline, {
+      extractionFellBack: extractionFellBack(status),
+    });
+    assert.ok(!hits.some((hit) => hit.rule === "protective_decline"));
+  });
+
+  it("reports a model response that survives normalisation as completed", () => {
+    const { extraction, status } = normalizeModelExtraction(japaneseExtraction, "テスト前で眠れない。");
+    assert.equal(status, "completed");
+    assert.equal(extractionFellBack(status), false);
+    assert.equal(extraction.nodes.length, japaneseExtraction.nodes.length);
+  });
 });
