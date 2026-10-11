@@ -69,6 +69,17 @@ export const RULES = {
   guardianIssue: rule("guardian-issue", "PILOT_GUARDIAN_ISSUE_LIMIT", 20, 3600),
   /** Routes that call OpenAI and therefore spend money. */
   externalModel: rule("external-model", "EXTERNAL_MODEL_LIMIT", 60, 3600),
+  /**
+   * Signed-in routes that write rows from client-supplied text without calling
+   * a model (#369). `/api/voice/turn` is the first; the limit is per user, so
+   * other such routes can share it.
+   *
+   * 600 because a realtime voice session lasts ten minutes and a settled turn
+   * — the student speaks, the model answers — takes several seconds: a session
+   * of nothing but five-second turns is 120, and this is five of those back to
+   * back. Typing does not come close.
+   */
+  authenticatedWrite: rule("authenticated-write", "AUTHENTICATED_WRITE_LIMIT", 600, 3600),
 } as const;
 
 function rule(route: string, envVar: string, fallback: number, windowSeconds: number): RateLimitRule {

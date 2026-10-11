@@ -259,6 +259,7 @@ PILOT_BASE_URL=https://blesc-pilot.vercel.app CRON_SECRET=... \
 | `PILOT_INVITE_REDEEM_LIMIT` | 10 | 1時間 | `/api/pilot/redeem`。成功すれば導線が終わるので低め |
 | `PILOT_GUARDIAN_ISSUE_LIMIT` | 20 | 1時間 | 保護者確認リンクの発行。1通=学校の連絡経路1回 |
 | `EXTERNAL_MODEL_LIMIT` | 60 | 1時間 | `/api/chat`・`/api/audio/transcriptions`。OpenAIの費用 |
+| `AUTHENTICATED_WRITE_LIMIT` | 600 | 1時間 | `/api/voice/turn`。モデルを呼ばずに行を書く認証済み経路。超過時は何も保存しないが、危機の通知だけは落とさない（#369） |
 
 既定値は**正規の参加者が普通に使って当たらない**よう、実利用の見積もりより大きく取っている。
 上限が実利用を捕まえると、誰かが上限を切るので、それが最悪の結果になる。
