@@ -13,8 +13,9 @@ Two synthetic cohorts play the two roles:
 The dry run does, in order: leakage probes; the synthetic ranking; the seal;
 the stand-in ranking under each fit mode; the comparison against the *sealed*
 ranking (read back from the seal file, not recomputed); the measurement audit
-of both cohorts and their comparison. #216 adds the missingness sensitivity
-analysis and the report on top of this.
+of both cohorts and their comparison; the missingness sensitivity analysis
+(#216) over several seeds; and the report, rendered into the template's
+headings.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ import json
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 from . import CANDIDATE_STATUS, CANDIDATE_STATUS_JA, TRANSFER_STUDY_VERSION
 from .audit import compare_audits, public_view, run_audit
@@ -33,7 +34,9 @@ from .generator import GeneratedCohort, SyntheticCohortConfig, generate, manifes
 from .plan import DRY_RUN_PLAN, FIT_TARGET_SPLIT, AnalysisPlan
 from .preregistration import Preregistration, load_preregistration
 from .ranking import compare_rankings, rank_evaluations
+from .report import render_report
 from .seal import build_seal, verify_seal, write_seal
+from .sensitivity import run_sensitivity
 
 STAND_IN_LABEL = "simulated_real_stand_in"
 STAND_IN_NOTE_JA = (
@@ -90,7 +93,15 @@ def run_transfer_dry_run(
     preregistration: Optional[Preregistration] = None,
     sealed_at: Optional[str] = None,
     code_commit: Optional[str] = None,
+    sensitivity_seeds: Optional[Sequence[int]] = None,
 ) -> Dict[str, Any]:
+    """Run everything; write every artifact under `out_dir`.
+
+    `sensitivity_seeds` defaults to three consecutive seeds. Three is a
+    reproducibility check, not a statement of statistical power, and which
+    seeds the study reports is part of P2/P13.
+    """
+
     out = Path(out_dir)
     plan.validate()
     prereg = preregistration if preregistration is not None else load_preregistration()
@@ -140,6 +151,10 @@ def run_transfer_dry_run(
     _write(out / "audit_selection_public.json", public_view(selection_audit))
     _write(out / "audit_comparison.json", audit_comparison)
 
+    seeds = list(sensitivity_seeds) if sensitivity_seeds is not None else [seed, seed + 1, seed + 2]
+    sensitivity = run_sensitivity(selection, plan, seeds=seeds)
+    _write(out / "sensitivity.json", sensitivity)
+
     summary = {
         "dry_run": "transfer_study",
         "transfer_study_version": TRANSFER_STUDY_VERSION,
@@ -167,9 +182,13 @@ def run_transfer_dry_run(
         "consent_dry_run_passed": gate["passed"],
         "real_data_used": False,
         "provider_calls": 0,
+        "sensitivity_seeds": seeds,
+        "outputs": sorted(
+            {str(path.relative_to(out)) for path in out.rglob("*") if path.is_file()} | {"report.md", "summary.json"}
+        ),
     }
     _write(out / "summary.json", summary)
-    return {
+    run = {
         "summary": summary,
         "selection": selection,
         "stand_in": stand_in,
@@ -179,4 +198,9 @@ def run_transfer_dry_run(
         "leakage_checks": probes,
         "consent_dry_run": gate,
         "audits": {"selection": selection_audit, "stand_in": stand_in_audit, "comparison": audit_comparison},
+        "sensitivity": sensitivity,
     }
+    report = render_report(run, sensitivity, plan=plan, preregistration=prereg, is_dry_run=True)
+    (out / "report.md").write_text(report, encoding="utf-8")
+    run["report"] = report
+    return run

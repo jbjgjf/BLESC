@@ -39,7 +39,7 @@ what it examined, and a probe that could not run reports failure.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -52,6 +52,9 @@ from .codes import TransferCode
 from .consent_gate import OPERATION_EVALUATE, OPERATION_FIT, admit, require_disjoint, to_observation_bundle
 from .plan import FIT_MODES, FIT_SYNTHETIC_FROZEN, FIT_TARGET_SPLIT, ORIGIN_REQUIRE_OBSERVED, AnalysisPlan
 from .schema import ITEM_BY_ID, ITEM_IDS, SOURCE_SYNTHETIC, DailyRecord, TransferDataset
+
+#: (research_code, target_day, item, observed value or None) → the value to score against, or None.
+TargetValue = Callable[[str, int, str, Optional[float]], Optional[float]]
 
 SPLIT_PARTICIPANT = "participant"
 SPLIT_TEMPORAL = "temporal"
@@ -283,7 +286,17 @@ def evaluate_split(
     eval_codes: Sequence[str],
     origin_days: Sequence[int],
     plan: AnalysisPlan,
+    target_value: Optional[TargetValue] = None,
 ) -> SplitEvaluation:
+    """Forecast every (participant, origin) and score the common set.
+
+    `target_value` replaces only what a forecast is *scored against* — never
+    what the models see. It exists for the missingness sensitivity analysis
+    (#216): scoring the same forecasts against the generating truth on
+    synthetic data, or against delta-adjusted values for unobserved days. The
+    model input is always the observed panel, sliced to the origin.
+    """
+
     if split_kind not in SPLIT_KINDS:
         raise ContractViolation(Code.UNKNOWN_ENUM_VALUE, f"未知の分割です: {split_kind}", "split_kind")
     eval_panel = ObservedPanel.from_dataset(eval_dataset)
@@ -317,6 +330,9 @@ def evaluate_split(
                 continue
             target_day = origin + plan.horizon_days
             actual = series[target_day - 1]
+            if target_value is not None:
+                replaced = target_value(code, target_day, item, None if np.isnan(actual) else float(actual))
+                actual = np.nan if replaced is None else float(replaced)
             if np.isnan(actual):
                 reduction["target_missing"] += 1
                 continue
@@ -394,6 +410,7 @@ def evaluate_dataset(
     selection: Optional[TransferDataset] = None,
     gate_kwargs: Optional[Mapping[str, Any]] = None,
     selection_gate_kwargs: Optional[Mapping[str, Any]] = None,
+    target_value: Optional[TargetValue] = None,
 ) -> Dict[str, Any]:
     """Every split kind × target item for one dataset and one fit mode.
 
@@ -440,6 +457,7 @@ def evaluate_dataset(
             eval_codes=split.heldout,
             origin_days=range(1, study_days),
             plan=plan,
+            target_value=target_value,
         )
         results[SPLIT_TEMPORAL][item] = evaluate_split(
             split_kind=SPLIT_TEMPORAL,
@@ -452,6 +470,7 @@ def evaluate_dataset(
             eval_codes=evaluation_input.participants,
             origin_days=range(k, study_days),
             plan=plan,
+            target_value=target_value,
         )
     return {
         "fit_mode": fit_mode,
