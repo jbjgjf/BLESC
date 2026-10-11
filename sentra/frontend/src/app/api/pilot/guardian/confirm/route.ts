@@ -29,6 +29,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { jsonError } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { advanceEnrollment, loadEnrollmentById, loadStudyById } from "@/lib/server/pilotStore";
@@ -36,6 +37,7 @@ import { loadConsentState, recordConsent } from "@/lib/server/consentStore";
 import { claimVerification, recordDecision, releaseClaim, requestedGrantsOf } from "@/lib/server/guardianStore";
 import { looksLikeGuardianToken } from "@/lib/server/guardianTokens";
 import { guardianConsentGrant } from "@/lib/guardianVerification";
+import { RULES, consumeRateLimit, rateLimitHeaders, rateLimitSubject } from "@/lib/server/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -49,6 +51,20 @@ export const runtime = "nodejs";
  * reveals about a token they already hold.
  */
 const UNUSABLE = "この確認用リンクは使用できません。お子さまにご確認のうえ、新しいリンクをお受け取りください。";
+
+/**
+ * Give the link back after a failure, and say so when that did not work.
+ *
+ * A claim that could not be released leaves the guardian holding a link that
+ * answers "already answered" for an answer nobody recorded. They cannot fix
+ * that and neither can this request; an operator can, by issuing a new link,
+ * and only if something tells them (#298).
+ */
+async function release(service: SupabaseClient, verificationId: string): Promise<void> {
+  if (!(await releaseClaim(service, verificationId))) {
+    console.warn("[pilot-guardian] the claim could not be released; this link needs reissuing", verificationId);
+  }
+}
 
 type ConfirmBody = {
   token?: string;
@@ -65,6 +81,24 @@ export async function POST(request: NextRequest) {
 
   const service = serviceRoleClient();
   if (!service) return jsonError("Supabase is not configured.", 503);
+
+  // Counted before the token is looked up (#246): this route has no session,
+  // and without a limit anyone can make the database search for well-formed
+  // tokens that do not exist, as often as they like. Placed after the shape
+  // check so that malformed input is refused without any round trip at all,
+  // and before the lookup so the 429 is the same whether or not the token is
+  // real — it says nothing about the link.
+  //
+  // Fails open, like every other rule. The limit is not what protects a
+  // consent record; the 256-bit single-use token is. Failing closed would turn
+  // a slow counter table into guardians being unable to answer.
+  const limited = await consumeRateLimit(service, RULES.guardianConfirm, rateLimitSubject(request));
+  if (!limited.allowed) {
+    return NextResponse.json(
+      { detail: "試行回数が多すぎます。しばらく待ってからもう一度お試しください。", code: "rate_limited" },
+      { status: 429, headers: rateLimitHeaders(limited) },
+    );
+  }
 
   const claim = await claimVerification(service, token);
   if (claim.outcome !== "claimed" || !claim.record) {
@@ -96,7 +130,7 @@ export async function POST(request: NextRequest) {
     // is a conversation, and the operator has the record to start it from.
     const recorded = await recordDecision(service, verification.id, "declined");
     if (!recorded) {
-      await releaseClaim(service, verification.id);
+      await release(service, verification.id);
       return jsonError("回答を記録できませんでした。時間をおいて、もう一度お試しください。", 502);
     }
     return NextResponse.json({ status: "recorded", decision: "declined" });
@@ -105,7 +139,7 @@ export async function POST(request: NextRequest) {
   const enrollment = await loadEnrollmentById(service, verification.enrollment_id);
   const study = enrollment ? await loadStudyById(service, enrollment.study_id) : null;
   if (!enrollment || !study) {
-    await releaseClaim(service, verification.id);
+    await release(service, verification.id);
     return jsonError("参加登録を読み込めませんでした。時間をおいて、もう一度お試しください。", 502);
   }
 
@@ -119,7 +153,7 @@ export async function POST(request: NextRequest) {
   try {
     await recordConsent(service, enrollment.owner_user_id, enrollment.participant_id, grant, "guardian_link");
   } catch (err) {
-    await releaseClaim(service, verification.id);
+    await release(service, verification.id);
     console.warn("[pilot-guardian] consent write failed", err instanceof Error ? err.message : err);
     return jsonError("同意を記録できませんでした。時間をおいて、もう一度お試しください。", 502);
   }
@@ -138,7 +172,7 @@ export async function POST(request: NextRequest) {
     // The consent record stands — it is append-only and describes a decision
     // that was really made. What did not happen is the transition, and the
     // claim goes back so the guardian can retry once the cause is fixed.
-    await releaseClaim(service, verification.id);
+    await release(service, verification.id);
     console.warn("[pilot-guardian] transition after confirmation failed", advanced.outcome);
     return jsonError("確認は記録しましたが、登録の更新に失敗しました。研究担当にご連絡ください。", 502, {
       code: advanced.outcome,
