@@ -27,6 +27,7 @@
  */
 
 import { createHmac, randomBytes } from "node:crypto";
+import { KEY_RULES, readBase64Key } from "./base64Key.ts";
 
 /** 32 bytes. Not read aloud, not typed, so length costs nothing. */
 const TOKEN_BYTES = 32;
@@ -60,23 +61,25 @@ export function guardianTokenPrefix(token: string): string {
   return token.slice(0, TOKEN_PREFIX_LENGTH);
 }
 
-/** The configured HMAC key, or null when the deployment has none. */
+/**
+ * The configured HMAC key, or null when the deployment has none.
+ *
+ * Decoded by `base64Key.ts`, for the reason `inviteCodes.ts` gives: a key in
+ * the wrong format used to be accepted as long as it happened to decode to
+ * enough bytes, and every guardian link outstanding at the moment somebody
+ * fixed the format would stop verifying (#255).
+ */
 export function guardianHmacKey(): Buffer | null {
-  const configured = process.env.PILOT_GUARDIAN_HMAC_KEY;
-  if (!configured) return null;
-
-  let bytes: Buffer;
-  try {
-    bytes = Buffer.from(configured, "base64");
-  } catch {
-    console.warn("[pilot-guardian] PILOT_GUARDIAN_HMAC_KEY is not valid base64; no verification can complete");
+  const result = readBase64Key(process.env.PILOT_GUARDIAN_HMAC_KEY, KEY_RULES.PILOT_GUARDIAN_HMAC_KEY);
+  if (!result.ok) {
+    if (result.problem !== "absent") {
+      console.warn(
+        `[pilot-guardian] PILOT_GUARDIAN_HMAC_KEY is unusable (${result.problem}); no verification can complete`,
+      );
+    }
     return null;
   }
-  if (bytes.length < 32) {
-    console.warn("[pilot-guardian] PILOT_GUARDIAN_HMAC_KEY must decode to at least 32 bytes; no verification can complete");
-    return null;
-  }
-  return bytes;
+  return result.bytes;
 }
 
 export function guardianHashingConfigured(): boolean {

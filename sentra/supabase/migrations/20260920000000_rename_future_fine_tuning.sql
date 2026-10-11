@@ -49,8 +49,19 @@
 -- default. The rename is verified rather than assumed by
 -- `supabase/tests/pilot_consent_rls.test.sql`.
 
-alter table public.consent_records
-  rename column future_fine_tuning to model_training_use;
+-- Guarded so the file can be applied twice (migration_smoke.sh step 2): the
+-- second time the old name is gone and there is nothing to rename.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'consent_records'
+       and column_name = 'future_fine_tuning'
+  ) then
+    alter table public.consent_records
+      rename column future_fine_tuning to model_training_use;
+  end if;
+end $$;
 
 comment on column public.consent_records.model_training_use is
   'Optional, separate from participation: may this participant''s data be used to train a model. '

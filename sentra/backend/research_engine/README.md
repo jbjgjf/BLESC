@@ -31,6 +31,8 @@ python -m research_engine.cli evaluate --run /tmp/blesc-research-smoke --split h
 
 APIは `app/api/research_world_model.py`（C6）。既定では `RESEARCH_API_TOKEN` 未設定で503を返し、誰にも開かない。
 
+`transfer/` は合成→実データのモデル選択移転研究（#210、#211〜#216）。上の契約（`contracts/observation.py` の拒否、`data.splits.participant_split`、`evaluation.leakage`）を再利用し、実データは v0 契約のとおり拒否する。入口は `python -m research_engine.transfer.cli`、説明は `docs/transfer_study_*.md`。
+
 ## 読み方の注意
 
 - `ci.json` の数値は経路確認用で、モデルの性能ではない。性能を読むのは `smoke.json` の結果。

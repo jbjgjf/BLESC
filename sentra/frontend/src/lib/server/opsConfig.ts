@@ -29,6 +29,8 @@
  * about them — `scripts/pilot/check-ops-config.mjs` does, with `gh`.
  */
 
+import { KEY_RULES, base64KeyAdvice, readBase64Key, type Base64KeyRule } from "./base64Key.ts";
+
 export type Severity = "blocking" | "degraded";
 
 export type ConfigCheck = {
@@ -48,22 +50,53 @@ export type ConfigCheck = {
 };
 
 /**
- * A base64 key that has to decode to at least 32 bytes.
+ * A base64 key, checked against the rule the code that reads it actually
+ * applies (#255).
  *
- * The same rule `recipientHashKey()` and `rawTextKey()` apply, restated here
- * rather than imported: those return null on a bad value and the caller cannot
- * tell "absent" from "malformed". For an operator that difference is the whole
- * message — one means nobody set it, the other means somebody set it wrong.
+ * The rule used to be restated here as "at least 32 bytes" for everything,
+ * which was wrong twice over. `Buffer.from(value, "base64")` does not throw on
+ * a value that is not base64 — it drops the offending characters — so the
+ * `try`/`catch` this replaced never ran; and `rawTextKeyMaterial()` wants
+ * *exactly* 32 bytes, so a 48-byte value was reported valid by a diagnostic
+ * whose own header promises to tell "absent" from "malformed", while retention
+ * was silently off. The rule now lives in `base64Key.ts` and each row below
+ * names the same rule its loader uses.
  */
-function base64KeyValid(value: string | undefined, minBytes = 32): boolean {
+function base64Key(value: string | undefined, rule: Base64KeyRule, consequence: string) {
+  const result = readBase64Key(value, rule);
+  return {
+    // "Somebody put something here", which whitespace is not. Reporting
+    // `configured: true` alongside advice that reads 「未設定。」 would be the
+    // report contradicting itself in the same row.
+    configured: result.ok || result.problem !== "absent",
+    valid: result.ok,
+    // The advice is about the shape, never the value: `base64KeyAdvice` cannot
+    // return anything derived from what was configured.
+    consequence: result.ok ? consequence : `${consequence} ${base64KeyAdvice(result.problem)}`,
+  };
+}
+
+/**
+ * Whether a configured site URL is one a link can be built on (#289).
+ *
+ * `guardianVerificationUrl()` appends a path to it and the crisis notification
+ * does the same, so it has to be an origin and nothing more: `https`, a host,
+ * no path, query or fragment. `http` is accepted for localhost only — a
+ * guardian link over plain http to a public host is not something to send
+ * through a school. Returns a verdict and never the value.
+ */
+function siteUrlValid(value: string | undefined): boolean {
   if (!value) return false;
-  let bytes: Buffer;
+  let url: URL;
   try {
-    bytes = Buffer.from(value, "base64");
+    url = new URL(value);
   } catch {
     return false;
   }
-  return bytes.length >= minBytes;
+  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  if (url.protocol !== "https:" && !(local && url.protocol === "http:")) return false;
+  if (url.username || url.password || url.search || url.hash) return false;
+  return url.pathname === "/" || url.pathname === "";
 }
 
 function idListSize(value: string | undefined): number {
@@ -125,20 +158,38 @@ export function configChecks(): ConfigCheck[] {
         "専用デプロイで /demo-view とURL/sessionのデモ上書きが生きたままになる(#193)。ビルド時に必要で、後から足しても再デプロイまで効かない。",
     },
     {
-      name: "SAFETY_RECIPIENT_HASH_KEY",
-      configured: Boolean(process.env.SAFETY_RECIPIENT_HASH_KEY),
-      valid: base64KeyValid(process.env.SAFETY_RECIPIENT_HASH_KEY),
-      severity: "degraded",
+      // The one row that is satisfied by being absent. `configured` still
+      // means "set", so a deployment that has it reads as "set, and wrong".
+      // Written as a literal for the reason in the header: it is inlined at
+      // build time, like NEXT_PUBLIC_PILOT_MODE.
+      name: "NEXT_PUBLIC_API_URL",
+      configured: Boolean(process.env.NEXT_PUBLIC_API_URL),
+      valid: !process.env.NEXT_PUBLIC_API_URL,
+      severity: "blocking",
       consequence:
+        "設定してはいけない。設定すると日記の送信と音声の文字起こしがFastAPIへ直接向かい、収集専用ゲート(#165)を通らずに本文が外部へ出る(#345)。" +
+        "パイロットのビルドは画面側でこの値を無視して /api に固定するが、値を消して再デプロイすること。",
+    },
+    {
+      name: "SAFETY_RECIPIENT_HASH_KEY",
+      // `recipientHashKey()` — 32 バイト以上。
+      ...base64Key(
+        process.env.SAFETY_RECIPIENT_HASH_KEY,
+        KEY_RULES.SAFETY_RECIPIENT_HASH_KEY,
         "通知ログの recipient hash が null。通知は届くが「誰に伝えたか」の記録が残らない。base64で32バイト以上。",
+      ),
+      severity: "degraded",
     },
     {
       name: "RESEARCH_RAW_TEXT_KEY",
-      configured: Boolean(process.env.RESEARCH_RAW_TEXT_KEY),
-      valid: base64KeyValid(process.env.RESEARCH_RAW_TEXT_KEY),
+      // `rawTextKeyMaterial()` — AES-256-GCM なので**ちょうど** 32 バイト。
+      // ここを「32以上」と書いていたのが #255 の誤報の半分だった。
+      ...base64Key(
+        process.env.RESEARCH_RAW_TEXT_KEY,
+        KEY_RULES.RESEARCH_RAW_TEXT_KEY,
+        "日記原文を保持しない(平文保存は起きない)。人手評価が必要なら必須。base64でちょうど32バイト。",
+      ),
       severity: "degraded",
-      consequence:
-        "日記原文を保持しない(平文保存は起きない)。人手評価が必要なら必須。base64で32バイト以上。",
     },
     {
       name: "PILOT_OPERATOR_USER_IDS",
@@ -156,10 +207,42 @@ export function configChecks(): ConfigCheck[] {
     },
     {
       name: "PILOT_INVITE_HMAC_KEY",
-      configured: Boolean(process.env.PILOT_INVITE_HMAC_KEY),
-      valid: Boolean(process.env.PILOT_INVITE_HMAC_KEY),
+      // `inviteHmacKey()` — 32 バイト以上。ここは「設定されているか」しか
+      // 見ていなかったので、`inviteHmacKey()` が null を返す値でも blocking に
+      // 上がらなかった。発行も引き換えもできない状態が、blocking gap の一覧に
+      // 出てこない状態だった。
+      ...base64Key(
+        process.env.PILOT_INVITE_HMAC_KEY,
+        KEY_RULES.PILOT_INVITE_HMAC_KEY,
+        "招待コードのhash化ができず、発行も引き換えもできない。base64で32バイト以上。",
+      ),
       severity: "blocking",
-      consequence: "招待コードのhash化ができず、発行も引き換えもできない。",
+    },
+    {
+      name: "PILOT_GUARDIAN_HMAC_KEY",
+      // `guardianHmacKey()` — 32 バイト以上。`PILOT_INVITE_HMAC_KEY` の双子で、
+      // 同じ理由で blocking: どちらも fail closed で、鍵が無ければ経路ごと
+      // 止まる。招待側だけが点検表にあったので、保護者確認が1件も通らない
+      // 配備が `ready: true` を返していた (#289)。
+      ...base64Key(
+        process.env.PILOT_GUARDIAN_HMAC_KEY,
+        KEY_RULES.PILOT_GUARDIAN_HMAC_KEY,
+        "保護者確認リンクの発行も検証もできない(安全側)。未成年の参加登録が1件も成立しない。base64で32バイト以上。",
+      ),
+      severity: "blocking",
+    },
+    {
+      name: "NEXT_PUBLIC_SITE_URL",
+      // Read as a literal for the reason `NEXT_PUBLIC_PILOT_MODE` is: the
+      // bundler inlines it at build time, and only the literal expression
+      // reports what this bundle was built with.
+      configured: Boolean(process.env.NEXT_PUBLIC_SITE_URL?.trim()),
+      valid: siteUrlValid(process.env.NEXT_PUBLIC_SITE_URL?.trim()),
+      severity: "blocking",
+      consequence:
+        "保護者確認リンクにoriginが付かず(パスだけになる)、学校の連絡経路に載せられない。" +
+        "危機通知もリンク無しで送られる。httpsのoriginだけを入れる(パス・クエリ無し)。" +
+        "ビルド時に必要で、後から足しても再デプロイまで効かない。",
     },
   ];
 }

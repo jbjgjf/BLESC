@@ -1,8 +1,8 @@
-# パイロット研究の文書一式（50名×21日）
+# パイロット研究の文書一式（50名×28日）
 
 > 状態: **草案**。研究倫理責任者・学校責任者・データ管理責任者の承認前。
 > 版: protocol `pilot-protocol-v1` / 同意文書 `research-consent-doc-v1`
-> 2026-09-19 ownerが[方針決定](decisions-2026-09-19.md)を採用。文書にはv2改訂案を反映したが、アプリとDBの現行版はv1。版整合・運用検証・承認前の募集は禁止。
+> 2026-09-19 ownerが[方針決定](decisions-2026-09-19.md)を採用。文書にはv3改訂案（2026-10-04、研究期間を28日の1区間に変更、[#315](https://github.com/jbjgjf/BLESC/issues/315)）を反映したが、アプリとDBの現行版はv1。v3は未承認。版整合・運用検証・承認前の募集は禁止。
 > 親Epic [#161](https://github.com/jbjgjf/BLESC/issues/161) / 本文書は [#162](https://github.com/jbjgjf/BLESC/issues/162)
 
 | 文書 | 内容 |

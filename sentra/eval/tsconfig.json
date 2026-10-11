@@ -8,7 +8,16 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "noEmit": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    // Tests import product code (the i18n catalogue, recordEscalation) so the
+    // harness does not keep second copies of it. That code type-imports
+    // supabase-js, which resolves from sentra/frontend/node_modules — not
+    // installed in the eval CI job. Point it at this package's copy (the ESM
+    // declaration, the one the harness itself sees). Type-only: no runtime effect.
+    "paths": {
+      "@supabase/supabase-js": ["./node_modules/@supabase/supabase-js/dist/index.d.mts"]
+    }
   },
   "include": ["src", "tests"]
 }

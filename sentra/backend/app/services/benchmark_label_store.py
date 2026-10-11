@@ -11,7 +11,8 @@ This module is that route. It owns one directory:
 
     benchmark_labels/
       raters/<rater_id>.json   one returned labelling file, exactly as sent back
-      adjudication.json        recorded resolutions, and who signed the labels off
+      adjudication.json        recorded resolutions and exclusions, and who signed
+                               the labels off
 
 Two decisions worth stating, because both could reasonably have gone the other
 way:
@@ -30,19 +31,22 @@ and reports PRELIMINARY, rather than refusing to run until someone has labelled
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Set, Tuple
 
 from .benchmark_cases import BENCHMARK_CASES, BenchmarkCase
 from .benchmark_labelling import (
+    DATASET_VERSION,
     AgreementResult,
     Adjudication,
     RaterLabels,
     adjudicate,
     agreement_sample,
     apply_human_labels,
+    check_adjudication_record,
     cohens_kappa,
+    display_ids,
     labelling_file,
     read_rater_labels,
 )
@@ -68,11 +72,14 @@ class LabelledDataset:
     agreement: AgreementResult | None
     reviewer: str | None
     raters: List[str]
-    #: Cases two raters labelled differently with no resolution recorded. They
+    #: Cases two raters labelled differently with no decision recorded. They
     #: keep their drafted keys, so they are excluded rather than guessed at.
     disputed: List[str]
     #: `"drafted"` when no rater file exists at all.
     source: str
+    #: Disputed cases with a RECORDED decision not to adjudicate, and why. Out
+    #: of the confirmatory set like `disputed`, but no longer outstanding work.
+    excluded: Dict[str, str] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +134,17 @@ def validate_rows(rows: Sequence[Dict[str, object]], cases: Sequence[BenchmarkCa
         if case is None:
             problems.append(f"{where}: not a case in this dataset")
             continue
+        # Display ids are numbered in presentation order, and the order is
+        # derived from the candidate set. A file exported against another
+        # version can name `k07` and mean a different day, and nothing in the
+        # id would show it — so the version has to match, not just the ids.
+        version = row.get("dataset_version")
+        if version is not None and str(version) != DATASET_VERSION:
+            problems.append(
+                f"{where}: exported for dataset version {version}, this is {DATASET_VERSION}. "
+                "The candidates may differ; re-export and label again"
+            )
+            continue
         if "selected_evidence_ids" not in row:
             problems.append(f"{where}: no selected_evidence_ids field — the file was not filled in")
             continue
@@ -134,7 +152,9 @@ def validate_rows(rows: Sequence[Dict[str, object]], cases: Sequence[BenchmarkCa
         if not isinstance(picks, list):
             problems.append(f"{where}: selected_evidence_ids must be a list")
             continue
-        known = {day.evidence_id for day in case.evidence}
+        # The display ids are what a rater was shown; the case's own ids are
+        # accepted too, for tooling (see `read_rater_labels`).
+        known = {day.evidence_id for day in case.evidence} | set(display_ids(case).values())
         unknown = [str(pick) for pick in picks if str(pick) not in known and str(pick) != "none"]
         if unknown:
             problems.append(f"{where}: selected {sorted(unknown)}, which are not candidates of this case")
@@ -158,7 +178,7 @@ def store_rater_file(source: Path, store: Path = DEFAULT_STORE, cases: Sequence[
     if problems:
         raise LabelStoreError("\n".join([f"{source}: {len(problems)} problem(s)", *problems]))
 
-    labels = read_rater_labels(rows)  # also enforces one rater per file
+    labels = read_rater_labels(rows, cases)  # also enforces one rater per file
     destination = export_path(store, labels.rater_id)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -170,21 +190,41 @@ def store_rater_file(source: Path, store: Path = DEFAULT_STORE, cases: Sequence[
 # ---------------------------------------------------------------------------
 
 
-def load_rater_labels(store: Path = DEFAULT_STORE) -> List[RaterLabels]:
+def load_rater_labels(
+    store: Path = DEFAULT_STORE,
+    cases: Sequence[BenchmarkCase] = BENCHMARK_CASES,
+) -> List[RaterLabels]:
     directory = store / RATERS_DIRNAME
     if not directory.is_dir():
         return []
-    return [read_rater_labels(read_labelling_file(path)) for path in sorted(directory.glob("*.json"))]
+    return [
+        read_rater_labels(read_labelling_file(path), cases)
+        for path in sorted(directory.glob("*.json"))
+    ]
 
 
 def load_adjudication_record(store: Path = DEFAULT_STORE) -> Dict[str, object]:
+    """`resolutions`: case -> ids; `exclusions`: case -> reason; `reviewer`."""
     path = store / ADJUDICATION_FILENAME
     if not path.is_file():
-        return {"resolutions": {}, "reviewer": None}
+        return {"resolutions": {}, "exclusions": {}, "reviewer": None}
     record = json.loads(path.read_text(encoding="utf-8"))
     record.setdefault("resolutions", {})
+    record.setdefault("exclusions", {})
     record.setdefault("reviewer", None)
     return record
+
+
+def _recorded_decisions(record: Dict[str, object]) -> Tuple[Dict[str, Set[str]], Dict[str, str]]:
+    resolutions = {
+        case_id: {str(pick) for pick in picks}
+        for case_id, picks in dict(record.get("resolutions") or {}).items()
+    }
+    exclusions = {
+        str(case_id): str(reason)
+        for case_id, reason in dict(record.get("exclusions") or {}).items()
+    }
+    return resolutions, exclusions
 
 
 def write_adjudication_record(record: Dict[str, object], store: Path = DEFAULT_STORE) -> Path:
@@ -194,7 +234,11 @@ def write_adjudication_record(record: Dict[str, object], store: Path = DEFAULT_S
     return path
 
 
-def _merge(raters: Sequence[RaterLabels], resolutions: Dict[str, Set[str]]) -> Adjudication:
+def _merge(
+    raters: Sequence[RaterLabels],
+    resolutions: Dict[str, Set[str]],
+    exclusions: Dict[str, str] | None = None,
+) -> Adjudication:
     """Fold any number of rater files into one adjudication.
 
     Two raters is the designed case — the set is single-labelled apart from the
@@ -207,12 +251,19 @@ def _merge(raters: Sequence[RaterLabels], resolutions: Dict[str, Set[str]]) -> A
     person who saw it and their answer would silently become the label. A
     disagreement must survive every rater who did not resolve it.
     """
+    exclusions = dict(exclusions or {})
     if not raters:
+        problems = check_adjudication_record((), resolutions, exclusions)
+        if problems:
+            raise LabelStoreError("\n".join(problems))
         return Adjudication(agreed={}, disputed={}, resolved={})
-    if len(raters) == 1:
-        return adjudicate(raters[0], RaterLabels("∅", {}), resolutions)
-    if len(raters) == 2:
-        return adjudicate(raters[0], raters[1], resolutions)
+    try:
+        if len(raters) == 1:
+            return adjudicate(raters[0], RaterLabels("∅", {}), resolutions, exclusions)
+        if len(raters) == 2:
+            return adjudicate(raters[0], raters[1], resolutions, exclusions)
+    except ValueError as error:
+        raise LabelStoreError(f"{ADJUDICATION_FILENAME}: {error}") from error
 
     agreed: Dict[str, Set[str]] = {}
     disputed: Dict[str, Tuple[Set[str], Set[str]]] = {}
@@ -225,8 +276,11 @@ def _merge(raters: Sequence[RaterLabels], resolutions: Dict[str, Set[str]]) -> A
         else:
             disputed[case_id] = (set(distinct[0]), set(distinct[1]))
 
+    problems = check_adjudication_record(disputed, resolutions, exclusions)
+    if problems:
+        raise LabelStoreError(f"{ADJUDICATION_FILENAME}: " + "\n".join(problems))
     resolved = {case_id: set(picks) for case_id, picks in resolutions.items() if case_id in disputed}
-    return Adjudication(agreed=agreed, disputed=disputed, resolved=resolved)
+    return Adjudication(agreed=agreed, disputed=disputed, resolved=resolved, excluded=exclusions)
 
 
 def resolve_dataset(
@@ -240,7 +294,7 @@ def resolve_dataset(
     difference is that it is now a fact read off disk rather than the only
     possibility.
     """
-    raters = load_rater_labels(store)
+    raters = load_rater_labels(store, cases)
     if not raters:
         return LabelledDataset(
             cases=list(cases),
@@ -252,20 +306,29 @@ def resolve_dataset(
         )
 
     record = load_adjudication_record(store)
-    resolutions = {
-        case_id: {str(pick) for pick in picks}
-        for case_id, picks in dict(record.get("resolutions") or {}).items()
-    }
-    merged = _merge(raters, resolutions)
+    resolutions, exclusions = _recorded_decisions(record)
+    merged = _merge(raters, resolutions, exclusions)
 
     return LabelledDataset(
         cases=apply_human_labels(merged, cases),
         agreement=measure_agreement(raters, cases),
         reviewer=record.get("reviewer"),
         raters=[rater.rater_id for rater in raters],
-        disputed=sorted(set(merged.disputed) - set(merged.resolved)),
+        disputed=merged.unresolved,
         source="store",
+        excluded=dict(sorted(merged.excluded.items())),
     )
+
+
+def disputed_case_ids(
+    store: Path = DEFAULT_STORE,
+    cases: Sequence[BenchmarkCase] = BENCHMARK_CASES,
+) -> List[str]:
+    """Every case two raters disagreed on, decided or not."""
+    raters = load_rater_labels(store, cases)
+    if len(raters) < 2:
+        return []
+    return sorted(_merge(raters, {}, {}).disputed)
 
 
 def measure_agreement(
@@ -303,31 +366,45 @@ def dispute_report(
     store: Path = DEFAULT_STORE,
     cases: Sequence[BenchmarkCase] = BENCHMARK_CASES,
 ) -> List[Dict[str, object]]:
-    """Every unresolved disagreement, with both selections, for adjudication."""
-    raters = load_rater_labels(store)
+    """Every unresolved disagreement, with both selections, for adjudication.
+
+    In display ids, with the text of every day either rater picked. Whoever
+    adjudicates is choosing between two raters, and the case's own ids would
+    tell them which of the two agreed with the draft (`c` target, `f` foil) —
+    adjudication would then drift toward the drafted key, which is the one
+    answer #88 says nobody may supply. `--resolve` takes display ids back.
+    """
+    raters = load_rater_labels(store, cases)
     if len(raters) < 2:
         return []
     record = load_adjudication_record(store)
-    resolutions = {
-        case_id: {str(pick) for pick in picks}
-        for case_id, picks in dict(record.get("resolutions") or {}).items()
-    }
-    merged = _merge(raters, resolutions)
+    resolutions, exclusions = _recorded_decisions(record)
+    merged = _merge(raters, resolutions, exclusions)
     by_id = {case.case_id: case for case in cases}
 
     report: List[Dict[str, object]] = []
     for case_id, (picks_a, picks_b) in sorted(merged.disputed.items()):
-        if case_id in merged.resolved:
+        if case_id in merged.resolved or case_id in merged.excluded:
             continue
         case = by_id.get(case_id)
+        shown = display_ids(case) if case else {}
+        text = {day.evidence_id: day.text for day in case.evidence} if case else {}
+
+        def as_shown(picks: Set[str]) -> List[str]:
+            return sorted(shown.get(pick, pick) for pick in picks)
+
         report.append(
             {
                 "case_id": case_id,
                 "query": case.query if case else "",
-                "first": sorted(picks_a),
-                "second": sorted(picks_b),
-                "only_first": sorted(picks_a - picks_b),
-                "only_second": sorted(picks_b - picks_a),
+                "first": as_shown(picks_a),
+                "second": as_shown(picks_b),
+                "only_first": as_shown(picks_a - picks_b),
+                "only_second": as_shown(picks_b - picks_a),
+                "candidates": {
+                    shown.get(pick, pick): text.get(pick, "")
+                    for pick in sorted(picks_a | picks_b)
+                },
             }
         )
     return report

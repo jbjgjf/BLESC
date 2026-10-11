@@ -9,7 +9,15 @@
 const BRAND = ["blesc"];
 
 /** Shell commands and selectors, quoted so a reader can copy them. */
-const CODE = ["npm run smoke", "#bl-main h1"];
+const CODE = [
+  "npm run smoke",
+  "#bl-main h1",
+  // The two commands an operator runs to tell a hex key from a base64 one
+  // (#255). They appear inside a Japanese sentence in `base64Key.ts`; a
+  // translated command is a command that does not run.
+  "openssl rand -hex 32",
+  "openssl rand -base64 32",
+];
 
 /**
  * Text the product matches *on*, not text it shows. Supabase answers in
@@ -24,9 +32,6 @@ const MATCHED_AGAINST = [
   "rate limit",
   "too many",
   "not configured",
-  "kill myself",
-  "want to die",
-  "hurt myself",
 ];
 
 /**

@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
-  DEFAULT_PHASES,
+  DEFAULT_STUDY_DAYS,
   buildIdentityMap,
   buildResearchDataset,
   dayIndex,
   identityLeakIn,
-  studyPhase,
+  withinStudy,
 } from "../src/lib/researchExport.ts";
 import { modelTrainingUseAllowed, normalizeConsent } from "../src/lib/consent.ts";
 
@@ -338,53 +338,66 @@ const reading = (over = {}) => ({
   ...over,
 });
 
-describe("studyPhase", () => {
-  it("splits the protocol at the study's own baseline boundary", () => {
-    const phases = { baselineDays: 14, observationDays: 7 };
-    assert.equal(studyPhase(1, phases), "baseline");
-    assert.equal(studyPhase(14, phases), "baseline");
-    assert.equal(studyPhase(15, phases), "observation");
-    assert.equal(studyPhase(21, phases), "observation");
+describe("withinStudy", () => {
+  it("collects days 1 to 28 under the default, and not day 29", () => {
+    assert.equal(DEFAULT_STUDY_DAYS, 28);
+    assert.equal(withinStudy(1, DEFAULT_STUDY_DAYS), true);
+    assert.equal(withinStudy(28, DEFAULT_STUDY_DAYS), true);
+    assert.equal(withinStudy(29, DEFAULT_STUDY_DAYS), false);
   });
 
-  it("reads the boundary from the study, not from the 14/21 in the dictionary", () => {
-    // Those numbers are the column defaults. A study configured differently
-    // must not be exported under someone else's phase boundary.
-    const short = { baselineDays: 3, observationDays: 2 };
-    assert.equal(studyPhase(3, short), "baseline");
-    assert.equal(studyPhase(4, short), "observation");
-    assert.equal(studyPhase(6, short), null);
-  });
-
-  it("returns null past the end rather than a late observation day", () => {
-    assert.equal(studyPhase(22, DEFAULT_PHASES), null);
+  it("reads the length from the study, not from the default", () => {
+    // A dry run is three days. Its day 4 is past the end even though the real
+    // pilot would still be collecting.
+    assert.equal(withinStudy(3, 3), true);
+    assert.equal(withinStudy(4, 3), false);
   });
 
   it("has no day 0 and no negative days", () => {
-    // `buildResearchDataset` excludes anything below 1 as outside the window;
-    // counting it as baseline here would disagree with that.
-    assert.equal(studyPhase(0, DEFAULT_PHASES), null);
-    assert.equal(studyPhase(-1, DEFAULT_PHASES), null);
+    assert.equal(withinStudy(0, DEFAULT_STUDY_DAYS), false);
+    assert.equal(withinStudy(-1, DEFAULT_STUDY_DAYS), false);
   });
 });
 
-describe("buildResearchDataset — study_phase", () => {
-  it("stamps the phase beside the day index", () => {
+describe("buildResearchDataset — study window", () => {
+  // The fixture's window opens on 2026-09-06 JST, so day 28 is 2026-10-03 JST
+  // and day 29 is 2026-10-04 JST.
+  const onDay = (isoJstNoon) => entry({ created_at: isoJstNoon });
+
+  it("stamps the day index and no phase", () => {
     const { rows } = build();
     assert.equal(rows[0].day_index, 3);
-    assert.equal(rows[0].study_phase, "baseline");
+    // The protocol has no baseline / observation halves since #315; a row that
+    // still carried one would be telling the analyst about a split nobody
+    // consented to.
+    assert.equal("study_phase" in rows[0], false);
   });
 
-  it("uses the split configured for that study", () => {
-    const { rows } = build({
-      phasesByStudy: new Map([["study-1", { baselineDays: 2, observationDays: 5 }]]),
+  it("keeps the last day and excludes the day after it", () => {
+    const result = build({
+      entries: [
+        onDay("2026-10-03T03:00:00Z"), // day 28
+        { ...onDay("2026-10-04T03:00:00Z"), id: "entry-2" }, // day 29
+      ],
     });
-    assert.equal(rows[0].study_phase, "observation");
+    assert.deepEqual(result.rows.map((row) => row.day_index), [28]);
+    // Writing after the last day 「研究データとしない」 (consent pack 第4条): it is
+    // counted, so the shortfall is visible, but it is not exported.
+    assert.equal(result.excluded.outside_window, 1);
   });
 
-  it("falls back to the column defaults for an unknown study", () => {
-    const { rows } = build({ phasesByStudy: new Map() });
-    assert.equal(rows[0].study_phase, "baseline");
+  it("uses the length configured for that study", () => {
+    const result = build({ studyDaysByStudy: new Map([["study-1", 2]]) });
+    assert.equal(result.rows.length, 0);
+    assert.equal(result.excluded.outside_window, 1);
+  });
+
+  it("falls back to the column default for an unknown study", () => {
+    const result = build({
+      entries: [onDay("2026-10-03T03:00:00Z")],
+      studyDaysByStudy: new Map(),
+    });
+    assert.equal(result.rows[0].day_index, 28);
   });
 });
 

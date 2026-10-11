@@ -56,6 +56,12 @@ from ..analytics.pattern_mining import (
 )
 from ..analytics.cognitive_probe import cognitive_probe_features
 from ..analytics.writing_dynamics import writing_dynamics_for_session
+from ..ontology.relation_endpoints import (
+    relation_source_id as _relation_source_id,
+    relation_source_or_unresolved,
+    relation_target_id as _relation_target_id,
+    relation_target_or_unresolved,
+)
 from ..schemas.analytics import AnomalyResult, DailyFeatureAggregation
 from ..schemas.entry import Entry
 from ..schemas.extraction import Extraction
@@ -188,14 +194,6 @@ def _node_label(node: Dict[str, Any]) -> str:
 
 def _node_category(node: Dict[str, Any]) -> str:
     return str(node.get("category") or "Unknown")
-
-
-def _relation_source_id(relation: Dict[str, Any]) -> str:
-    return str(relation.get("source_node_id") or relation.get("source_id") or "")
-
-
-def _relation_target_id(relation: Dict[str, Any]) -> str:
-    return str(relation.get("target_node_id") or relation.get("target_id") or "")
 
 
 def _node_brief(node: Dict[str, Any]) -> Dict[str, Any]:
@@ -565,10 +563,13 @@ def record_model_run(
 
 def _entity_key(entity: Dict[str, Any], entity_type: str) -> str:
     if entity_type == "relation":
+        # Same resolver as the Supabase mirror (#304). The local key keeps its
+        # own `source|target|type` layout; only the endpoint lookup is shared,
+        # and a missing endpoint is marked rather than left as an empty slot.
         return "|".join(
             [
-                str(entity.get("source_id") or entity.get("source_node_id") or ""),
-                str(entity.get("target_id") or entity.get("target_node_id") or ""),
+                relation_source_or_unresolved(entity),
+                relation_target_or_unresolved(entity),
                 str(entity.get("type") or "co_occurs"),
             ]
         )

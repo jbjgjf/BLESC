@@ -449,6 +449,63 @@ def test_positional_id_history_suppresses_the_comparison(monkeypatch):
     assert diff["removed_nodes"] == []
 
 
+# ── graph_change_events keys (#304) ──────────────────────────────────────────
+#
+# `entity_key` is how a change row says which element changed. Reading the
+# endpoints as `source_id` alone keyed every relation in the extractor's
+# `source_node_id` shape `None:causes:None`, so the rows of one version could
+# not be told apart.
+
+
+def _relation_change_keys(client):
+    return [row["entity_key"] for row in client.writes["graph_change_events"] if row["entity_type"] == "relation"]
+
+
+def test_extractor_shaped_relations_are_keyed_by_their_endpoints(monkeypatch):
+    client = FakeClient()
+    _configured(monkeypatch, client)
+    relations = [
+        {"source_node_id": "exam", "target_node_id": "sleep", "type": "causes", "confidence": 0.8},
+        {"source_node_id": "sleep", "target_node_id": "fatigue", "type": "causes", "confidence": 0.7},
+    ]
+
+    supabase_writer.write_entry_result(
+        "owner-1", "participant-1", _computed(nodes=[_node("exam", "Trigger"), _node("sleep"), _node("fatigue")], relations=relations)
+    )
+
+    keys = _relation_change_keys(client)
+    assert keys == ["exam:causes:sleep", "sleep:causes:fatigue"]
+    # Two relations of the same type in one version must stay distinguishable.
+    assert len(set(keys)) == len(keys)
+
+
+def test_validated_relations_keep_the_same_key(monkeypatch):
+    """Both spellings of one relation resolve to one key, so history lines up."""
+    client = FakeClient()
+    _configured(monkeypatch, client)
+
+    supabase_writer.write_entry_result("owner-1", "participant-1", _computed(relations=[_relation("exam", "sleep")]))
+
+    assert _relation_change_keys(client) == ["exam:causes:sleep"]
+
+
+def test_an_unresolvable_endpoint_is_marked_not_printed_as_none(monkeypatch):
+    client = FakeClient()
+    _configured(monkeypatch, client)
+    relations = [
+        {"type": "causes", "confidence": 0.5},
+        {"source_node_id": "exam", "type": "causes", "confidence": 0.5},
+    ]
+
+    supabase_writer.write_entry_result("owner-1", "participant-1", _computed(relations=relations))
+
+    keys = _relation_change_keys(client)
+    assert keys == ["<unresolved>:causes:<unresolved>", "exam:causes:<unresolved>"]
+    assert all("None" not in key for key in keys)
+    # The marker is the shared constant, not a writer-local spelling.
+    assert supabase_writer.relation_source_or_unresolved({}) == "<unresolved>"
+
+
 # ── failure containment ──────────────────────────────────────────────────────
 
 

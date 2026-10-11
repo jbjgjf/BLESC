@@ -355,6 +355,49 @@ that the metrics are right on inputs whose answers are known by hand, that the
 counterfactual gate really moves the orchestrator, and that
 `MIN_REFLECTION_BASELINE_DAYS` is still floored at `RAMP_UP_DAYS`.
 
+## Required observations for the learned stages (#99, #100)
+
+This study measured how much of *one participant's* history a Reflection
+Signal needs. It did not measure how much real data a population-to-personal
+model (#99) or learned relation-specific attention (#100) needs, and on
+synthetic participants it could not: their entry gates are about real,
+consented students. Those thresholds are pre-registration items, and they are
+**未決定** — see `stage2_partial_pooling_preregistration.md` and
+`stage3_relation_attention_preregistration.md`.
+
+What exists is the judgement the gates call,
+`data_sufficiency.assess_observation_sufficiency`. It takes counts, never
+content, and returns `sufficient` plus every reason as a stable code
+(`observation_requirement_undecided`, `no_observed_data`,
+`not_real_consented_data`, `requirement_exceeds_design`, ...). Counts classified
+anything other than `real_consented` are refused outright rather than
+down-weighted.
+
+**The design it judges against is 50 participants × 28 days, one period, one
+entry a day — at most 1,400 entries.** That is PR #328 (#315), which is not on
+main as of 2026-10-11; main's `docs/pilot/protocol.md` still says 50 × 21.
+
+**1,400 entries are not 1,400 observations.** One student's days resemble each
+other. Under an exchangeable within-participant correlation ρ, participant *i*'s
+*m_i* days are worth *m_i* / (1 + (*m_i* − 1)ρ) independent ones, summed over
+participants:
+
+| ρ | 0 | 0.1 | 0.2 | 0.3 | **0.5** | 0.7 | 1 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| effective n, 50 × 28 | 1,400 | 378 | 219 | 154 | **97** | 70 | 50 |
+
+ρ = 0.5 is the planning assumption (`PLANNING_ICC`, the value
+`world-model/math-identification.md` uses); nothing has measured it. When real
+data supplies an interval, the gate uses its **upper** end, because a larger ρ
+means fewer effective observations. A requirement the design cannot reach —
+an effective n above ≈ 97 at ρ = 0.5, more than 50 participants, more than 28
+days — is reported as `requirement_exceeds_design` before any data is looked at.
+
+One finding above bears directly on these stages: the pilot collects **one entry
+a day**, the sparsest density this study swept, where detection AUROC plateaus
+near 0.74 (Result 2). Whatever the learned stages need, they will be judged on
+the density at which the deterministic signal is weakest.
+
 ## Related
 
 - `baseline_reestimation.md` — why `POPULATION_BASELINE` was deleted (#91)

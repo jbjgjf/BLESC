@@ -33,6 +33,7 @@
 import type { NextRequest } from "next/server";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { envPositiveInt } from "./envNumber.ts";
 
 export type RateLimitRule = {
   /** Namespace for the counter. Appears in the bucket key. */
@@ -67,14 +68,40 @@ export const RULES = {
   inviteRedeem: rule("invite-redeem", "PILOT_INVITE_REDEEM_LIMIT", 10, 3600),
   /** Issuing or re-sending a guardian verification link. */
   guardianIssue: rule("guardian-issue", "PILOT_GUARDIAN_ISSUE_LIMIT", 20, 3600),
+  /**
+   * Answering a guardian link (#246). The route takes no session, so this is
+   * per address. A guardian answers once and may reopen the link to check;
+   * twenty an hour is not that person, and it bounds how often an unsigned
+   * request can make the database look a token up.
+   */
+  guardianConfirm: rule("guardian-confirm", "PILOT_GUARDIAN_CONFIRM_LIMIT", 20, 3600),
+  /**
+   * Recording acceptance of the terms or the privacy policy (#253). Two
+   * documents, each accepted once per version: pressing it again is not a
+   * thing people do, so the limit is as low as redemption's.
+   */
+  legalAcceptance: rule("legal-acceptance", "LEGAL_ACCEPTANCE_LIMIT", 10, 3600),
   /** Routes that call OpenAI and therefore spend money. */
   externalModel: rule("external-model", "EXTERNAL_MODEL_LIMIT", 60, 3600),
+  /**
+   * Signed-in routes that write rows from client-supplied text without calling
+   * a model (#369). `/api/voice/turn` is the first; the limit is per user, so
+   * other such routes can share it.
+   *
+   * 600 because a realtime voice session lasts ten minutes and a settled turn
+   * — the student speaks, the model answers — takes several seconds: a session
+   * of nothing but five-second turns is 120, and this is five of those back to
+   * back. Typing does not come close.
+   */
+  authenticatedWrite: rule("authenticated-write", "AUTHENTICATED_WRITE_LIMIT", 600, 3600),
 } as const;
 
+// The validation this used to do inline now lives in `envNumber.ts` (#269),
+// because three other call sites were reading numbers out of the environment
+// without it and turning a typo into an aborted request or a missing size cap.
+// One copy of the rule, so there cannot be two versions of it.
 function rule(route: string, envVar: string, fallback: number, windowSeconds: number): RateLimitRule {
-  const configured = Number(process.env[envVar]);
-  const limit = Number.isSafeInteger(configured) && configured > 0 ? configured : fallback;
-  return { route, limit, windowSeconds };
+  return { route, limit: envPositiveInt(envVar, fallback), windowSeconds };
 }
 
 /**
