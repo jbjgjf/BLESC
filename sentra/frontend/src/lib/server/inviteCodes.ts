@@ -24,6 +24,7 @@
  */
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { KEY_RULES, readBase64Key } from "./base64Key.ts";
 
 /** Crockford base32: 32 symbols, minus I, L, O, U. */
 const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -107,23 +108,27 @@ export function inviteCodePrefix(normalized: string): string {
   return normalized.slice(0, CODE_PREFIX_LENGTH);
 }
 
-/** The configured HMAC key, or null when the deployment has none. */
+/**
+ * The configured HMAC key, or null when the deployment has none.
+ *
+ * Decoded by `base64Key.ts` so that this and the deployment self-check apply
+ * one rule (#255). It matters more here than anywhere else that a wrong-format
+ * key is *rejected* rather than quietly used: 64 hex characters decode to 48
+ * valid bytes, codes would be issued under them, and the day somebody corrects
+ * the format every invitation already printed and handed to a school stops
+ * matching its hash.
+ */
 export function inviteHmacKey(): Buffer | null {
-  const configured = process.env.PILOT_INVITE_HMAC_KEY;
-  if (!configured) return null;
-
-  let bytes: Buffer;
-  try {
-    bytes = Buffer.from(configured, "base64");
-  } catch {
-    console.warn("[pilot-invite] PILOT_INVITE_HMAC_KEY is not valid base64; no code can be redeemed");
+  const result = readBase64Key(process.env.PILOT_INVITE_HMAC_KEY, KEY_RULES.PILOT_INVITE_HMAC_KEY);
+  if (!result.ok) {
+    if (result.problem !== "absent") {
+      console.warn(
+        `[pilot-invite] PILOT_INVITE_HMAC_KEY is unusable (${result.problem}); no code can be redeemed`,
+      );
+    }
     return null;
   }
-  if (bytes.length < 32) {
-    console.warn("[pilot-invite] PILOT_INVITE_HMAC_KEY must decode to at least 32 bytes; no code can be redeemed");
-    return null;
-  }
-  return bytes;
+  return result.bytes;
 }
 
 export function inviteHashingConfigured(): boolean {
