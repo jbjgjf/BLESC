@@ -19,6 +19,18 @@ Types: `feat`, `fix`, `chore`, `refactor`, `docs`, `spike`
 
 **Direct push to `main`: forbidden.** Main is protected (require PR + 1 review + passing CI). No one, including the lead, pushes directly.
 
+**Which CI runs when:**
+
+| What you do | What runs |
+| --- | --- |
+| Push to `claude/**`, `feat/**`, `fix/**`, `chore/**`, `refactor/**`, `docs/**`, `spike/**` | [Research Contracts](.github/workflows/research-contracts.yml), all jobs. A newer push to the same branch cancels the run for the older commit |
+| Open or update a pull request | Research Contracts again, as the `pull_request` event. This is the run branch protection reads |
+| Merge to `main` | Research Contracts on `main`, never cancelled |
+| Push to a branch with any other prefix | Nothing until a pull request is opened |
+| Nothing (every 5 minutes, or by hand) | [Safety dispatch](.github/workflows/safety-dispatch.yml). Not triggered by pushes |
+
+A branch with an open pull request therefore gets two runs per push. The list of prefixes lives in the `on:` block of the workflow; change it there and here together.
+
 **Experimental/spike branches:** prefix `spike/`, max lifespan 3 days, never merged directly — if the spike works, cut a clean `feat/` branch and PR from that. Delete spike branches after.
 
 ---

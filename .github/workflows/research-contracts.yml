@@ -1,11 +1,42 @@
 name: Research Contracts
 
+# When this runs (#295). `pull_request` is what branch protection reads and is
+# the only trigger a merge depends on. The push trigger is for the time before a
+# pull request exists: the RLS and E2E jobs need a local Supabase stack, most
+# people do not start one, and without a push run the first result arrives when
+# the pull request is opened.
+#
+# The branch list is the naming in CONTRIBUTING.md §1 plus `claude/**`, which
+# is what the agent sessions push to. It used to be `main` and `codex/**`, a
+# prefix no branch on the remote has, so no work branch ever got a push run.
+# Listed rather than inverted with `branches-ignore`: `dependabot/**` always
+# has a pull request, so a push run there is a pure duplicate, and a name
+# outside the convention should not start seven jobs by accident.
+#
+# A branch that already has a pull request runs twice per push, once for each
+# event. That is accepted: the repository is public, so the minutes are not
+# billed, and telling the two apart would take an API call per run. What is
+# not accepted is a queue of runs for commits that have been superseded, which
+# is what `concurrency` below removes.
 on:
   pull_request:
   push:
     branches:
       - main
-      - "codex/**"
+      - "claude/**"
+      - "feat/**"
+      - "fix/**"
+      - "chore/**"
+      - "refactor/**"
+      - "docs/**"
+      - "spike/**"
+
+# One live run per branch and event. A newer push cancels the run for the older
+# commit, except on `main`, where every merge keeps its own result so a red
+# main can be traced to the merge that caused it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Every job here checks out, runs tests, and uploads artifacts. None of that
 # needs the token to be able to write: artifact upload authenticates against the
