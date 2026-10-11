@@ -69,6 +69,28 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ExtractionPayload } from "@/lib/extraction";
+// Relative, with the extension: this module is loaded directly by
+// `tests/collection-mode.test.mjs` under node, which resolves the `@/` alias
+// only for type-only imports. `pilotDeployment.ts` has no imports of its own
+// for the same reason — see its header.
+import { pilotGateEnforced } from "./pilotDeployment.ts";
+
+/**
+ * Why the gate closed without reading anything.
+ *
+ * Separated from the normal path so the log line can say which of the two
+ * happened, and so a reader of this file can see that "not a pilot deployment"
+ * and "a pilot deployment that cannot check" are different answers (#296).
+ */
+function unreachableGate(scope: "participant" | "user"): boolean {
+  if (!pilotGateEnforced()) return false;
+  console.error(
+    `[collection-mode] no service-role client for the ${scope} gate on a pilot deployment; withholding external calls. ` +
+      "Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY: without them this process cannot tell whether a " +
+      "participant's collection window is open, and #165 promises their text is not sent while it is.",
+  );
+  return true;
+}
 
 /**
  * Whether this participant is inside an open collection window.
@@ -83,14 +105,32 @@ import type { ExtractionPayload } from "@/lib/extraction";
  * the other direction is a pilot participant's journal text leaving the system
  * during the study. Those are not comparable, so the check does not treat them
  * as a tie.
+ *
+ * That holds for a *missing client* as well, and it did not used to (#296). The
+ * old reading was that no client means no enrollment can exist — true of a
+ * missing participant id, false of a missing client. `serviceRoleClient()`
+ * returns null whenever `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` is unset,
+ * mistyped, or rotated without the deployment being updated. The enrollments
+ * are still in the database; this process has lost the key to read them. So all
+ * five send points opened, on a pilot deployment, with nothing in the log but
+ * "skipping sync".
+ *
+ * Which deployment this is comes from `pilotGateEnforced()` — the same question
+ * `pilotGate.ts` asks before it refuses anyone. Off `PILOT_STUDY_SLUG`, and in
+ * demo mode and development, nothing changes: a school evaluating the product
+ * and a laptop with no service key keep their AI features.
  */
 export async function collectionOnlyForParticipant(
   client: SupabaseClient | null,
   participantId: string | null,
 ): Promise<boolean> {
-  // No participant and no service client means no enrollment can exist, so
-  // there is nothing to protect. This is the ordinary non-pilot path.
-  if (!client || !participantId) return false;
+  // No participant means no enrollment can exist, so there is nothing to
+  // protect — on any deployment.
+  if (!participantId) return false;
+  // No client is a different fact: the enrollment may well exist and this
+  // process has lost the key to read it. On a pilot deployment that is a gate
+  // that cannot answer, which must not be read as "open" (#296).
+  if (!client) return unreachableGate("participant");
 
   const result = await client.rpc("pilot_collection_open", { target_participant: participantId });
   if (result.error) {
@@ -116,7 +156,8 @@ export async function collectionOnlyForUser(
   client: SupabaseClient | null,
   ownerUserId: string | null,
 ): Promise<boolean> {
-  if (!client || !ownerUserId) return false;
+  if (!ownerUserId) return false;
+  if (!client) return unreachableGate("user");
 
   const result = await client
     .from("pilot_enrollments")

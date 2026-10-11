@@ -41,6 +41,8 @@ insert into rls_service_only values
    'audit log of who opened a journal; written and read only by the triage API via service_role (20260921030000, #256)'),
   ('pilot_invitations',
    'invitation codes are stored hashed and redeemed only through SECURITY DEFINER functions (20260906010000)'),
+  ('pilot_retention_policy',
+   'retention periods and their approval; read by the purge job and changed by an operator, both via service_role (20261010010000, #318)'),
   ('rate_limit_counters',
    'written only by the server-side limiter with service_role; participants have no reason to see it (20260921000000)');
 

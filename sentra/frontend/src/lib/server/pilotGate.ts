@@ -27,26 +27,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isCollecting, pendingRequirement, type PilotEnrollment } from "@/lib/pilotEnrollment";
 import { collectionOpen, loadStudyBySlug } from "./pilotStore";
 
-/** The study this deployment collects for, or null on a normal deployment. */
-export function pilotStudySlug(): string | null {
-  const slug = process.env.PILOT_STUDY_SLUG?.trim();
-  return slug ? slug : null;
-}
-
 /**
- * Whether the enrollment gate applies.
+ * Re-exported, not moved away.
  *
- * Demo mode turns it off even when a study is configured. The demo reads fixed
- * data and never touches Supabase, so gating it would only mean the 5-minute
- * walkthrough in `demo_and_release_gate.md` stops at a redirect — protecting
- * nothing, since there is no participant and nothing is written.
+ * The two predicates now live in `pilotDeployment.ts` because
+ * `collectionMode.ts` needs the same answer and cannot import this file — see
+ * the header there. Every existing caller reaches them through
+ * `@/lib/server/pilotGate`, which is still the right place to look for them,
+ * so they keep arriving from here.
  */
-export function pilotGateEnforced(): boolean {
-  if (!pilotStudySlug()) return false;
-  if (process.env.NEXT_PUBLIC_DEMO_MODE === "1") return false;
-  if (process.env.NODE_ENV === "development") return false;
-  return true;
-}
+import { pilotGateEnforced, pilotStudySlug } from "./pilotDeployment";
+export { pilotGateEnforced, pilotStudySlug };
 
 export type GateOutcome =
   | { allowed: true; reason: "not_enforced" | "collecting" }
