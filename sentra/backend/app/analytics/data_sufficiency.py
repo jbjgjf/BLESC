@@ -46,13 +46,22 @@ Event durations are deliberately absent. The production extraction schema never
 asks the model for one, so `event_avg_duration` is zero on every real day while
 carrying weight 0.08 in the deviation table. Generating durations here would
 have hidden that; leaving them out reproduces it.
+
+## Required observations for the learned stages
+
+The last section of this file is not about the synthetic participants. It is
+the judgement the #99 and #100 entry gates call: given the pilot design and the
+counts of real, consented observations, is there enough to fit anything? It
+reads counts, never content, and it never reads data itself — whoever calls it
+supplies the counts. Synthetic counts are refused, because the generators above
+are the one thing this module knows is not a measured population.
 """
 
 from __future__ import annotations
 
 import hashlib
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date
 from statistics import fmean
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -656,3 +665,388 @@ def choose_threshold(labelled_scores: Sequence[Tuple[bool, float]]) -> Dict[str,
         "f1": round(float(best_f1), 6),
         "candidates": len(candidates),
     }
+
+
+# ── required observations for the learned stages (#99, #100) ─────────────────
+#
+# Nothing below generates or reads data. It answers one question for the entry
+# gates in `app/ontology/learning_gates.py`: do the real, consented observations
+# someone has counted meet what the stage pre-registered as necessary, and could
+# the pilot design ever deliver it? The answer is a decision plus every reason
+# behind it, in codes a machine can branch on.
+
+#: The only `data_classification` whose counts are counted. Everything else —
+#: `synthetic` above all — is refused rather than down-weighted: a synthetic
+#: participant was written by the person asking the question, and counting it
+#: towards "enough real data" is the laundering #91 removed.
+REAL_CONSENTED = "real_consented"
+
+#: Reason codes. Stable strings: a caller branches on these, not on the prose.
+REQUIREMENT_UNDECIDED = "observation_requirement_undecided"
+REQUIREMENT_EXCEEDS_DESIGN = "requirement_exceeds_design"
+NO_OBSERVED_DATA = "no_observed_data"
+NOT_REAL_CONSENTED = "not_real_consented_data"
+COUNTS_INCONSISTENT_WITH_DESIGN = "observed_counts_inconsistent_with_design"
+TOO_FEW_PARTICIPANTS = "too_few_participants"
+EFFECTIVE_SAMPLE_BELOW_REQUIREMENT = "effective_sample_below_requirement"
+TOO_FEW_EDGES_PER_RELATION = "too_few_edges_per_relation_type"
+
+
+@dataclass(frozen=True)
+class StudyDesign:
+    """The collection design a requirement is judged against."""
+
+    participants: int
+    days_per_participant: int
+    entries_per_day: int
+    source: str
+
+    @property
+    def observations_per_participant(self) -> int:
+        return self.days_per_participant * self.entries_per_day
+
+    @property
+    def max_observations(self) -> int:
+        return self.participants * self.observations_per_participant
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "participants": self.participants,
+            "days_per_participant": self.days_per_participant,
+            "entries_per_day": self.entries_per_day,
+            "max_observations": self.max_observations,
+            "source": self.source,
+        }
+
+
+#: 50 participants x 28 days, one collection period, one entry a day: at most
+#: 1,400 entries.
+#:
+#: Taken from PR #328 (#315), which is **not on main** as of 2026-10-11 — main's
+#: `docs/pilot/protocol.md` still describes 50 x 21 days (14 baseline + 7
+#: observation). #315 settled 28 days with no split on 2026-10-04, and after that
+#: PR the source of truth is `sentra/frontend/src/lib/pilotProtocol.ts`
+#: (`PILOT_TARGET_PARTICIPANTS`, `PILOT_STUDY_DAYS`, `PILOT_MAX_ENTRIES`). Should
+#: #328 change before it merges, this changes with it.
+PILOT_STUDY_DESIGN = StudyDesign(
+    participants=50,
+    days_per_participant=28,
+    entries_per_day=1,
+    source="PR #328 (#315) pilotProtocol.ts; not on main as of 2026-10-11",
+)
+
+#: Within-participant correlation assumed for planning, until real data measures
+#: one. 0.5 is the value `sentra/docs/world-model/math-identification.md` (PR #328)
+#: uses for the same calculation. It is an assumption: nothing has measured how
+#: alike one student's days are, and the pre-registration decides how the real
+#: value is estimated and whether it replaces this one.
+PLANNING_ICC = 0.5
+
+
+def effective_sample_size(observations_per_participant: Sequence[int], icc: float) -> float:
+    """How many independent observations a set of per-participant counts is worth.
+
+    One student's days are not independent of each other. Under an exchangeable
+    within-participant correlation `icc`, participant i's m_i observations carry
+    the information of m_i / (1 + (m_i - 1) * icc) independent ones (Kish's design
+    effect), and the total is the sum over participants. For the whole pilot —
+    50 x 28 at icc 0.5 — that is 1400 / 14.5 = 96.6: about 97 observations' worth,
+    not 1,400.
+
+    It is the planning approximation requirements are stated in, exact for the
+    mean under compound symmetry. A model with slopes or autocorrelation has its
+    own effective size; this is not a power calculation and is not used as one.
+    """
+    if not 0.0 <= icc <= 1.0:
+        raise ValueError(f"icc must lie in [0, 1]; got {icc}")
+    total = 0.0
+    for count in observations_per_participant:
+        if count < 0:
+            raise ValueError(f"an observation count cannot be negative; got {count}")
+        if count:
+            total += count / (1.0 + (count - 1) * icc)
+    return total
+
+
+def design_effective_sample_size(design: StudyDesign, icc: float) -> float:
+    """The most the design can deliver: every participant, every day, at `icc`."""
+    return effective_sample_size([design.observations_per_participant] * design.participants, icc)
+
+
+_THRESHOLD_FIELDS = (
+    "min_participants",
+    "min_days_per_participant",
+    "min_effective_sample_size",
+    "min_edges_per_relation_type",
+)
+
+
+@dataclass(frozen=True)
+class ObservationRequirement:
+    """What a stage needs before it may fit anything. A `None` threshold is 未決定.
+
+    The thresholds are pre-registration items. They are deliberately not chosen
+    here: a number written into this file by whoever writes the gate would be
+    that person deciding when the gate opens. Until the pre-registration fixes
+    them, each threshold in `must_decide` stays `None` and the assessment reports
+    the gate closed for that reason before it looks at any data.
+    """
+
+    stage: str
+    must_decide: Tuple[str, ...]
+    min_participants: Optional[int] = None
+    min_days_per_participant: Optional[int] = None
+    min_effective_sample_size: Optional[float] = None
+    min_edges_per_relation_type: Optional[int] = None
+    #: The relation types `min_edges_per_relation_type` applies to — one learned
+    #: parameter set each (#100). Empty for a stage with no relation parameters.
+    relation_types: Tuple[str, ...] = ()
+    planning_icc: float = PLANNING_ICC
+    #: The pre-registration version that fixed the thresholds. `None` until one did.
+    decided_in: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        unknown = set(self.must_decide) - set(_THRESHOLD_FIELDS)
+        if unknown:
+            raise ValueError(f"{self.stage}: must_decide names unknown thresholds {sorted(unknown)}")
+
+    def undecided(self) -> Tuple[str, ...]:
+        return tuple(name for name in self.must_decide if getattr(self, name) is None)
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "stage": self.stage,
+            **{name: getattr(self, name) for name in _THRESHOLD_FIELDS},
+            "relation_types": list(self.relation_types),
+            "planning_icc": self.planning_icc,
+            "decided_in": self.decided_in,
+            "undecided": list(self.undecided()),
+        }
+
+
+@dataclass(frozen=True)
+class ObservedCounts:
+    """Counts of observations, as whoever assembled them declares them.
+
+    Counts only: the type has nowhere to put content. `days_observed` holds one
+    value per participant whose consent covers the analysis — a withdrawn
+    participant is not in it. Assembling these is outside this module and, today,
+    outside this repository: there is no real-data path here, which is #99's gate
+    working as intended rather than a gap to fill.
+    """
+
+    data_classification: str
+    days_observed: Tuple[int, ...]
+    edges_per_relation_type: Mapping[str, int] = field(default_factory=dict)
+    #: Upper end of the interval for the measured within-participant correlation.
+    #: The upper end, because a larger correlation means fewer effective
+    #: observations and the gate should not open on the optimistic reading.
+    icc_upper_bound: Optional[float] = None
+    source: str = ""
+
+
+@dataclass(frozen=True)
+class SufficiencyReason:
+    code: str
+    detail: str
+
+    def as_dict(self) -> Dict[str, str]:
+        return {"code": self.code, "detail": self.detail}
+
+
+@dataclass(frozen=True)
+class SufficiencyAssessment:
+    stage: str
+    sufficient: bool
+    reasons: Tuple[SufficiencyReason, ...]
+    design: StudyDesign
+    #: At the planning ICC. The most this design can ever deliver.
+    design_ceiling_effective_n: float
+    observed_effective_n: Optional[float]
+    icc_used: Optional[float]
+    icc_source: str
+    requirement: ObservationRequirement
+
+    @property
+    def codes(self) -> Tuple[str, ...]:
+        return tuple(reason.code for reason in self.reasons)
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "stage": self.stage,
+            "sufficient": self.sufficient,
+            "reasons": [reason.as_dict() for reason in self.reasons],
+            "design": self.design.as_dict(),
+            "design_ceiling_effective_n": round(self.design_ceiling_effective_n, 3),
+            "observed_effective_n": (
+                round(self.observed_effective_n, 3) if self.observed_effective_n is not None else None
+            ),
+            "icc_used": self.icc_used,
+            "icc_source": self.icc_source,
+            "requirement": self.requirement.as_dict(),
+        }
+
+
+def assess_observation_sufficiency(
+    requirement: ObservationRequirement,
+    observed: Optional[ObservedCounts],
+    design: StudyDesign = PILOT_STUDY_DESIGN,
+) -> SufficiencyAssessment:
+    """Whether `observed` meets `requirement`, judged against `design`. Fails closed.
+
+    Every failing condition is reported, not only the first, so the result is a
+    list of what has to change rather than the next obstacle. Thresholds that are
+    still undecided are reported as such and not guessed; the design ceiling is
+    reported whatever happens, because "the pilot could never reach this" is the
+    finding a requirement-setter most needs to see.
+    """
+    reasons: List[SufficiencyReason] = []
+    ceiling = design_effective_sample_size(design, requirement.planning_icc)
+
+    undecided = requirement.undecided()
+    if undecided:
+        reasons.append(
+            SufficiencyReason(
+                REQUIREMENT_UNDECIDED,
+                f"{', '.join(undecided)} not fixed by a pre-registration (未決定). The required "
+                "observations are a pre-registered decision, not a value this gate supplies.",
+            )
+        )
+
+    reasons.extend(_exceeds_design(requirement, design, ceiling))
+
+    if observed is None:
+        reasons.append(
+            SufficiencyReason(
+                NO_OBSERVED_DATA,
+                "no counts of real, consented observations were supplied; this repository has no "
+                "path that reads real data",
+            )
+        )
+        return _assessment(requirement, reasons, design, ceiling, None, None, "not_used")
+
+    if observed.data_classification != REAL_CONSENTED:
+        reasons.append(
+            SufficiencyReason(
+                NOT_REAL_CONSENTED,
+                f"counts are classified {observed.data_classification!r}; only {REAL_CONSENTED!r} "
+                "counts towards a stage that would be read as describing real students",
+            )
+        )
+        return _assessment(requirement, reasons, design, ceiling, None, None, "not_used")
+
+    inconsistent = _inconsistent_with_design(observed, design)
+    if inconsistent:
+        reasons.append(SufficiencyReason(COUNTS_INCONSISTENT_WITH_DESIGN, inconsistent))
+        return _assessment(requirement, reasons, design, ceiling, None, None, "not_used")
+
+    if observed.icc_upper_bound is not None:
+        icc, icc_source = float(observed.icc_upper_bound), "observed_upper_bound"
+    else:
+        icc, icc_source = requirement.planning_icc, "planning_assumption"
+
+    min_days = requirement.min_days_per_participant
+    eligible = [days for days in observed.days_observed if min_days is None or days >= min_days]
+    observed_n = effective_sample_size(eligible, icc)
+
+    if requirement.min_participants is not None and len(eligible) < requirement.min_participants:
+        reasons.append(
+            SufficiencyReason(
+                TOO_FEW_PARTICIPANTS,
+                f"{len(eligible)} participant(s) meet the per-participant minimum; "
+                f"{requirement.min_participants} required",
+            )
+        )
+    if (
+        requirement.min_effective_sample_size is not None
+        and observed_n < requirement.min_effective_sample_size
+    ):
+        reasons.append(
+            SufficiencyReason(
+                EFFECTIVE_SAMPLE_BELOW_REQUIREMENT,
+                f"effective sample {observed_n:.1f} at icc {icc} ({icc_source}); "
+                f"{requirement.min_effective_sample_size} required",
+            )
+        )
+    if requirement.min_edges_per_relation_type is not None:
+        short = [
+            f"{relation}={int(observed.edges_per_relation_type.get(relation, 0))}"
+            for relation in requirement.relation_types
+            if int(observed.edges_per_relation_type.get(relation, 0)) < requirement.min_edges_per_relation_type
+        ]
+        if short:
+            reasons.append(
+                SufficiencyReason(
+                    TOO_FEW_EDGES_PER_RELATION,
+                    f"below {requirement.min_edges_per_relation_type} observed edges: {', '.join(short)}",
+                )
+            )
+
+    return _assessment(requirement, reasons, design, ceiling, observed_n, icc, icc_source)
+
+
+def _exceeds_design(
+    requirement: ObservationRequirement, design: StudyDesign, ceiling: float
+) -> List[SufficiencyReason]:
+    """Thresholds the design could not meet even with every participant and day."""
+    problems: List[str] = []
+    if requirement.min_participants is not None and requirement.min_participants > design.participants:
+        problems.append(f"min_participants {requirement.min_participants} > {design.participants} recruited")
+    if (
+        requirement.min_days_per_participant is not None
+        and requirement.min_days_per_participant > design.days_per_participant
+    ):
+        problems.append(
+            f"min_days_per_participant {requirement.min_days_per_participant} > "
+            f"{design.days_per_participant} collection days"
+        )
+    if requirement.min_effective_sample_size is not None and requirement.min_effective_sample_size > ceiling:
+        problems.append(
+            f"min_effective_sample_size {requirement.min_effective_sample_size} > {ceiling:.1f}, the "
+            f"design's ceiling at icc {requirement.planning_icc} ({design.max_observations} entries)"
+        )
+    if not problems:
+        return []
+    return [
+        SufficiencyReason(
+            REQUIREMENT_EXCEEDS_DESIGN,
+            "the pilot design cannot deliver this requirement: " + "; ".join(problems),
+        )
+    ]
+
+
+def _inconsistent_with_design(observed: ObservedCounts, design: StudyDesign) -> Optional[str]:
+    """Counts the design could not have produced. Refused rather than clipped."""
+    if len(observed.days_observed) > design.participants:
+        return f"{len(observed.days_observed)} participants counted; the design recruits {design.participants}"
+    impossible = [
+        days for days in observed.days_observed if days < 0 or days > design.observations_per_participant
+    ]
+    if impossible:
+        return (
+            f"per-participant counts {sorted(set(impossible))} fall outside "
+            f"0-{design.observations_per_participant}"
+        )
+    return None
+
+
+def _assessment(
+    requirement: ObservationRequirement,
+    reasons: List[SufficiencyReason],
+    design: StudyDesign,
+    ceiling: float,
+    observed_n: Optional[float],
+    icc: Optional[float],
+    icc_source: str,
+) -> SufficiencyAssessment:
+    return SufficiencyAssessment(
+        stage=requirement.stage,
+        sufficient=not reasons,
+        reasons=tuple(reasons),
+        design=design,
+        design_ceiling_effective_n=ceiling,
+        observed_effective_n=observed_n,
+        icc_used=icc,
+        icc_source=icc_source,
+        requirement=requirement,
+    )
