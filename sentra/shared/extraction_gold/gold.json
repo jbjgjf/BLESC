@@ -1,0 +1,253 @@
+{
+  "gold": "extraction_gold_ja",
+  "schema_version": 1,
+  "synthetic": true,
+  "language": "ja",
+  "ontology": "sentra/backend/app/ontology/schema.py (CATEGORIES, RELATIONS)",
+  "drafted_by": "model:claude-opus-5.5",
+  "drafted_on": "2026-10-10",
+  "labelling_status": "drafted, not human-labelled. Every item is labelled_by: draft and is excluded from confirmatory numbers (#88).",
+  "privacy_boundary": "Every text was written for this file. None is, or is derived from, a real student's writing.",
+  "items": [
+    {
+      "id": "eg-001",
+      "text": "明日の数学のテストが不安で、夜なかなか眠れなかった。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "t1", "category": "Trigger", "label": "数学のテスト", "match_terms": ["テスト", "試験"], "evidence": "明日の数学のテスト"},
+        {"id": "s1", "category": "State", "label": "不安", "match_terms": ["不安", "心配", "緊張"], "evidence": "不安"},
+        {"id": "s2", "category": "State", "label": "眠れない", "match_terms": ["眠", "睡眠", "寝"], "evidence": "夜なかなか眠れなかった"}
+      ],
+      "relations": [
+        {"source": "t1", "target": "s1", "type": "causes"},
+        {"source": "s1", "target": "s2", "type": "causes"}
+      ]
+    },
+    {
+      "id": "eg-002",
+      "text": "部活でミスして落ち込んだけど、友だちと話したら少し気持ちが軽くなった。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "e1", "category": "Event", "label": "部活でのミス", "match_terms": ["ミス", "失敗"], "evidence": "部活でミスして"},
+        {"id": "s1", "category": "State", "label": "落ち込み", "match_terms": ["落ち込", "気分の低下"], "evidence": "落ち込んだ"},
+        {"id": "p1", "category": "Protective", "label": "友だちとの会話", "match_terms": ["友", "会話"], "evidence": "友だちと話したら"}
+      ],
+      "relations": [
+        {"source": "e1", "target": "s1", "type": "causes"},
+        {"source": "p1", "target": "s1", "type": "buffers"}
+      ]
+    },
+    {
+      "id": "eg-003",
+      "text": "課題の締め切りが三つ重なって、ずっとイライラしている。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "t1", "category": "Trigger", "label": "締め切りの重なり", "match_terms": ["締め切り", "期限", "課題"], "evidence": "課題の締め切りが三つ重なって"},
+        {"id": "s1", "category": "State", "label": "イライラ", "match_terms": ["イライラ", "苛立", "いらだ"], "evidence": "ずっとイライラしている"}
+      ],
+      "relations": [
+        {"source": "t1", "target": "s1", "type": "causes"}
+      ]
+    },
+    {
+      "id": "eg-004",
+      "text": "朝ごはんを食べずに学校へ行ったら、三時間目にはもうだるかった。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "b1", "category": "Behavior", "label": "朝食を抜く", "match_terms": ["朝ごはん", "朝食", "食事"], "evidence": "朝ごはんを食べずに"},
+        {"id": "s1", "category": "State", "label": "だるさ", "match_terms": ["だる", "疲", "倦怠"], "evidence": "もうだるかった"}
+      ],
+      "relations": [
+        {"source": "b1", "target": "s1", "type": "causes"}
+      ]
+    },
+    {
+      "id": "eg-005",
+      "text": "最近はクラスの人を避けて、昼休みは一人で過ごしている。さみしい。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "b1", "category": "Behavior", "label": "クラスメイトを避ける", "match_terms": ["避け"], "evidence": "クラスの人を避けて"},
+        {"id": "b2", "category": "Behavior", "label": "一人で過ごす", "match_terms": ["一人", "ひとり"], "evidence": "昼休みは一人で過ごしている"},
+        {"id": "s1", "category": "State", "label": "さみしさ", "match_terms": ["さみし", "寂し", "孤独"], "evidence": "さみしい"}
+      ],
+      "relations": [
+        {"source": "b1", "target": "b2", "type": "co_occurs"},
+        {"source": "b2", "target": "s1", "type": "co_occurs"}
+      ]
+    },
+    {
+      "id": "eg-006",
+      "text": "夜に30分散歩したら、頭がすっきりして不安がましになった。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "e1", "category": "Event", "label": "夜の散歩（30分）", "match_terms": ["散歩"], "evidence": "夜に30分散歩した"},
+        {"id": "p1", "category": "Protective", "label": "散歩", "match_terms": ["散歩", "運動", "歩く"], "evidence": "散歩"},
+        {"id": "s1", "category": "State", "label": "すっきりした気分", "match_terms": ["すっきり"], "evidence": "頭がすっきりして"},
+        {"id": "s2", "category": "State", "label": "不安", "match_terms": ["不安"], "evidence": "不安がましになった"}
+      ],
+      "relations": [
+        {"source": "p1", "target": "s2", "type": "buffers"},
+        {"source": "e1", "target": "s1", "type": "precedes"}
+      ]
+    },
+    {
+      "id": "eg-007",
+      "text": "家族と夕飯を食べながら話せて、安心した。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "p1", "category": "Protective", "label": "家族との時間", "match_terms": ["家族"], "evidence": "家族と夕飯を食べながら話せて"},
+        {"id": "b1", "category": "Behavior", "label": "夕食をとる", "match_terms": ["夕飯", "夕食", "食事"], "evidence": "夕飯を食べながら"},
+        {"id": "s1", "category": "State", "label": "安心", "match_terms": ["安心"], "evidence": "安心した"}
+      ],
+      "relations": [
+        {"source": "p1", "target": "s1", "type": "causes"},
+        {"source": "b1", "target": "p1", "type": "co_occurs"}
+      ]
+    },
+    {
+      "id": "eg-008",
+      "text": "明日の発表のことを考えると緊張して、手が震えた。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "e1", "category": "Event", "label": "発表", "match_terms": ["発表"], "evidence": "明日の発表"},
+        {"id": "s1", "category": "State", "label": "緊張", "match_terms": ["緊張", "不安"], "evidence": "緊張して"},
+        {"id": "s2", "category": "State", "label": "手の震え", "match_terms": ["震え"], "evidence": "手が震えた"}
+      ],
+      "relations": [
+        {"source": "e1", "target": "s1", "type": "causes"},
+        {"source": "s1", "target": "s2", "type": "causes"}
+      ]
+    },
+    {
+      "id": "eg-009",
+      "text": "進路のことで悩んでいたけど、先生に相談したら、やることが整理できて少し落ち着いた。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "t1", "category": "Trigger", "label": "進路の悩み", "match_terms": ["進路"], "evidence": "進路のことで悩んでいた"},
+        {"id": "p1", "category": "Protective", "label": "先生への相談", "match_terms": ["先生", "相談"], "evidence": "先生に相談したら"},
+        {"id": "s1", "category": "State", "label": "落ち着き", "match_terms": ["落ち着"], "evidence": "少し落ち着いた"}
+      ],
+      "relations": [
+        {"source": "p1", "target": "s1", "type": "causes"},
+        {"source": "t1", "target": "p1", "type": "precedes"}
+      ]
+    },
+    {
+      "id": "eg-010",
+      "text": "スマホを夜中の二時まで見てしまい、朝起きられなかった。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "b1", "category": "Behavior", "label": "夜中までスマホを見る", "match_terms": ["スマホ", "夜更かし"], "evidence": "スマホを夜中の二時まで見てしまい"},
+        {"id": "s1", "category": "State", "label": "朝起きられない", "match_terms": ["起き", "寝不足", "睡眠"], "evidence": "朝起きられなかった"}
+      ],
+      "relations": [
+        {"source": "b1", "target": "s1", "type": "causes"}
+      ]
+    },
+    {
+      "id": "eg-011",
+      "text": "テスト前なのに勉強する気が起きなくて、ゲームばかりしていた。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "t1", "category": "Trigger", "label": "テスト前", "match_terms": ["テスト", "試験"], "evidence": "テスト前"},
+        {"id": "s1", "category": "State", "label": "意欲の低下", "match_terms": ["やる気", "意欲", "気が起き"], "evidence": "勉強する気が起きなくて"},
+        {"id": "b1", "category": "Behavior", "label": "ゲームをする", "match_terms": ["ゲーム"], "evidence": "ゲームばかりしていた"}
+      ],
+      "relations": [
+        {"source": "b1", "target": "t1", "type": "avoids"},
+        {"source": "s1", "target": "b1", "type": "co_occurs"}
+      ]
+    },
+    {
+      "id": "eg-012",
+      "text": "兄とけんかして、部屋にこもった。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "e1", "category": "Event", "label": "兄とのけんか", "match_terms": ["けんか", "喧嘩"], "evidence": "兄とけんかして"},
+        {"id": "b1", "category": "Behavior", "label": "部屋にこもる", "match_terms": ["こも", "引きこも"], "evidence": "部屋にこもった"}
+      ],
+      "relations": [
+        {"source": "e1", "target": "b1", "type": "precedes"}
+      ]
+    },
+    {
+      "id": "eg-013",
+      "text": "体育で走ったあとは、気分がいつもより明るかった。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "e1", "category": "Event", "label": "体育の授業", "match_terms": ["体育"], "evidence": "体育で走った"},
+        {"id": "p1", "category": "Protective", "label": "走ること", "match_terms": ["走", "運動"], "evidence": "走った"},
+        {"id": "s1", "category": "State", "label": "明るい気分", "match_terms": ["明る"], "evidence": "気分がいつもより明るかった"}
+      ],
+      "relations": [
+        {"source": "p1", "target": "s1", "type": "causes"},
+        {"source": "e1", "target": "s1", "type": "precedes"}
+      ]
+    },
+    {
+      "id": "eg-014",
+      "text": "バイトのシフトが増えて疲れがたまり、友だちの誘いを断ってしまった。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "t1", "category": "Trigger", "label": "シフトの増加", "match_terms": ["バイト", "シフト"], "evidence": "バイトのシフトが増えて"},
+        {"id": "s1", "category": "State", "label": "疲れ", "match_terms": ["疲"], "evidence": "疲れがたまり"},
+        {"id": "b1", "category": "Behavior", "label": "誘いを断る", "match_terms": ["断"], "evidence": "友だちの誘いを断ってしまった"}
+      ],
+      "relations": [
+        {"source": "t1", "target": "s1", "type": "causes"},
+        {"source": "s1", "target": "b1", "type": "causes"}
+      ]
+    },
+    {
+      "id": "eg-015",
+      "text": "今日は特に書くことがない。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "note": "正解のノードが0件の項目。何も無い日に何かを描く抽出器の適合率を測る。",
+      "nodes": [],
+      "relations": []
+    },
+    {
+      "id": "eg-016",
+      "text": "英語の小テストでいい点が取れて、うれしかった。母にもほめられた。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "e1", "category": "Event", "label": "英語の小テスト", "match_terms": ["テスト"], "evidence": "英語の小テスト"},
+        {"id": "s1", "category": "State", "label": "うれしさ", "match_terms": ["うれし", "嬉し", "喜"], "evidence": "うれしかった"},
+        {"id": "p1", "category": "Protective", "label": "母からの承認", "match_terms": ["母", "家族", "ほめ"], "evidence": "母にもほめられた"}
+      ],
+      "relations": [
+        {"source": "e1", "target": "s1", "type": "causes"},
+        {"source": "p1", "target": "s1", "type": "co_occurs"}
+      ]
+    },
+    {
+      "id": "eg-017",
+      "text": "母に成績のことを言われて、もともとあった不安がもっと強くなった。",
+      "labelled_by": "draft",
+      "author": "model:claude-opus-5.5",
+      "nodes": [
+        {"id": "t1", "category": "Trigger", "label": "成績について言われる", "match_terms": ["成績"], "evidence": "母に成績のことを言われて"},
+        {"id": "s1", "category": "State", "label": "不安", "match_terms": ["不安"], "evidence": "もともとあった不安"}
+      ],
+      "relations": [
+        {"source": "t1", "target": "s1", "type": "escalates"}
+      ]
+    }
+  ]
+}
