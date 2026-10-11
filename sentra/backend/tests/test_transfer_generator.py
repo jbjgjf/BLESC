@@ -41,6 +41,9 @@ from research_engine.transfer.schema import ITEM_IDS, STUDY_DAYS, TARGET_PARTICI
 #: If this changes, the generator produces different data for the same seed.
 #: That may be intended — but then bump `GENERATOR_VERSION`, say why in the
 #: commit, and remember that any cohort already sealed was made by the old code.
+#: The value was checked to be identical under numpy 2.4.6 and 2.5.3 (the
+#: version in requirements.lock.txt). A numpy upgrade that changes it means
+#: the old cohorts can no longer be re-created with the new numpy.
 PINNED_SEED_1_STATE_DEPENDENT = "sha256:14dcbd26a21b845698e142bf44c8462809b4b17d04621c597c00bf628584f759"
 
 
@@ -136,6 +139,7 @@ def test_the_manifest_records_what_issue_213_asks_for() -> None:
     assert manifest["config"]["seed"] == 1
     assert manifest["missingness_scenario"] == "state_dependent"
     assert manifest["config_hash"].startswith("sha256:")
+    assert manifest["environment"]["numpy"] == np.__version__
     assert manifest["hashes"]["dataset_hash"] == cohort.dataset.content_hash()
     assert manifest["hashes"]["truth_hash"] == cohort.truth.content_hash()
     assert manifest["shape"]["matches_protocol"] is True

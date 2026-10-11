@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import json
 import math
+import platform
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -665,6 +666,10 @@ def build_manifest(config: SyntheticCohortConfig, dataset: TransferDataset, trut
         },
         "config": config.as_dict(),
         "config_hash": content_hash(config.as_dict()),
+        # The random streams are numpy's. NumPy does not promise that every
+        # distribution method yields the same stream across versions, so the
+        # version that produced the data is part of what re-creating it needs.
+        "environment": {"numpy": np.__version__, "python": platform.python_version()},
         "seed": config.seed,
         "missingness_scenario": config.missingness,
         "shape": protocol_shape(dataset),

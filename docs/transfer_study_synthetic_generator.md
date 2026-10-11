@@ -67,6 +67,7 @@
 | `status` | `candidate_not_frozen`（候補・未凍結） |
 | `generator` | 種類（`statistical`）、版、**生成コードのファイル hash**、固定パラメータの全部 |
 | `config` / `config_hash` | 設定の全部と、その hash |
+| `environment` | numpy と Python の版。numpy は版をまたいで乱数列が同じであることを保証しないため |
 | `seed` / `missingness_scenario` | seed と欠測シナリオ |
 | `shape` | 参加者数、日数、記録数、protocol の形と一致するか |
 | `schema` | 5項目の尺度、相対日の範囲、期間区分なし、protocol 版・同意文書版 |
