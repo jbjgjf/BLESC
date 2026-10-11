@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
   //
   // Every one of them is paged (#275). A plain `.in(...)` stops at
   // `db-max-rows` — 1,000 on a stock Supabase project — without an error, and
-  // 50 participants x 21 days is up to 1,050 entries and the same number of
+  // 50 participants x 28 days is up to 1,400 entries and the same number of
   // self-report rows. Truncated, this handler reports days a student did write
   // as missing, and reports retained text that is past its expiry as purged.
   //
