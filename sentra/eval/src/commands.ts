@@ -6,14 +6,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { COST_LIMITS, MATRIX, type EvalEnv } from "./config.ts";
 import type { ScenarioCase } from "./contracts.ts";
-import { estimateRunUsd } from "./cost.ts";
-import type { ProvisionedAccounts } from "./provision.ts";
+import { UnpricedModel, estimateRunUsd } from "./cost.ts";
+import type { ProvisionedAccounts, ResetReport } from "./provision.ts";
 import type { RunOptions } from "./runner.ts";
 import type { RunSummary } from "./artifacts.ts";
 import { buildMatrix, smokeSelection } from "./scenarios.ts";
 
 export const USAGE =
-  "usage: cli.ts provision|reset|smoke|full [--confirm-full] [--resume <runId>] [--limit <n>] [--media]";
+  "usage: cli.ts provision|reset|smoke|full [--confirm-full] [--resume <runId>] [--limit <n>] [--media] [--register-eval]";
 
 /** A refusal before anything runs. The CLI exits 2 with the message. */
 export class UsageError extends Error {}
@@ -24,6 +24,8 @@ export interface CliArgs {
   resumeRunId?: string;
   limit?: number;
   media: boolean;
+  /** Also register the graded cases with OpenAI Evals, paid through the cost guard (#266). */
+  registerEval: boolean;
 }
 
 export function parseArgs(argv: string[]): CliArgs {
@@ -48,6 +50,7 @@ export function parseArgs(argv: string[]): CliArgs {
     resumeRunId: valueOf("--resume"),
     limit,
     media: argv.includes("--media"),
+    registerEval: argv.includes("--register-eval"),
   };
 }
 
@@ -67,12 +70,23 @@ export function selectScenarios(args: CliArgs, all: ScenarioCase[] = buildMatrix
 export interface CliDeps {
   loadEnv(): EvalEnv;
   provisionAccounts(env: EvalEnv): Promise<ProvisionedAccounts>;
-  resetSyntheticData(env: EvalEnv): Promise<{ wipedUsers: number }>;
+  resetSyntheticData(env: EvalEnv): Promise<ResetReport>;
   adminClient(env: EvalEnv): SupabaseClient;
   executeRun(options: RunOptions): Promise<{ runId: string; summary: RunSummary }>;
   now(): Date;
   log(message: string): void;
   error(message: string): void;
+}
+
+/** What a reset did and did not do, for the operator (#375). */
+export function describeReset(report: ResetReport): string[] {
+  const rows = report.deleted.reduce((sum, entry) => sum + (entry.rows ?? 0), 0);
+  const lines = [`[reset] emptied ${report.deleted.length} table(s) for ${report.wipedUsers} synthetic accounts (${rows} rows)`];
+  if (report.missing.length) {
+    lines.push(`[reset] WARNING: ${report.missing.length} table(s) the reset expects are missing from this database — its schema is behind the migrations: ${report.missing.join(", ")}`);
+  }
+  for (const { table, reason } of report.excluded) lines.push(`[reset] not reset: ${table} — ${reason}`);
+  return lines;
 }
 
 /** Runs one CLI invocation and returns the exit code. */
@@ -101,8 +115,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     return 0;
   }
   if (command === "reset") {
-    const { wipedUsers } = await deps.resetSyntheticData(env);
-    deps.log(`[reset] wiped content for ${wipedUsers} synthetic accounts`);
+    for (const line of describeReset(await deps.resetSyntheticData(env))) deps.log(line);
     return 0;
   }
 
@@ -116,7 +129,17 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     }
     throw error;
   }
-  const estimate = estimateRunUsd(scenarios.length, (MATRIX.minTurns + MATRIX.maxTurns) / 2);
+  let estimate: ReturnType<typeof estimateRunUsd>;
+  try {
+    estimate = estimateRunUsd(scenarios.length, (MATRIX.minTurns + MATRIX.maxTurns) / 2, { registerEval: args.registerEval });
+  } catch (error) {
+    // An estimate without a price is not US$0.00 (#286).
+    if (error instanceof UnpricedModel) {
+      deps.error(`[plan] refusing to start: ${error.message}`);
+      return 2;
+    }
+    throw error;
+  }
   deps.log(`[plan] ${scenarios.length} conversations · est ~${Math.round(estimate.tokens / 1000)}k tokens ≈ US$${estimate.usd.toFixed(2)} (warn $${COST_LIMITS.warnUsd} / stop $${COST_LIMITS.hardStopUsd})`);
   if (command === "full" && !args.confirmFull) {
     deps.error("[plan] full run requires --confirm-full");
@@ -127,7 +150,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     return 2;
   }
 
-  await deps.resetSyntheticData(env);
+  for (const line of describeReset(await deps.resetSyntheticData(env))) deps.log(line);
   const accounts = await deps.provisionAccounts(env);
   const admin = deps.adminClient(env);
   const stamp = deps.now().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -138,6 +161,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     artifactsDir: `artifacts/${command}-${stamp}`,
     captureMedia: command === "smoke" || args.media,
     resumeRunId: args.resumeRunId,
+    registerEval: args.registerEval,
   });
   deps.log(`[done] run ${runId}: ${summary.verdict} · artifacts in artifacts/${command}-${stamp}/`);
   return 0;

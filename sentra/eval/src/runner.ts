@@ -8,15 +8,16 @@ import {
   executiveHtml, executivePdf, expertCsv, failureCards, reproJsonl, selectHumanReview, type RunSummary,
 } from "./artifacts.ts";
 import * as browser from "./browser.ts";
+import { ObservationNotReady } from "./browser.ts";
 import { DATA_CLASSIFICATION, MATRIX, MODELS, SYNTHETIC_ACCOUNTS, type EvalEnv } from "./config.ts";
 import { JUDGE_UNAVAILABLE, type CaseResult, type JudgeOutcome, type ScenarioCase, type TurnRecord } from "./contracts.ts";
-import { CostGuard, CostHardStop, estimateRunUsd } from "./cost.ts";
+import { CostGuard, CostHardStop, assertPriced, estimateRunUsd } from "./cost.ts";
 import { failureKinds, gradeDeterministic, rawSentinel } from "./graders/deterministic.ts";
-import { judgeCase, registerOpenAiEval, type EvalRow } from "./graders/judge.ts";
+import { evalRegistrationUsage, judgeCase, registerOpenAiEval, type EvalRegistration, type EvalRow } from "./graders/judge.ts";
 import { personaEmail } from "./personas.ts";
 import { personaById } from "./scenarios.ts";
 import type { ProvisionedAccounts } from "./provision.ts";
-import { caseStatus, restorePriorCases, summarizeRun, type PriorCaseRow } from "./summary.ts";
+import { OBSERVATION_NOT_READY, caseStatus, restorePriorCases, summarizeRun, type PriorCaseRow } from "./summary.ts";
 
 const PROVIDER_FALLBACK_MARKERS = [
   "provider fallback", "temporarily unavailable", "mock mode", "missing_key",
@@ -131,7 +132,7 @@ export interface RunnerDeps {
   trace<T>(name: string, fn: (traceId: string | undefined) => Promise<T>, metadata: Record<string, string>): Promise<T>;
   studentMessage(scenario: ScenarioCase, transcript: TurnRecord[], cost: CostGuard): Promise<string>;
   judge(scenario: ScenarioCase, transcript: TurnRecord[], cost: CostGuard): Promise<JudgeOutcome>;
-  registerEval(label: string, rows: EvalRow[]): Promise<{ evalId?: string; runId?: string }>;
+  registerEval(label: string, rows: EvalRow[]): Promise<EvalRegistration>;
 }
 
 /** The real dependencies: Playwright, the Agents SDK, and the OpenAI client. */
@@ -173,6 +174,8 @@ export interface RunOptions {
   artifactsDir: string;
   captureMedia: boolean;
   resumeRunId?: string;
+  /** Register the graded cases with OpenAI Evals (`--register-eval`). Off by default (#266). */
+  registerEval?: boolean;
 }
 
 export async function executeRun(
@@ -181,10 +184,13 @@ export async function executeRun(
 ): Promise<{ runId: string; summary: RunSummary }> {
   const { env, admin, accounts, scenarios, mode, label } = options;
   const { driver } = deps;
-  const cost = new CostGuard();
+  // Before anything is created or spent: a model without a price would make
+  // the cost guard throw on its first call, after the money was spent (#286).
+  assertPriced(Object.values(MODELS));
   mkdirSync(options.artifactsDir, { recursive: true });
 
-  const estimate = estimateRunUsd(scenarios.length, (MATRIX.minTurns + MATRIX.maxTurns) / 2);
+  const avgTurns = (MATRIX.minTurns + MATRIX.maxTurns) / 2;
+  const estimate = estimateRunUsd(scenarios.length, avgTurns, { registerEval: options.registerEval });
   console.log(`[run] ${label}: ${scenarios.length} conversations · est ~${Math.round(estimate.tokens / 1000)}k tokens ≈ US$${estimate.usd.toFixed(2)}`);
 
   // Create or resume the run row (service-role writer).
@@ -193,8 +199,9 @@ export async function executeRun(
   let caseIdByKey = new Map<string, string>();
   let results: CaseResult[] = [];
   let priorCaseKeys: string[] = [];
+  let cost = new CostGuard();
   if (runId) {
-    const runRow = await admin.from("evaluation_runs").select("id,mode,status").eq("id", runId).maybeSingle();
+    const runRow = await admin.from("evaluation_runs").select("id,mode,status,actual_cost_usd").eq("id", runId).maybeSingle();
     if (runRow.error) throw new Error(`resume ${runId}: ${runRow.error.message}`);
     if (!runRow.data) throw new ResumeSelectionMismatch(`resume ${runId}: no such evaluation run`);
     if (runRow.data.mode !== mode) {
@@ -216,6 +223,23 @@ export async function executeRun(
     }
     ({ results, doneKeys, caseIdByKey } = restored);
     priorCaseKeys = [...caseIdByKey.keys()];
+
+    // The limit is per run, not per attempt (#266). Start from what this run
+    // already recorded; resuming used to hand out a fresh US$80 every time.
+    const priorSpend = Number(runRow.data.actual_cost_usd ?? 0);
+    if (runRow.data.actual_cost_usd == null) {
+      console.warn(`[cost] run ${runId} has no recorded spend; counting this resume's budget from US$0`);
+    }
+    cost = new CostGuard({ alreadySpentUsd: priorSpend });
+    cost.assertBudgetLeft();
+    const remaining = estimateRunUsd(scenarios.length - doneKeys.size, avgTurns, { registerEval: options.registerEval });
+    console.log(`[cost] already spent ~US$${priorSpend.toFixed(2)}; the rest is estimated at ~US$${remaining.usd.toFixed(2)}`);
+    if (priorSpend + remaining.usd >= cost.hardStopUsd()) {
+      // The CLI refuses a fresh run whose estimate crosses the hard stop; the
+      // same rule for a resume has to count what was spent before.
+      throw new CostHardStop(priorSpend,
+        `refusing to resume ${runId}: ~US$${priorSpend.toFixed(2)} spent + ~US$${remaining.usd.toFixed(2)} estimated crosses the US$${cost.hardStopUsd()} limit`);
+    }
     console.log(
       `[run] resuming ${runId}: restored ${results.length} graded case(s) and treating ${doneKeys.size} as done; `
       + `${restored.rerunKeys.length} prior case(s) will be re-run, ${scenarios.length - doneKeys.size} to run in all`);
@@ -228,6 +252,15 @@ export async function executeRun(
     if (created.error) throw new Error(`run insert: ${created.error.message}`);
     runId = created.data.id;
   }
+
+  // Written after every case, not only at the end: a crash or a kill between
+  // cases would otherwise leave the run's spend unrecorded, and the next resume
+  // would start its budget from an old number (#266). `cost.total()` starts at
+  // the run's prior spend and only grows, so this never lowers the column.
+  const recordSpend = async () => {
+    const written = await admin.from("evaluation_runs").update({ actual_cost_usd: cost.total() }).eq("id", runId);
+    if (written.error) console.warn(`[cost] could not record spend on run ${runId}: ${written.error.message}`);
+  };
 
   for (const scenario of scenarios) {
     if (doneKeys.has(scenario.caseKey)) continue;
@@ -249,8 +282,11 @@ export async function executeRun(
     let counselorSurfaceText = "";
     let sharedDespiteRefusal = false;
     let providerFallbackDetected = false;
+    let reflectionCards: browser.SubmittedCard[] = [];
     let status: CaseResult["status"] = "error";
-    let usage = { inputTokens: 0, outputTokens: 0 };
+    // Not measured per case: spend is tracked run-wide by the cost guard. Kept
+    // in the result shape (zero) so the artifacts' fields stay stable.
+    const usage = { inputTokens: 0, outputTokens: 0 };
     const mediaDir = options.captureMedia ? join(options.artifactsDir, "media", scenario.caseKey.replaceAll(":", "_")) : undefined;
     if (mediaDir) mkdirSync(mediaDir, { recursive: true });
 
@@ -266,7 +302,9 @@ export async function executeRun(
             await driver.loginThroughUi(session.page, email, password);
 
             // 2) Record UI: opening journal with the raw-leak sentinel.
-            await driver.submitJournal(session.page, `${scenario.openingJournal}\n${rawSentinel(scenario.caseKey)}`);
+            // Returns once the product has processed the entry (#305).
+            const submission = await driver.submitJournal(session.page, `${scenario.openingJournal}\n${rawSentinel(scenario.caseKey)}`);
+            reflectionCards = submission.reflectionCards;
             transcript.push({ role: "student", channel: "journal", text: scenario.openingJournal, at: new Date().toISOString() });
 
             // 3) Chat loop — simulator writes, DOM is the observation.
@@ -320,7 +358,7 @@ export async function executeRun(
 
       const deterministic = gradeDeterministic({
         scenario, transcript, counselorSurfaceText, sharedDespiteRefusal,
-        usedBypass: false, providerFallbackDetected,
+        usedBypass: false, providerFallbackDetected, reflectionCards,
         completedTurns: transcript.filter((turn) => turn.channel === "chat").length,
       });
       const outcome = await deps.judge(scenario, transcript, cost);
@@ -349,6 +387,7 @@ export async function executeRun(
         finished_at: new Date().toISOString(),
       }).eq("id", caseRow.data.id);
       console.log(`[case] ${scenario.caseKey}: ${status}${kinds.length ? ` (${kinds.join(",")})` : ""}`);
+      await recordSpend();
     } catch (error) {
       if (error instanceof CostHardStop) {
         await admin.from("evaluation_runs").update({ status: "aborted", actual_cost_usd: cost.total() }).eq("id", runId);
@@ -356,13 +395,21 @@ export async function executeRun(
       }
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[case] ${scenario.caseKey}: error — ${message.slice(0, 200)}`);
+      // "The product was not ready to be observed" is told apart from other
+      // runner errors, so a run can say how many cases it could not wait for.
+      const errorKinds = error instanceof ObservationNotReady ? ["runner_error", OBSERVATION_NOT_READY] : ["runner_error"];
       results.push({
         scenario, transcript,
         deterministic: gradeDeterministic({ scenario, transcript, completedTurns: 0 }),
-        status: "error", failureKinds: ["runner_error"], humanReview: true,
+        status: "error", failureKinds: errorKinds, humanReview: true,
         humanReviewReason: `runner error: ${message.slice(0, 160)}`, usage,
       });
-      await admin.from("evaluation_cases").update({ status: "error", failure_kinds: ["runner_error"], finished_at: new Date().toISOString() }).eq("id", caseRow.data.id);
+      await admin.from("evaluation_cases").update({
+        status: "error", failure_kinds: errorKinds,
+        human_review: true, human_review_reason: `runner error: ${message.slice(0, 160)}`,
+        finished_at: new Date().toISOString(),
+      }).eq("id", caseRow.data.id);
+      await recordSpend();
     }
   }
 
@@ -399,17 +446,33 @@ export async function executeRun(
   console.log(`[run] reviewer /evaluation check: ${reviewerCheckPassed ? "ok" : "FAILED"}`);
 
   // OpenAI Evals registration (testing criteria; references stored on the run).
-  const evalRefsResult = await deps.registerEval(label, results.map((result) => ({
-    caseKey: result.scenario.caseKey,
-    transcript: result.transcript.map((turn) => `${turn.role}: ${turn.text}`).join("\n").slice(0, 20000),
-    contract: JSON.stringify(result.scenario.expected),
-    verdict: result.status,
-  })));
+  // Opt-in, and paid for through the guard before it starts (#266): the
+  // re-grading happens on OpenAI's side, where the guard cannot see it.
+  let evalRegistration: EvalRegistration = {};
+  let evalProblem: string | undefined;
+  if (options.registerEval) {
+    const rows: EvalRow[] = results.map((result) => ({
+      caseKey: result.scenario.caseKey,
+      transcript: result.transcript.map((turn) => `${turn.role}: ${turn.text}`).join("\n").slice(0, 20000),
+      contract: JSON.stringify(result.scenario.expected),
+      verdict: result.status,
+    }));
+    const usage = evalRegistrationUsage(rows);
+    if (!cost.wouldStayUnder(MODELS.judge, usage)) {
+      evalProblem = `OpenAI Evals registration skipped: its estimated cost would cross the US$${cost.hardStopUsd()} hard stop.`;
+    } else {
+      cost.add(MODELS.judge, usage);
+      evalRegistration = await deps.registerEval(label, rows);
+      if (evalRegistration.error) evalProblem = `OpenAI Evals registration failed: ${evalRegistration.error}`;
+    }
+    await recordSpend();
+  }
 
   const summary = summarizeRun({
     label, mode, results, reviewerCheckPassed,
     spentUsd: cost.total(),
-    evalRefs: [evalRefsResult.evalId, evalRefsResult.runId].filter((ref): ref is string => Boolean(ref)),
+    evalRefs: [evalRegistration.evalId, evalRegistration.runId].filter((ref): ref is string => Boolean(ref)),
+    evalProblem,
     expectedCaseKeys: [...new Set([...priorCaseKeys, ...scenarios.map((scenario) => scenario.caseKey)])],
   });
   // `completed` claims the verdict covers the run. If it does not, the run is
