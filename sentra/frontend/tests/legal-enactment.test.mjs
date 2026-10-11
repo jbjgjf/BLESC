@@ -139,7 +139,10 @@ describe("an acceptance is a record of something that happened", () => {
 
   it("is written through the caller's own client, not service role", () => {
     assert.match(code(route), /auth\.client\s*\n?\s*\.from\("legal_acceptances"\)/);
-    assert.doesNotMatch(code(route), /serviceRoleClient/);
+    // The service-role client appears in the route for one thing only, the
+    // attempt counter (#253). That no acceptance is written through it is
+    // checked by calling the route, in tests/rate-limit-routes.test.mjs.
+    assert.doesNotMatch(code(route), /serviceRoleClient\(\)\s*\n?\s*\.from/);
   });
 
   it("cannot be edited or deleted afterwards", () => {

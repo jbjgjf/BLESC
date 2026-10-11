@@ -67,6 +67,19 @@ export const RULES = {
   inviteRedeem: rule("invite-redeem", "PILOT_INVITE_REDEEM_LIMIT", 10, 3600),
   /** Issuing or re-sending a guardian verification link. */
   guardianIssue: rule("guardian-issue", "PILOT_GUARDIAN_ISSUE_LIMIT", 20, 3600),
+  /**
+   * Answering a guardian link (#246). The route takes no session, so this is
+   * per address. A guardian answers once and may reopen the link to check;
+   * twenty an hour is not that person, and it bounds how often an unsigned
+   * request can make the database look a token up.
+   */
+  guardianConfirm: rule("guardian-confirm", "PILOT_GUARDIAN_CONFIRM_LIMIT", 20, 3600),
+  /**
+   * Recording acceptance of the terms or the privacy policy (#253). Two
+   * documents, each accepted once per version: pressing it again is not a
+   * thing people do, so the limit is as low as redemption's.
+   */
+  legalAcceptance: rule("legal-acceptance", "LEGAL_ACCEPTANCE_LIMIT", 10, 3600),
   /** Routes that call OpenAI and therefore spend money. */
   externalModel: rule("external-model", "EXTERNAL_MODEL_LIMIT", 60, 3600),
 } as const;
