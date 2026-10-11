@@ -24,9 +24,6 @@ const MATCHED_AGAINST = [
   "rate limit",
   "too many",
   "not configured",
-  "kill myself",
-  "want to die",
-  "hurt myself",
 ];
 
 /**

@@ -10,6 +10,7 @@ import { ProcessingTimeline } from "@/components/ProcessingTimeline";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
 import { useAuth } from "@/lib/auth";
 import { t } from "@/lib/i18n";
+import { recallOfflineSafetyNotice, sendRecallTurn } from "@/lib/recallTurn";
 
 type RecallMessage = {
   id: string;
@@ -34,19 +35,6 @@ const guidedQuestions = [
   "大事なところを見落とさないために、blescが次に聞くとよい質問は何だと思いますか。",
 ];
 
-const crisisTerms = [
-  "自殺",
-  "死にたい",
-  "消えたい",
-  "殺したい",
-  "傷つけたい",
-  "suicide",
-  "kill myself",
-  "want to die",
-  "self-harm",
-  "hurt myself",
-];
-
 const panel: React.CSSProperties = {
   backgroundColor: "#ffffff",
   border: "1px solid var(--limestone)",
@@ -54,11 +42,6 @@ const panel: React.CSSProperties = {
 };
 const displayFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
 const bodyFont: React.CSSProperties = { fontFamily: "var(--font-sans), sans-serif" };
-
-function hasCrisisLanguage(text: string) {
-  const normalized = text.toLowerCase();
-  return crisisTerms.some((term) => normalized.includes(term));
-}
 
 function nextQuestionForTurn(userTurnCount: number) {
   return guidedQuestions[userTurnCount % guidedQuestions.length];
@@ -124,40 +107,32 @@ export default function RecallWorkspacePage() {
         setStep((current) => Math.min(current + 1, recallSteps.length - 2));
       }, 850);
 
-      if (hasCrisisLanguage(content)) {
-        const safetyMessage: RecallMessage = {
-          id: `assistant-safety-${Date.now()}`,
-          role: "assistant",
-          content:
-            "いますぐの危険がある場合は、緊急の連絡先や、信頼できる大人にすぐ連絡してください。blescは緊急時の相談を受けることはできません。もし答えられそうなら、これだけ教えてください——いま安全な場所にいますか。近くに頼れる人はいますか。",
-        };
-        setMessages((current) => [...current, safetyMessage]);
-      } else {
-        const conversationContext = [
-          "BLESC 30-turn recall workspace. Use cautious, non-diagnostic language.",
-          "Briefly reflect the user's latest answer, avoid clinical certainty, then keep the interview moving.",
-          `Current user turn: ${nextUserTurnCount}/${MAX_USER_TURNS}.`,
-          `Next guided question candidate: ${nextQuestionForTurn(nextUserTurnCount)}`,
-        ];
-        const response = await ApiClient.createChat(
-          userId,
-          content,
-          5,
-          { mode: "recall_workspace", conversationContext },
-        );
-        const nextQuestion = nextUserTurnCount >= MAX_USER_TURNS
-          ? t.recall.completed
-          : nextQuestionForTurn(nextUserTurnCount);
-        const assistantMessage: RecallMessage = {
-          id: `assistant-${Date.now()}`,
-          role: "assistant",
-          content: `${response.answer}\n\n${nextQuestion}`,
-        };
-        setMessages((current) => [...current, assistantMessage]);
-        setSummary(response.conversation_recall_30 ?? null);
-        if (response.conversation_recall_30?.memory_objects?.length) {
-          setMemoryObjects(response.conversation_recall_30.memory_objects);
-        }
+      // Always through the server, whatever the message says: the safety
+      // assessment and the escalation live in `/api/chat` (#343).
+      const conversationContext = [
+        "BLESC 30-turn recall workspace. Use cautious, non-diagnostic language.",
+        "Briefly reflect the user's latest answer, avoid clinical certainty, then keep the interview moving.",
+        `Current user turn: ${nextUserTurnCount}/${MAX_USER_TURNS}.`,
+        `Next guided question candidate: ${nextQuestionForTurn(nextUserTurnCount)}`,
+      ];
+      const { reply, response } = await sendRecallTurn({
+        content,
+        turn: nextUserTurnCount,
+        maxTurns: MAX_USER_TURNS,
+        nextQuestion: nextQuestionForTurn(nextUserTurnCount),
+        completedText: t.recall.completed,
+        conversationContext,
+        createChat: (message, options) => ApiClient.createChat(userId, message, 5, options),
+      });
+      const assistantMessage: RecallMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: reply,
+      };
+      setMessages((current) => [...current, assistantMessage]);
+      setSummary(response.conversation_recall_30 ?? null);
+      if (response.conversation_recall_30?.memory_objects?.length) {
+        setMemoryObjects(response.conversation_recall_30.memory_objects);
       }
 
       if (timer) window.clearInterval(timer);
@@ -166,6 +141,15 @@ export default function RecallWorkspacePage() {
       setComplete(true);
       if (nextUserTurnCount >= MIN_SUMMARY_TURNS) void refreshSummary(true);
     } catch (err) {
+      // The turn never reached the server, so nothing was assessed, recorded
+      // or escalated. Put it back for the student to send again rather than
+      // leaving it on screen as if it had been taken in.
+      setMessages((current) => current.filter((message) => message.id !== userMessage.id));
+      setInput((current) => current || content);
+      const notice = recallOfflineSafetyNotice(content);
+      if (notice) {
+        setMessages((current) => [...current, { id: `assistant-safety-${Date.now()}`, role: "assistant", content: notice }]);
+      }
       setError(err instanceof Error ? err.message : "送信に失敗しました。");
     } finally {
       if (timer) window.clearInterval(timer);
