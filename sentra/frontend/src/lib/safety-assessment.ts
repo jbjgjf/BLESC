@@ -150,18 +150,49 @@ function lexicon(terms: readonly string[]): RegExp {
   return new RegExp(alternatives.join("|"), "i");
 }
 
-const LEXICONS = {
-  selfHarm: lexicon(spellings(selfHarmTerms)),
+/**
+ * Every spelling each check compares against, under the names
+ * `sentra/shared/safety_assessment_conformance.json` uses. The FastAPI path
+ * (`backend/app/services/safety.py`) builds the same table, and both test
+ * suites hash theirs against the digest in that file, so a term added on one
+ * side alone fails a build instead of changing one deployment's answers (#374).
+ */
+export const SAFETY_LEXICON_SPELLINGS: Readonly<Record<string, readonly string[]>> = {
+  self_harm: spellings(selfHarmTerms),
   // No readings: see KANA_SPELLINGS on #290.
-  imminent: lexicon(imminentTerms),
-  violence: lexicon(spellings(violenceTerms)),
-  abuse: lexicon(spellings(abuseTerms)),
-  concealment: lexicon(spellings(concealmentTerms)),
-  passive: lexicon(spellings(passiveRiskTerms)),
-  ambiguous: lexicon(spellings(ambiguousRiskTerms)),
-  distress: lexicon(spellings(distressTerms)),
-  explicitLethal: lexicon(spellings(["kill myself", "killing myself", "end my life", "ending my life", "want to die", "suicide", "自殺", "死にたい"])),
-  cannotStaySafe: lexicon(spellings(["cannot stay safe", "can't stay safe", "安全でいられない"])),
+  imminent: imminentTerms,
+  violence: spellings(violenceTerms),
+  abuse: spellings(abuseTerms),
+  concealment: spellings(concealmentTerms),
+  passive: spellings(passiveRiskTerms),
+  ambiguous: spellings(ambiguousRiskTerms),
+  distress: spellings(distressTerms),
+  explicit_lethal: spellings(["kill myself", "killing myself", "end my life", "ending my life", "want to die", "suicide", "自殺", "死にたい"]),
+  cannot_stay_safe: spellings(["cannot stay safe", "can't stay safe", "安全でいられない"]),
+};
+
+/** The text `safetyLexiconFingerprint` digests: one sorted, folded line per check. */
+export function safetyLexiconCanonicalForm(): string {
+  return Object.keys(SAFETY_LEXICON_SPELLINGS)
+    .sort()
+    .map((name) => `${name}=${[...new Set(SAFETY_LEXICON_SPELLINGS[name].map(foldWriting))].sort().join("|")}`)
+    .join("\n");
+}
+
+/** What the student reads; pinned to the shared contract, which FastAPI reads. */
+export const SAFETY_RESPONSES = { crisis: crisisResponse, elevated: elevatedResponse } as const;
+
+const LEXICONS = {
+  selfHarm: lexicon(SAFETY_LEXICON_SPELLINGS.self_harm),
+  imminent: lexicon(SAFETY_LEXICON_SPELLINGS.imminent),
+  violence: lexicon(SAFETY_LEXICON_SPELLINGS.violence),
+  abuse: lexicon(SAFETY_LEXICON_SPELLINGS.abuse),
+  concealment: lexicon(SAFETY_LEXICON_SPELLINGS.concealment),
+  passive: lexicon(SAFETY_LEXICON_SPELLINGS.passive),
+  ambiguous: lexicon(SAFETY_LEXICON_SPELLINGS.ambiguous),
+  distress: lexicon(SAFETY_LEXICON_SPELLINGS.distress),
+  explicitLethal: lexicon(SAFETY_LEXICON_SPELLINGS.explicit_lethal),
+  cannotStaySafe: lexicon(SAFETY_LEXICON_SPELLINGS.cannot_stay_safe),
 } as const;
 
 const RISK_ORDER: SafetyAssessment["risk_level"][] = ["none", "low", "elevated", "crisis"];
@@ -216,9 +247,9 @@ export function assessSafety(rawContent: string): SafetyAssessment {
     return { risk_level: "crisis", confidence: imminent ? 0.98 : 0.92, escalation_required: true, reasons: [...new Set(reasons)], safe_response: crisisResponse, policy_refs: SAFETY_POLICY_REFS };
   }
 
+  // Abuse never reaches here: any abuse disclosure is a crisis above.
   if (selfHarm) reasons.push("possible_self_harm_or_suicide_risk");
-  if (abuse) reasons.push("abuse_or_violence_disclosure");
-  if (concealment && (selfHarm || abuse || violence)) reasons.push("concealment_request_related_to_harm");
+  if (concealment && (selfHarm || violence)) reasons.push("concealment_request_related_to_harm");
   if (violence) reasons.push("possible_violence_risk");
   // Ambiguity about wanting to be gone is graded as elevated rather than
   // crisis: it earns a supportive response with real-person routes, but not

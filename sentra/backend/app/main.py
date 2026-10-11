@@ -60,6 +60,7 @@ from .services.inference_orchestrator import InferenceOrchestrator
 from .services.hf_research_benchmark import hf_dataset_rows, run_hf_research_benchmark
 from .services.llm_adapter import llm_adapter
 from .services.reflection_intelligence import analyze_reflection, run_reflection_eval
+from .services.safety import SAFETY_ASSESSMENT_VERSION
 from .services.research_pipeline import (
     create_fine_tuning_dataset_export,
     create_openai_fine_tuning_job,
@@ -668,10 +669,10 @@ def create_entry(
                 artifact_type="safety_assessment",
                 artifact_id=extraction.id,
                 provider="rules",
-                model="safety-assessment-v1",
+                model=SAFETY_ASSESSMENT_VERSION,
                 output=safety_assessment,
-                prompt_version="safety-assessment-v1",
-                schema_version="safety-assessment-v1",
+                prompt_version=SAFETY_ASSESSMENT_VERSION,
+                schema_version=SAFETY_ASSESSMENT_VERSION,
                 temperature=0.0,
                 input_provenance={"entry_id": entry.id},
                 output_summary={

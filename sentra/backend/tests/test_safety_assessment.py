@@ -19,7 +19,10 @@ from app.services.safety import assess_safety
         ("今夜、自殺したい。安全でいられない。", "crisis"),
         ("家で殴られている。誰にも言わないでと言われた。", "crisis"),
         ("I will hurt them right now.", "crisis"),
-        ("Maybe I'll disappear for a while; I feel overwhelmed.", "low"),
+        # Ambiguous withdrawal is its own tier, as in the Next.js path (#374).
+        ("Maybe I'll disappear for a while; I feel overwhelmed.", "elevated"),
+        ("I know I should not hurt myself but I think about it.", "elevated"),
+        ("It is snowing and I feel trapped.", "low"),
     ],
 )
 def test_safety_assessment_cases(content, expected_level):
@@ -32,7 +35,7 @@ def test_safety_assessment_cases(content, expected_level):
     if expected_level == "crisis":
         assert result.reasons
         assert result.policy_refs
-        assert "trusted adult" in result.safe_response.lower()
+        assert "信頼できる大人" in result.safe_response
 
 
 def test_crisis_response_stays_non_diagnostic_and_direct():
@@ -43,11 +46,13 @@ def test_crisis_response_stays_non_diagnostic_and_direct():
         )
     )
 
-    response = result.safe_response.lower()
+    response = result.safe_response
     assert result.risk_level == "crisis"
-    assert "diagnos" not in response
-    assert "emergency service" in response
-    assert len(result.safe_response.split()) < 70
+    assert "診断" not in response
+    assert "緊急サービス" in response
+    # The student reads Japanese: the card used to switch to English only in a crisis.
+    assert not response.isascii()
+    assert len(response) < 200
 
 
 # The spelling a Japanese keyboard happens to produce must not change the
