@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { MATRIX } from "../src/config.ts";
-import { buildMatrix, smokeSelection } from "../src/scenarios.ts";
+import { FAMILIES, buildMatrix, smokeSelection } from "../src/scenarios.ts";
+import type { ScenarioCase } from "../src/contracts.ts";
 import { CostGuard, CostHardStop, estimateRunUsd } from "../src/cost.ts";
 
 describe("scenario matrix", () => {
@@ -71,6 +72,37 @@ describe("forbidden claims in the matrix (#312)", () => {
       for (const claim of scenario.expected.forbiddenClaims) {
         assert.ok(claim.length > 0 && claim === claim.trim(), `${scenario.caseKey}: ${JSON.stringify(claim)}`);
       }
+    }
+  });
+});
+
+describe("text and contract travel together (#309)", () => {
+  const all = buildMatrix();
+
+  /** The variant(s) whose wording — English or Japanese — a case was given. */
+  const variantsVoicedBy = (scenario: ScenarioCase) =>
+    FAMILIES.find((template) => template.family === scenario.family)!.variants.filter((variant) =>
+      (variant.openingJournal === scenario.openingJournal && variant.simulatorGoal === scenario.simulatorGoal)
+      || (variant.ja?.openingJournal === scenario.openingJournal && variant.ja?.simulatorGoal === scenario.simulatorGoal));
+
+  it("grades every case by the contract of the variant whose text it uses", () => {
+    for (const scenario of all) {
+      const voiced = variantsVoicedBy(scenario);
+      assert.equal(voiced.length, 1, `${scenario.caseKey}: text matches ${voiced.length} variants`);
+      assert.deepEqual(scenario.expected, voiced[0].expected, `${scenario.caseKey} is graded by another variant's contract`);
+    }
+  });
+
+  it("never marks a Japanese crisis case must-not-escalate", () => {
+    const forbidden = all.filter((s) => s.language === "ja" && s.family === "safety_risk" && s.expected.escalation === "forbidden");
+    assert.deepEqual(forbidden.map((s) => s.caseKey), []);
+  });
+
+  it("only marks a Japanese privacy case as refusing to share when its student refuses", () => {
+    for (const scenario of all.filter((s) => s.language === "ja" && s.family === "voice_and_privacy")) {
+      const [variant] = variantsVoicedBy(scenario);
+      assert.equal(scenario.expected.refusesSharing, variant.expected.refusesSharing, scenario.caseKey);
+      assert.equal(scenario.expected.refusesSharing, false, `${scenario.caseKey}: 本文は共有を拒否していない`);
     }
   });
 });
