@@ -1,6 +1,6 @@
 # インシデント対応手順
 
-> 改訂案 `pilot-protocol-v2` / 方針採用済み・運用承認前。[決定記録](decisions-2026-09-19.md)を参照。
+> 改訂案 `pilot-protocol-v3` / 方針採用済み・運用承認前。[決定記録](decisions-2026-09-19.md)を参照。
 > 実地演習は dry run day 3（[#168](https://github.com/jbjgjf/BLESC/issues/168)）で行う。**演習していない手順を本番の手順と呼ばない。**
 
 ## 0. 共通の原則

@@ -55,8 +55,9 @@ function elapsedDays(startedAt: string | null, instant: string): number | null {
  * Bounded three ways, and each bound is a different way of being wrong:
  *
  *   - by today, so tomorrow's entry is not missing;
- *   - by the protocol length, so a participant past day 21 is complete rather
- *     than accumulating a growing deficit forever;
+ *   - by the protocol length (`pilot_studies.study_days`), so a participant
+ *     past the last study day is complete rather than accumulating a growing
+ *     deficit forever;
  *   - by the withdrawal date, so a participant who left on day 2 is expected to
  *     have written on days 0-2 and is not counted as absent for the rest.
  *
@@ -67,8 +68,8 @@ export function expectedDays(input: {
   collectionStartedAt: string | null;
   withdrawnAt?: string | null;
   completedAt?: string | null;
-  baselineDays: number;
-  observationDays: number;
+  /** The study's own length. One period since #315, so no halves to add up. */
+  studyDays: number;
   now?: string | Date;
 }): number {
   if (!input.collectionStartedAt) return 0;
@@ -83,7 +84,7 @@ export function expectedDays(input: {
     .reduce((min, day) => (day < min ? day : min), Number.POSITIVE_INFINITY);
   if (!Number.isFinite(lastDay)) return 0;
 
-  const protocolLastDay = input.baselineDays + input.observationDays - 1;
+  const protocolLastDay = input.studyDays - 1;
   const bounded = Math.min(lastDay, protocolLastDay);
   // A `withdrawnAt` before collection opened gives a negative day: nothing was
   // ever expected of that participant.
@@ -121,8 +122,9 @@ export type ParticipantReconciliation = {
  *
  * `submittedDayNumbers` may contain repeats (two entries on one day) and
  * numbers outside the window (a submission after the protocol ended). Both are
- * counted rather than dropped: a day-22 entry is a protocol deviation, and a
- * deviation that the dashboard silently discards is one nobody investigates.
+ * counted rather than dropped: an entry past the last study day is a protocol
+ * deviation, and a deviation that the dashboard silently discards is one
+ * nobody investigates.
  */
 export function reconcileParticipant(input: {
   research_code: string;

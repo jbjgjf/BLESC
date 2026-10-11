@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
+import { PILOT_STUDY_DAYS } from "../src/lib/pilotProtocol.ts";
+
 import {
   STUDY_TIME_ZONE,
   expectedDays,
@@ -49,7 +51,7 @@ describe("study days elapsed", () => {
 });
 
 describe("expected days", () => {
-  const study = { baselineDays: 3, observationDays: 0 };
+  const study = { studyDays: 3 };
 
   it("counts day 0 as one expected submission", () => {
     assert.equal(
@@ -62,6 +64,19 @@ describe("expected days", () => {
     assert.equal(
       expectedDays({ collectionStartedAt: "2026-09-01T00:00:00.000Z", now: "2026-09-30T10:00:00.000Z", ...study }),
       3,
+    );
+  });
+
+  it("stops at the real pilot's 28 days, not at 21", () => {
+    // Day 0 is 2026-09-01, so day 27 — the 28th study day — is 2026-09-28.
+    // Two weeks later the participant is still expected for 28 days, not 42.
+    assert.equal(
+      expectedDays({
+        collectionStartedAt: "2026-09-01T00:00:00.000Z",
+        now: "2026-10-12T10:00:00.000Z",
+        studyDays: PILOT_STUDY_DAYS,
+      }),
+      28,
     );
   });
 

@@ -11,11 +11,11 @@ test("legal review covers all four documents with delegated organization facts",
   assert.equal(LEGAL_ORGANIZATION.representative, "田雨竜");
   assert.equal(LEGAL_ORGANIZATION.researchLead, "王謙蘊");
   assert.equal(LEGAL_DRAFT_VERSION, "legal-review-2026-09-14-v1");
-  // Carries the `-draft` suffix until a deployment enacts v2, and drops it at
+  // Carries the `-draft` suffix until a deployment enacts v3, and drops it at
   // the same moment the stamped version changes (consentDocument.ts). Asserted
   // against the same helper so the two cannot drift back apart.
   assert.equal(RESEARCH_DRAFT_VERSION, researchDocumentLabel());
-  assert.equal(RESEARCH_DRAFT_VERSION, "research-consent-doc-v2-draft");
+  assert.equal(RESEARCH_DRAFT_VERSION, "research-consent-doc-v3-draft");
   for (const document of LEGAL_DOCUMENTS) {
     assert.ok(document.sections.length > 0);
     assert.ok(document.sections.every((section) => section.paragraphs.length > 0));
@@ -37,8 +37,8 @@ test("review route is public, non-indexed and does not replace active consent ve
    * `consent.ts`. That constant is now derived from `consentDocument.ts`, so
    * the literal is gone while the property is unchanged — and checking the
    * property is the stronger test anyway, because it also covers the case
-   * where somebody enacts v2 without finishing the pack.
+   * where somebody enacts v3 without finishing the pack.
    */
   assert.equal(currentConsentDocumentVersion(), "research-consent-doc-v1");
-  assert.equal(researchDocumentLabel(), "research-consent-doc-v2-draft");
+  assert.equal(researchDocumentLabel(), "research-consent-doc-v3-draft");
 });
