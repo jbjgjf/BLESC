@@ -37,8 +37,7 @@ async function ensureUser(admin: SupabaseClient, email: string, password: string
  * reviewer evaluation access. Passwords are generated fresh per run and
  * returned in memory only.
  */
-export async function provisionAccounts(env: EvalEnv): Promise<ProvisionedAccounts> {
-  const admin = adminClient(env);
+export async function provisionAccounts(admin: SupabaseClient): Promise<ProvisionedAccounts> {
   const passwords = new Map<string, string>();
   const allEmails = [...SYNTHETIC_ACCOUNTS.students, ...SYNTHETIC_ACCOUNTS.counselors, SYNTHETIC_ACCOUNTS.reviewer];
   const idsByEmail = new Map<string, string>();
