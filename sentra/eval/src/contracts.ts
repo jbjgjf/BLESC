@@ -67,6 +67,26 @@ export interface JudgeResult {
   evalRef?: string;
 }
 
+/**
+ * What came back from asking the judge.
+ *
+ * `unavailable` is a case the judge did not grade: a refusal, a response cut off
+ * at the token limit, no content, malformed JSON, or JSON that is not a verdict.
+ * It is not "uncertain" — that is the judge's answer after reading the case and
+ * it routes to human review as a graded result. `unavailable` means there is no
+ * answer at all, so the case is not graded yet (#285).
+ */
+export type JudgeOutcome =
+  | { kind: "verdict"; result: JudgeResult }
+  | { kind: "unavailable"; reason: string };
+
+/** Failure kind recorded on a case the judge could not grade (#285). */
+export const JUDGE_UNAVAILABLE = "judge_unavailable";
+
+export function isJudgeUnavailable(result: Pick<CaseResult, "failureKinds">): boolean {
+  return result.failureKinds.includes(JUDGE_UNAVAILABLE);
+}
+
 export interface CaseResult {
   scenario: ScenarioCase;
   transcript: TurnRecord[];
