@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SafetyAssessment } from "@/api/models";
 import { assessSafety, escalateAssessment, SAFETY_ASSESSMENT_VERSION } from "@/lib/safety-assessment";
+import { recentDisclosedRisk } from "@/lib/server/disclosedRisk";
 
 /**
  * Safety rules shared by every conversational surface.
@@ -47,42 +48,7 @@ export const RISK_DIRECTIVES: Record<SafetyAssessment["risk_level"], string> = {
 /** Student turns the safety assessment reads, on every surface. */
 export const SAFETY_WINDOW_TURNS = 12;
 
-const RISK_ORDER: SafetyAssessment["risk_level"][] = ["none", "low", "elevated", "crisis"];
-
 type ChatMessageRow = { role: string; content_redacted: string | null };
-
-/**
- * Highest risk assessed on the student's other surfaces in the last day, so a
- * disclosure written in the Record UI keeps shaping a conversation that never
- * repeats the words.
- */
-export async function recentDisclosedRisk(
-  client: SupabaseClient,
-  participantId: string,
-  excludeSurface: string,
-): Promise<SafetyAssessment["risk_level"]> {
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { data, error } = await client
-    .from("model_runs")
-    .select("retrieval_config_json")
-    .eq("participant_id", participantId)
-    .eq("artifact_type", "safety_assessment")
-    .gte("created_at", since)
-    .order("created_at", { ascending: false })
-    .limit(20);
-  if (error || !data) return "none";
-
-  let highest: SafetyAssessment["risk_level"] = "none";
-  for (const row of data) {
-    const config = (row.retrieval_config_json ?? {}) as { risk_level?: string; surface?: string };
-    // Skip this surface's own audit rows; re-reading them would make a single
-    // elevated turn stick to the participant for a day.
-    if (config.surface === excludeSurface) continue;
-    const level = config.risk_level as SafetyAssessment["risk_level"] | undefined;
-    if (level && RISK_ORDER.indexOf(level) > RISK_ORDER.indexOf(highest)) highest = level;
-  }
-  return highest;
-}
 
 /**
  * The assessment a surface should act on: this conversation's window, raised by
