@@ -11,6 +11,60 @@ met, the file that meets it is named.
 
 ---
 
+## Update — 2026-10-11: Stages 2 and 3 deferred behind executable gates
+
+The sections below this one are the original plan and are left as written. What
+changed since:
+
+| Issue | GitHub | Now |
+|---|---|---|
+| #95, #96, #97, #98, #101 | CLOSED | Stage 0/1 foundations on main |
+| #62, #88, #90, #91 | CLOSED | but #88's cases carry **0** human labels (76 `draft`, 6 `author`) |
+| #99 Stage 2 partial pooling | OPEN | **deferred behind its gate.** Pre-registration skeleton + fail-closed entry gate. Not fitted |
+| #100 Stage 3 relation attention | OPEN | **deferred behind its gate.** Pre-registration skeleton + fail-closed entry gate + the educator-facing invariant. Not trained |
+
+#102's Definition of Done allows a layer to be "explicitly deferred behind its
+documented data/governance gate". For #99 and #100 that is now literal: the gate
+is code, it returns `open=False` with every reason as a stable code, and a test
+fails if either opens.
+
+- `app/analytics/data_sufficiency.assess_observation_sufficiency` — the required
+  observations, judged against the pilot design: **50 participants × 28 days,
+  one period, one entry a day, 1,400 entries at most** (PR #328 / #315, not yet
+  on main). At the planning ICC of 0.5 those 1,400 entries are worth **≈ 97**
+  independent observations. Synthetic counts are refused.
+- `app/ontology/learning_gates.py` — `evaluate_stage2_entry_gate()` (#99) and
+  `evaluate_stage3_entry_gate()` (#100). No argument, environment variable or
+  setting opens either. Stage 2 falls back to `not_enough_data`; Stage 3 to the
+  deterministic traversal of #96.
+- `stage2_partial_pooling_preregistration.md`,
+  `stage3_relation_attention_preregistration.md` — every research decision
+  is 未決定; only what the issues already decide is filled in. A test keeps each
+  document's item table identical to the code.
+- The educator-facing invariant — `app/ontology/educator_exposure.py` for any
+  producer (a learned output is withheld while Stage 3 is closed), and
+  `frontend/src/lib/educatorThemes.ts` for the one graph-derived output the
+  production educator screen shows. The full list of educator outputs and their
+  checks is in `educator_display_policy.md`.
+
+**What has to exist before either gate can open** — none of it can be supplied
+by code:
+
+1. The 未決定 items of each pre-registration decided by the research lead and
+   owner, reviewed, and frozen before any real data is seen.
+2. The required observations (participants, days per participant, effective n;
+   for Stage 3 also edges per relation type) fixed by that pre-registration.
+   Anything above ≈ 97 effective observations, 50 participants or 28 days cannot
+   be met by this pilot and is reported as `requirement_exceeds_design`.
+3. A governance/ethics approval naming the stage and the pre-registration
+   version. The pilot protocol approvals in `docs/pilot/approvals.md` are not it.
+4. Counts — never content — of real consented observations, assembled outside
+   this repository by someone with lawful access. The pilot has not started.
+5. Stage 3 only: human labels on the #88 benchmark with measured inter-rater
+   agreement, and a declared pin of the deterministic baseline version.
+
+---
+
 ## Status at a glance
 
 | Issue | State | Actually blocked by | Verdict |
@@ -289,6 +343,9 @@ of result from looking like a finding.
 
 ## #99 — Stage 2 hierarchical Bayesian
 
+*2026-10-11: superseded by the update at the top — the gate is now code and the
+regression guard below exists in `tests/test_dynamics.py`.*
+
 Out of scope. Its entry gate — a data-sufficiency analysis (#62, other category),
 enough real consented data, governance approval, a written estimand — is not met on
 any of the four conditions, and the issue itself says it exists to record the gate
@@ -304,6 +361,9 @@ entire practical content of #99 until the gate opens.
 ---
 
 ## #100 — Stage 3 learned attention
+
+*2026-10-11: superseded by the update at the top — #96 is done, and the gate,
+pre-registration skeleton and educator-facing invariant now exist.*
 
 Out of scope this cycle, and the issue's own entry gate says so: it needs the
 deterministic baseline stable (#96, not started), a labelled corpus past a
