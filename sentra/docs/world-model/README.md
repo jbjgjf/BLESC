@@ -46,7 +46,7 @@ Wikiの入口は [Research-Engine](https://github.com/jbjgjf/BLESC/wiki/Research
 - 既存Epic [#102](https://github.com/jbjgjf/BLESC/issues/102)、未完了の [#99](https://github.com/jbjgjf/BLESC/issues/99)・[#100](https://github.com/jbjgjf/BLESC/issues/100) を参照する。新しい研究基盤ができても、これらを自動的に完了にはしない。
 - パイロットは [Project 2](https://github.com/users/jbjgjf/projects/2)、運用判断は [Discussion 137](https://github.com/jbjgjf/BLESC/discussions/137) で管理する。
 - [PR 138](https://github.com/jbjgjf/BLESC/pull/138) は、確認時点では未マージの同意・保存経路の修正。新チームはそのファイルを同時に変更しない。
-- 50人×21日は最大1,050記録、各人の隣接した日次遷移は最大20組。大規模モデルのゼロからの学習データ量と同一視しない。
+- 50人×28日は最大1,400記録、各人の隣接した日次遷移は最大27組。大規模モデルのゼロからの学習データ量と同一視しない。
 - 既存の `learning_stages_roadmap.md` は過去のコミットに基づく資料。現在の着手可否は最新mainとIssue/PRの状態を再確認する。
 
 ## 72時間の後（後続研究の設計）
@@ -55,7 +55,7 @@ Wikiの入口は [Research-Engine](https://github.com/jbjgjf/BLESC/wiki/Research
 
 | 文書 | 対応Issue | 内容 |
 | --- | --- | --- |
-| [R1 実観測の利用計画と表現・測定の検証](research-r1-real-observations.md) | [#153](https://github.com/jbjgjf/BLESC/issues/153) | 実データの拒否を外す条件、固定アンカー、測定の安定性、50×21で何が推定できないか |
+| [R1 実観測の利用計画と表現・測定の検証](research-r1-real-observations.md) | [#153](https://github.com/jbjgjf/BLESC/issues/153) | 実データの拒否を外す条件、固定アンカー、測定の安定性、50×28で何が推定できないか |
 | [R2 多時間尺度・高次構造・部分識別](research-r2-multiscale-structure.md) | [#154](https://github.com/jbjgjf/BLESC/issues/154) | v0が置いた5つの単純化を1つずつ外す実験 |
 | [R3 観測選択と前向き評価](research-r3-observation-selection.md) | [#155](https://github.com/jbjgjf/BLESC/issues/155) | 情報利得による質問選択と、`active_questioning` を外す条件 |
 

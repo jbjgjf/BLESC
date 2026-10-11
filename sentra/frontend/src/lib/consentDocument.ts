@@ -25,8 +25,9 @@
  *
  * So the version this build stamps is derived, not declared:
  *
- *   - **v2 is enacted only when `CONSENT_DOCUMENT_ENACTED` says so**, which a
- *     deployment sets after the blanks are filled and the approvals recorded.
+ *   - **The revised document (v3 since #315) is enacted only when
+ *     `CONSENT_DOCUMENT_ENACTED` says so**, which a deployment sets after the
+ *     blanks are filled and the approvals recorded.
  *   - Until then the build stamps v1 and the legal page keeps its `-draft`
  *     suffix, so nothing claims agreement to a document nobody has finished.
  *
@@ -34,28 +35,42 @@
  * `docs/pilot/consent-pack.md` still contains a placeholder, so turning it on
  * is a decision somebody has to actually complete rather than one they can make
  * by typing `1`.
+ *
+ * ## v3 (#315)
+ *
+ * v2 was approved internally on 2026-09-20 with a 21-day period in two halves.
+ * The owner then settled the period at 28 days with no split, which changes
+ * what a participant is asked to do, so the pack became v3 rather than v2 with
+ * its body edited under an approval given for different text (the pack:
+ * 「文面を変えたら版を上げ、approvals.md に再承認を記録する」).
+ *
+ * The flag now names v3 only. A deployment that set it to v2 before #315 stops
+ * enacting anything and falls back to v1 — this build no longer carries the
+ * v2 text, so stamping v2 would assert agreement to a document it cannot show.
+ * The test also refuses the flag until approvals.md records v3 for all three
+ * signatories.
  */
 
-/** The formal name the pack gives the revised document. */
-export const CONSENT_DOCUMENT_V2 = "research-consent-doc-v2";
+/** The formal name the pack gives the revised document: v3 since #315. */
+export const CONSENT_DOCUMENT_V3 = "research-consent-doc-v3";
 
 /** The version currently in force on rows written before the revision. */
 export const CONSENT_DOCUMENT_V1 = "research-consent-doc-v1";
 
 /**
- * Whether this deployment has enacted v2.
+ * Whether this deployment has enacted v3.
  *
  * Read from the environment rather than hard-coded so that enactment is a
  * deployment decision with a date on it, not a commit that quietly takes effect
  * wherever it lands.
  */
-export function consentDocumentV2Enacted(): boolean {
-  return process.env.NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED === "research-consent-doc-v2";
+export function consentDocumentV3Enacted(): boolean {
+  return process.env.NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED === "research-consent-doc-v3";
 }
 
 /** The version string stamped onto consent records written by this build. */
 export function currentConsentDocumentVersion(): string {
-  return consentDocumentV2Enacted() ? CONSENT_DOCUMENT_V2 : CONSENT_DOCUMENT_V1;
+  return consentDocumentV3Enacted() ? CONSENT_DOCUMENT_V3 : CONSENT_DOCUMENT_V1;
 }
 
 /**
@@ -66,13 +81,13 @@ export function currentConsentDocumentVersion(): string {
  * so the page and the record cannot describe different documents.
  */
 export function researchDocumentLabel(): string {
-  return consentDocumentV2Enacted() ? CONSENT_DOCUMENT_V2 : `${CONSENT_DOCUMENT_V2}-draft`;
+  return consentDocumentV3Enacted() ? CONSENT_DOCUMENT_V3 : `${CONSENT_DOCUMENT_V3}-draft`;
 }
 
 /**
  * The heading the research and guardian documents carry on `/legal`.
  *
- * 「（案）」 until v2 is enacted, and it disappears at the same moment
+ * 「（案）」 until v3 is enacted, and it disappears at the same moment
  * `currentConsentDocumentVersion()` changes — the same one switch as the label
  * above, applied to the visible title rather than to the version string.
  *
@@ -83,5 +98,5 @@ export function researchDocumentLabel(): string {
  * re-label the other's documents.
  */
 export function consentDocumentLabel(base: string): string {
-  return consentDocumentV2Enacted() ? base : `${base}（案）`;
+  return consentDocumentV3Enacted() ? base : `${base}（案）`;
 }

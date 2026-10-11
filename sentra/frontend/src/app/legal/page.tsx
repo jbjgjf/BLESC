@@ -3,11 +3,29 @@ import Link from "next/link";
 import {
   LEGAL_CONTACT,
   LEGAL_DOCUMENTS,
+  documentEffectiveDateLabel,
   documentHeading,
   documentVersion,
 } from "@/lib/legalDocuments";
-import { isLegalAcceptableDocument, legalEffectiveDate, legalEnacted } from "@/lib/legalEnactment";
+import {
+  isLegalAcceptableDocument,
+  legalEffectiveDate,
+  legalEnacted,
+  legalEnactmentState,
+} from "@/lib/legalEnactment";
 import { LegalAcceptanceControl, LegalAcceptanceProvider } from "@/components/LegalAcceptance";
+
+/**
+ * Rendered per request, not prerendered (#282).
+ *
+ * The version and the date are `NEXT_PUBLIC_*`, which the bundler inlines at
+ * build time — those are deployment decisions and being fixed per deployment
+ * is correct. **The clock is not.** Whether the declared date has arrived is
+ * answered at render time, so a statically prerendered page would keep saying
+ * 「施行予定」 after the day came, until somebody happened to redeploy. There is
+ * no data fetch here; the cost is rendering a few constant documents.
+ */
+export const dynamic = "force-dynamic";
 
 /**
  * `generateMetadata` rather than a static `metadata` object, because the title
@@ -15,9 +33,9 @@ import { LegalAcceptanceControl, LegalAcceptanceProvider } from "@/components/Le
  * notice below says 「施行の規約・プライバシーポリシーです」 is the same screen
  * naming itself two ways.
  *
- * Sync and reading only a `NEXT_PUBLIC_` value, which the bundler inlines at
- * build time — no dynamic behaviour, so the page stays prerendered and the
- * title ships in the initial HTML.
+ * Sync, and evaluated per request like the rest of the page (`force-dynamic`
+ * above): the version and the date are inlined at build time, but whether the
+ * date has arrived is not (#282). The title still ships in the initial HTML.
  *
  * `robots` stays `noindex` on both branches. Enacting the terms is not a
  * decision to list participant-facing URLs in a search engine; that is #249's
@@ -31,22 +49,38 @@ export function generateMetadata(): Metadata {
 }
 
 export default function LegalDraftsPage() {
-  // 施行の有無で見出しと注記が切り替わる。「（案）」と「施行済み」を
+  // 施行の状態で見出しと注記が切り替わる。「（案）」と「施行済み」を
   // 同じ画面が別々の根拠で名乗らないように、判定は一箇所から取る。
-  const enacted = legalEnacted();
+  //
+  // 状態は3つある（#282）。「まだ決まっていない」と「決まっているが、まだ
+  // その日ではない」は参加者に伝えるべきことが違い、後者には見せられる日付が
+  // ある。施行日前に「施行済み」と読める画面を出さないための分岐でもある。
+  //
+  // 判定はリクエスト時の一つの時刻で行う（`force-dynamic`）。施行予定日の前は
+  // `enacted` は false で、同意欄にボタンは出ない。
+  const now = new Date();
+  const state = legalEnactmentState(now);
+  const enacted = legalEnacted(now);
   const effectiveDate = legalEffectiveDate();
 
   // 同意欄（#251）にも同じ判定を渡す。押せるかどうかを画面側で別に計算すると、
-  // 「施行済み」を名乗る根拠が二つになる。
+  // 「施行済み」を名乗る根拠が二つになる。施行予定日は、ボタンが無い理由を
+  // 「未決定」と取り違えさせないために、表示用にだけ渡す。
   return (
-    <LegalAcceptanceProvider enacted={enacted}>
+    <LegalAcceptanceProvider enacted={enacted} scheduledDate={state === "scheduled" ? effectiveDate : null}>
     <main className="bl-wrap bl-stack" style={{ paddingBlock: 32 }}>
       <header className="bl-stack">
         <p className="bl-eyebrow">{enacted ? "blesc · 規約・ポリシー" : "blesc · 確認用草案"}</p>
         <h1 className="bl-h1">利用・個人情報・研究の書類</h1>
-        {enacted ? (
+        {state === "in_force" ? (
           <p className="bl-notice" role="note">
             以下は {effectiveDate} 施行の規約・プライバシーポリシーです。
+            研究参加の同意はこれとは別に取得します（この書類への同意は研究同意ではありません）。
+          </p>
+        ) : state === "scheduled" ? (
+          <p className="bl-notice" role="note">
+            以下は {effectiveDate} 施行予定の案です。施行日まではまだ効力がなく、
+            閲覧しても同意した扱いにはなりません。施行日より前に同意を記録することもできません。
             研究参加の同意はこれとは別に取得します（この書類への同意は研究同意ではありません）。
           </p>
         ) : (
@@ -69,7 +103,7 @@ export default function LegalDraftsPage() {
           <p className="bl-meta">
             版：{documentVersion(document)}
             {" ／施行日："}
-            {enacted ? effectiveDate : "未設定"}
+            {documentEffectiveDateLabel(document, now)}
           </p>
           {document.sections.map((section) => (
             <section key={section.title} className="bl-stack" style={{ gap: 10 }}>

@@ -8,6 +8,7 @@ import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { escalate, notifiableLevel } from "@/lib/server/safetyEscalation";
 import { chatSessionConsentSnapshot } from "@/lib/server/consentStore";
 import { RULES, consumeRateLimit, rateLimitHeaders, rateLimitSubject } from "@/lib/server/rateLimit";
+import { envPositiveInt } from "@/lib/server/envNumber";
 import {
   COLLECTION_ONLY_MESSAGE,
   COLLECTION_ONLY_PROVIDER,
@@ -243,7 +244,7 @@ async function callOpenAI(
         ],
         text: { verbosity: "medium" },
       }),
-    }, Number(process.env.OPENAI_CHAT_TIMEOUT_MS ?? 25000));
+    }, envPositiveInt("OPENAI_CHAT_TIMEOUT_MS", 25000));
 
     if (!response.ok) {
       const error = await providerError(response, "OpenAI chat request failed.");

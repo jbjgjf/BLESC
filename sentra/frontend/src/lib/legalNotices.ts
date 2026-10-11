@@ -13,7 +13,7 @@
  * enacting the terms says nothing about the research consent pack.
  */
 
-import { consentDocumentV2Enacted } from "./consentDocument.ts";
+import { consentDocumentV3Enacted } from "./consentDocument.ts";
 import { legalEnacted } from "./legalEnactment.ts";
 
 export type LegalNotice = { link: string; note: string };
@@ -36,7 +36,7 @@ export function loginLegalNotice(): LegalNotice {
 
 /** On the consent, join and guardian screens: the research documents. */
 export function researchDocumentNotice(audience: "research" | "guardian"): LegalNotice {
-  if (consentDocumentV2Enacted()) {
+  if (consentDocumentV3Enacted()) {
     return {
       link: audience === "guardian" ? "保護者向け説明・確認の全文を読む（別タブ）" : "研究説明・同意の全文を読む（別タブ）",
       note: "説明文書の全文は別タブで確認できます。閲覧しただけでは同意として記録されません。",

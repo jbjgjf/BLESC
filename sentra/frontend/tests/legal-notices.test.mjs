@@ -10,14 +10,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { CONSENT_DOCUMENT_V2 } from "../src/lib/consentDocument.ts";
+import { CONSENT_DOCUMENT_V3 } from "../src/lib/consentDocument.ts";
 import { LEGAL_DOCUMENTS, documentHeading } from "../src/lib/legalDocuments.ts";
 import { LEGAL_ENACTED_VERSION } from "../src/lib/legalEnactment.ts";
 import { loginLegalNotice, researchDocumentNotice } from "../src/lib/legalNotices.ts";
 
 const LEGAL_ON = { NEXT_PUBLIC_LEGAL_ENACTED: LEGAL_ENACTED_VERSION, NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: "2026-10-01" };
 const LEGAL_OFF = { NEXT_PUBLIC_LEGAL_ENACTED: undefined, NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE: undefined };
-const CONSENT_ON = { NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED: CONSENT_DOCUMENT_V2 };
+const CONSENT_ON = { NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED: CONSENT_DOCUMENT_V3 };
 const CONSENT_OFF = { NEXT_PUBLIC_CONSENT_DOCUMENT_ENACTED: undefined };
 
 function withEnv(values, run) {

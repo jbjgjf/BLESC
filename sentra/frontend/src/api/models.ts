@@ -523,6 +523,8 @@ export interface ChatResponse {
   chat_session_id: RecordId;
   message_id: RecordId;
   answer: string;
+  /** The route's assessment of this turn; `answer` already carries its safe response. */
+  safety_assessment?: SafetyAssessment;
   evidence_refs: Record<string, JsonValue>;
   retrieval_context: Record<string, JsonValue>;
   conversation_recall_30?: ConversationRecallSummary;

@@ -17,7 +17,9 @@
 | ファイル | 役割 |
 | --- | --- |
 | [scenario-matrix.json](scenario-matrix.json) | 10アカウントの割当。**正本** |
-| [`sentra/supabase/seed/pilot_dry_run.seed.sql`](../../../sentra/supabase/seed/pilot_dry_run.seed.sql) | study・招待・アカウント・合成本文の投入 |
+| [`sentra/supabase/seed/pilot_dry_run.seed.sql`](../../../sentra/supabase/seed/pilot_dry_run.seed.sql) | study・アカウント・合成本文の投入 |
+| [`sentra/frontend/scripts/dry-run-invitations.mjs`](../../../sentra/frontend/scripts/dry-run-invitations.mjs) | 招待10件の投入（`PILOT_INVITE_HMAC_KEY` で hash する） |
+| [`sentra/supabase/scripts/dry_run_sql_smoke.sh`](../../../sentra/supabase/scripts/dry_run_sql_smoke.sh) | 上の2つと照合クエリが現在のスキーマで実行できることの検査（CI の `dry-run-sql` job） |
 | [`sentra/frontend/scripts/dry-run-smoke.mjs`](../../../sentra/frontend/scripts/dry-run-smoke.mjs) | matrixの検証と実行計画の出力 |
 | [`sentra/supabase/scripts/dry_run_reconciliation.sql`](../../../sentra/supabase/scripts/dry_run_reconciliation.sql) | 13本の照合クエリ |
 | [evidence-template.md](evidence-template.md) | 記録の様式。**Discussion #137 へ貼る** |
@@ -37,6 +39,9 @@ cd ../.. && cd sentra && ./supabase/scripts/migration_smoke.sh
 
 # 3. dry-run用のデータを投入（パイロット環境またはlocal）
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed/pilot_dry_run.seed.sql
+
+# 4. 招待を投入（対象の deployment と同じ PILOT_INVITE_HMAC_KEY を環境変数に置いて実行する。値を端末に打たない）
+node frontend/scripts/dry-run-invitations.mjs | psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1
 ```
 
 **deployment SHAを固定して記録する。** 途中でデプロイしない。デプロイしたら、その時点でdry runは最初からやり直す。
@@ -59,10 +64,10 @@ export、PII review、retention/purge、backup/restore、incident tabletop、復
 
 ## 招待コード
 
-seedはコードをhashで保存する（本番と同じ規則）。平文は行番号から導ける。
+コードは本番と同じ規則で、`PILOT_INVITE_HMAC_KEY` による HMAC として保存する。鍵は SQL から見えないので、招待は seed ではなく `dry-run-invitations.mjs` が投入する。**対象の deployment と違う鍵で投入した招待は1件も引き換えられない。** 平文は行番号から導ける。
 
 ```
-DRYRUN-0001 .. DRYRUN-0010
+DRYRN-00000-00000-00001 .. DRYRN-00000-00000-00010
 ```
 
 3番は**期限切れ**、4番は `max_redemptions=1` で二重利用を試す。

@@ -4,6 +4,8 @@ import { assessConversation, recordSafetyAudit } from "@/lib/server/safety";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { escalate, notifiableLevel } from "@/lib/server/safetyEscalation";
 import { chatSessionConsentSnapshot } from "@/lib/server/consentStore";
+import { rateLimitSubject } from "@/lib/server/rateLimit";
+import { limitVoiceTurn } from "@/lib/server/voiceTurnLimit";
 
 export const runtime = "nodejs";
 export const maxDuration = 20;
@@ -45,6 +47,32 @@ export async function POST(request: NextRequest) {
 
   if (!userId) return jsonError("participant_code is required.", 422);
   if (!message) return jsonError("message is required.", 422);
+
+  // Before any read or write below (#369). Past the limit nothing is stored;
+  // a crisis is still escalated — see `limitVoiceTurn` for why that is safe.
+  const refused = await limitVoiceTurn(serviceRoleClient(), {
+    subject: rateLimitSubject(request, auth.user.id),
+    message,
+    escalateFloor: async (level, reasons) => {
+      const service = serviceRoleClient();
+      const found = await auth.client.from("participants").select("id, code").eq("code", userId).limit(1).maybeSingle();
+      const overLimitParticipant = found.data as { id: string; code: string | null } | null;
+      if (!service || !overLimitParticipant) {
+        console.error("[safety-escalation] an over-limit voice turn assessed as a crisis and could not be escalated");
+        return;
+      }
+      await escalate(service, {
+        ownerUserId: auth.user.id,
+        participantId: overLimitParticipant.id,
+        participantCode: overLimitParticipant.code,
+        riskLevel: level,
+        reasons,
+        surface: "voice",
+        sourceArtifactId: null,
+      });
+    },
+  });
+  if (refused) return refused;
 
   const participantResult = await auth.client
     .from("participants")

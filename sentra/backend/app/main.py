@@ -22,6 +22,7 @@ from .authz import (
     require_user,
 )
 from .clock import utcnow
+from .env_number import env_positive_int
 from .database import create_db_and_tables, get_session
 from .seed import seed_data
 from .ontology.repair import get_fallback_extraction
@@ -60,6 +61,7 @@ from .services.inference_orchestrator import InferenceOrchestrator
 from .services.hf_research_benchmark import hf_dataset_rows, run_hf_research_benchmark
 from .services.llm_adapter import llm_adapter
 from .services.reflection_intelligence import analyze_reflection, run_reflection_eval
+from .services.safety import SAFETY_ASSESSMENT_VERSION
 from .services.research_pipeline import (
     create_fine_tuning_dataset_export,
     create_openai_fine_tuning_job,
@@ -104,7 +106,7 @@ from .api.research_world_model import router as research_world_model_router  # n
 
 app.include_router(research_world_model_router)
 
-AUDIO_MAX_BYTES = int(os.getenv("OPENAI_TRANSCRIPTION_MAX_BYTES", str(24 * 1024 * 1024)))
+AUDIO_MAX_BYTES = env_positive_int("OPENAI_TRANSCRIPTION_MAX_BYTES", 24 * 1024 * 1024)
 AUDIO_EXTENSIONS = {".webm", ".wav", ".mp3", ".m4a", ".mp4", ".mpeg", ".mpga"}
 AUDIO_CONTENT_TYPES = {
     "audio/webm",
@@ -668,10 +670,10 @@ def create_entry(
                 artifact_type="safety_assessment",
                 artifact_id=extraction.id,
                 provider="rules",
-                model="safety-assessment-v1",
+                model=SAFETY_ASSESSMENT_VERSION,
                 output=safety_assessment,
-                prompt_version="safety-assessment-v1",
-                schema_version="safety-assessment-v1",
+                prompt_version=SAFETY_ASSESSMENT_VERSION,
+                schema_version=SAFETY_ASSESSMENT_VERSION,
                 temperature=0.0,
                 input_provenance={"entry_id": entry.id},
                 output_summary={
