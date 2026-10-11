@@ -5,6 +5,7 @@ cd sentra/backend
 python -m research_engine.transfer.cli prereg-status      # what still blocks the freeze
 python -m research_engine.transfer.cli prereg-hash        # the hash a human copies into 凍結記録
 python -m research_engine.transfer.cli generate --seed 1 --missingness state_dependent --out /tmp/cohort
+python -m research_engine.transfer.cli consent-dry-run    # #212 refusals and exclusions, synthetic only
 ```
 
 `generate` needs `--seed` and `--missingness` spelled out: which seed and
@@ -24,6 +25,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
+from .consent_gate import consent_dry_run
 from .generator import MISSINGNESS_SCENARIOS, SyntheticCohortConfig, generate, manifest_hash, write_cohort
 from .preregistration import PREREGISTRATION_PATH, freeze_status, load_preregistration
 
@@ -61,6 +63,12 @@ def command_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_consent_dry_run(args: argparse.Namespace) -> int:
+    report = consent_dry_run(args.seed)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report["passed"] else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="research_engine.transfer.cli", description="合成→実データ移転研究（#210）"
@@ -81,6 +89,10 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument("--mnar-strength", type=float, default=1.0)
     gen.add_argument("--out", required=True)
     gen.set_defaults(handler=command_generate)
+
+    gate = subparsers.add_parser("consent-dry-run", help="同意・撤回ゲートを合成データだけで検証する（#212）")
+    gate.add_argument("--seed", type=int, default=11)
+    gate.set_defaults(handler=command_consent_dry_run)
     return parser
 
 
