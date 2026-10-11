@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { ObservationNotReady } from "../src/browser.ts";
 import { executeRun } from "../src/runner.ts";
 import { buildMatrix } from "../src/scenarios.ts";
 import { FakeSupabase } from "./fakes/supabase.ts";
@@ -57,5 +58,23 @@ describe("a case the judge could not grade (#285)", () => {
     assert.notEqual(summary.verdict, "ready");
     assert.ok(summary.recommendedActions.some((action) => /could not grade/i.test(action)), summary.recommendedActions.join(" | "));
     assert.ok(summary.findings.some((finding) => /could not grade/i.test(finding)), summary.findings.join(" | "));
+  });
+});
+
+describe("a case whose journal the product never finished processing (#305)", () => {
+  it("is an error marked observation_not_ready, not a graded case", async () => {
+    const db = new FakeSupabase();
+    const deps = fakeDeps({
+      submitJournal: async () => { throw new ObservationNotReady("journal", "the journal submission did not finish within 90s"); },
+    });
+    const { summary } = await executeRun(runOptions(db, firstCases(1)), deps);
+    const [row] = db.rows("evaluation_cases");
+    assert.equal(row.status, "error");
+    assert.ok((row.failure_kinds as string[]).includes("observation_not_ready"), JSON.stringify(row.failure_kinds));
+    assert.match(String(row.human_review_reason), /did not finish/);
+    assert.equal(deps.driver.calls.includes("chat"), false, "no observation was taken after the journal");
+    assert.equal(summary.totals.passed, 0);
+    assert.notEqual(summary.verdict, "ready");
+    assert.ok(summary.findings.some((finding) => finding.includes("observation_not_ready")), summary.findings.join(" | "));
   });
 });

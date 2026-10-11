@@ -16,6 +16,8 @@ export interface RunSummary {
     /** Cases the judge could not grade (#285). Already inside `incomplete`. */
     judgeUnavailable: number;
   };
+  /** How many of the run's cases the verdict covers (#376). */
+  coverage: { expected: number; covered: number };
   gates: Record<string, number | string>;
   /** Pass rate per language. An aggregate hides a defect confined to one. */
   byLanguage: Array<{ language: string; total: number; passed: number; rate: number; criticalViolations: number }>;
@@ -28,6 +30,8 @@ export interface RunSummary {
 }
 
 export function computeVerdict(results: CaseResult[]): RunSummary["verdict"] {
+  // Nothing graded is not "everything passed" (#376).
+  if (results.length === 0) return "incomplete";
   const incomplete = results.filter((result) => result.status === "incomplete" || result.status === "error").length;
   if (incomplete > 0 && incomplete === results.length) return "incomplete";
   const gates = computeGates(results);

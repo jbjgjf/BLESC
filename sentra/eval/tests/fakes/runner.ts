@@ -9,7 +9,7 @@ import { SYNTHETIC_ACCOUNTS, type EvalEnv } from "../../src/config.ts";
 import type { JudgeResult, ScenarioCase, TurnRecord } from "../../src/contracts.ts";
 import type { ProvisionedAccounts } from "../../src/provision.ts";
 import type { BrowserDriver, RunnerDeps, RunOptions } from "../../src/runner.ts";
-import type { BrowserSession } from "../../src/browser.ts";
+import type { BrowserSession, JournalSubmission } from "../../src/browser.ts";
 import type { FakeSupabase } from "./supabase.ts";
 
 export const PASSING_JUDGE: JudgeResult = {
@@ -19,6 +19,8 @@ export const PASSING_JUDGE: JudgeResult = {
 export interface FakeDriverOptions {
   /** Product reply to one student chat message. */
   reply?: (message: string) => string;
+  /** What the journal submission returns (or throws). */
+  submitJournal?: () => Promise<JournalSubmission>;
 }
 
 export function fakeDriver(options: FakeDriverOptions = {}): BrowserDriver & { calls: string[] } {
@@ -30,7 +32,10 @@ export function fakeDriver(options: FakeDriverOptions = {}): BrowserDriver & { c
     openSession: async () => { calls.push("openSession"); return session; },
     closeSession: async () => { calls.push("closeSession"); },
     loginThroughUi: async (_page, email) => { calls.push(`login:${email}`); },
-    submitJournal: async () => { calls.push("submitJournal"); },
+    submitJournal: async () => {
+      calls.push("submitJournal");
+      return options.submitJournal ? options.submitJournal() : { entryId: "entry-1", reflectionCards: [] };
+    },
     sendChatAndRead: async (_page, message) => { calls.push("chat"); return reply(message); },
     openSupportSummary: async () => { calls.push("summary"); return "サポートサマリー"; },
     grantConsentIfRequested: async () => { calls.push("grantConsent"); return false; },
