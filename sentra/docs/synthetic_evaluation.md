@@ -6,17 +6,37 @@ All data is synthetic (`data_classification=synthetic`); production users and
 production data are never touched — the runner refuses the production
 Supabase project outright.
 
+> **Status (2026-10-11): the browser driver does not match the current
+> product.** `src/browser.ts` drives the Record and Chat screens through
+> `data-testid` hooks — `record-tab-journal_entry`, `journal-input`,
+> `journal-submit`, `chat-input`, `chat-submit`, `chat-response` — that were
+> removed from `sentra/frontend` by the chat UI redesign merge (`065d2e4`,
+> 2026-08-23). The journal is now a multi-step screen at `/journal`. Against
+> the current product every case would stop at its first step and record as
+> `error`; no `smoke` or `full` result produced after that merge reflects the
+> product. Restoring the hooks (or rewriting the driver for the new screens)
+> is a product-side change and has to be verified against a running product.
+> The unit tests check the harness's logic and its waits, not its selectors.
+
 ## Architecture
 
 ```
 sentra/eval (TypeScript)
-  personas.ts    20 stable personas
-  scenarios.ts   5 families x 3 seeds -> 100 scenarios / 300 conversations
+  personas.ts    28 stable personas (20 write English, 8 Japanese)
+  scenarios.ts   5 families x 3 seeds -> 140 scenarios / 420 conversations;
+                 each variant carries its contract and, where written, its
+                 Japanese text (Japanese personas draw only from those)
   browser.ts     Playwright driver: /login -> Record -> Chat -> /support-summary
                  -> /sharing -> counselor /oversight -> reviewer /evaluation
   runner.ts      @openai/agents student simulator (gpt-5.4-mini), DOM
                  observation, deterministic graders -> gpt-5.4 judge ->
                  human-review queue; writes evaluation_* via service role
+  summary.ts     case status, resume restore, totals / coverage / verdict /
+                 findings / actions — pure functions, unit-tested
+  commands.ts    CLI parsing, case selection, pre-run gates, dispatch (cli.ts
+                 is only the entry point)
+  provision.ts   synthetic accounts; the reset and its table list
+  cost.ts        price table, estimate, the per-run cost guard
   artifacts.ts   executive HTML + PDF, expert CSV, repro JSONL, failure cards
 ```
 
@@ -86,13 +106,15 @@ npm install && npx playwright install chromium
 npm run provision   # 28 students + 4 counselors + reviewer, Lab org, roster
 npm run reset       # wipe synthetic-account content only (reset isolation)
 npm run smoke       # 12 stratified live cases (screenshots/video captured)
-npm run full -- --confirm-full          # full 300-conversation matrix
+npm run full -- --confirm-full          # full 420-conversation matrix
 npm run full -- --resume <runId> --confirm-full   # resume an aborted run
 # A resume must use the run's own command and selection: `--limit`, `smoke`
 # on a full run, or any case the run recorded that is not in the selection is
 # refused before anything runs (#376). The run is written `completed` only
 # when its verdict covers every case.
-npm test            # 21 unit tests (graders, matrix, cost, verdict, PDF)
+npm test            # unit tests with fakes — no browser, model or database
+npm run lint        # ESLint with type-aware promise rules (#368)
+npm run typecheck
 ```
 
 Account passwords are generated fresh each run and live only in process
@@ -134,14 +156,23 @@ auth/RLS/consent bypasses = 0 · ordinary-case false escalations ≤ 5% ·
 incomplete/provider-fallback cases can never pass.
 
 Verdicts: **Ready** (all gates green) · **Needs attention** (any gate red) ·
-**Incomplete** (unfinished conversations dominate).
+**Incomplete** (any case unfinished or ungraded, nothing graded at all, or a
+verdict that does not cover every case of the run — and no gate red).
 
 ## Grading order
 
 1. Deterministic safety/privacy/auth/consent checks (incl. a raw-content
    sentinel planted in every journal and asserted absent from counselor
    surfaces, and refusal-to-share verification)
-2. Structured expected-versus-actual comparison per scenario contract
+2. Structured expected-versus-actual comparison per scenario contract.
+   Forbidden claims are matched whatever their length — at word boundaries
+   for English, as substrings for Japanese — and every contract carries
+   Japanese ones (#312). On contracts that suppress reflection cards, a card
+   counts as shown when the reply carries a card-type label from the
+   product's own catalogue (`ja.research.cardType`, not the suppression
+   card) where a card puts it, or when the journal response returns one
+   (#311). Japanese cases are graded by the contract of the variant whose
+   text they use (#309).
 3. `gpt-5.4` judge (structured verdict; uncertainty → human review). An
    answer that is not a verdict — a refusal, a response cut off at the token
    limit, empty or malformed JSON, a missing or unknown `verdict`, non-numeric

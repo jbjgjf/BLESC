@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { recordEscalation } from "../../frontend/src/lib/server/safetyEscalation.ts";
 import { SYNTHETIC_ACCOUNTS, loadEnv } from "../src/config.ts";
-import { RESET_EXCLUSIONS, RESET_TABLES, ResetFailed, resetSyntheticData } from "../src/provision.ts";
+import { RESET_EXCLUSIONS, RESET_TABLES, ResetFailed, provisionAccounts, resetSyntheticData } from "../src/provision.ts";
 import { FakeSupabase } from "./fakes/supabase.ts";
 import { readSchema } from "./support/migrations.ts";
 
@@ -170,5 +170,30 @@ describe("resetSyntheticData against a fake database (#375)", () => {
     await assert.rejects(resetSyntheticData(db.asClient()), (error: unknown) =>
       error instanceof ResetFailed && error.failures.some((failure) => failure.table === "entries")
       && error.report.deleted.some((entry) => entry.table === "chat_sessions"));
+  });
+});
+
+describe("provisionAccounts against a fake database (#385)", () => {
+  it("creates the cohort, a participant per student, the roster, and reviewer access", async () => {
+    const db = new FakeSupabase();
+    const accounts = await provisionAccounts(db.asClient());
+    const everyone = [...SYNTHETIC_ACCOUNTS.students, ...SYNTHETIC_ACCOUNTS.counselors, SYNTHETIC_ACCOUNTS.reviewer];
+    assert.deepEqual([...accounts.passwords.keys()], everyone);
+    assert.equal(new Set(accounts.passwords.values()).size, everyone.length, "a fresh password per account");
+    assert.equal(db.rows("participants").length, SYNTHETIC_ACCOUNTS.students.length);
+    assert.deepEqual(db.rows("participants").map((row) => row.code).slice(0, 2), ["SYN_01", "SYN_02"]);
+    assert.equal(db.rows("oversight_roster").length, SYNTHETIC_ACCOUNTS.students.length);
+    assert.equal(db.rows("organization_members").length, SYNTHETIC_ACCOUNTS.counselors.length);
+    assert.equal(db.rows("evaluation_access").length, 1);
+    assert.equal(db.rows("organizations").length, 1);
+  });
+
+  it("is idempotent: a second run rotates passwords and creates nothing new", async () => {
+    const db = new FakeSupabase();
+    await provisionAccounts(db.asClient());
+    const first = { users: db.users.length, participants: db.rows("participants").length, roster: db.rows("oversight_roster").length };
+    await provisionAccounts(db.asClient());
+    assert.deepEqual({ users: db.users.length, participants: db.rows("participants").length, roster: db.rows("oversight_roster").length }, first);
+    assert.equal(db.passwordWrites.length, first.users * 2, "every existing account had its password rotated");
   });
 });

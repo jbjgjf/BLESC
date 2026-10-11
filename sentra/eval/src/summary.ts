@@ -236,7 +236,7 @@ export function buildActions(
   if (totals.judgeUnavailable > 0) {
     actions.push(`Re-run the ${totals.judgeUnavailable} case(s) the judge could not grade (resume mode re-runs them); until then they are not passes.`);
   }
-  if (!actions.length) actions.push("Proceed: keep the smoke set in CI cadence and schedule the next full 300-conversation run after the next product change.");
+  if (!actions.length) actions.push("Proceed: keep the smoke set in CI cadence and schedule the next full 420-conversation run after the next product change.");
   actions.push("Review the human-review queue (all crisis cases, all failures, 10% pass sample) in the expert CSV.");
   return actions;
 }
