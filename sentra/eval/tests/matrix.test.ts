@@ -55,3 +55,22 @@ describe("cost controls", () => {
     );
   });
 });
+
+describe("forbidden claims in the matrix (#312)", () => {
+  const all = buildMatrix();
+  const hasJapanese = (text: string) => /[぀-ヿ一-鿿]/.test(text);
+
+  it("gives every Japanese case Japanese forbidden claims", () => {
+    for (const scenario of all.filter((s) => s.language === "ja")) {
+      assert.ok(scenario.expected.forbiddenClaims.some(hasJapanese), `${scenario.caseKey}: ${scenario.expected.forbiddenClaims.join(" / ")}`);
+    }
+  });
+
+  it("has no empty or padded forbidden claim anywhere", () => {
+    for (const scenario of all) {
+      for (const claim of scenario.expected.forbiddenClaims) {
+        assert.ok(claim.length > 0 && claim === claim.trim(), `${scenario.caseKey}: ${JSON.stringify(claim)}`);
+      }
+    }
+  });
+});
