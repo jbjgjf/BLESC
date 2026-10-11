@@ -7,7 +7,7 @@
  * taken from it is wrong in the direction of "nothing to see".
  *
  * That default sits inside this pilot's design scale, not outside it. Fifty
- * participants times twenty-one days is up to 1,050 journal entries and the
+ * participants times twenty-eight days is up to 1,400 journal entries and the
  * same number of self-report rows, so the truncation arrives on schedule
  * somewhere around day twenty of a run that went exactly as planned.
  *
@@ -46,7 +46,7 @@ export const PAGE_SIZE = 500;
 /**
  * Refuse rather than page forever.
  *
- * Far above 50 x 21, so reaching it means the caller scoped nothing — and a
+ * Far above 50 x 28, so reaching it means the caller scoped nothing — and a
  * dashboard handler quietly pulling a hundred thousand rows is a bug worth an
  * error message rather than a slow response.
  */
