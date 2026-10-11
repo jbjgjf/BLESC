@@ -277,7 +277,19 @@ describe("every API route has an answer to 'is this limited?'", () => {
     "pilot/guardian/issue": "guardianIssue",
     "pilot/invite/check": "inviteCheck",
     "pilot/redeem": "inviteRedeem",
+    "voice/turn": "authenticatedWrite",
   };
+
+  /**
+   * Routes whose limit lives in a helper rather than in the route file. The
+   * route must import the helper, and the helper must consume the rule and
+   * answer 429.
+   */
+  const LIMITED_VIA = {
+    "voice/turn": "../src/lib/server/voiceTurnLimit.ts",
+  };
+  const limitSource = (route) =>
+    route in LIMITED_VIA ? readFileSync(new URL(LIMITED_VIA[route], import.meta.url), "utf8") : source(route);
 
   /** No limit, on purpose, and why. */
   const UNLIMITED_BY_DESIGN = {
@@ -307,7 +319,6 @@ describe("every API route has an answer to 'is this limited?'", () => {
     "research/pilot-dashboard",
     "research/world-model",
     "voice/realtime-session",
-    "voice/turn",
   ];
 
   it("no route is missing from the three lists, and no list names a route that is gone", () => {
@@ -318,8 +329,12 @@ describe("every API route has an answer to 'is this limited?'", () => {
   it("the routes listed as limited consume their rule and can answer 429", () => {
     for (const [route, rule] of Object.entries(LIMITED)) {
       assert.ok(rule in RULES, `RULES.${rule} does not exist`);
-      assert.ok(source(route).includes(`RULES.${rule}`), `${route} does not consume RULES.${rule}`);
-      assert.ok(source(route).includes("429"), `${route} cannot answer 429`);
+      if (route in LIMITED_VIA) {
+        const helper = LIMITED_VIA[route].replace(/^.*\/(\w+)\.ts$/, "$1");
+        assert.ok(source(route).includes(helper), `${route} does not use ${helper}`);
+      }
+      assert.ok(limitSource(route).includes(`RULES.${rule}`), `${route} does not consume RULES.${rule}`);
+      assert.ok(limitSource(route).includes("429"), `${route} cannot answer 429`);
     }
   });
 

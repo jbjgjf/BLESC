@@ -19,9 +19,9 @@ import {
  * never refuses one for being large, and it silently gives back fewer rows than
  * were asked for whenever its own cap is the smaller number.
  *
- * The 1,050 in these tests is not a round number picked for a test. It is 50
- * participants x 21 days, the pilot's design scale, and it is the smallest
- * quantity at which the old code was wrong.
+ * The 1,050 in these tests is not a round number picked for a test. It was 50
+ * participants x 21 days, the pilot's design scale before #315 made it 28 days
+ * (1,400), and it is still above the 1,000-row cap that made the old code wrong.
  */
 
 /**
@@ -221,7 +221,7 @@ describe("fetchAllRows", () => {
   });
 
   it("keeps the ceiling above the pilot's design scale", () => {
-    assert.ok(MAX_ROWS > 50 * 21, "a 50x21 pilot must not be able to reach the ceiling");
+    assert.ok(MAX_ROWS > 50 * 28, "a 50x28 pilot must not be able to reach the ceiling");
     assert.ok(PAGE_SIZE <= 1000, "a page larger than db-max-rows is served short");
   });
 });
@@ -230,18 +230,18 @@ describe("fetchAllRows", () => {
  * The dashboard's own arithmetic at the pilot's design scale (#275).
  *
  * The tests above show the pager returns every row. This one shows why that
- * matters: the same 1,050 entries, read once the way the old handler read them
+ * matters: the same 1,400 entries, read once the way the old handler read them
  * and once through `fetchAllRows`, then reconciled with the functions the
- * route calls. Truncated, every participant loses their last day and the
+ * route calls. Truncated, every participant loses their last eight days and the
  * overdue rows on the far side of the cap vanish; paged, both are exact.
  */
-describe("the dashboard at 50 participants x 21 days", () => {
+describe("the dashboard at 50 participants x 28 days", () => {
   const PARTICIPANTS = 50;
-  const DAYS = 21;
+  const DAYS = 28;
   // 09:00 JST on 2026-09-01, the opening day.
   const STARTED_AT = "2026-09-01T00:00:00.000Z";
-  // After the 21-day window has closed.
-  const NOW = "2026-09-23T03:00:00.000Z";
+  // After the 28-day window has closed.
+  const NOW = "2026-09-30T03:00:00.000Z";
   const OVERDUE = 30;
 
   // Sorted the way the route orders `entries`: `created_at`, then `id`.
@@ -281,8 +281,7 @@ describe("the dashboard at 50 participants x 21 days", () => {
         state: "completed",
         expected_days: expectedDays({
           collectionStartedAt: STARTED_AT,
-          baselineDays: 7,
-          observationDays: 14,
+          studyDays: DAYS,
           now: NOW,
         }),
         submittedDayNumbers: own.map((entry) => studyDaysElapsed(STARTED_AT, entry.created_at)),
@@ -306,7 +305,8 @@ describe("the dashboard at 50 participants x 21 days", () => {
     const result = dashboard(truncatedEntries, truncatedReports);
 
     assert.equal(truncatedEntries.length, 1000);
-    assert.equal(result.totals.missing_submissions, PARTICIPANTS, "every participant loses their last day");
+    // Rows 1,000 onward are days 20 to 27: eight days per participant.
+    assert.equal(result.totals.missing_submissions, PARTICIPANTS * (DAYS - 20), "every participant loses their last eight days");
     assert.equal(result.retention.overdue, 0, "the overdue rows are the ones cut off");
   });
 
