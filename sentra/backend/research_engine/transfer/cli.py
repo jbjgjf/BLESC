@@ -5,7 +5,13 @@ cd sentra/backend
 python -m research_engine.transfer.cli prereg-status      # what still blocks the freeze
 python -m research_engine.transfer.cli prereg-hash        # the hash a human copies into 凍結記録
 python -m research_engine.transfer.cli generate --seed 1 --missingness state_dependent --out /tmp/cohort
+python -m research_engine.transfer.cli consent-dry-run    # #212 refusals and exclusions, synthetic only
+python -m research_engine.transfer.cli audit --seed 1 --missingness state_dependent --out /tmp/audit
+python -m research_engine.transfer.cli dry-run --seed 1 --out /tmp/transfer-dry-run   # #215 end to end, synthetic only
 ```
+
+`dry-run` refuses an output directory that already holds a seal: the seal is
+write-once, and a second run is a different result, not a replacement.
 
 `generate` needs `--seed` and `--missingness` spelled out: which seed and
 scenario become the frozen synthetic set is P13 of the pre-registration, and a
@@ -24,7 +30,10 @@ import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
+from .audit import check_against_dictionary, public_view, run_audit
+from .consent_gate import consent_dry_run
 from .generator import MISSINGNESS_SCENARIOS, SyntheticCohortConfig, generate, manifest_hash, write_cohort
+from .pipeline import run_transfer_dry_run
 from .preregistration import PREREGISTRATION_PATH, freeze_status, load_preregistration
 
 
@@ -61,6 +70,37 @@ def command_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_consent_dry_run(args: argparse.Namespace) -> int:
+    report = consent_dry_run(args.seed)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report["passed"] else 1
+
+
+def _write(path: Path, payload) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+
+
+def command_audit(args: argparse.Namespace) -> int:
+    cohort = generate(SyntheticCohortConfig(seed=args.seed, missingness=args.missingness, mnar_strength=args.mnar_strength))
+    report = run_audit(cohort.dataset, manifest=cohort.manifest, seed=args.seed)
+    checks = check_against_dictionary()
+    out = Path(args.out)
+    _write(out / "audit.json", report)
+    _write(out / "audit_public.json", public_view(report))
+    _write(out / "dictionary_check.json", checks)
+    agrees = all(row["agrees"] for row in checks)
+    print(json.dumps({"dictionary_agrees": agrees, "out": str(out)}, ensure_ascii=False))
+    return 0 if agrees else 1
+
+
+def command_dry_run(args: argparse.Namespace) -> int:
+    result = run_transfer_dry_run(args.seed, Path(args.out))
+    summary = result["summary"]
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0 if summary["leakage_checks_passed"] and summary["consent_dry_run_passed"] else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="research_engine.transfer.cli", description="合成→実データ移転研究（#210）"
@@ -81,6 +121,22 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument("--mnar-strength", type=float, default=1.0)
     gen.add_argument("--out", required=True)
     gen.set_defaults(handler=command_generate)
+
+    gate = subparsers.add_parser("consent-dry-run", help="同意・撤回ゲートを合成データだけで検証する（#212）")
+    gate.add_argument("--seed", type=int, default=11)
+    gate.set_defaults(handler=command_consent_dry_run)
+
+    audit = subparsers.add_parser("audit", help="測定・入力過程を参加者単位で監査する（#214、合成データ）")
+    audit.add_argument("--seed", type=int, required=True)
+    audit.add_argument("--missingness", choices=MISSINGNESS_SCENARIOS, required=True)
+    audit.add_argument("--mnar-strength", type=float, default=1.0)
+    audit.add_argument("--out", required=True)
+    audit.set_defaults(handler=command_audit)
+
+    dry = subparsers.add_parser("dry-run", help="移転研究の全経路を合成データだけで通す（#215・#216）")
+    dry.add_argument("--seed", type=int, required=True)
+    dry.add_argument("--out", required=True)
+    dry.set_defaults(handler=command_dry_run)
     return parser
 
 
