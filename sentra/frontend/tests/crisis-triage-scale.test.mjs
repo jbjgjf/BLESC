@@ -34,6 +34,7 @@ import {
   countPending,
   enqueuePendingReviews,
   loadQueue,
+  queueCounts,
 } from "../src/lib/server/crisisTriage.ts";
 
 const ASSESSOR = "test-assessor";
@@ -136,6 +137,10 @@ function fakeDb({ entries = [], reviews = [], enrollments = [], maxRows = 1000 }
       },
       eq(column, value) {
         state.filters.push((row) => row[column] === value);
+        return chain;
+      },
+      neq(column, value) {
+        state.filters.push((row) => row[column] !== value);
         return chain;
       },
       in(column, values) {
@@ -354,7 +359,9 @@ describe("worst first means worst first", () => {
     // and a sort applied afterwards cannot put back what the cut removed.
     const entries = seedEntries(251);
     const older = reviewsFor(entries.slice(0, 250));
-    const newest = reviewsFor(entries.slice(250), () => ({ assessed_risk: "crisis" }));
+    // Its own id: `reviewsFor` numbers from 0 on each call, and review ids are
+    // unique in the real table.
+    const newest = reviewsFor(entries.slice(250), () => ({ id: "seeded-newest", assessed_risk: "crisis" }));
 
     const db = fakeDb({
       entries,
@@ -436,5 +443,153 @@ describe("the screen is told how much it is not showing", () => {
     });
 
     assert.equal(await countPending(db), 6);
+  });
+});
+
+describe("showing decided rows does not hide pending ones (#380)", () => {
+  /**
+   * 800 decided rows, all older, then 300 pending rows — what the `none` band
+   * looks like a week into the pilot. Every decided row is older than every
+   * pending row, so a shared oldest-first band query hands the whole budget to
+   * decided rows and today's entries are cut.
+   */
+  function weekIntoThePilot() {
+    const entries = seedEntries(1100);
+    const decided = reviewsFor(entries.slice(0, 800), () => ({
+      status: "no_concern",
+      reviewed_at: "2026-01-02T00:00:00.000Z",
+      review_slot: "morning",
+    }));
+    const pending = reviewsFor(entries.slice(800), (_entry, i) => ({
+      id: `pending-${i}`,
+      // A few crisis rows among the newest, to check the bands still lead.
+      assessed_risk: i >= 295 ? "crisis" : "none",
+    }));
+    const db = fakeDb({
+      entries,
+      reviews: [...decided, ...pending],
+      enrollments: entries.map((entry) => ({
+        participant_id: entry.participant_id,
+        research_code: `P-${entry.participant_id}`,
+      })),
+      maxRows: 1000,
+    });
+    return { db, entries };
+  }
+
+  it("fills the page with pending rows before any decided row", async () => {
+    const { db } = weekIntoThePilot();
+    const queue = await loadQueue(db, { includeDecided: true });
+
+    assert.equal(queue.length, 200);
+    assert.equal(
+      queue.filter((row) => row.status === "pending").length,
+      200,
+      "decided rows must not push pending ones off the page",
+    );
+  });
+
+  it("keeps worst first among the pending rows", async () => {
+    const { db } = weekIntoThePilot();
+    const queue = await loadQueue(db, { includeDecided: true });
+
+    assert.deepEqual(
+      queue.slice(0, 5).map((row) => row.assessed_risk),
+      ["crisis", "crisis", "crisis", "crisis", "crisis"],
+    );
+    assert.equal(queue[5].assessed_risk, "none");
+    assert.equal(queue[5].status, "pending");
+  });
+
+  it("adds decided rows after the pending ones when there is budget left", async () => {
+    const entries = seedEntries(30);
+    const reviews = reviewsFor(entries, (_entry, i) =>
+      i < 20
+        ? { status: "escalated", assessed_risk: i < 2 ? "crisis" : "low", reviewed_at: "2026-01-02T00:00:00.000Z" }
+        : {},
+    );
+    const db = fakeDb({
+      entries,
+      reviews,
+      enrollments: entries.map((entry) => ({
+        participant_id: entry.participant_id,
+        research_code: `P-${entry.participant_id}`,
+      })),
+    });
+
+    const queue = await loadQueue(db, { includeDecided: true });
+
+    assert.equal(queue.length, 30);
+    assert.deepEqual(
+      queue.map((row) => row.status === "pending"),
+      [...Array(10).fill(true), ...Array(20).fill(false)],
+      "pending first, then decided",
+    );
+    // Decided rows keep the same worst-first order among themselves.
+    assert.equal(queue[10].assessed_risk, "crisis");
+    assert.equal(queue[12].assessed_risk, "low");
+  });
+
+  it("does not list a row twice when it is decided between the two passes", async () => {
+    const entries = seedEntries(5);
+    const db = fakeDb({
+      entries,
+      reviews: reviewsFor(entries),
+      enrollments: entries.map((entry) => ({
+        participant_id: entry.participant_id,
+        research_code: `P-${entry.participant_id}`,
+      })),
+    });
+
+    // Another reviewer decides the first row right after the pending pass has
+    // read it, before the decided pass runs.
+    let reviewReads = 0;
+    const racing = {
+      ...db,
+      from(table) {
+        if (table === "pilot_crisis_reviews" && ++reviewReads === 5) {
+          db.tables.pilot_crisis_reviews[0].status = "no_concern";
+        }
+        return db.from(table);
+      },
+    };
+
+    const queue = await loadQueue(racing, { includeDecided: true });
+    const ids = queue.map((row) => row.review_id);
+    assert.equal(new Set(ids).size, ids.length, "a review_id must appear once");
+    assert.equal(queue.length, 5);
+  });
+
+  it("leaves the default (pending only) queue unchanged", async () => {
+    const { db } = weekIntoThePilot();
+    const queue = await loadQueue(db);
+    assert.equal(queue.length, 200);
+    assert.ok(queue.every((row) => row.status === "pending"));
+  });
+
+  it("reports the pending rows that are not on the page, as their own number", async () => {
+    const { db } = weekIntoThePilot();
+    const queue = await loadQueue(db, { includeDecided: true });
+    const counts = queueCounts(queue, await countPending(db));
+
+    assert.equal(counts.pending, 200);
+    assert.equal(counts.pending_total, 300);
+    assert.equal(counts.pending_not_shown, 100);
+    assert.equal(counts.crisis, 5);
+  });
+
+  it("reports nothing hidden when the whole queue fits", async () => {
+    const entries = seedEntries(12);
+    const db = fakeDb({
+      entries,
+      reviews: reviewsFor(entries, (_entry, i) => (i < 4 ? { status: "no_concern" } : {})),
+    });
+    const queue = await loadQueue(db, { includeDecided: true });
+    const counts = queueCounts(queue, await countPending(db));
+
+    assert.equal(queue.length, 12);
+    assert.equal(counts.pending, 8);
+    assert.equal(counts.pending_total, 8);
+    assert.equal(counts.pending_not_shown, 0);
   });
 });
