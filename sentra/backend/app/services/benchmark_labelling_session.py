@@ -1,7 +1,7 @@
 """One rater's labelling session: what the local labelling screen shows and saves (#127).
 
 The CLI (`scripts/run_benchmark_labelling.py`) hands a rater a JSON file and
-takes it back. That works, and it asks a rater to make about 2,250 judgements
+takes it back. That works, and it asks a rater to make about 2,400 judgements
 by editing lists of ids in a text editor. The screen
 (`scripts/run_benchmark_labelling_screen.py`) is the same protocol with a page
 in front of it, and this module is everything about it that is not HTML.

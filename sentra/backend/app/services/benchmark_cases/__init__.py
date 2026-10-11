@@ -1,4 +1,4 @@
-"""Benchmark cases: 80 across four families, grown from 6 for #88.
+"""Benchmark cases: 86 across four families, grown from 6 for #88.
 
 Was one module until #88 needed 60-100 cases; the families now sit in their own
 files because each carries a different argument for why its cases are shaped the
@@ -12,8 +12,8 @@ Read the family modules for the design. What is true across all four:
 so a lexical method is actively misled rather than merely uninformative, which
 is what it takes to drive a keyword baseline to or below chance.
 
-WHAT #88 DID NOT DO. `expected_evidence_ids` on all 74 new cases is
-`labelled_by="draft"` — proposed by whoever wrote the case, not labelled by a
+WHAT #88 DID NOT DO. `expected_evidence_ids` on every case added since the
+six development cases is `labelled_by="draft"` — proposed by whoever wrote the case, not labelled by a
 person. They are NOT an answer key and the pre-registration excludes them from
 the confirmatory analysis until `benchmark_labelling.apply_human_labels()` has
 overwritten them from a rater file. A model that writes both the question and
@@ -78,13 +78,18 @@ FAMILIES = (
 #: The composition #88 fixed in advance, so a family that quietly shrank is a
 #: test failure rather than a footnote in a result table.
 TARGET_COMPOSITION: Dict[str, int] = {
-    two_hop.FAMILY: 26,
+    # 28, from 26 on 2026-10-11: `irritability_red_herring` gave the held-out
+    # split its first case built to be failed (pre-registration amendment).
+    two_hop.FAMILY: 28,
     vocab_disjoint.FAMILY: 26,
     # 16, not the 14 the issue sketched: the severity material clusters on the
     # social subgraph, so an eighth draft was added on academic-pressure edges
     # to stop the validation split holding no high-severity cases at all.
     low_frequency.FAMILY: 16,
-    heavy_decoy.FAMILY: 14,
+    # 16, from 14 on 2026-10-11: `heavy_routine_buffer` stops one held-out
+    # leakage group consisting only of cases the graph walk solves from the
+    # anchor (pre-registration amendment).
+    heavy_decoy.FAMILY: 16,
 }
 
 
