@@ -6,7 +6,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { COST_LIMITS, MATRIX, type EvalEnv } from "./config.ts";
 import type { ScenarioCase } from "./contracts.ts";
-import { estimateRunUsd } from "./cost.ts";
+import { UnpricedModel, estimateRunUsd } from "./cost.ts";
 import type { ProvisionedAccounts } from "./provision.ts";
 import type { RunOptions } from "./runner.ts";
 import type { RunSummary } from "./artifacts.ts";
@@ -116,7 +116,17 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     }
     throw error;
   }
-  const estimate = estimateRunUsd(scenarios.length, (MATRIX.minTurns + MATRIX.maxTurns) / 2);
+  let estimate: ReturnType<typeof estimateRunUsd>;
+  try {
+    estimate = estimateRunUsd(scenarios.length, (MATRIX.minTurns + MATRIX.maxTurns) / 2);
+  } catch (error) {
+    // An estimate without a price is not US$0.00 (#286).
+    if (error instanceof UnpricedModel) {
+      deps.error(`[plan] refusing to start: ${error.message}`);
+      return 2;
+    }
+    throw error;
+  }
   deps.log(`[plan] ${scenarios.length} conversations · est ~${Math.round(estimate.tokens / 1000)}k tokens ≈ US$${estimate.usd.toFixed(2)} (warn $${COST_LIMITS.warnUsd} / stop $${COST_LIMITS.hardStopUsd})`);
   if (command === "full" && !args.confirmFull) {
     deps.error("[plan] full run requires --confirm-full");

@@ -10,7 +10,7 @@ import {
 import * as browser from "./browser.ts";
 import { DATA_CLASSIFICATION, MATRIX, MODELS, SYNTHETIC_ACCOUNTS, type EvalEnv } from "./config.ts";
 import { JUDGE_UNAVAILABLE, type CaseResult, type JudgeOutcome, type ScenarioCase, type TurnRecord } from "./contracts.ts";
-import { CostGuard, CostHardStop, estimateRunUsd } from "./cost.ts";
+import { CostGuard, CostHardStop, assertPriced, estimateRunUsd } from "./cost.ts";
 import { failureKinds, gradeDeterministic, rawSentinel } from "./graders/deterministic.ts";
 import { judgeCase, registerOpenAiEval, type EvalRow } from "./graders/judge.ts";
 import { personaEmail } from "./personas.ts";
@@ -181,6 +181,9 @@ export async function executeRun(
 ): Promise<{ runId: string; summary: RunSummary }> {
   const { env, admin, accounts, scenarios, mode, label } = options;
   const { driver } = deps;
+  // Before anything is created or spent: a model without a price would make
+  // the cost guard throw on its first call, after the money was spent (#286).
+  assertPriced(Object.values(MODELS));
   const cost = new CostGuard();
   mkdirSync(options.artifactsDir, { recursive: true });
 
