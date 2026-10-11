@@ -12,7 +12,9 @@ Three things this deliberately makes hard to get wrong:
 case is handed to a person. A rater shown the intended answer produces a
 confirmation, not a label. It also shuffles the candidates deterministically,
 because c1..c3 sitting at the top of every list is itself a cue — the same
-position bias that let the broken tokeniser score a false 1.0 in #86.
+position bias that let the broken tokeniser score a false 1.0 in #86. And it
+renames them: the ids themselves spell the drafted role (`c` target, `f` foil,
+`d` decoy), so a rater is shown `display_ids()` instead (#127).
 
 **Agreement can be undefined, and says so.** Cohen's kappa divides by
 `1 - p_e`. When a rater marks nearly everything "not evidence" — the expected
@@ -32,10 +34,11 @@ hand-maintained list is the kind of thing that silently stops being true.
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field, replace
 from typing import Dict, Iterable, List, Sequence, Set, Tuple
 
-from .benchmark_cases import BENCHMARK_CASES, BenchmarkCase
+from .benchmark_cases import BENCHMARK_CASES, BenchmarkCase, EvidenceDay
 from .benchmark_cases._splits import SPLITS
 from .benchmark_retrieval import parse_motifs
 
@@ -46,7 +49,12 @@ from .benchmark_retrieval import parse_motifs
 #: `low_frequency_high_severity` and `heavy_decoy` families, and moved splits
 #: onto an authored partition of the curated edges. Results from 0.2.0 are not
 #: comparable to results from this version — different cases, different splits.
-DATASET_VERSION = "0.3.0-dev"
+#:
+#: 0.4.0-dev (2026-10-11): the held-out split was re-composed — one case
+#: re-chained, two added (86 cases, 13 leakage groups). See the 2026-10-11
+#: amendments in docs/benchmark_preregistration.md. Not comparable to 0.3.0-dev,
+#: and a rater file exported for 0.3.0-dev is refused on import.
+DATASET_VERSION = "0.4.0-dev"
 
 DATASET_METADATA = {
     "name": "blesc-synthetic-retrieval-benchmark",
@@ -82,9 +90,65 @@ def _shuffle_key(case_id: str, evidence_id: str) -> str:
     return hashlib.sha256(f"{case_id}:{evidence_id}".encode()).hexdigest()
 
 
+#: Prefix of the id a rater sees for a candidate. One prefix for every role.
+DISPLAY_ID_PREFIX = "k"
+
+#: `State:decoy 07` -> `State:#07` in what a rater is shown. See `_rater_motif`.
+_DECOY_TERM = re.compile(r"\bdecoy (\d+)\b")
+
+
+def _presentation_order(case: BenchmarkCase) -> List[EvidenceDay]:
+    return sorted(case.evidence, key=lambda day: _shuffle_key(case.case_id, day.evidence_id))
+
+
+def display_ids(case: BenchmarkCase) -> Dict[str, str]:
+    """evidence_id -> the id a rater is shown for it.
+
+    The case's own ids are the drafted answer key written as a prefix: targets
+    are `c1..cn`, foils `f1..fn`, decoys `d1..dn`. Shuffling the presentation
+    order hid where the targets sat and left their names on them, so a rater
+    could read the intended answer off the ids — and in the red-herring cases,
+    target against foil is the one judgement that is genuinely hard (#127).
+
+    So a rater sees `k01..kNN`, numbered in presentation order. The order is a
+    hash and is the same for every rater, so the number carries nothing, and
+    two raters' `k07` is the same day. Everything downstream of the rater file
+    — agreement, adjudication, `apply_human_labels` — still works in the
+    case's own ids; this is a presentation layer, translated back on read.
+    """
+    ordered = _presentation_order(case)
+    width = max(2, len(str(len(ordered))))
+    return {
+        day.evidence_id: f"{DISPLAY_ID_PREFIX}{index:0{width}d}"
+        for index, day in enumerate(ordered, start=1)
+    }
+
+
+def internal_ids(case: BenchmarkCase) -> Dict[str, str]:
+    """The inverse of `display_ids`: shown id -> the case's own evidence_id."""
+    return {shown: evidence_id for evidence_id, shown in display_ids(case).items()}
+
+
+def _rater_motif(motif: str) -> str:
+    """A motif as a rater sees it: decoy placeholders lose the word "decoy".
+
+    The placeholders are numbered so the decoy subgraph carries no language
+    (see `benchmark_cases._build._decoy_days`), and the number is what keeps it
+    a graph. The word in front of the number labels the day as wrong, which is
+    a judgement the rater is there to make. Only the rater's copy changes; the
+    retrieval conditions read the case, not this.
+    """
+    return _DECOY_TERM.sub(r"#\1", motif)
+
+
 def labelling_task(case: BenchmarkCase) -> Dict[str, object]:
-    """One case, as presented to a human rater. No answer key."""
-    candidates = sorted(case.evidence, key=lambda day: _shuffle_key(case.case_id, day.evidence_id))
+    """One case, as presented to a human rater. No answer key.
+
+    `evidence_id` on each candidate is the DISPLAY id (`display_ids`), not the
+    case's own id — the field keeps its name so a rater file has one id field
+    and one selection field, and `read_rater_labels` translates.
+    """
+    shown = display_ids(case)
     return {
         "case_id": case.case_id,
         "lang": case.lang,
@@ -96,15 +160,15 @@ def labelling_task(case: BenchmarkCase) -> Dict[str, object]:
         ),
         "candidates": [
             {
-                "evidence_id": day.evidence_id,
+                "evidence_id": shown[day.evidence_id],
                 "day": day.day,
                 "text": day.text,
                 # Motifs are shown: in the product the graph is visible to the
                 # retriever, so a rater judging without it would be labelling a
                 # different task than the one being measured.
-                "graph_motifs": list(day.graph_motifs),
+                "graph_motifs": [_rater_motif(motif) for motif in day.graph_motifs],
             }
-            for day in candidates
+            for day in _presentation_order(case)
         ],
     }
 
@@ -389,26 +453,42 @@ def labelling_file(rater_id: str, cases: Sequence[BenchmarkCase] = BENCHMARK_CAS
     ]
 
 
-def read_rater_labels(rows: Iterable[Dict[str, object]]) -> RaterLabels:
-    """A returned labelling file, as `RaterLabels`.
+def read_rater_labels(
+    rows: Iterable[Dict[str, object]],
+    cases: Sequence[BenchmarkCase] = BENCHMARK_CASES,
+) -> RaterLabels:
+    """A returned labelling file, as `RaterLabels` in the cases' own ids.
 
     A case with an empty `selected_evidence_ids` is treated as UNLABELLED, not
     as "this rater found nothing". The two are different claims and only one of
     them is evidence — a rater who worked through a case and concluded nothing
     helps records that by writing `["none"]`, which is the one sentinel this
     format has.
+
+    Selections arrive as display ids (`k07`, what the rater was shown) and are
+    translated back. A case's own id is also accepted, because tooling and
+    tests write those; the two spaces cannot collide (`k` is not a role
+    prefix). Anything else is passed through untranslated, and
+    `apply_human_labels` refuses it as "not among its candidates".
     """
     rows = list(rows)
     rater_ids = {str(row.get("rater_id", "")) for row in rows}
     if len(rater_ids) != 1:
         raise ValueError(f"a labelling file holds exactly one rater, found {sorted(rater_ids)}")
 
+    by_id = {case.case_id: case for case in cases}
     selections: Dict[str, Set[str]] = {}
     for row in rows:
         picks = list(row.get("selected_evidence_ids") or [])
         if not picks:
             continue
-        selections[str(row["case_id"])] = set() if picks == ["none"] else {str(pick) for pick in picks}
+        case_id = str(row["case_id"])
+        if picks == ["none"]:
+            selections[case_id] = set()
+            continue
+        case = by_id.get(case_id)
+        translate = internal_ids(case) if case is not None else {}
+        selections[case_id] = {translate.get(str(pick), str(pick)) for pick in picks}
     return RaterLabels(rater_id=rater_ids.pop(), selections=selections)
 
 
@@ -419,27 +499,73 @@ class Adjudication:
     agreed: Dict[str, Set[str]]
     disputed: Dict[str, Tuple[Set[str], Set[str]]]
     resolved: Dict[str, Set[str]]
+    #: Disputed cases someone decided NOT to adjudicate, with the reason. They
+    #: stay out of `usable` exactly like an unresolved case; the difference is
+    #: that the exclusion is now a recorded decision with a reason beside it,
+    #: rather than a disagreement nobody got to.
+    excluded: Dict[str, str] = field(default_factory=dict)
 
     @property
     def usable(self) -> Dict[str, Set[str]]:
         return {**self.agreed, **self.resolved}
+
+    @property
+    def unresolved(self) -> List[str]:
+        """Disputed, and neither resolved nor excluded: work still to do."""
+        return sorted(set(self.disputed) - set(self.resolved) - set(self.excluded))
+
+
+def check_adjudication_record(
+    disputed: Iterable[str],
+    resolutions: Dict[str, Set[str]],
+    exclusions: Dict[str, str],
+) -> List[str]:
+    """Everything wrong with a set of recorded decisions, before it is applied.
+
+    Two rules, both from the pre-registration's exclusion criteria:
+
+    - An exclusion is only for a case the raters DISAGREED on. "Being hard,
+      being one every condition fails, or being one where the baseline wins"
+      are listed as not grounds for exclusion; an exclusion path that accepted
+      any case id would be a way round that list.
+    - A case is resolved or excluded, not both, and an exclusion carries a
+      reason. A reasonless exclusion is the silent drop this exists to replace.
+    """
+    disputed = set(disputed)
+    problems: List[str] = []
+    for case_id, reason in sorted(exclusions.items()):
+        if case_id not in disputed:
+            problems.append(
+                f"{case_id}: excluded, but the raters did not disagree on it. Disagreement "
+                "is the only exclusion ground this record can carry (docs/benchmark_preregistration.md)"
+            )
+        if not str(reason or "").strip():
+            problems.append(f"{case_id}: excluded with no reason")
+        if case_id in resolutions:
+            problems.append(f"{case_id}: both resolved and excluded; record one decision")
+    return problems
 
 
 def adjudicate(
     first: RaterLabels,
     second: RaterLabels,
     resolutions: Dict[str, Set[str]] | None = None,
+    exclusions: Dict[str, str] | None = None,
 ) -> Adjudication:
     """Merge two raters, keeping unresolved disagreement unresolved.
 
     The pre-registration excludes a case where "the two raters disagree and no
     adjudication was recorded". This is where that exclusion is produced: a
     disputed case stays in `disputed` and out of `usable` until someone records
-    a decision in `resolutions`. Taking the union or the intersection instead
-    would manufacture an answer key out of a disagreement and there would be
-    nothing left to exclude.
+    a decision — a resolution in `resolutions`, or an exclusion with a reason in
+    `exclusions`. Taking the union or the intersection instead would
+    manufacture an answer key out of a disagreement and there would be nothing
+    left to exclude.
+
+    Raises if the recorded decisions break `check_adjudication_record`.
     """
     resolutions = dict(resolutions or {})
+    exclusions = dict(exclusions or {})
     agreed: Dict[str, Set[str]] = {}
     disputed: Dict[str, Tuple[Set[str], Set[str]]] = {}
 
@@ -457,8 +583,11 @@ def adjudicate(
             if case_id not in other.selections:
                 agreed[case_id] = set(picks)
 
+    problems = check_adjudication_record(disputed, resolutions, exclusions)
+    if problems:
+        raise ValueError("\n".join(problems))
     resolved = {case_id: set(picks) for case_id, picks in resolutions.items() if case_id in disputed}
-    return Adjudication(agreed=agreed, disputed=disputed, resolved=resolved)
+    return Adjudication(agreed=agreed, disputed=disputed, resolved=resolved, excluded=exclusions)
 
 
 def apply_human_labels(
@@ -549,9 +678,20 @@ def labelling_status(
             "The pre-registration makes an unmeasured coefficient grounds for "
             "making no claim from the retrieval numbers at all."
         )
+    elif not agreement.is_defined:
+        # Not "below 0.67": an undefined coefficient is not a small one, and
+        # the pre-registration's falsification rule is written for a number.
+        # What to do with an undefined kappa is not fixed there, and choosing
+        # it after seeing the labels would be choosing the outcome.
+        warnings.append(
+            "inter-rater agreement is UNDEFINED on the agreement sample (chance agreement "
+            "is ~100%). Report it as undefined, never as 0. The 0.67 criterion in "
+            "docs/benchmark_preregistration.md cannot be evaluated, and that document "
+            "does not yet say how an undefined coefficient is treated."
+        )
     elif not agreement.meets_threshold:
         warnings.append(
-            f"inter-rater agreement is {agreement.kappa if agreement.is_defined else 'undefined'}, "
+            f"inter-rater agreement is {agreement.kappa}, "
             "below the 0.67 convention fixed in advance. The labels are not yet "
             "reliable enough to interpret a retrieval result."
         )
@@ -576,6 +716,10 @@ def labelling_status(
         "drafted_not_labelled_count": len([case for case in cases if case.labelled_by == "draft"]),
         "inter_rater_agreement": agreement.kappa if agreement and agreement.is_defined else None,
         "inter_rater_agreement_measured": agreement is not None,
+        # `inter_rater_agreement` is None both when nothing was measured and
+        # when kappa is undefined. Those are different findings; this is the
+        # field that tells them apart (None = not measured).
+        "inter_rater_agreement_defined": agreement.is_defined if agreement is not None else None,
         "agreement_sample": [case.case_id for case in sample],
         "agreement_sample_size": len(sample),
         "leakage_groups": split.groups,
