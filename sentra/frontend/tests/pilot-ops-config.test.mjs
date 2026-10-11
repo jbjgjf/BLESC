@@ -35,6 +35,8 @@ const TOUCHED = [
   "PILOT_OPERATOR_USER_IDS",
   "RESEARCH_EXPORT_USER_IDS",
   "PILOT_INVITE_HMAC_KEY",
+  "PILOT_GUARDIAN_HMAC_KEY",
+  "NEXT_PUBLIC_SITE_URL",
   "SAFETY_ALERT_WEBHOOK_URL",
   "RESEND_API_KEY",
   "SAFETY_ALERT_EMAIL_FROM",
@@ -59,7 +61,14 @@ describe("configChecks", () => {
   it("reports every blocking setting as unsatisfied on a bare deployment", () => {
     clearAll();
     const gaps = blockingGaps().map((gap) => gap.name);
-    for (const name of ["CRON_SECRET", "SAFETY_DISPATCH_TOKEN", "NEXT_PUBLIC_PILOT_MODE", "PILOT_INVITE_HMAC_KEY"]) {
+    for (const name of [
+      "CRON_SECRET",
+      "SAFETY_DISPATCH_TOKEN",
+      "NEXT_PUBLIC_PILOT_MODE",
+      "PILOT_INVITE_HMAC_KEY",
+      "PILOT_GUARDIAN_HMAC_KEY",
+      "NEXT_PUBLIC_SITE_URL",
+    ]) {
       assert.ok(
         gaps.some((gap) => gap.startsWith(name)),
         `${name} should be reported as a blocking gap when unset`,
@@ -119,6 +128,99 @@ describe("configChecks", () => {
     assert.equal(byName("NEXT_PUBLIC_PILOT_MODE").valid, true);
   });
 
+  describe("the guardian path (#289)", () => {
+    /** Everything else a pilot deployment needs, so only the two rows under test can be gaps. */
+    function configureEverythingElse() {
+      clearAll();
+      const key = Buffer.alloc(32, 1).toString("base64");
+      process.env.CRON_SECRET = "cron";
+      process.env.SAFETY_DISPATCH_TOKEN = "dispatch";
+      process.env.SAFETY_ALERT_WEBHOOK_URL = "https://example.invalid/hook";
+      process.env.NEXT_PUBLIC_PILOT_MODE = "1";
+      process.env.PILOT_OPERATOR_USER_IDS = "operator-1";
+      process.env.PILOT_INVITE_HMAC_KEY = key;
+      process.env.PILOT_GUARDIAN_HMAC_KEY = key;
+      process.env.NEXT_PUBLIC_SITE_URL = "https://pilot.example.jp";
+    }
+    const gapNames = () => blockingGaps().map((gap) => gap.name);
+
+    it("is not ready when only the guardian key is missing", () => {
+      // The reproduction in the issue: the invite key is set, the guardian key
+      // is not, and the report used to say nothing was blocking.
+      configureEverythingElse();
+      assert.deepEqual(gapNames(), []);
+
+      delete process.env.PILOT_GUARDIAN_HMAC_KEY;
+      assert.deepEqual(gapNames(), ["PILOT_GUARDIAN_HMAC_KEY"]);
+      const row = byName("PILOT_GUARDIAN_HMAC_KEY");
+      assert.equal(row.configured, false);
+      assert.equal(row.severity, byName("PILOT_INVITE_HMAC_KEY").severity);
+    });
+
+    it("tells a guardian key that is set wrongly from one that is not set", async () => {
+      configureEverythingElse();
+      const { guardianHmacKey } = await import("../src/lib/server/guardianTokens.ts");
+
+      for (const [label, value] of [
+        ["16 bytes", Buffer.alloc(16, 1).toString("base64")],
+        ["not base64", "this is not a key!"],
+        ["hex", "ab".repeat(32)],
+      ]) {
+        process.env.PILOT_GUARDIAN_HMAC_KEY = value;
+        const row = byName("PILOT_GUARDIAN_HMAC_KEY");
+        assert.equal(row.configured, true, `${label}: somebody did set it`);
+        assert.equal(row.valid, false, `${label}: reported as usable`);
+        // The report and the code that reads the key must not disagree.
+        assert.equal(guardianHmacKey(), null, `${label}: the loader accepts what the report rejects`);
+        assert.deepEqual(gapNames(), ["PILOT_GUARDIAN_HMAC_KEY"]);
+      }
+
+      process.env.PILOT_GUARDIAN_HMAC_KEY = Buffer.alloc(32, 1).toString("base64");
+      assert.equal(byName("PILOT_GUARDIAN_HMAC_KEY").valid, true);
+      assert.notEqual(guardianHmacKey(), null);
+    });
+
+    it("is not ready without a site URL, and says both things that break", () => {
+      configureEverythingElse();
+      delete process.env.NEXT_PUBLIC_SITE_URL;
+
+      assert.deepEqual(gapNames(), ["NEXT_PUBLIC_SITE_URL"]);
+      const row = byName("NEXT_PUBLIC_SITE_URL");
+      assert.equal(row.configured, false);
+      assert.match(row.consequence, /保護者確認リンク/);
+      assert.match(row.consequence, /危機通知/);
+      assert.match(row.consequence, /再デプロイ/);
+    });
+
+    it("rejects a site URL a link cannot be built on", async () => {
+      configureEverythingElse();
+      for (const value of [
+        "pilot.example.jp",
+        "http://pilot.example.jp",
+        "https://pilot.example.jp/app",
+        "https://pilot.example.jp/?utm=1",
+        "https://user:pw@pilot.example.jp",
+        "   ",
+      ]) {
+        process.env.NEXT_PUBLIC_SITE_URL = value;
+        const row = byName("NEXT_PUBLIC_SITE_URL");
+        assert.equal(row.valid, false, `"${value}" was reported as usable`);
+        assert.equal(row.configured, value.trim() !== "", `"${value}"`);
+        assert.deepEqual(gapNames(), ["NEXT_PUBLIC_SITE_URL"]);
+      }
+    });
+
+    it("accepts an https origin, with or without the trailing slash, and the link is built on it", async () => {
+      configureEverythingElse();
+      const { guardianVerificationUrl } = await import("../src/lib/server/guardianTokens.ts");
+      for (const value of ["https://pilot.example.jp", "https://pilot.example.jp/", "http://localhost:3000"]) {
+        process.env.NEXT_PUBLIC_SITE_URL = value;
+        assert.equal(byName("NEXT_PUBLIC_SITE_URL").valid, true, value);
+        assert.equal(guardianVerificationUrl("t"), `${value.replace(/\/$/, "")}/pilot/guardian/t`);
+      }
+    });
+  });
+
   it("never carries a configured value into the report", () => {
     clearAll();
     const sentinel = "SENTINEL-c0ffee-do-not-leak";
@@ -128,6 +230,8 @@ describe("configChecks", () => {
     process.env.RESEARCH_RAW_TEXT_KEY = sentinel;
     process.env.SAFETY_RECIPIENT_HASH_KEY = sentinel;
     process.env.PILOT_OPERATOR_USER_IDS = sentinel;
+    process.env.PILOT_GUARDIAN_HMAC_KEY = sentinel;
+    process.env.NEXT_PUBLIC_SITE_URL = `https://${sentinel}.example.jp/path`;
 
     const serialized = JSON.stringify(configChecks());
     assert.ok(!serialized.includes(sentinel), "a secret's value reached the ops report");
