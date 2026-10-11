@@ -49,7 +49,12 @@ from .benchmark_retrieval import parse_motifs
 #: `low_frequency_high_severity` and `heavy_decoy` families, and moved splits
 #: onto an authored partition of the curated edges. Results from 0.2.0 are not
 #: comparable to results from this version — different cases, different splits.
-DATASET_VERSION = "0.3.0-dev"
+#:
+#: 0.4.0-dev (2026-10-11): the held-out split was re-composed — one case
+#: re-chained, two added (86 cases, 13 leakage groups). See the 2026-10-11
+#: amendments in docs/benchmark_preregistration.md. Not comparable to 0.3.0-dev,
+#: and a rater file exported for 0.3.0-dev is refused on import.
+DATASET_VERSION = "0.4.0-dev"
 
 DATASET_METADATA = {
     "name": "blesc-synthetic-retrieval-benchmark",
@@ -494,27 +499,73 @@ class Adjudication:
     agreed: Dict[str, Set[str]]
     disputed: Dict[str, Tuple[Set[str], Set[str]]]
     resolved: Dict[str, Set[str]]
+    #: Disputed cases someone decided NOT to adjudicate, with the reason. They
+    #: stay out of `usable` exactly like an unresolved case; the difference is
+    #: that the exclusion is now a recorded decision with a reason beside it,
+    #: rather than a disagreement nobody got to.
+    excluded: Dict[str, str] = field(default_factory=dict)
 
     @property
     def usable(self) -> Dict[str, Set[str]]:
         return {**self.agreed, **self.resolved}
+
+    @property
+    def unresolved(self) -> List[str]:
+        """Disputed, and neither resolved nor excluded: work still to do."""
+        return sorted(set(self.disputed) - set(self.resolved) - set(self.excluded))
+
+
+def check_adjudication_record(
+    disputed: Iterable[str],
+    resolutions: Dict[str, Set[str]],
+    exclusions: Dict[str, str],
+) -> List[str]:
+    """Everything wrong with a set of recorded decisions, before it is applied.
+
+    Two rules, both from the pre-registration's exclusion criteria:
+
+    - An exclusion is only for a case the raters DISAGREED on. "Being hard,
+      being one every condition fails, or being one where the baseline wins"
+      are listed as not grounds for exclusion; an exclusion path that accepted
+      any case id would be a way round that list.
+    - A case is resolved or excluded, not both, and an exclusion carries a
+      reason. A reasonless exclusion is the silent drop this exists to replace.
+    """
+    disputed = set(disputed)
+    problems: List[str] = []
+    for case_id, reason in sorted(exclusions.items()):
+        if case_id not in disputed:
+            problems.append(
+                f"{case_id}: excluded, but the raters did not disagree on it. Disagreement "
+                "is the only exclusion ground this record can carry (docs/benchmark_preregistration.md)"
+            )
+        if not str(reason or "").strip():
+            problems.append(f"{case_id}: excluded with no reason")
+        if case_id in resolutions:
+            problems.append(f"{case_id}: both resolved and excluded; record one decision")
+    return problems
 
 
 def adjudicate(
     first: RaterLabels,
     second: RaterLabels,
     resolutions: Dict[str, Set[str]] | None = None,
+    exclusions: Dict[str, str] | None = None,
 ) -> Adjudication:
     """Merge two raters, keeping unresolved disagreement unresolved.
 
     The pre-registration excludes a case where "the two raters disagree and no
     adjudication was recorded". This is where that exclusion is produced: a
     disputed case stays in `disputed` and out of `usable` until someone records
-    a decision in `resolutions`. Taking the union or the intersection instead
-    would manufacture an answer key out of a disagreement and there would be
-    nothing left to exclude.
+    a decision — a resolution in `resolutions`, or an exclusion with a reason in
+    `exclusions`. Taking the union or the intersection instead would
+    manufacture an answer key out of a disagreement and there would be nothing
+    left to exclude.
+
+    Raises if the recorded decisions break `check_adjudication_record`.
     """
     resolutions = dict(resolutions or {})
+    exclusions = dict(exclusions or {})
     agreed: Dict[str, Set[str]] = {}
     disputed: Dict[str, Tuple[Set[str], Set[str]]] = {}
 
@@ -532,8 +583,11 @@ def adjudicate(
             if case_id not in other.selections:
                 agreed[case_id] = set(picks)
 
+    problems = check_adjudication_record(disputed, resolutions, exclusions)
+    if problems:
+        raise ValueError("\n".join(problems))
     resolved = {case_id: set(picks) for case_id, picks in resolutions.items() if case_id in disputed}
-    return Adjudication(agreed=agreed, disputed=disputed, resolved=resolved)
+    return Adjudication(agreed=agreed, disputed=disputed, resolved=resolved, excluded=exclusions)
 
 
 def apply_human_labels(
@@ -624,9 +678,20 @@ def labelling_status(
             "The pre-registration makes an unmeasured coefficient grounds for "
             "making no claim from the retrieval numbers at all."
         )
+    elif not agreement.is_defined:
+        # Not "below 0.67": an undefined coefficient is not a small one, and
+        # the pre-registration's falsification rule is written for a number.
+        # What to do with an undefined kappa is not fixed there, and choosing
+        # it after seeing the labels would be choosing the outcome.
+        warnings.append(
+            "inter-rater agreement is UNDEFINED on the agreement sample (chance agreement "
+            "is ~100%). Report it as undefined, never as 0. The 0.67 criterion in "
+            "docs/benchmark_preregistration.md cannot be evaluated, and that document "
+            "does not yet say how an undefined coefficient is treated."
+        )
     elif not agreement.meets_threshold:
         warnings.append(
-            f"inter-rater agreement is {agreement.kappa if agreement.is_defined else 'undefined'}, "
+            f"inter-rater agreement is {agreement.kappa}, "
             "below the 0.67 convention fixed in advance. The labels are not yet "
             "reliable enough to interpret a retrieval result."
         )
@@ -651,6 +716,10 @@ def labelling_status(
         "drafted_not_labelled_count": len([case for case in cases if case.labelled_by == "draft"]),
         "inter_rater_agreement": agreement.kappa if agreement and agreement.is_defined else None,
         "inter_rater_agreement_measured": agreement is not None,
+        # `inter_rater_agreement` is None both when nothing was measured and
+        # when kappa is undefined. Those are different findings; this is the
+        # field that tells them apart (None = not measured).
+        "inter_rater_agreement_defined": agreement.is_defined if agreement is not None else None,
         "agreement_sample": [case.case_id for case in sample],
         "agreement_sample_size": len(sample),
         "leakage_groups": split.groups,
