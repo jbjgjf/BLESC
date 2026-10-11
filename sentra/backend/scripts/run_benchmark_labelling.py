@@ -19,6 +19,7 @@ answer key — and none of it had a way in or out of a file. This is that way.
     python scripts/run_benchmark_labelling.py agreement
     python scripts/run_benchmark_labelling.py adjudicate
     python scripts/run_benchmark_labelling.py adjudicate --resolve sleep_chain_ja=k03,k11
+    python scripts/run_benchmark_labelling.py adjudicate --exclude sleep_chain_ja --reason "..."
 
     # sign the labels off; the benchmark picks them up from the store
     python scripts/run_benchmark_labelling.py apply --reviewer "Name"
@@ -47,8 +48,10 @@ from app.services.benchmark_label_store import (
     DEFAULT_STORE,
     LabelStoreError,
     dispute_report,
+    disputed_case_ids,
     export_path,
     load_adjudication_record,
+    load_rater_labels,
     resolve_dataset,
     store_rater_file,
     write_adjudication_record,
@@ -94,10 +97,12 @@ def cmd_status(args: argparse.Namespace) -> int:
             "label_source": dataset.source,
             "raters": dataset.raters,
             "unresolved_disputes": dataset.disputed,
+            "excluded_disputes": dataset.excluded,
             "human_labelled_count": status["human_labelled_count"],
             "drafted_not_labelled_count": status["drafted_not_labelled_count"],
             "inter_rater_agreement": status["inter_rater_agreement"],
             "inter_rater_agreement_measured": status["inter_rater_agreement_measured"],
+            "inter_rater_agreement_defined": status["inter_rater_agreement_defined"],
             "dataset": status["dataset"],
             "independent_group_count": status["independent_group_count"],
             "warnings": status["warnings"],
@@ -130,7 +135,23 @@ def cmd_import(args: argparse.Namespace) -> int:
     print(f"  human-labelled  {sum(1 for case in dataset.cases if case.labelled_by == 'human')}/{len(dataset.cases)}")
     if dataset.disputed:
         print(f"  unresolved      {len(dataset.disputed)} case(s) — run `adjudicate`")
+    if dataset.excluded:
+        print(f"  excluded        {len(dataset.excluded)} disputed case(s), with recorded reasons")
     return 0
+
+
+def kappa_report(result) -> str:
+    """The one line to copy into a write-up. Never a number when there is none."""
+    if not result.is_defined:
+        return (
+            "Cohen's kappa: UNDEFINED (未定義) on this sample — chance agreement is ~100%. "
+            "Report it as undefined, never as 0."
+        )
+    verdict = "meets" if result.meets_threshold else "is below"
+    return (
+        f"Cohen's kappa = {result.kappa} over {result.judgements} judgements; "
+        f"{verdict} the 0.67 convention fixed in docs/benchmark_preregistration.md."
+    )
 
 
 def cmd_agreement(args: argparse.Namespace) -> int:
@@ -144,6 +165,12 @@ def cmd_agreement(args: argparse.Namespace) -> int:
         )
         return 1
     result = dataset.agreement
+    raters = load_rater_labels(args.store)
+    sample = [case.case_id for case in agreement_sample()]
+    first, second = raters[0], raters[1]
+    compared = [
+        case_id for case_id in sample if case_id in first.selections and case_id in second.selections
+    ]
     _print(
         {
             "kappa": result.kappa,
@@ -152,9 +179,24 @@ def cmd_agreement(args: argparse.Namespace) -> int:
             "observed_agreement": result.observed_agreement,
             "expected_agreement": result.expected_agreement,
             "judgements": result.judgements,
+            "raters_compared": [first.rater_id, second.rater_id],
+            # A coefficient over 12 of the 20 pre-drawn cases is not the
+            # coefficient the pre-registration asked for. Shown, not hidden.
+            "agreement_sample_size": len(sample),
+            "sample_cases_compared": len(compared),
+            "sample_cases_missing": sorted(set(sample) - set(compared)),
             "note": result.note,
+            "report": kappa_report(result),
         }
     )
+    if not result.is_defined:
+        # Non-zero, so a script reading this cannot carry on as if it had a
+        # number. #126 promised exactly this.
+        print(
+            "kappa is undefined here, not 0. Report it as undefined.",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
@@ -191,21 +233,60 @@ def _parse_resolutions(pairs: Sequence[str]) -> Dict[str, Set[str]]:
 
 
 def cmd_adjudicate(args: argparse.Namespace) -> int:
-    if args.resolve:
+    """List disagreements; record a resolution or an exclusion for each.
+
+    Every disagreement has to end in one of two recorded decisions — resolved
+    to a set of days, or excluded with a reason. Neither is taken by default,
+    and nothing here takes a union or an intersection of the two raters.
+    """
+    if args.exclude and not (args.reason or "").strip():
+        raise SystemExit("--exclude needs --reason: an exclusion without one is the silent drop this replaces")
+    if args.reason and not args.exclude:
+        raise SystemExit("--reason is only meaningful with --exclude")
+
+    if args.resolve or args.exclude:
         record = load_adjudication_record(args.store)
         resolutions = dict(record.get("resolutions") or {})
+        exclusions = dict(record.get("exclusions") or {})
+
+        disputed = set(disputed_case_ids(args.store))
+        not_disputed = sorted(case_id for case_id in args.exclude if case_id not in disputed)
+        if not_disputed:
+            raise SystemExit(
+                f"--exclude: {', '.join(not_disputed)} is not a disagreement between the raters. "
+                "Disagreement is the only exclusion ground this record carries; see the "
+                "exclusion criteria in docs/benchmark_preregistration.md"
+            )
+
         for case_id, picks in _parse_resolutions(args.resolve).items():
+            if exclusions.pop(case_id, None) is not None:
+                print(f"{case_id}: this resolution replaces an earlier exclusion")
             resolutions[case_id] = sorted(picks)
+        for case_id in args.exclude:
+            if resolutions.pop(case_id, None) is not None:
+                print(f"{case_id}: this exclusion replaces an earlier resolution")
+            exclusions[case_id] = args.reason.strip()
+
         record["resolutions"] = resolutions
+        record["exclusions"] = exclusions
         path = write_adjudication_record(record, args.store)
-        print(f"recorded {len(args.resolve)} resolution(s) in {path}")
+        print(
+            f"recorded {len(args.resolve)} resolution(s) and {len(args.exclude)} "
+            f"exclusion(s) in {path}"
+        )
+
+    record = load_adjudication_record(args.store)
+    excluded = dict(record.get("exclusions") or {})
+    if excluded:
+        print(f"{len(excluded)} disagreement(s) excluded by recorded decision:")
+        _print(excluded)
 
     disputes = dispute_report(args.store)
     if not disputes:
         print("no unresolved disagreement")
         return 0
-    print(f"{len(disputes)} unresolved disagreement(s). Until resolved these keep their")
-    print("drafted keys and stay out of the confirmatory analysis.\n")
+    print(f"{len(disputes)} unresolved disagreement(s). Until resolved or excluded these keep")
+    print("their drafted keys and stay out of the confirmatory analysis.\n")
     _print(disputes)
     return 0
 
@@ -217,6 +298,16 @@ def cmd_apply(args: argparse.Namespace) -> int:
         return 1
 
     human = [case for case in dataset.cases if case.labelled_by == "human"]
+    if dataset.disputed:
+        # A signature over a set with undecided cases signs a key nobody has
+        # finished. Each disagreement is resolved or excluded first.
+        print(
+            f"{len(dataset.disputed)} disagreement(s) have no recorded decision: "
+            f"{', '.join(dataset.disputed)}. Resolve or exclude each with `adjudicate` "
+            "before signing off.",
+            file=sys.stderr,
+        )
+        return 1
     if args.reviewer:
         record = load_adjudication_record(args.store)
         record["reviewer"] = args.reviewer
@@ -231,8 +322,8 @@ def cmd_apply(args: argparse.Namespace) -> int:
         return 1
 
     print(f"human-labelled {len(human)}/{len(dataset.cases)} cases")
-    if dataset.disputed:
-        print(f"still unresolved: {', '.join(dataset.disputed)}")
+    if dataset.excluded:
+        print(f"excluded after disagreement: {', '.join(dataset.excluded)}")
     if len(human) < len(dataset.cases):
         print("retrieval numbers stay PRELIMINARY until every case carries a human label")
     return 0
@@ -260,8 +351,16 @@ def main() -> int:
     agreement = sub.add_parser("agreement", help="Cohen's kappa over the agreement sample.")
     agreement.set_defaults(func=cmd_agreement)
 
-    adjudication = sub.add_parser("adjudicate", help="List disagreements; record resolutions.")
+    adjudication = sub.add_parser("adjudicate", help="List disagreements; record a resolution or an exclusion.")
     adjudication.add_argument("--resolve", action="append", default=[], metavar="CASE_ID=id,id")
+    adjudication.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="CASE_ID",
+        help="Record that a disagreement is excluded rather than adjudicated. Needs --reason.",
+    )
+    adjudication.add_argument("--reason", default=None, help="Why the excluded case(s) were not adjudicated.")
     adjudication.set_defaults(func=cmd_adjudicate)
 
     apply_cmd = sub.add_parser("apply", help="Sign the labels off.")

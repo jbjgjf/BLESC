@@ -4,7 +4,8 @@ The answer key for the #88 retrieval benchmark, and who produced it.
 
 ```
 raters/<rater_id>.json   one returned labelling file, exactly as the rater sent it back
-adjudication.json        resolutions for cases the raters disagreed on, and the reviewer's name
+adjudication.json        for each case the raters disagreed on, a resolution or an exclusion
+                         with its reason; and the reviewer's name
 ```
 
 Written and read by `scripts/run_benchmark_labelling.py`; assembled into a case

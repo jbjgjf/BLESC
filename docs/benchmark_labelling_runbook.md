@@ -94,13 +94,20 @@ that cannot be regenerated from the repository is not reproducible.
 python scripts/run_benchmark_labelling.py agreement
 ```
 
-Cohen's kappa over the pre-drawn sample. Two outcomes are both fine and mean
-different things:
+Cohen's kappa over the pre-drawn sample. The output carries a `report` line
+to copy into a write-up as it stands, and `sample_cases_compared` /
+`sample_cases_missing`: a coefficient over 12 of the 20 pre-drawn cases is not
+the one the pre-registration asked for, so a shortfall is shown rather than
+absorbed. Two outcomes are both fine and mean different things:
 
 - **`is_defined: false`** — kappa cannot be computed here, because both raters
   marked nearly every candidate the same way and chance agreement is already
   ~100%. That is the expected shape when most candidates are decoys. Report it
   as undefined. **Do not report it as 0**, which reads as "the raters disagreed".
+  The command exits 1 in this case so a script cannot carry on as if it had a
+  number. Note that the pre-registration's 0.67 falsification rule is written
+  for a number and does not say how an undefined coefficient is treated; that
+  is a decision to record *before* the agreement pass is run, not after.
 - **`meets_threshold: false`** — kappa is below the 0.67 convention fixed in
   advance. The labels are not yet reliable enough to interpret a result.
 
@@ -119,6 +126,24 @@ and stays out of the confirmatory analysis. Taking the union or the intersection
 would manufacture an answer key out of a disagreement, and there would be
 nothing left for the pre-registration's exclusion criterion to exclude.
 
+Every disagreement ends in one of two recorded decisions:
+
+```bash
+# resolved — the adjudicator picks the days
+python scripts/run_benchmark_labelling.py adjudicate --resolve sleep_chain_ja=k03,k11
+
+# excluded — not adjudicated, on purpose, and why
+python scripts/run_benchmark_labelling.py adjudicate --exclude sleep_chain_ja \
+  --reason "raters read the query as asking about different weeks"
+```
+
+An exclusion keeps the drafted key, so the case stays out of the confirmatory
+set exactly as an unresolved one does; what changes is that it is a decision
+with a reason in `adjudication.json` rather than work nobody got to. `--exclude`
+refuses a case the raters agreed on: disagreement is the only exclusion ground
+this record carries, and "hard", "every condition fails it" and "the baseline
+wins it" are listed in the pre-registration as **not** grounds.
+
 ## 5. Sign off
 
 ```bash
@@ -126,7 +151,9 @@ python scripts/run_benchmark_labelling.py apply --reviewer "Name"
 ```
 
 Writes the reviewer into `benchmark_labels/adjudication.json`. Required: a
-labelled dataset with nobody's name on it cannot be cited.
+labelled dataset with nobody's name on it cannot be cited. Refused while any
+disagreement has no recorded decision — a signature over undecided cases signs
+a key nobody has finished.
 
 ## 6. Run the benchmark
 
