@@ -138,16 +138,25 @@ describe("single use", () => {
     const { token, record } = await issued();
     await claimVerification(client, token);
     assert.equal(await recordDecision(client, record.id, "declined"), true);
-    await recordDecision(client, record.id, "confirmed");
+    // Not an error to the database, and not a second record either (#298).
+    assert.equal(await recordDecision(client, record.id, "confirmed"), false);
 
     assert.equal(stored(record.id).decision, "declined");
     assert.equal((await claimVerification(client, token)).outcome, "already_decided");
   });
 
+  it("says nothing was recorded when there is no such verification, or the write fails", async () => {
+    const { record } = await issued();
+    assert.equal(await recordDecision(client, "verification-that-does-not-exist", "declined"), false);
+    client.failNext(TABLE);
+    assert.equal(await recordDecision(client, record.id, "declined"), false);
+    assert.equal(stored(record.id).decision, undefined);
+  });
+
   it("a claim that could not be completed is released and can be presented again", async () => {
     const { token, record } = await issued();
     await claimVerification(client, token);
-    await releaseClaim(client, record.id);
+    assert.equal(await releaseClaim(client, record.id), true);
     assert.equal((await claimVerification(client, token)).outcome, "claimed");
   });
 
@@ -155,7 +164,7 @@ describe("single use", () => {
     const { token, record } = await issued();
     await claimVerification(client, token);
     await recordDecision(client, record.id, "confirmed");
-    await releaseClaim(client, record.id);
+    assert.equal(await releaseClaim(client, record.id), false, "a decided link was reported as released");
     assert.equal((await claimVerification(client, token)).outcome, "already_decided");
   });
 
