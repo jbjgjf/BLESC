@@ -2,7 +2,7 @@
   "contract": "pilot_data_dictionary",
   "version": "pilot-protocol-v1",
   "status": "draft",
-  "purpose": "The collected fields of the 50x21 pilot, as one machine-readable source. The app, the export and the analysis all read the field names and scales from here rather than each carrying its own copy - which is how a scale ends up meaning 0-10 in one place and 1-7 in another. `implementation` records whether the field exists in code yet; a field marked not_implemented is a protocol decision that still needs building, not a field that quietly returns null.",
+  "purpose": "The collected fields of the 50x28 pilot, as one machine-readable source. The app, the export and the analysis all read the field names and scales from here rather than each carrying its own copy - which is how a scale ends up meaning 0-10 in one place and 1-7 in another. `implementation` records whether the field exists in code yet; a field marked not_implemented is a protocol decision that still needs building, not a field that quietly returns null.",
   "notes": [
     "Every self-report item is optional. A missing answer is null with observed=false, never 0 and never the midpoint.",
     "Times are stored as timestamptz. The analysis uses relative day numbers, not calendar dates, so the export cannot be aligned to a school timetable.",
@@ -19,24 +19,11 @@
     },
     "relative_day": {
       "type": "integer",
-      "description": "参加者ごとの収集期間の初日を1とした相対日。暦日はexportしない。**0起点ではなく1起点**で、起点は登録日ではなく collection_started_at（＝運営が窓を開けた日）。export上の名前は day_index。",
+      "description": "参加者ごとの収集期間の初日を1とした相対日。暦日はexportしない。**0起点ではなく1起点**で、起点は登録日ではなく collection_started_at（＝運営が窓を開けた日）。export上の名前は day_index。 値は1..study_days（pilot_studies.study_days、既定28）。最終日を過ぎた記録は研究データとせずexportから除く。baseline／観察の区分は持たない（#315）。",
       "in_export": true,
       "implementation": "implemented",
       "code_ref": "ResearchRow.day_index / dayIndex() (src/lib/researchExport.ts)",
       "export_field": "day_index"
-    },
-    "study_phase": {
-      "type": "enum",
-      "values": [
-        "baseline",
-        "observation"
-      ],
-      "description": "相対日1..baseline_days が baseline、その後 observation_days 日ぶんが observation。境界は pilot_studies.baseline_days / observation_days から導出する（既定は14/7＝1-14と15-21）。プロトコルの終端を超えた日は null。",
-      "in_export": true,
-      "implementation": "implemented",
-      "code_ref": "ResearchRow.study_phase / studyPhase() (src/lib/researchExport.ts)",
-      "export_field": "study_phase",
-      "nullable": true
     }
   },
   "daily_self_report": {

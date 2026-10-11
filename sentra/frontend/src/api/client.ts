@@ -25,6 +25,7 @@ import {
   StudentAccessRecord,
 } from "./models";
 import { supabase } from "@/lib/supabase/client";
+import { attributableThemes } from "@/lib/educatorThemes";
 import { NO_CONSENT, consentSnapshot, normalizeConsent, type ConsentState } from "@/lib/consent";
 import type { PilotState } from "@/lib/pilotEnrollment";
 import type { GuardianVerificationStatus } from "@/lib/guardianVerification";
@@ -32,10 +33,22 @@ import { EMPTY_STATS, computeJournalStats, type JournalStats } from "@/lib/journ
 import { generateCounselorSummary, type CounselorTimelineEvent } from "@/lib/counselor-summary";
 import { buildAuditTrails, type ModelRunRecord } from "@/lib/audit-trail";
 import { t } from "@/lib/i18n";
+import { latestRowPerParticipant } from "@/lib/cohortLatestRows";
 import { readDemoFlag } from "@/lib/demo";
+import { acknowledgedAlertKeys, readAlertEscalations } from "@/lib/cohortAlertReads";
 import * as demo from "@/lib/blesc/demoApi";
+import { resolveApiBaseUrl } from "@/lib/apiBaseUrl";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
+const apiBase = resolveApiBaseUrl({
+  pilotMode: process.env.NEXT_PUBLIC_PILOT_MODE,
+  apiUrl: process.env.NEXT_PUBLIC_API_URL,
+});
+const API_BASE_URL = apiBase.baseUrl;
+// Said once, at load, rather than ignored silently: someone set this and
+// should learn here — not from a missing FastAPI log — that it did nothing.
+if (apiBase.ignoredApiUrl) {
+  console.warn("[api] NEXT_PUBLIC_API_URL is ignored on a pilot build; requests go to /api (#345)");
+}
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 
 function shouldAttachAuthorizationHeader() {
@@ -1179,24 +1192,6 @@ export class ApiClient {
     if (!roster.length) return [];
     const ids = roster.map((row) => row.participant_id);
 
-    const [insightsResult, safetyResult] = await Promise.all([
-      supabase
-        .from("insights")
-        .select("participant_id, day, anomaly_score, baseline_deviation_json")
-        .in("participant_id", ids)
-        .order("day", { ascending: false })
-        .limit(400),
-      supabase
-        .from("model_runs")
-        .select("participant_id, retrieval_config_json, created_at")
-        .eq("artifact_type", "safety_assessment")
-        .in("participant_id", ids)
-        .order("created_at", { ascending: false })
-        .limit(400),
-    ]);
-    if (insightsResult.error) throwSupabaseError(t.apiError.loadCohortInsights, insightsResult.error);
-    if (safetyResult.error) throwSupabaseError(t.apiError.loadCohortSafety, safetyResult.error);
-
     type InsightRowLite = {
       participant_id: string;
       day: string;
@@ -1207,14 +1202,29 @@ export class ApiClient {
       } | null;
     };
     type SafetyRowLite = { participant_id: string; retrieval_config_json: Record<string, JsonValue> | null; created_at: string };
-    const latestInsight = new Map<string, InsightRowLite>();
-    for (const row of (insightsResult.data ?? []) as InsightRowLite[]) {
-      if (!latestInsight.has(row.participant_id)) latestInsight.set(row.participant_id, row);
-    }
-    const latestSafety = new Map<string, SafetyRowLite>();
-    for (const row of (safetyResult.data ?? []) as SafetyRowLite[]) {
-      if (!latestSafety.has(row.participant_id)) latestSafety.set(row.participant_id, row);
-    }
+
+    // Each student's newest row, however much the rest of the cohort wrote
+    // (#338). A read that could not be completed throws like any other failed
+    // read: a blank safety level reads as "nothing to see".
+    const [insightsResult, safetyResult] = await Promise.all([
+      latestRowPerParticipant<InsightRowLite>(supabase, {
+        table: "insights",
+        columns: "participant_id, day, anomaly_score, baseline_deviation_json",
+        participantIds: ids,
+        newestBy: "day",
+      }),
+      latestRowPerParticipant<SafetyRowLite>(supabase, {
+        table: "model_runs",
+        columns: "participant_id, retrieval_config_json, created_at",
+        participantIds: ids,
+        newestBy: "created_at",
+        where: { artifact_type: "safety_assessment" },
+      }),
+    ]);
+    if (insightsResult.error) throwSupabaseError(t.apiError.loadCohortInsights, insightsResult.error);
+    if (safetyResult.error) throwSupabaseError(t.apiError.loadCohortSafety, safetyResult.error);
+    const latestInsight = insightsResult.latest;
+    const latestSafety = safetyResult.latest;
 
     return roster.map((row) => {
       const insight = latestInsight.get(row.participant_id);
@@ -1272,27 +1282,19 @@ export class ApiClient {
     // the acknowledgement log, so nothing is acknowledged yet.
     if (readDemoFlag()) return this.alertsFromRoster(roster, new Set<string>());
 
-    const ackResult = await supabase
-      .from("educator_access_log")
-      .select("metadata")
-      .eq("view_type", "alert_ack")
-      .limit(500);
+    // Derived first, so the acknowledgement log can be asked about exactly
+    // these keys instead of whichever 500 rows came back (#364).
+    const unacknowledged = this.alertsFromRoster(roster, new Set<string>());
+    const ackResult = await acknowledgedAlertKeys(supabase, unacknowledged.map((alert) => alert.alert_key));
     if (ackResult.error) throwSupabaseError(t.apiError.loadAlertAcknowledgements, ackResult.error);
-    const acked = new Set(
-      ((ackResult.data ?? []) as Array<{ metadata: Record<string, JsonValue> | null }>)
-        .map((row) => String(row.metadata?.alert_key ?? ""))
-        .filter(Boolean),
-    );
-
-    const derived = this.alertsFromRoster(roster, acked);
+    const derived = unacknowledged.map((alert) => ({ ...alert, acknowledged: ackResult.acked.has(alert.alert_key) }));
 
     // Escalations are RLS-scoped to participants this educator oversees, so no
     // filtering is needed here; the database has already done it.
-    const escalationResult = await supabase
-      .from("safety_escalations")
-      .select("id, participant_id, risk_level, surface, detected_at, status, delivered_at, acknowledged_at")
-      .order("detected_at", { ascending: false })
-      .limit(200);
+    const escalationResult = await readAlertEscalations<EscalationAlertRow>(
+      supabase,
+      "id, participant_id, risk_level, surface, detected_at, status, delivered_at, acknowledged_at",
+    );
     if (escalationResult.error) {
       // A read failure must not blank the alert list: the derived alerts are
       // still true, and an empty dashboard is the most dangerous thing this
@@ -1303,7 +1305,7 @@ export class ApiClient {
 
     const byParticipant = new Map(roster.map((student) => [student.participant_id, student]));
     const escalated: CohortAlert[] = [];
-    for (const row of (escalationResult.data ?? []) as EscalationAlertRow[]) {
+    for (const row of escalationResult.rows) {
       const student = byParticipant.get(row.participant_id);
       if (!student) continue;
       escalated.push({
@@ -1462,7 +1464,7 @@ export class ApiClient {
     const [insightsResult, safetyResult] = await Promise.all([
       supabase
         .from("insights")
-        .select("day, graph_summary_json")
+        .select("day, entry_id, graph_summary_json")
         .eq("participant_id", participantId)
         .order("day", { ascending: false })
         .limit(30),
@@ -1477,20 +1479,14 @@ export class ApiClient {
     if (insightsResult.error) throwSupabaseError(t.apiError.loadStudentSignals, insightsResult.error);
     if (safetyResult.error) throwSupabaseError(t.apiError.loadStudentSafety, safetyResult.error);
 
-    type InsightRowLite = { day: string; graph_summary_json: Record<string, JsonValue> | null };
+    type InsightRowLite = { day: string; entry_id: string | null; graph_summary_json: Record<string, JsonValue> | null };
     const rows = (insightsResult.data ?? []) as InsightRowLite[];
-    const themeCounts = new Map<string, number>();
-    for (const row of rows) {
-      const keyNodes = Array.isArray(row.graph_summary_json?.key_nodes) ? row.graph_summary_json.key_nodes : [];
-      for (const node of keyNodes as Array<Record<string, JsonValue>>) {
-        const label = typeof node?.label === "string" ? node.label : null;
-        if (label) themeCounts.set(label, (themeCounts.get(label) ?? 0) + 1);
-      }
-    }
-    const themes = [...themeCounts.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .slice(0, 5)
-      .map(([label, count]) => ({ label, count }));
+    // Counted only from occurrences that trace back to an entry the student
+    // wrote (#100). Every label used to be counted, so on a day extraction fell
+    // back to its template, 「いまの気持ち」「日記を書いた」 became this student's
+    // recurring themes. `entry_id` is selected for that check alone; it is an id,
+    // and the educator RLS policy already covers the row.
+    const { themes } = attributableThemes(rows);
 
     void this.recordEducatorAccess(student, "student_overview");
 

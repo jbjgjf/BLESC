@@ -29,14 +29,52 @@ export function resolveRelationStyle(type: string) {
   return RELATION_STYLES[type] ?? RELATION_STYLES.co_occurs;
 }
 
-function relationField(value: object, field: "source_id" | "target_id" | "type") {
+/**
+ * One field of a relation, under whichever of its two names it arrived with.
+ *
+ * An extracted relation names its endpoints `source_node_id` / `target_node_id`
+ * — that is what `llm_adapter.py`'s response schema marks required, what its
+ * prompt asks the model for, and therefore what `relations_json` holds. The
+ * `ExtractionRelation` type declares `source_id` / `target_id`, which is the
+ * shape `buildConceptGraphData` writes back out and what the research pipeline
+ * hands to the explanation payload. Both reach this module.
+ *
+ * So every endpoint read in this file goes through here rather than restating
+ * the fallback. Four call sites each wrote their own, and the ones that forgot
+ * — link resolution, and the two badge checks in `summarizeNodeRelations` —
+ * failed silently: `relation.source_id` is `undefined` on an extracted
+ * relation, `nodeMap.get(undefined)` misses, and the link was dropped. The
+ * daily and temporal views drew every vertex at a radius computed from the
+ * degree those dropped edges contributed, with no edges at all (#303).
+ */
+function relationField(value: object, field: "source_id" | "target_id" | "type"): string | undefined {
   const record = value as Record<string, unknown>;
   const legacyField = field === "source_id" ? "source_node_id" : field === "target_id" ? "target_node_id" : field;
-  return typeof record[field] === "string"
-    ? record[field]
-    : typeof record[legacyField] === "string"
-      ? record[legacyField]
-      : undefined;
+  const direct = record[field];
+  if (typeof direct === "string") return direct;
+  const legacy = record[legacyField];
+  return typeof legacy === "string" ? legacy : undefined;
+}
+
+/** The id of a relation's source endpoint, or undefined if it carries neither name. */
+export function relationSourceId(relation: object): string | undefined {
+  return relationField(relation, "source_id");
+}
+
+/** The id of a relation's target endpoint, or undefined if it carries neither name. */
+export function relationTargetId(relation: object): string | undefined {
+  return relationField(relation, "target_id");
+}
+
+/**
+ * A relation's type.
+ *
+ * Falls back to `co_occurs` — the same relation `resolveRelationStyle` falls
+ * back to — so a relation missing its type is drawn as the weakest claim the
+ * palette has rather than not drawn at all.
+ */
+export function relationType(relation: object): string {
+  return relationField(relation, "type") ?? "co_occurs";
 }
 
 function sameRelationShape(left: object, right: object) {
@@ -60,6 +98,7 @@ export function buildGraphViewerData(
 
   const nodes: GraphViewerNode[] = [];
   const links: GraphViewerLink[] = [];
+  let unresolved = 0;
 
   visibleSnapshots.forEach((snapshot, layerIndex) => {
     const z = mode === "temporal" ? (layerIndex - Math.max(0, visibleSnapshots.length - 1) / 2) * 90 : 0;
@@ -69,9 +108,8 @@ export function buildGraphViewerData(
     // Pre-compute degree for size scaling
     const degreeCounts = new Map<string, number>();
     safeArray(snapshot.relations_json).forEach((rel) => {
-      const r = rel as unknown as Record<string, string>;
-      const src = rel.source_id ?? r["source_node_id"];
-      const tgt = rel.target_id ?? r["target_node_id"];
+      const src = relationSourceId(rel);
+      const tgt = relationTargetId(rel);
       if (src) degreeCounts.set(src, (degreeCounts.get(src) ?? 0) + 1);
       if (tgt) degreeCounts.set(tgt, (degreeCounts.get(tgt) ?? 0) + 1);
     });
@@ -109,15 +147,37 @@ export function buildGraphViewerData(
     });
 
     safeArray(snapshot.relations_json).forEach((relation) => {
-      const style = resolveRelationStyle(relation.type);
-      const source = nodeMap.get(relation.source_id) ?? nodes.find((item) => item.snapshotId === snapshot.id && item.originalId === relation.source_id);
-      const target = nodeMap.get(relation.target_id) ?? nodes.find((item) => item.snapshotId === snapshot.id && item.originalId === relation.target_id);
-      if (!source || !target) return;
+      const type = relationType(relation);
+      const style = resolveRelationStyle(type);
+      const sourceId = relationSourceId(relation);
+      const targetId = relationTargetId(relation);
+      const source = sourceId
+        ? nodeMap.get(sourceId) ?? nodes.find((item) => item.snapshotId === snapshot.id && item.originalId === sourceId)
+        : undefined;
+      const target = targetId
+        ? nodeMap.get(targetId) ?? nodes.find((item) => item.snapshotId === snapshot.id && item.originalId === targetId)
+        : undefined;
+      if (!source || !target) {
+        // A relation naming an endpoint this snapshot does not carry. Still
+        // dropped — there is nothing to draw it between — but counted, because
+        // dropping every relation of every snapshot is how this read as working
+        // for as long as it did.
+        unresolved += 1;
+        return;
+      }
       const confidence = typeof relation.confidence === "number" ? relation.confidence : 1;
       const isAdded = mode === "temporal" && safeArray(snapshot.temporal_diff_json?.added_relations).some((item) => sameRelationShape(item, relation));
       const isChanged = mode === "temporal" && safeArray(snapshot.temporal_diff_json?.changed_relations).some((item) => sameRelationShape(item, relation));
       links.push({
         ...relation,
+        // Canonical names on the way out, whichever name came in. A consumer
+        // holding a `GraphViewerLink` reads `source_id` off the type and must
+        // not have to repeat the fallback above to get a value. Taken from the
+        // resolved vertices, which is where the ids just came from and is the
+        // one form of them that cannot be undefined.
+        source_id: source.originalId,
+        target_id: target.originalId,
+        type,
         source,
         target,
         color: isAdded ? "#14b8a6" : isChanged ? "#f59e0b" : style.color,
@@ -149,7 +209,7 @@ export function buildGraphViewerData(
     });
   }
 
-  return { nodes, links };
+  return { nodes, links, unresolvedLinks: unresolved };
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -214,14 +274,12 @@ export function buildConceptGraphData(snapshots: GraphSnapshot[]): GraphViewerDa
     }
 
     for (const relation of safeArray(snapshot.relations_json)) {
-      const r2 = relation as unknown as Record<string, string>;
-      const srcRaw = relation.source_id ?? r2["source_node_id"] ?? "";
-      const tgtRaw = relation.target_id ?? r2["target_node_id"] ?? "";
-      const sourceKey = nodeKeyMap.get(srcRaw);
-      const targetKey = nodeKeyMap.get(tgtRaw);
+      const sourceKey = nodeKeyMap.get(relationSourceId(relation) ?? "");
+      const targetKey = nodeKeyMap.get(relationTargetId(relation) ?? "");
       if (!sourceKey || !targetKey || sourceKey === targetKey) continue;
 
-      const edgeKey = `${sourceKey}→${targetKey}:${relation.type}`;
+      const type = relationType(relation);
+      const edgeKey = `${sourceKey}→${targetKey}:${type}`;
       const confidence = typeof relation.confidence === "number" ? relation.confidence : 1.0;
       const existing = edgeMap.get(edgeKey);
 
@@ -229,7 +287,7 @@ export function buildConceptGraphData(snapshots: GraphSnapshot[]): GraphViewerDa
         existing.frequency++;
         existing.totalConfidence += confidence;
       } else {
-        edgeMap.set(edgeKey, { sourceKey, targetKey, type: relation.type, frequency: 1, totalConfidence: confidence });
+        edgeMap.set(edgeKey, { sourceKey, targetKey, type, frequency: 1, totalConfidence: confidence });
       }
     }
   }
@@ -316,7 +374,11 @@ function summarizeNodeRelations(
   if (graphSummary?.key_nodes?.some((item) => item.id === node.originalId)) {
     summaries.push(t.graph.role.highSalience);
   }
-  if (keyRelations.some((relation) => relation.source_id === node.originalId || relation.target_id === node.originalId)) {
+  // `key_relations` and `changed_relations` are the extractor's own relation
+  // dicts, passed through `build_graph_summary` and `build_temporal_graph_diff`
+  // untouched — so they carry `source_node_id`, and reading `source_id` off
+  // them matched nothing. Both badges were unreachable.
+  if (keyRelations.some((relation) => relationSourceId(relation) === node.originalId || relationTargetId(relation) === node.originalId)) {
     summaries.push(t.graph.role.keyRelation);
   }
 
@@ -327,7 +389,7 @@ function summarizeNodeRelations(
   if (diff?.removed_nodes?.some((item) => item.id === node.originalId)) {
     summaries.push(t.graph.role.removed);
   }
-  if (diff?.changed_relations?.some((relation) => relation.source_id === node.originalId || relation.target_id === node.originalId)) {
+  if (diff?.changed_relations?.some((relation) => relationSourceId(relation) === node.originalId || relationTargetId(relation) === node.originalId)) {
     summaries.push(t.graph.role.relationShifted);
   }
   if (node.category === "Event") summaries.push(t.graph.role.event);

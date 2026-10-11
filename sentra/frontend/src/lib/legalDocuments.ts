@@ -1,6 +1,6 @@
 /** Review-only documents. Never substitute these drafts for an accepted consent version. */
 import { consentDocumentLabel, researchDocumentLabel } from "./consentDocument.ts";
-import { legalDisplayVersion, legalDocumentLabel } from "./legalEnactment.ts";
+import { legalDisplayVersion, legalDocumentLabel, legalEffectiveDateLabel } from "./legalEnactment.ts";
 
 export const LEGAL_DRAFT_VERSION = "legal-review-2026-09-14-v1";
 /**
@@ -125,7 +125,7 @@ export const LEGAL_DOCUMENTS: LegalDocument[] = [
     id: "research", title: "研究参加者への説明・本人同意", version: RESEARCH_DRAFT_VERSION, enactment: "research",
     sections: [
       { title: "1. 研究の目的・体制", paragraphs: [
-        "実施主体はBlesc株式会社、研究責任者は王謙蘊です。高校生の日々の記録と気分等の自己評定を、AIの応答を受けない条件で集め、将来の時系列モデルの研究・評価に利用します。協力校の高校生を対象とし、目標は50名、期間は21日間（14日と7日の解析上の区分）です。1か月・研究中にAIが分析を返す企画書とは異なる計画です。",
+        "実施主体はBlesc株式会社、研究責任者は王謙蘊です。高校生の日々の記録と気分等の自己評定を、AIの応答を受けない条件で集め、将来の時系列モデルの研究・評価に利用します。協力校の高校生を対象とし、目標は50名、期間は1か月（28日間）です。期間内に区分は設けません。",
         "研究機関・協力校・学校側の責任者、資金源・利益相反、倫理審査の適用と承認記録は確認中です。当社の将来の事業開発にもつながる研究であることを説明し、適用される審査と機関の許可・学校承認・データ管理承認を得るまで本案で募集・同意取得をしません。",
       ] },
       { title: "2. お願いすること・負担", paragraphs: [
@@ -133,7 +133,7 @@ export const LEGAL_DOCUMENTS: LegalDocument[] = [
         "つらい経験を思い出す負担、不快感、情報漏えい等のリスクがあります。いつでも入力をやめられます。個人への直接の治療効果や状態改善は保証せず、個人の分析・診断結果は返しません。現在支援・治療を受けているかを研究の参加条件として直接質問しない案です。本人が負担と感じる場合は参加しない・途中でやめる選択を尊重します。",
       ] },
       { title: "3. AI・閲覧・安全の限界", paragraphs: [
-        "この21日間はAI抽出・埋め込み・対話・音声文字起こし・助言・個人分析表示を停止し、本文や自己評定をOpenAI等の外部AIへ送りません。アプリ提供に必要なSupabase等のクラウド保存とは区別します。本文は保持に同意した場合のみ暗号化して保存します。研究チームは仮名化データを扱い、学校・保護者に本文を表示しません。",
+        "この28日間はAI抽出・埋め込み・対話・音声文字起こし・助言・個人分析表示を停止し、本文や自己評定をOpenAI等の外部AIへ送りません。アプリ提供に必要なSupabase等のクラウド保存とは区別します。本文は保持に同意した場合のみ暗号化して保存します。研究チームは仮名化データを扱い、学校・保護者に本文を表示しません。",
         "安全上の必要がある場合、権限を持つ運営担当が保存された本文を確認することがあります。目視確認は平日10時・16時（日本時間）の案で、リアルタイム・夜間休日の見守りは提供しません。本文保持に同意しない場合や保存されない記録は確認できません。危険な記述を必ず発見できるわけではありません。体制が整わない場合は研究を開始しません。",
         "急迫した生命・身体の危険を知った場合は、必要最小限の情報で学校の相談窓口等へつなぐ場合があります。緊急時は学校の返信を待たず119・110等への連絡を優先し、家庭への連絡が危険を増す場合は保護者への自動連絡をしない方針です。アプリや問い合わせメールは緊急窓口ではありません。",
       ] },
@@ -195,4 +195,22 @@ export function documentHeading(document: LegalDocument): string {
  */
 export function documentVersion(document: LegalDocument): string {
   return document.enactment === "legal" ? legalDisplayVersion(document.version) : document.version;
+}
+
+/**
+ * The effective date a document names on screen.
+ *
+ * Per document, for the same reason as the heading and the version: the terms
+ * and the privacy policy answer to `NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE`, and the
+ * research and guardian documents do not. Rendering the legal label under every
+ * article meant scheduling the terms for 2026-10-01 printed
+ * 「2026-10-01（施行予定）」 under the consent pack too — and, once in force,
+ * gave the research documents a date nobody had declared for them.
+ *
+ * The research switch (`consentDocument.ts`) carries a version and no date, so
+ * there is no effective date to show for those documents. 「未設定」 is what that
+ * switch honestly supports; a date belongs here only once it declares one.
+ */
+export function documentEffectiveDateLabel(document: LegalDocument, now: Date = new Date()): string {
+  return document.enactment === "legal" ? legalEffectiveDateLabel(now) : "未設定";
 }

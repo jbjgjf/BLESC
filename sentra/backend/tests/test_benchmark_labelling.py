@@ -5,6 +5,7 @@ be checked now is that the protocol cannot quietly produce a benchmark that
 grades itself.
 """
 
+import re
 from collections import Counter
 
 import pytest
@@ -18,6 +19,7 @@ from app.services.benchmark_labelling import (
     apply_human_labels,
     assign_splits,
     cohens_kappa,
+    display_ids,
     labelling_file,
     labelling_status,
     labelling_task,
@@ -44,10 +46,53 @@ def test_candidate_order_is_not_the_authoring_order():
     will happily exploit. A rater is no different."""
     moved = 0
     for case in BENCHMARK_CASES:
-        shown = [candidate["evidence_id"] for candidate in labelling_task(case)["candidates"]]
-        if shown != [day.evidence_id for day in case.evidence]:
+        internal = {shown: evidence_id for evidence_id, shown in display_ids(case).items()}
+        order = [internal[candidate["evidence_id"]] for candidate in labelling_task(case)["candidates"]]
+        if order != [day.evidence_id for day in case.evidence]:
             moved += 1
     assert moved == len(BENCHMARK_CASES)
+
+
+def test_the_id_a_rater_is_shown_does_not_name_the_drafted_role():
+    """The internal ids ARE the drafted answer key, spelled as a prefix.
+
+    `c*` is a drafted target, `f*` a foil, `d*` a decoy. A rater handed those
+    ids is told which candidate the author meant before reading a word — and in
+    the red-herring cases, telling a target from a foil is the only judgement
+    that is actually hard. Shuffling the order hid the position and left the
+    name. Every id a rater sees has to look the same whatever the day was
+    drafted as.
+    """
+    for case in BENCHMARK_CASES:
+        shown = [candidate["evidence_id"] for candidate in labelling_task(case)["candidates"]]
+        internal = {day.evidence_id for day in case.evidence}
+        assert not set(shown) & internal, f"{case.case_id} shows its internal ids"
+        assert len({re.sub(r"\d+", "", value) for value in shown}) == 1, (
+            f"{case.case_id}: shown ids differ in form by role: {sorted(set(shown))[:6]}"
+        )
+
+
+def test_a_decoy_motif_does_not_say_decoy_to_the_rater():
+    """The decoy placeholders are numbered concepts named `decoy NN`.
+
+    That keeps the graph language-free for the retrieval conditions, and it
+    also writes the word "decoy" on every wrong day a rater is shown.
+    """
+    for case in BENCHMARK_CASES:
+        for candidate in labelling_task(case)["candidates"]:
+            for motif in candidate["graph_motifs"]:
+                assert "decoy" not in motif.lower(), f"{case.case_id}: {motif}"
+
+
+def test_a_rater_answering_in_shown_ids_reaches_the_cases_own_ids():
+    """The display ids are a presentation layer; the answer key stays in the
+    case's own ids, so every downstream consumer is unchanged."""
+    case = next(case for case in BENCHMARK_CASES if case.labelled_by == "draft")
+    shown = display_ids(case)
+    rows = labelling_file("rater-a", [case])
+    rows[0]["selected_evidence_ids"] = [shown[evidence_id] for evidence_id in case.expected_evidence_ids]
+    labels = read_rater_labels(rows, [case])
+    assert labels.selections[case.case_id] == set(case.expected_evidence_ids)
 
 
 def test_candidate_order_is_stable_across_calls():
@@ -105,7 +150,7 @@ def test_every_split_is_filled_and_no_group_spans_two():
 def test_the_effective_sample_size_is_reported_on_every_run():
     """Not only when it is small.
 
-    82 cases over an ontology of ~40 edges are nowhere near 82 independent
+    86 cases over an ontology of ~40 edges are nowhere near 86 independent
     items, and the group count is what any held-out claim rests on. Reporting it
     unconditionally is the difference between a limitation and a footnote.
     """
@@ -301,3 +346,85 @@ def test_a_rater_cannot_select_a_day_that_is_not_in_the_case():
     labels = RaterLabels("a", {case.case_id: {"not-a-real-id"}})
     with pytest.raises(ValueError, match="not among its candidates"):
         apply_human_labels(adjudicate(labels, RaterLabels("b", {})))
+
+
+# ---- agreement and adjudication on synthetic labels (#127) ------------------
+#
+# Every label below is invented inside the test. None of it is, or stands in
+# for, a human judgement about a case.
+
+
+def test_kappa_matches_a_hand_computed_value():
+    """One case, 2 picks each, 1 shared: 1 both / 1 + 1 one-sided / rest neither.
+
+    p_o = (1 + (n-3)) / n, p_e = (2/n)^2 + ((n-2)/n)^2. For n = 26 that is
+    p_o = 24/26 and p_e = 580/676, so kappa = 44/96.
+    """
+    case = next(case for case in BENCHMARK_CASES if len(case.evidence) == 26)
+    ids = [day.evidence_id for day in case.evidence]
+    first = RaterLabels("a", {case.case_id: {ids[0], ids[1]}})
+    second = RaterLabels("b", {case.case_id: {ids[0], ids[2]}})
+
+    result = cohens_kappa(first, second, [case])
+    assert result.is_defined is True
+    assert result.judgements == 26
+    assert result.observed_agreement == round(24 / 26, 4)
+    assert result.expected_agreement == round(580 / 676, 4)
+    assert result.kappa == round(44 / 96, 4)
+    assert result.meets_threshold is False
+
+
+def test_identical_raters_meet_the_threshold():
+    cases = [case for case in BENCHMARK_CASES if case.labelled_by == "draft"][:5]
+    picks = {case.case_id: {case.evidence[0].evidence_id, case.evidence[3].evidence_id} for case in cases}
+    result = cohens_kappa(RaterLabels("a", picks), RaterLabels("b", dict(picks)), cases)
+    assert result.is_defined and result.kappa == 1.0 and result.meets_threshold
+
+
+def test_status_tells_undefined_apart_from_not_measured():
+    """Both read `inter_rater_agreement: None`. Only one of them was measured."""
+    empty = {case.case_id: set() for case in BENCHMARK_CASES}
+    undefined = cohens_kappa(RaterLabels("a", empty), RaterLabels("b", dict(empty)))
+
+    measured = labelling_status(agreement=undefined)
+    assert measured["inter_rater_agreement"] is None
+    assert measured["inter_rater_agreement_measured"] is True
+    assert measured["inter_rater_agreement_defined"] is False
+    joined = " ".join(measured["warnings"])
+    assert "UNDEFINED" in joined and "never as 0" in joined
+    # An undefined coefficient is not a low one.
+    assert "below the 0.67" not in joined
+
+    unmeasured = labelling_status()
+    assert unmeasured["inter_rater_agreement_measured"] is False
+    assert unmeasured["inter_rater_agreement_defined"] is None
+
+
+def test_an_excluded_disagreement_is_out_of_the_key_and_no_longer_outstanding():
+    case_id = BENCHMARK_CASES[0].case_id
+    first = RaterLabels("a", {case_id: {"c1"}})
+    second = RaterLabels("b", {case_id: {"c1", "c2"}})
+
+    pending = adjudicate(first, second)
+    assert pending.unresolved == [case_id]
+
+    excluded = adjudicate(first, second, exclusions={case_id: "raters read the query differently"})
+    assert case_id not in excluded.usable, "an exclusion must not become a label"
+    assert excluded.unresolved == []
+    assert excluded.excluded == {case_id: "raters read the query differently"}
+
+
+def test_an_exclusion_needs_a_disagreement_and_a_reason():
+    """Only disagreement can ground an exclusion here: the pre-registration lists
+    "being hard" and "being one the baseline wins" as NOT grounds, and an
+    exclusion path that took any case id would be a way round that list."""
+    agreed, disputed = BENCHMARK_CASES[0].case_id, BENCHMARK_CASES[1].case_id
+    first = RaterLabels("a", {agreed: {"c1"}, disputed: {"c1"}})
+    second = RaterLabels("b", {agreed: {"c1"}, disputed: {"c2"}})
+
+    with pytest.raises(ValueError, match="did not disagree"):
+        adjudicate(first, second, exclusions={agreed: "too hard"})
+    with pytest.raises(ValueError, match="no reason"):
+        adjudicate(first, second, exclusions={disputed: "  "})
+    with pytest.raises(ValueError, match="both resolved and excluded"):
+        adjudicate(first, second, {disputed: {"c1"}}, {disputed: "split decision"})

@@ -3,6 +3,7 @@ import { fetchWithTimeout, jsonError, openAIKey, providerError, requireUser, sha
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { COLLECTION_ONLY_MESSAGE, collectionOnlyForUser } from "@/lib/server/collectionMode";
 import { SAFETY_GUARDRAILS } from "@/lib/server/safety";
+import { envPositiveInt } from "@/lib/server/envNumber";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
         },
       },
     }),
-  }, Number(process.env.OPENAI_REALTIME_TIMEOUT_MS ?? 20000));
+  }, envPositiveInt("OPENAI_REALTIME_TIMEOUT_MS", 20000));
 
   if (!response.ok) {
     const error = await providerError(response, "Realtime session creation failed.");

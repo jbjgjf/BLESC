@@ -4,7 +4,8 @@ The answer key for the #88 retrieval benchmark, and who produced it.
 
 ```
 raters/<rater_id>.json   one returned labelling file, exactly as the rater sent it back
-adjudication.json        resolutions for cases the raters disagreed on, and the reviewer's name
+adjudication.json        for each case the raters disagreed on, a resolution or an exclusion
+                         with its reason; and the reviewer's name
 ```
 
 Written and read by `scripts/run_benchmark_labelling.py`; assembled into a case
@@ -25,7 +26,8 @@ case is never changed by editing a label.
 
 ## State
 
-Empty. The 82 cases currently carry drafted keys (`labelled_by="draft"`), so
+Empty. The 86 cases currently carry drafted keys (`labelled_by="draft"`, or
+`"author"` for the 6 development cases), so
 every retrieval number the benchmark reports is PRELIMINARY. The labelling work
 is #127; the pre-registration in `docs/benchmark_preregistration.md` is what to
 read before starting it.

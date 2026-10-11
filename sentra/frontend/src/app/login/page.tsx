@@ -8,10 +8,12 @@ import { supabase } from "@/lib/supabase/client";
 import { Icon } from "@/components/ui/Icon";
 import { t } from "@/lib/i18n";
 import { localizeAuthError } from "@/lib/i18n/authError";
+import { loginLegalNotice } from "@/lib/legalNotices";
 import styles from "./login.module.css";
 
 export default function LoginPage() {
   const router = useRouter();
+  const legalNotice = loginLegalNotice();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -122,8 +124,8 @@ export default function LoginPage() {
         </div>
 
         <p className="bl-meta" style={{ marginBottom: 16 }}>
-          <Link href="/legal" target="_blank" rel="noopener noreferrer">利用規約・プライバシーポリシーの確認用草案（別タブ）</Link>
-          <br />未施行の案です。登録操作をこの草案への同意として記録しません。
+          <Link href="/legal" target="_blank" rel="noopener noreferrer">{legalNotice.link}</Link>
+          <br />{legalNotice.note}
         </p>
         {needsInvite && (
           <form onSubmit={checkInvite} className={styles.form}>

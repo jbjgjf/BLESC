@@ -104,7 +104,8 @@ def test_apply_refuses_without_a_reviewer_then_records_one(monkeypatch, tmp_path
     assert "no reviewer recorded" in capsys.readouterr().err
 
     assert _run(monkeypatch, "--store", str(store), "apply", "--reviewer", "A Reviewer") == 0
-    assert "human-labelled 82/82" in capsys.readouterr().out
+    total = len(BENCHMARK_CASES)
+    assert f"human-labelled {total}/{total}" in capsys.readouterr().out
 
     record = json.loads((store / "adjudication.json").read_text(encoding="utf-8"))
     assert record["reviewer"] == "A Reviewer"
@@ -137,3 +138,119 @@ def test_adjudicate_records_a_resolution_and_then_reports_none(monkeypatch, tmp_
 def test_a_malformed_resolution_is_rejected_rather_than_half_applied(monkeypatch, tmp_path):
     with pytest.raises(SystemExit):
         _run(monkeypatch, "--store", str(tmp_path / "s"), "adjudicate", "--resolve", "missing-equals-sign")
+
+
+def test_resolve_takes_the_display_ids_adjudicate_prints(monkeypatch, tmp_path, capsys):
+    from app.services.benchmark_label_store import load_adjudication_record
+    from app.services.benchmark_labelling import display_ids
+
+    store = tmp_path / "store"
+    drafted = next(case for case in BENCHMARK_CASES if case.labelled_by == "draft")
+    shown = display_ids(drafted)
+    picks = [shown[evidence_id] for evidence_id in drafted.expected_evidence_ids]
+
+    assert _run(monkeypatch, "--store", str(store), "adjudicate", "--resolve", f"{drafted.case_id}={','.join(picks)}") == 0
+    record = load_adjudication_record(store)
+    assert set(record["resolutions"][drafted.case_id]) == set(drafted.expected_evidence_ids)
+
+
+def test_resolve_refuses_a_day_the_case_does_not_have(monkeypatch, tmp_path):
+    drafted = next(case for case in BENCHMARK_CASES if case.labelled_by == "draft")
+    with pytest.raises(SystemExit, match="no candidate"):
+        _run(monkeypatch, "--store", str(tmp_path / "s"), "adjudicate", "--resolve", f"{drafted.case_id}=k99")
+    assert not (tmp_path / "s" / "adjudication.json").exists()
+
+
+# ---- agreement, exclusion and sign-off on synthetic labels (#127) -----------
+#
+# The selections below are invented by the test to exercise the flow. They are
+# not labels, and nothing here writes outside tmp_path.
+
+from app.services.benchmark_labelling import agreement_sample as _agreement_sample  # noqa: E402
+
+#: The first case of the pre-drawn sample, used as "the one the raters split on".
+min_case = min(case.case_id for case in _agreement_sample())
+
+
+def _label_sample(monkeypatch, store, out, rater, picks_for):
+    _run(monkeypatch, "--store", str(store), "export", "--rater", rater, "--sample", "--out", str(out))
+    _answer(out / f"{rater}.json", picks_for)
+    assert _run(monkeypatch, "--store", str(store), "import", str(out / f"{rater}.json")) == 0
+
+
+def _first_shown(row, count=1):
+    return [candidate["evidence_id"] for candidate in row["candidates"][:count]]
+
+
+def test_agreement_reports_a_defined_kappa_and_how_much_of_the_sample_it_covers(monkeypatch, tmp_path, capsys):
+    store, out = tmp_path / "store", tmp_path / "out"
+    _label_sample(monkeypatch, store, out, "a", lambda row: _first_shown(row, 2))
+    _label_sample(monkeypatch, store, out, "b", lambda row: _first_shown(row, 2 if row["case_id"] < "m" else 3))
+    capsys.readouterr()
+
+    assert _run(monkeypatch, "--store", str(store), "agreement") == 0
+    reported = json.loads(capsys.readouterr().out)
+    assert reported["is_defined"] is True
+    assert isinstance(reported["kappa"], float)
+    assert reported["sample_cases_compared"] == reported["agreement_sample_size"] == 20
+    assert reported["sample_cases_missing"] == []
+    assert reported["report"].startswith("Cohen's kappa = ")
+
+
+def test_agreement_reports_undefined_and_never_a_number(monkeypatch, tmp_path, capsys):
+    """Both raters mark every sample case "none": p_e = 1, kappa undefined."""
+    store, out = tmp_path / "store", tmp_path / "out"
+    _label_sample(monkeypatch, store, out, "a", lambda row: ["none"])
+    _label_sample(monkeypatch, store, out, "b", lambda row: ["none"])
+    capsys.readouterr()
+
+    assert _run(monkeypatch, "--store", str(store), "agreement") == 1
+    captured = capsys.readouterr()
+    reported = json.loads(captured.out)
+    assert reported["kappa"] is None and reported["is_defined"] is False
+    assert "UNDEFINED" in reported["report"] and "never as 0" in reported["report"]
+    assert "not 0" in captured.err
+
+
+def test_a_disagreement_is_excluded_with_a_reason_and_sign_off_waits_for_it(monkeypatch, tmp_path, capsys):
+    store, out = tmp_path / "store", tmp_path / "out"
+    _label_sample(monkeypatch, store, out, "a", lambda row: _first_shown(row, 1))
+    _label_sample(monkeypatch, store, out, "b", lambda row: _first_shown(row, 2 if row["case_id"] == min_case else 1))
+    capsys.readouterr()
+
+    # One unresolved disagreement: sign-off is refused until it is decided.
+    assert _run(monkeypatch, "--store", str(store), "apply", "--reviewer", "A Reviewer") == 1
+    assert "no recorded decision" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit, match="needs --reason"):
+        _run(monkeypatch, "--store", str(store), "adjudicate", "--exclude", min_case)
+
+    reason = "raters disagree on whether a chain link counts"
+    assert _run(monkeypatch, "--store", str(store), "adjudicate", "--exclude", min_case, "--reason", reason) == 0
+    assert "no unresolved disagreement" in capsys.readouterr().out
+
+    record = json.loads((store / "adjudication.json").read_text(encoding="utf-8"))
+    assert record["exclusions"] == {min_case: reason}
+    assert min_case not in record["resolutions"]
+
+    assert _run(monkeypatch, "--store", str(store), "status") == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["unresolved_disputes"] == []
+    assert status["excluded_disputes"] == {min_case: reason}
+
+    from app.services.benchmark_label_store import resolve_dataset
+
+    excluded_case = {case.case_id: case for case in resolve_dataset(store).cases}[min_case]
+    assert excluded_case.labelled_by != "human", "an excluded disagreement must keep its drafted key"
+
+    assert _run(monkeypatch, "--store", str(store), "apply", "--reviewer", "A Reviewer") == 0
+
+
+def test_exclude_refuses_a_case_the_raters_agreed_on(monkeypatch, tmp_path):
+    store, out = tmp_path / "store", tmp_path / "out"
+    _label_sample(monkeypatch, store, out, "a", lambda row: _first_shown(row, 1))
+    _label_sample(monkeypatch, store, out, "b", lambda row: _first_shown(row, 1))
+
+    with pytest.raises(SystemExit, match="not a disagreement"):
+        _run(monkeypatch, "--store", str(store), "adjudicate", "--exclude", min_case, "--reason", "hard case")
+    assert not (store / "adjudication.json").exists(), "a refused exclusion must not be written"
