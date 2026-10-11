@@ -24,6 +24,7 @@ class TransferCode:
     OPERATION_NOT_PERMITTED = "operation_not_permitted"
 
     PLAN_NOT_CONFIRMATORY = "analysis_plan_not_confirmatory"
+    PLAN_MISMATCH = "analysis_plan_mismatch"
     PROTOCOL_SHAPE_MISMATCH = "protocol_shape_mismatch"
     TRUTH_IN_MODEL_INPUT = "generation_truth_in_model_input"
     SPLIT_KINDS_MIXED = "split_kinds_mixed"

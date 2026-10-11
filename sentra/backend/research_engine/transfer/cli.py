@@ -7,7 +7,11 @@ python -m research_engine.transfer.cli prereg-hash        # the hash a human cop
 python -m research_engine.transfer.cli generate --seed 1 --missingness state_dependent --out /tmp/cohort
 python -m research_engine.transfer.cli consent-dry-run    # #212 refusals and exclusions, synthetic only
 python -m research_engine.transfer.cli audit --seed 1 --missingness state_dependent --out /tmp/audit
+python -m research_engine.transfer.cli dry-run --seed 1 --out /tmp/transfer-dry-run   # #215 end to end, synthetic only
 ```
+
+`dry-run` refuses an output directory that already holds a seal: the seal is
+write-once, and a second run is a different result, not a replacement.
 
 `generate` needs `--seed` and `--missingness` spelled out: which seed and
 scenario become the frozen synthetic set is P13 of the pre-registration, and a
@@ -29,6 +33,7 @@ from typing import Optional, Sequence
 from .audit import check_against_dictionary, public_view, run_audit
 from .consent_gate import consent_dry_run
 from .generator import MISSINGNESS_SCENARIOS, SyntheticCohortConfig, generate, manifest_hash, write_cohort
+from .pipeline import run_transfer_dry_run
 from .preregistration import PREREGISTRATION_PATH, freeze_status, load_preregistration
 
 
@@ -89,6 +94,13 @@ def command_audit(args: argparse.Namespace) -> int:
     return 0 if agrees else 1
 
 
+def command_dry_run(args: argparse.Namespace) -> int:
+    result = run_transfer_dry_run(args.seed, Path(args.out))
+    summary = result["summary"]
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0 if summary["leakage_checks_passed"] and summary["consent_dry_run_passed"] else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="research_engine.transfer.cli", description="合成→実データ移転研究（#210）"
@@ -120,6 +132,11 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("--mnar-strength", type=float, default=1.0)
     audit.add_argument("--out", required=True)
     audit.set_defaults(handler=command_audit)
+
+    dry = subparsers.add_parser("dry-run", help="移転研究の全経路を合成データだけで通す（#215・#216）")
+    dry.add_argument("--seed", type=int, required=True)
+    dry.add_argument("--out", required=True)
+    dry.set_defaults(handler=command_dry_run)
     return parser
 
 
