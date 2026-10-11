@@ -1,7 +1,8 @@
 # Labelling the benchmark — runbook
 
-How to get human `expected_evidence_ids` onto the 82 cases (#127), and how those
-labels reach a benchmark result (#126).
+How to get human `expected_evidence_ids` onto the 86 cases (#127), and how those
+labels reach a benchmark result (#126). Numbers below are for dataset
+`0.4.0-dev` (2026-10-11).
 
 **Read [`benchmark_preregistration.md`](benchmark_preregistration.md) first.**
 The analysis plan and the exclusion criteria were written before any case was
@@ -17,7 +18,7 @@ python scripts/run_benchmark_labelling.py status
 ```
 
 Reports how many cases carry a human label, whether agreement has been measured,
-and who signed the labels off. Today: 0 of 82 human-labelled, 76 drafted, 6
+and who signed the labels off. Today: 0 of 86 human-labelled, 80 drafted, 6
 authored during development. Every retrieval number the benchmark prints is
 PRELIMINARY until that changes.
 
@@ -58,6 +59,43 @@ Two things worth deciding before sending anything out:
   and language. Choosing which cases to double-label after seeing the labels
   would let the coefficient be selected rather than measured.
 
+### Or: the labelling screen
+
+```bash
+# first rater — every drafted case plus the agreement sample, test split last
+python scripts/run_benchmark_labelling_screen.py --rater ayaka
+
+# second rater — the 20 pre-drawn cases only
+python scripts/run_benchmark_labelling_screen.py --rater kenji --sample
+```
+
+Open the address it prints (`http://127.0.0.1:8765/`). It is the same protocol
+as the file above with a page in front of it, and it writes the same file,
+`benchmark_labels/raters/<rater>.json`, on every 保存 — so Ctrl-C at any point
+loses nothing, and the same command resumes. The file then goes through
+`status` / `agreement` / `adjudicate` / `apply` exactly like an imported one;
+no `import` step is needed.
+
+What it does not do, each pinned by `tests/test_benchmark_labelling_screen.py`:
+
+- **pre-select anything.** A case opens with nothing ticked unless this rater
+  ticked it earlier. Drafts are never shown — not as a default, not behind a
+  switch.
+- **show one rater another's labels.** A session reads and writes only its own
+  file. On a shared machine nothing stops someone opening the other JSON by
+  hand, so keep each rater's file out of the other's checkout until both are
+  done (do not commit or pull `raters/` mid-pass).
+- **put the held-out split first.** Train, then validation, then test, and the
+  two languages of a matched pair are never labelled back to back.
+- **listen beyond this machine.** 127.0.0.1 only, no `--host` option, requests
+  for any other Host refused, saves need the form token this process issued.
+  No accounts and nothing to deploy.
+
+The default pass covers the 76 drafted cases plus the one development case the
+agreement sample draws (`vocab_disjoint_en`) — without it the coefficient would
+be over 19 cases, not the 20 fixed in advance. `--all` adds the other
+development cases, which the pre-registration excludes from the analysis.
+
 ## 2. The rater fills it in
 
 For each case, `selected_evidence_ids` gets the days that help answer the query.
@@ -69,8 +107,10 @@ a chain that reaches it.
 
 The two are different claims, so the format keeps them apart.
 
-Budget, measured from the files themselves: 76 cases at 26–40 candidates each is
-**2,252 judgements** for the main pass, plus about 560 for the agreement pass.
+Budget, measured from the files themselves (`0.4.0-dev`): the main pass is 81
+cases — the 80 drafted plus the agreement sample's one development case — at
+26–40 candidates each, **2,408 judgements**; the agreement pass is 20 cases,
+**628 judgements**. (#127's 2,252 / ~560 were measured on `0.3.0-dev`.)
 
 ## 3. Take the files back
 
@@ -175,7 +215,8 @@ PRELIMINARY warnings, which is what it has always done.
 
 ## What this does not change
 
-**The effective sample size is 12 independent leakage groups, not 82 cases.**
+**The effective sample size is 13 independent leakage groups, not 86 cases**
+(4 of them in the held-out split).
 Labelling raises the quality of the key, not the amount of independent
 information. Any held-out claim rests on 12. The ceiling is the size of the
 curated ontology; growing the case set does not raise it, and growing the

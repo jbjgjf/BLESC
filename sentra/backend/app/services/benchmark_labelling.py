@@ -49,7 +49,12 @@ from .benchmark_retrieval import parse_motifs
 #: `low_frequency_high_severity` and `heavy_decoy` families, and moved splits
 #: onto an authored partition of the curated edges. Results from 0.2.0 are not
 #: comparable to results from this version — different cases, different splits.
-DATASET_VERSION = "0.3.0-dev"
+#:
+#: 0.4.0-dev (2026-10-11): the held-out split was re-composed — one case
+#: re-chained, two added (86 cases, 13 leakage groups). See the 2026-10-11
+#: amendments in docs/benchmark_preregistration.md. Not comparable to 0.3.0-dev,
+#: and a rater file exported for 0.3.0-dev is refused on import.
+DATASET_VERSION = "0.4.0-dev"
 
 DATASET_METADATA = {
     "name": "blesc-synthetic-retrieval-benchmark",
