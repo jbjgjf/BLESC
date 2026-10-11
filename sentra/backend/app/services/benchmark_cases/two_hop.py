@@ -570,4 +570,67 @@ DRAFTS = (
         candidates=28,
         decoy_anchor_motif_every=7,
     ),
+    # ---- added 2026-10-11 (pre-registration amendment) ----------------------
+    # The held-out split had no case built to be failed. Both cases with a foil
+    # (`chain_red_herring`, `counsellor_offer_declined`) are in train, so on
+    # the test split every traversable curated path from an anchor led to the
+    # answer and `relation_aware` scored 1.0 on all 22 test cases in both the
+    # retrieval harness and the graph-walk harness — a ceiling no learned
+    # policy (#98) could ever be shown to beat on held-out data.
+    CaseDraft(
+        slug="irritability_red_herring",
+        split="test",
+        family=FAMILY,
+        query_en="Everyone at home has started tiptoeing round me.",
+        query_ja="最近、家族がみんな私の顔色をうかがってる。",
+        anchors=("sleep_deprivation",),
+        answer=(
+            Step(
+                ("sleep_deprivation", "irritability"),
+                "Slammed the drawer so hard the cutlery jumped, over nothing.",
+                "なんでもないことで、食器が跳ねるほど引き出しを強く閉めた。",
+                "2026-05-12",
+            ),
+            Step(
+                ("irritability", "social_withdrawal"),
+                "Said I would eat later and carried the plate up to my room.",
+                "あとで食べると言って、皿を持って自分の部屋に上がった。",
+                "2026-05-23",
+            ),
+        ),
+        # A curated chain, traversable from the same anchor on `causes`, and the
+        # WRONG thread for a query about home: sleep loss -> concentration ->
+        # marks. The withdrawal link the query is about is a `precedes` edge,
+        # weaker than either foil link, so a method that follows the strongest
+        # path without reading the query puts the foil above the second target.
+        # Foil text is written fresh rather than copied, so it links this case to
+        # no other case's group (`leakage_groups` reads target text, not foils).
+        foil=(
+            Step(
+                ("sleep_deprivation", "cognitive_impairment"),
+                "Copied the exercise down from the board with half the numbers swapped.",
+                "黒板の課題を写したら、数字が半分入れ替わってた。",
+                "2026-05-08",
+            ),
+            Step(
+                ("cognitive_impairment", "academic_difficulty"),
+                "The quiz came back and I had lost marks on questions I knew.",
+                "小テストが返ってきて、わかってた問題で点を落としてた。",
+                "2026-05-19",
+            ),
+        ),
+        expected_safety="elevated",
+        expected_policy="link the reactivity at home to sleep, not to the schoolwork thread beside it",
+        note=(
+            "Built to be failed, in the held-out split. The sleep -> concentration -> "
+            "marks chain is present, curated, traversable from the anchor on stronger "
+            "relations than the answer's, and is the wrong answer to a query about home."
+        ),
+        required_hops=1,
+        decoy_en=("everyone", "home", "started", "tiptoeing", "round", "around", "lately"),
+        decoy_ja=("最近", "家族", "みんな", "顔色", "うかがって", "私", "ずっと"),
+        candidates=26,
+        decoy_anchor_motif_every=7,
+        decoy_day_from=4,
+    ),
 )

@@ -1,7 +1,8 @@
 # Labelling the benchmark — runbook
 
-How to get human `expected_evidence_ids` onto the 82 cases (#127), and how those
-labels reach a benchmark result (#126).
+How to get human `expected_evidence_ids` onto the 86 cases (#127), and how those
+labels reach a benchmark result (#126). Numbers below are for dataset
+`0.4.0-dev` (2026-10-11).
 
 **Read [`benchmark_preregistration.md`](benchmark_preregistration.md) first.**
 The analysis plan and the exclusion criteria were written before any case was
@@ -17,7 +18,7 @@ python scripts/run_benchmark_labelling.py status
 ```
 
 Reports how many cases carry a human label, whether agreement has been measured,
-and who signed the labels off. Today: 0 of 82 human-labelled, 76 drafted, 6
+and who signed the labels off. Today: 0 of 86 human-labelled, 80 drafted, 6
 authored during development. Every retrieval number the benchmark prints is
 PRELIMINARY until that changes.
 
@@ -106,8 +107,10 @@ a chain that reaches it.
 
 The two are different claims, so the format keeps them apart.
 
-Budget, measured from the files themselves: 76 cases at 26–40 candidates each is
-**2,252 judgements** for the main pass, plus about 560 for the agreement pass.
+Budget, measured from the files themselves (`0.4.0-dev`): the main pass is 81
+cases — the 80 drafted plus the agreement sample's one development case — at
+26–40 candidates each, **2,408 judgements**; the agreement pass is 20 cases,
+**628 judgements**. (#127's 2,252 / ~560 were measured on `0.3.0-dev`.)
 
 ## 3. Take the files back
 
@@ -212,7 +215,8 @@ PRELIMINARY warnings, which is what it has always done.
 
 ## What this does not change
 
-**The effective sample size is 12 independent leakage groups, not 82 cases.**
+**The effective sample size is 13 independent leakage groups, not 86 cases**
+(4 of them in the held-out split).
 Labelling raises the quality of the key, not the amount of independent
 information. Any held-out claim rests on 12. The ceiling is the size of the
 curated ontology; growing the case set does not raise it, and growing the

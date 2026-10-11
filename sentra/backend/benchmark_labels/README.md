@@ -26,7 +26,8 @@ case is never changed by editing a label.
 
 ## State
 
-Empty. The 82 cases currently carry drafted keys (`labelled_by="draft"`), so
+Empty. The 86 cases currently carry drafted keys (`labelled_by="draft"`, or
+`"author"` for the 6 development cases), so
 every retrieval number the benchmark reports is PRELIMINARY. The labelling work
 is #127; the pre-registration in `docs/benchmark_preregistration.md` is what to
 read before starting it.

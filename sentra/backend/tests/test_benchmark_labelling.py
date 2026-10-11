@@ -150,7 +150,7 @@ def test_every_split_is_filled_and_no_group_spans_two():
 def test_the_effective_sample_size_is_reported_on_every_run():
     """Not only when it is small.
 
-    82 cases over an ontology of ~40 edges are nowhere near 82 independent
+    86 cases over an ontology of ~40 edges are nowhere near 86 independent
     items, and the group count is what any held-out claim rests on. Reporting it
     unconditionally is the difference between a limitation and a footnote.
     """

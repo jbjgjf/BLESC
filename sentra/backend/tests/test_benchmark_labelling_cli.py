@@ -104,7 +104,8 @@ def test_apply_refuses_without_a_reviewer_then_records_one(monkeypatch, tmp_path
     assert "no reviewer recorded" in capsys.readouterr().err
 
     assert _run(monkeypatch, "--store", str(store), "apply", "--reviewer", "A Reviewer") == 0
-    assert "human-labelled 82/82" in capsys.readouterr().out
+    total = len(BENCHMARK_CASES)
+    assert f"human-labelled {total}/{total}" in capsys.readouterr().out
 
     record = json.loads((store / "adjudication.json").read_text(encoding="utf-8"))
     assert record["reviewer"] == "A Reviewer"
