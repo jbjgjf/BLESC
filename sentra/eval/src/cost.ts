@@ -17,6 +17,11 @@
 //   exactly, and a snapshot must be listed under its own name. Prefix matching
 //   is the alternative and it is wrong in both directions here: "gpt-5.4" is a
 //   prefix of "gpt-5.4-mini", and a snapshot's price is the vendor's to set.
+// - The limit is per run, across resumes (#266). A resumed run's guard starts
+//   from the run's recorded `actual_cost_usd`, and the runner records the spend
+//   after every case, so neither a resume nor a crash hands out a fresh US$80.
+// - OpenAI Evals registration is opt-in (`--register-eval`) and paid for
+//   through the guard before it starts (see `registerOpenAiEval`).
 
 import { COST_LIMITS, MODELS, PRICING } from "./config.ts";
 
@@ -66,11 +71,26 @@ export function assertPriced(models: Iterable<string>, pricing: PriceTable = PRI
   }
 }
 
-/** Pre-run estimate shown to the operator before anything is spent. */
+/**
+ * Token ceiling for one row graded by OpenAI Evals: the rubric, the contract,
+ * and a transcript the runner caps at 20,000 characters — counted as one token
+ * per character, which is about right for Japanese and generous for English.
+ */
+export const EVAL_ROW_MAX_INPUT_TOKENS = 22_000;
+export const EVAL_ROW_OUTPUT_TOKENS = 300;
+
+/**
+ * Pre-run estimate shown to the operator before anything is spent.
+ *
+ * `MODELS.counselorSimulator` is not counted because nothing calls it: the
+ * counselor pass logs in and reads /oversight through the browser, and no
+ * model writes a counselor turn. If a counselor simulator is ever wired in,
+ * it must be added here and charged to the guard (#266).
+ */
 export function estimateRunUsd(
   conversations: number,
   avgTurns: number,
-  options: { pricing?: PriceTable; models?: ModelSet } = {},
+  options: { pricing?: PriceTable; models?: ModelSet; registerEval?: boolean } = {},
 ): {
   tokens: number;
   usd: number;
@@ -84,8 +104,15 @@ export function estimateRunUsd(
     outputTokens: conversations * avgTurns * 160,
   };
   const judgeUsage = { inputTokens: conversations * 6000, outputTokens: conversations * 700 };
-  const usd = usdFor(models.studentSimulator, simUsage, pricing) + usdFor(models.judge, judgeUsage, pricing);
-  return { tokens: simUsage.inputTokens + simUsage.outputTokens + judgeUsage.inputTokens + judgeUsage.outputTokens, usd };
+  // OpenAI Evals grades every row again with the judge model, server-side.
+  const evalUsage = options.registerEval
+    ? { inputTokens: conversations * EVAL_ROW_MAX_INPUT_TOKENS, outputTokens: conversations * EVAL_ROW_OUTPUT_TOKENS }
+    : { inputTokens: 0, outputTokens: 0 };
+  const usd = usdFor(models.studentSimulator, simUsage, pricing)
+    + usdFor(models.judge, judgeUsage, pricing)
+    + usdFor(models.judge, evalUsage, pricing);
+  const tokens = [simUsage, judgeUsage, evalUsage].reduce((sum, usage) => sum + usage.inputTokens + usage.outputTokens, 0);
+  return { tokens, usd };
 }
 
 export class CostGuard {
@@ -94,9 +121,33 @@ export class CostGuard {
   private readonly pricing: PriceTable;
   private readonly limits: CostLimits;
 
-  constructor(options: { pricing?: PriceTable; limits?: CostLimits } = {}) {
+  /**
+   * `alreadySpentUsd` is what the run spent before this process: a resumed
+   * run's guard starts there, so the limit covers the run and not the attempt.
+   */
+  constructor(options: { pricing?: PriceTable; limits?: CostLimits; alreadySpentUsd?: number } = {}) {
     this.pricing = options.pricing ?? PRICING;
     this.limits = options.limits ?? COST_LIMITS;
+    const already = options.alreadySpentUsd ?? 0;
+    if (!Number.isFinite(already) || already < 0) throw new Error(`invalid prior spend ${already}`);
+    this.spentUsd = already;
+  }
+
+  /** Stops before anything is spent when the run is already at the hard stop. */
+  assertBudgetLeft(): void {
+    if (this.spentUsd >= this.limits.hardStopUsd) {
+      throw new CostHardStop(this.spentUsd,
+        `hard cost stop: this run has already spent ~$${this.spentUsd.toFixed(2)}, at or over the US$${this.limits.hardStopUsd} limit`);
+    }
+  }
+
+  /** Whether spending `usage` on `model` would stay under the hard stop. */
+  wouldStayUnder(model: string, usage: UsageTotals): boolean {
+    return this.spentUsd + usdFor(model, usage, this.pricing) < this.limits.hardStopUsd;
+  }
+
+  hardStopUsd(): number {
+    return this.limits.hardStopUsd;
   }
 
   add(model: string, usage: UsageTotals): void {

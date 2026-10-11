@@ -130,6 +130,24 @@ US$80 (run aborts and is resumable). The full matrix requires
 `--confirm-full`. Typical full-run estimate is well under the warn line;
 smoke runs cost cents.
 
+The limit is **per run, across resumes** (#266). `actual_cost_usd` is written
+after every case, and a resume starts its cost guard from that value — so a
+run stopped at US$80 cannot be resumed into another US$80, and the column
+never goes down. A resume whose recorded spend plus remaining estimate crosses
+the hard stop is refused before anything runs.
+
+A model missing from `PRICING` (`src/config.ts`) stops the run instead of
+counting as $0 — including a dated snapshot, which must be listed under its
+own name (#286). A test fails when `MODELS` and `PRICING` disagree.
+
+OpenAI Evals registration is **off by default**; pass `--register-eval` to
+turn it on. Its server-side re-grading is outside the cost guard's view, so
+the runner charges an estimate of it to the guard first (and includes it in
+the pre-run estimate), skips it if that would cross the hard stop, and reports
+a skip or a failure in the run's findings. The guard counts the runner's own
+key only — the product's traffic under evaluation runs on the deployment's
+key and is not included.
+
 ## Reviewer access
 
 `reviewer@synthetic.blesc.invalid` logs in through the normal frontend and

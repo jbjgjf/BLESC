@@ -3,7 +3,7 @@
 //   tsx src/cli.ts reset                — wipe synthetic-account content
 //   tsx src/cli.ts smoke                — 12 stratified live smoke cases
 //   tsx src/cli.ts full --confirm-full  — full 420-conversation matrix
-//   flags: --resume <runId>  --limit <n>  --media
+//   flags: --resume <runId>  --limit <n>  --media  --register-eval
 //
 // The decisions live in commands.ts, where they are tested; this file only
 // connects them to the real environment.

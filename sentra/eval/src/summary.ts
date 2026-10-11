@@ -126,6 +126,8 @@ export interface SummaryInputs {
   reviewerCheckPassed: boolean;
   spentUsd: number;
   evalRefs: string[];
+  /** Why OpenAI Evals registration did not happen, when it was asked for (#266). */
+  evalProblem?: string;
   /**
    * Every case this run is made of: the selection plus any case an earlier
    * attempt of the same run recorded. The verdict covers the run only if
@@ -153,6 +155,7 @@ export function summarizeRun(inputs: SummaryInputs): RunSummary {
   if (coverage.covered < coverage.expected) {
     findings.unshift(`Only ${coverage.covered} of ${coverage.expected} cases in this run were graded — the verdict does not cover the run.`);
   }
+  if (inputs.evalProblem) findings.push(inputs.evalProblem);
   const totals = buildTotals(results);
   if (!inputs.reviewerCheckPassed) {
     findings.unshift("Reviewer could not open /evaluation through the normal frontend — the boss-facing dashboard is unreachable for this run.");

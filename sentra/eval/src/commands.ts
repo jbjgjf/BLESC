@@ -13,7 +13,7 @@ import type { RunSummary } from "./artifacts.ts";
 import { buildMatrix, smokeSelection } from "./scenarios.ts";
 
 export const USAGE =
-  "usage: cli.ts provision|reset|smoke|full [--confirm-full] [--resume <runId>] [--limit <n>] [--media]";
+  "usage: cli.ts provision|reset|smoke|full [--confirm-full] [--resume <runId>] [--limit <n>] [--media] [--register-eval]";
 
 /** A refusal before anything runs. The CLI exits 2 with the message. */
 export class UsageError extends Error {}
@@ -24,6 +24,8 @@ export interface CliArgs {
   resumeRunId?: string;
   limit?: number;
   media: boolean;
+  /** Also register the graded cases with OpenAI Evals, paid through the cost guard (#266). */
+  registerEval: boolean;
 }
 
 export function parseArgs(argv: string[]): CliArgs {
@@ -48,6 +50,7 @@ export function parseArgs(argv: string[]): CliArgs {
     resumeRunId: valueOf("--resume"),
     limit,
     media: argv.includes("--media"),
+    registerEval: argv.includes("--register-eval"),
   };
 }
 
@@ -118,7 +121,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
   }
   let estimate: ReturnType<typeof estimateRunUsd>;
   try {
-    estimate = estimateRunUsd(scenarios.length, (MATRIX.minTurns + MATRIX.maxTurns) / 2);
+    estimate = estimateRunUsd(scenarios.length, (MATRIX.minTurns + MATRIX.maxTurns) / 2, { registerEval: args.registerEval });
   } catch (error) {
     // An estimate without a price is not US$0.00 (#286).
     if (error instanceof UnpricedModel) {
@@ -148,6 +151,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     artifactsDir: `artifacts/${command}-${stamp}`,
     captureMedia: command === "smoke" || args.media,
     resumeRunId: args.resumeRunId,
+    registerEval: args.registerEval,
   });
   deps.log(`[done] run ${runId}: ${summary.verdict} · artifacts in artifacts/${command}-${stamp}/`);
   return 0;
