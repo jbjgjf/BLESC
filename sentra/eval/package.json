@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "lint": "eslint",
     "test": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --test-timeout=30000 tests/*.test.ts",
     "smoke": "tsx src/cli.ts smoke",
     "full": "tsx src/cli.ts full",
@@ -19,8 +20,11 @@
     "playwright": "^1.58.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/node": "^20",
+    "eslint": "^9.39.4",
     "tsx": "^4.20.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "typescript-eslint": "^8.58.0"
   }
 }

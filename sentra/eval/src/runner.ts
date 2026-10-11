@@ -284,7 +284,9 @@ export async function executeRun(
     let providerFallbackDetected = false;
     let reflectionCards: browser.SubmittedCard[] = [];
     let status: CaseResult["status"] = "error";
-    let usage = { inputTokens: 0, outputTokens: 0 };
+    // Not measured per case: spend is tracked run-wide by the cost guard. Kept
+    // in the result shape (zero) so the artifacts' fields stay stable.
+    const usage = { inputTokens: 0, outputTokens: 0 };
     const mediaDir = options.captureMedia ? join(options.artifactsDir, "media", scenario.caseKey.replaceAll(":", "_")) : undefined;
     if (mediaDir) mkdirSync(mediaDir, { recursive: true });
 
