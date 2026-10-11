@@ -12,7 +12,9 @@ Three things this deliberately makes hard to get wrong:
 case is handed to a person. A rater shown the intended answer produces a
 confirmation, not a label. It also shuffles the candidates deterministically,
 because c1..c3 sitting at the top of every list is itself a cue — the same
-position bias that let the broken tokeniser score a false 1.0 in #86.
+position bias that let the broken tokeniser score a false 1.0 in #86. And it
+renames them: the ids themselves spell the drafted role (`c` target, `f` foil,
+`d` decoy), so a rater is shown `display_ids()` instead (#127).
 
 **Agreement can be undefined, and says so.** Cohen's kappa divides by
 `1 - p_e`. When a rater marks nearly everything "not evidence" — the expected
@@ -32,10 +34,11 @@ hand-maintained list is the kind of thing that silently stops being true.
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field, replace
 from typing import Dict, Iterable, List, Sequence, Set, Tuple
 
-from .benchmark_cases import BENCHMARK_CASES, BenchmarkCase
+from .benchmark_cases import BENCHMARK_CASES, BenchmarkCase, EvidenceDay
 from .benchmark_cases._splits import SPLITS
 from .benchmark_retrieval import parse_motifs
 
@@ -82,9 +85,65 @@ def _shuffle_key(case_id: str, evidence_id: str) -> str:
     return hashlib.sha256(f"{case_id}:{evidence_id}".encode()).hexdigest()
 
 
+#: Prefix of the id a rater sees for a candidate. One prefix for every role.
+DISPLAY_ID_PREFIX = "k"
+
+#: `State:decoy 07` -> `State:#07` in what a rater is shown. See `_rater_motif`.
+_DECOY_TERM = re.compile(r"\bdecoy (\d+)\b")
+
+
+def _presentation_order(case: BenchmarkCase) -> List[EvidenceDay]:
+    return sorted(case.evidence, key=lambda day: _shuffle_key(case.case_id, day.evidence_id))
+
+
+def display_ids(case: BenchmarkCase) -> Dict[str, str]:
+    """evidence_id -> the id a rater is shown for it.
+
+    The case's own ids are the drafted answer key written as a prefix: targets
+    are `c1..cn`, foils `f1..fn`, decoys `d1..dn`. Shuffling the presentation
+    order hid where the targets sat and left their names on them, so a rater
+    could read the intended answer off the ids — and in the red-herring cases,
+    target against foil is the one judgement that is genuinely hard (#127).
+
+    So a rater sees `k01..kNN`, numbered in presentation order. The order is a
+    hash and is the same for every rater, so the number carries nothing, and
+    two raters' `k07` is the same day. Everything downstream of the rater file
+    — agreement, adjudication, `apply_human_labels` — still works in the
+    case's own ids; this is a presentation layer, translated back on read.
+    """
+    ordered = _presentation_order(case)
+    width = max(2, len(str(len(ordered))))
+    return {
+        day.evidence_id: f"{DISPLAY_ID_PREFIX}{index:0{width}d}"
+        for index, day in enumerate(ordered, start=1)
+    }
+
+
+def internal_ids(case: BenchmarkCase) -> Dict[str, str]:
+    """The inverse of `display_ids`: shown id -> the case's own evidence_id."""
+    return {shown: evidence_id for evidence_id, shown in display_ids(case).items()}
+
+
+def _rater_motif(motif: str) -> str:
+    """A motif as a rater sees it: decoy placeholders lose the word "decoy".
+
+    The placeholders are numbered so the decoy subgraph carries no language
+    (see `benchmark_cases._build._decoy_days`), and the number is what keeps it
+    a graph. The word in front of the number labels the day as wrong, which is
+    a judgement the rater is there to make. Only the rater's copy changes; the
+    retrieval conditions read the case, not this.
+    """
+    return _DECOY_TERM.sub(r"#\1", motif)
+
+
 def labelling_task(case: BenchmarkCase) -> Dict[str, object]:
-    """One case, as presented to a human rater. No answer key."""
-    candidates = sorted(case.evidence, key=lambda day: _shuffle_key(case.case_id, day.evidence_id))
+    """One case, as presented to a human rater. No answer key.
+
+    `evidence_id` on each candidate is the DISPLAY id (`display_ids`), not the
+    case's own id — the field keeps its name so a rater file has one id field
+    and one selection field, and `read_rater_labels` translates.
+    """
+    shown = display_ids(case)
     return {
         "case_id": case.case_id,
         "lang": case.lang,
@@ -96,15 +155,15 @@ def labelling_task(case: BenchmarkCase) -> Dict[str, object]:
         ),
         "candidates": [
             {
-                "evidence_id": day.evidence_id,
+                "evidence_id": shown[day.evidence_id],
                 "day": day.day,
                 "text": day.text,
                 # Motifs are shown: in the product the graph is visible to the
                 # retriever, so a rater judging without it would be labelling a
                 # different task than the one being measured.
-                "graph_motifs": list(day.graph_motifs),
+                "graph_motifs": [_rater_motif(motif) for motif in day.graph_motifs],
             }
-            for day in candidates
+            for day in _presentation_order(case)
         ],
     }
 
@@ -389,26 +448,42 @@ def labelling_file(rater_id: str, cases: Sequence[BenchmarkCase] = BENCHMARK_CAS
     ]
 
 
-def read_rater_labels(rows: Iterable[Dict[str, object]]) -> RaterLabels:
-    """A returned labelling file, as `RaterLabels`.
+def read_rater_labels(
+    rows: Iterable[Dict[str, object]],
+    cases: Sequence[BenchmarkCase] = BENCHMARK_CASES,
+) -> RaterLabels:
+    """A returned labelling file, as `RaterLabels` in the cases' own ids.
 
     A case with an empty `selected_evidence_ids` is treated as UNLABELLED, not
     as "this rater found nothing". The two are different claims and only one of
     them is evidence — a rater who worked through a case and concluded nothing
     helps records that by writing `["none"]`, which is the one sentinel this
     format has.
+
+    Selections arrive as display ids (`k07`, what the rater was shown) and are
+    translated back. A case's own id is also accepted, because tooling and
+    tests write those; the two spaces cannot collide (`k` is not a role
+    prefix). Anything else is passed through untranslated, and
+    `apply_human_labels` refuses it as "not among its candidates".
     """
     rows = list(rows)
     rater_ids = {str(row.get("rater_id", "")) for row in rows}
     if len(rater_ids) != 1:
         raise ValueError(f"a labelling file holds exactly one rater, found {sorted(rater_ids)}")
 
+    by_id = {case.case_id: case for case in cases}
     selections: Dict[str, Set[str]] = {}
     for row in rows:
         picks = list(row.get("selected_evidence_ids") or [])
         if not picks:
             continue
-        selections[str(row["case_id"])] = set() if picks == ["none"] else {str(pick) for pick in picks}
+        case_id = str(row["case_id"])
+        if picks == ["none"]:
+            selections[case_id] = set()
+            continue
+        case = by_id.get(case_id)
+        translate = internal_ids(case) if case is not None else {}
+        selections[case_id] = {translate.get(str(pick), str(pick)) for pick in picks}
     return RaterLabels(rater_id=rater_ids.pop(), selections=selections)
 
 

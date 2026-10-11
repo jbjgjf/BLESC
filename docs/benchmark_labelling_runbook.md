@@ -37,6 +37,18 @@ The file holds the query and the shuffled candidates and **nothing else**: no
 rater shown the intended answer produces a confirmation rather than a label, and
 a test fails if any of those fields reaches the file.
 
+**The candidate ids in the file are display ids (`k01`, `k02`, …), not the
+case's own ids.** The case's own ids spell the drafted role — `c*` is a drafted
+target, `f*` a foil, `d*` a decoy — so until 2026-10-11 a rater could read the
+intended answer straight off them, and in the red-herring cases telling a
+target from a foil is the one judgement that is actually hard. Display ids are
+numbered in the shuffled presentation order, which is the same for every
+rater, so two raters' `k07` is the same day. Decoy placeholders in the motifs
+(`State:decoy 07`) are shown as `State:#07` for the same reason. The file is
+translated back to the case's own ids when it is read; nothing downstream
+changes. A file exported for a different `dataset_version` is refused on
+import, because the numbering follows the candidate set.
+
 Two things worth deciding before sending anything out:
 
 - **Leave the test split for last.** `--split train`, then `validation`, then
@@ -94,8 +106,13 @@ different things:
 
 ```bash
 python scripts/run_benchmark_labelling.py adjudicate
-python scripts/run_benchmark_labelling.py adjudicate --resolve sleep_chain_ja=c1,c2
+python scripts/run_benchmark_labelling.py adjudicate --resolve sleep_chain_ja=k03,k11
 ```
+
+`adjudicate` lists each disagreement in display ids, with the text of every day
+either rater picked, and `--resolve` takes display ids back. The person
+resolving it is choosing between two raters; the case's own ids would tell them
+which rater matched the draft.
 
 An unresolved disagreement **stays unresolved**: the case keeps its drafted key
 and stays out of the confirmatory analysis. Taking the union or the intersection

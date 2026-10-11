@@ -18,10 +18,14 @@ answer key — and none of it had a way in or out of a file. This is that way.
     # what the two raters disagreed about, and the coefficient over the sample
     python scripts/run_benchmark_labelling.py agreement
     python scripts/run_benchmark_labelling.py adjudicate
-    python scripts/run_benchmark_labelling.py adjudicate --resolve sleep_chain_ja=c1,c2
+    python scripts/run_benchmark_labelling.py adjudicate --resolve sleep_chain_ja=k03,k11
 
     # sign the labels off; the benchmark picks them up from the store
     python scripts/run_benchmark_labelling.py apply --reviewer "Name"
+
+Candidate ids in a rater file are display ids (`k01`...), not the case's own
+ids, which spell the drafted role (`c` target, `f` foil, `d` decoy). `adjudicate`
+prints display ids and `--resolve` takes them.
 
 Read `docs/benchmark_preregistration.md` before labelling. The exclusion
 criteria were written before any case was excluded, and this tool follows them
@@ -50,7 +54,12 @@ from app.services.benchmark_label_store import (
     write_adjudication_record,
     write_labelling_file,
 )
-from app.services.benchmark_labelling import agreement_sample, assign_splits, labelling_status
+from app.services.benchmark_labelling import (
+    agreement_sample,
+    assign_splits,
+    internal_ids,
+    labelling_status,
+)
 
 
 def _selected_cases(args: argparse.Namespace) -> List[BenchmarkCase]:
@@ -150,13 +159,34 @@ def cmd_agreement(args: argparse.Namespace) -> int:
 
 
 def _parse_resolutions(pairs: Sequence[str]) -> Dict[str, Set[str]]:
+    """`CASE_ID=k03,k11` -> {case_id: {the case's own evidence ids}}.
+
+    Takes the display ids `adjudicate` prints, so the person resolving a
+    disagreement never has to see the ids that spell the drafted role. The
+    case's own ids are accepted too. Anything else stops the command before
+    anything is written: a resolution naming a day the case does not have would
+    otherwise be stored and only fail at `apply`.
+    """
+    by_id = {case.case_id: case for case in BENCHMARK_CASES}
     resolutions: Dict[str, Set[str]] = {}
     for pair in pairs:
         case_id, _, picks = pair.partition("=")
         if not case_id or not _:
             raise SystemExit(f"--resolve expects CASE_ID=id,id (got {pair!r})")
+        case = by_id.get(case_id)
+        if case is None:
+            raise SystemExit(f"--resolve: {case_id!r} is not a case in this dataset")
         chosen = [pick.strip() for pick in picks.split(",") if pick.strip()]
-        resolutions[case_id] = set() if chosen == ["none"] else set(chosen)
+        if chosen == ["none"]:
+            resolutions[case_id] = set()
+            continue
+        translate = internal_ids(case)
+        own = {day.evidence_id for day in case.evidence}
+        resolved = {translate.get(pick, pick) for pick in chosen}
+        unknown = sorted(pick for pick in resolved if pick not in own)
+        if unknown:
+            raise SystemExit(f"--resolve: {case_id} has no candidate {unknown}")
+        resolutions[case_id] = resolved
     return resolutions
 
 

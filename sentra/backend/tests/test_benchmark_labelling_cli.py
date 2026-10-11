@@ -137,3 +137,24 @@ def test_adjudicate_records_a_resolution_and_then_reports_none(monkeypatch, tmp_
 def test_a_malformed_resolution_is_rejected_rather_than_half_applied(monkeypatch, tmp_path):
     with pytest.raises(SystemExit):
         _run(monkeypatch, "--store", str(tmp_path / "s"), "adjudicate", "--resolve", "missing-equals-sign")
+
+
+def test_resolve_takes_the_display_ids_adjudicate_prints(monkeypatch, tmp_path, capsys):
+    from app.services.benchmark_label_store import load_adjudication_record
+    from app.services.benchmark_labelling import display_ids
+
+    store = tmp_path / "store"
+    drafted = next(case for case in BENCHMARK_CASES if case.labelled_by == "draft")
+    shown = display_ids(drafted)
+    picks = [shown[evidence_id] for evidence_id in drafted.expected_evidence_ids]
+
+    assert _run(monkeypatch, "--store", str(store), "adjudicate", "--resolve", f"{drafted.case_id}={','.join(picks)}") == 0
+    record = load_adjudication_record(store)
+    assert set(record["resolutions"][drafted.case_id]) == set(drafted.expected_evidence_ids)
+
+
+def test_resolve_refuses_a_day_the_case_does_not_have(monkeypatch, tmp_path):
+    drafted = next(case for case in BENCHMARK_CASES if case.labelled_by == "draft")
+    with pytest.raises(SystemExit, match="no candidate"):
+        _run(monkeypatch, "--store", str(tmp_path / "s"), "adjudicate", "--resolve", f"{drafted.case_id}=k99")
+    assert not (tmp_path / "s" / "adjudication.json").exists()

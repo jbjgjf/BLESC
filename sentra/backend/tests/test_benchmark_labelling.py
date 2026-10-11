@@ -5,6 +5,7 @@ be checked now is that the protocol cannot quietly produce a benchmark that
 grades itself.
 """
 
+import re
 from collections import Counter
 
 import pytest
@@ -18,6 +19,7 @@ from app.services.benchmark_labelling import (
     apply_human_labels,
     assign_splits,
     cohens_kappa,
+    display_ids,
     labelling_file,
     labelling_status,
     labelling_task,
@@ -44,10 +46,53 @@ def test_candidate_order_is_not_the_authoring_order():
     will happily exploit. A rater is no different."""
     moved = 0
     for case in BENCHMARK_CASES:
-        shown = [candidate["evidence_id"] for candidate in labelling_task(case)["candidates"]]
-        if shown != [day.evidence_id for day in case.evidence]:
+        internal = {shown: evidence_id for evidence_id, shown in display_ids(case).items()}
+        order = [internal[candidate["evidence_id"]] for candidate in labelling_task(case)["candidates"]]
+        if order != [day.evidence_id for day in case.evidence]:
             moved += 1
     assert moved == len(BENCHMARK_CASES)
+
+
+def test_the_id_a_rater_is_shown_does_not_name_the_drafted_role():
+    """The internal ids ARE the drafted answer key, spelled as a prefix.
+
+    `c*` is a drafted target, `f*` a foil, `d*` a decoy. A rater handed those
+    ids is told which candidate the author meant before reading a word — and in
+    the red-herring cases, telling a target from a foil is the only judgement
+    that is actually hard. Shuffling the order hid the position and left the
+    name. Every id a rater sees has to look the same whatever the day was
+    drafted as.
+    """
+    for case in BENCHMARK_CASES:
+        shown = [candidate["evidence_id"] for candidate in labelling_task(case)["candidates"]]
+        internal = {day.evidence_id for day in case.evidence}
+        assert not set(shown) & internal, f"{case.case_id} shows its internal ids"
+        assert len({re.sub(r"\d+", "", value) for value in shown}) == 1, (
+            f"{case.case_id}: shown ids differ in form by role: {sorted(set(shown))[:6]}"
+        )
+
+
+def test_a_decoy_motif_does_not_say_decoy_to_the_rater():
+    """The decoy placeholders are numbered concepts named `decoy NN`.
+
+    That keeps the graph language-free for the retrieval conditions, and it
+    also writes the word "decoy" on every wrong day a rater is shown.
+    """
+    for case in BENCHMARK_CASES:
+        for candidate in labelling_task(case)["candidates"]:
+            for motif in candidate["graph_motifs"]:
+                assert "decoy" not in motif.lower(), f"{case.case_id}: {motif}"
+
+
+def test_a_rater_answering_in_shown_ids_reaches_the_cases_own_ids():
+    """The display ids are a presentation layer; the answer key stays in the
+    case's own ids, so every downstream consumer is unchanged."""
+    case = next(case for case in BENCHMARK_CASES if case.labelled_by == "draft")
+    shown = display_ids(case)
+    rows = labelling_file("rater-a", [case])
+    rows[0]["selected_evidence_ids"] = [shown[evidence_id] for evidence_id in case.expected_evidence_ids]
+    labels = read_rater_labels(rows, [case])
+    assert labels.selections[case.case_id] == set(case.expected_evidence_ids)
 
 
 def test_candidate_order_is_stable_across_calls():

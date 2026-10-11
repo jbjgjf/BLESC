@@ -300,3 +300,55 @@ def test_the_default_run_is_unchanged_when_no_labels_exist():
 
     assert result["label_provenance"]["source"] == "drafted"
     assert any("PRELIMINARY" in warning for warning in result["labelling_status"]["warnings"])
+
+
+# ---- what the rater and the adjudicator see (#127) -------------------------
+
+
+def test_a_file_exported_for_another_dataset_version_is_refused(tmp_path):
+    """Display ids are numbered in presentation order, which comes from the
+    candidate set. A file from another version can say `k07` and mean a
+    different day, and the id alone would never show it."""
+    case = DRAFTED[0]
+    path = write_labelling_file("rater-a", tmp_path / "a.json", [case])
+    rows = _fill(path, lambda row: [row["candidates"][0]["evidence_id"]])
+    for row in rows:
+        row["dataset_version"] = "0.0.1-old"
+    path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(LabelStoreError, match="dataset version"):
+        store_rater_file(path, tmp_path / "store", [case])
+
+
+def test_a_rater_file_in_display_ids_becomes_the_cases_own_ids(tmp_path):
+    from app.services.benchmark_labelling import display_ids
+
+    store = tmp_path / "store"
+    case = DRAFTED[0]
+    shown = display_ids(case)
+    path = write_labelling_file("rater-a", tmp_path / "a.json", [case])
+    _fill(path, lambda row: [shown[evidence_id] for evidence_id in case.expected_evidence_ids])
+    store_rater_file(path, store, [case])
+
+    dataset = resolve_dataset(store, [case])
+    assert dataset.cases[0].labelled_by == "human"
+    assert set(dataset.cases[0].expected_evidence_ids) == set(case.expected_evidence_ids)
+
+
+def test_the_dispute_report_does_not_tell_the_adjudicator_which_rater_matched_the_draft(tmp_path):
+    """In the case's own ids, `c1` against `f2` says which rater agreed with the
+    drafted key, and adjudication would drift toward it."""
+    store = tmp_path / "store"
+    case = DRAFTED[0]
+    ids = [day.evidence_id for day in case.evidence]
+    for rater, picks in (("rater-a", ids[:2]), ("rater-b", ids[1:4])):
+        path = write_labelling_file(rater, tmp_path / f"{rater}.json", [case])
+        _fill(path, lambda row, picks=picks: picks)
+        store_rater_file(path, store, [case])
+
+    [entry] = dispute_report(store, [case])
+    internal = {day.evidence_id for day in case.evidence}
+    for field in ("first", "second", "only_first", "only_second"):
+        assert not set(entry[field]) & internal, f"{field} shows internal ids: {entry[field]}"
+    assert set(entry["candidates"]) == set(entry["first"]) | set(entry["second"])
+    assert all(text for text in entry["candidates"].values())
