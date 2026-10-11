@@ -16,7 +16,7 @@ import { executeRun } from "./runner.ts";
 runCli(process.argv.slice(2), {
   loadEnv,
   provisionAccounts,
-  resetSyntheticData,
+  resetSyntheticData: (env) => resetSyntheticData(adminClient(env)),
   adminClient,
   executeRun: (options) => executeRun(options),
   now: () => new Date(),

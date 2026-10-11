@@ -83,7 +83,7 @@ NEXT_PUBLIC_API_URL= npx next start -p 3940
 ```bash
 npm install && npx playwright install chromium
 
-npm run provision   # 20 students + 4 counselors + reviewer, Lab org, roster
+npm run provision   # 28 students + 4 counselors + reviewer, Lab org, roster
 npm run reset       # wipe synthetic-account content only (reset isolation)
 npm run smoke       # 12 stratified live cases (screenshots/video captured)
 npm run full -- --confirm-full          # full 300-conversation matrix
@@ -97,6 +97,34 @@ npm test            # 21 unit tests (graders, matrix, cost, verdict, PDF)
 
 Account passwords are generated fresh each run and live only in process
 memory. Synthetic emails end in `@synthetic.blesc.invalid`.
+
+### What a reset empties (#375)
+
+`smoke` and `full` reset before every run. The reset empties, for the
+synthetic accounts only, every table with an `owner_user_id` column except an
+explicit list of exclusions (`RESET_TABLES` / `RESET_EXCLUSIONS` in
+`src/provision.ts`, each exclusion with its reason). A test derives the set of
+owner-scoped tables from `sentra/supabase/migrations` and fails when a new one
+is neither reset nor excluded, and checks the deletion order against every
+foreign key that does not cascade. The reset prints what it emptied, which
+tables the target database is missing (its schema is behind), and what it
+deliberately left; any other failure stops the run.
+
+It now includes `safety_escalations`. Its dedupe key is per participant, level,
+surface and UTC hour, and participants are kept, so before this a second run
+inside the same hour recorded **no** escalation row, delivery or ops alert —
+while the case still graded as a pass on the reply text.
+
+Left in place on purpose: `participants`, `profiles`, `oversight_roster`
+(provisioning state); `consent_records`, `pilot_enrollments`,
+`pilot_guardian_verifications` (account state the harness does not
+re-create); `pilot_enrollment_events` and `educator_access_log` (append-only).
+
+**Not re-tested after the first run: the terms acceptance on `/legal`.**
+`legal_acceptances` is append-only for the service role (20260927010000), so a
+synthetic account that has accepted once starts every later run already
+accepted. The harness does not work around this (it would need fresh accounts
+per run); read every run after an account's first as not exercising that path.
 
 ## Pass gates (hard)
 
