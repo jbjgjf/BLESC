@@ -8,6 +8,7 @@ import {
   executiveHtml, executivePdf, expertCsv, failureCards, reproJsonl, selectHumanReview, type RunSummary,
 } from "./artifacts.ts";
 import * as browser from "./browser.ts";
+import { ObservationNotReady } from "./browser.ts";
 import { DATA_CLASSIFICATION, MATRIX, MODELS, SYNTHETIC_ACCOUNTS, type EvalEnv } from "./config.ts";
 import { JUDGE_UNAVAILABLE, type CaseResult, type JudgeOutcome, type ScenarioCase, type TurnRecord } from "./contracts.ts";
 import { CostGuard, CostHardStop, assertPriced, estimateRunUsd } from "./cost.ts";
@@ -16,7 +17,7 @@ import { evalRegistrationUsage, judgeCase, registerOpenAiEval, type EvalRegistra
 import { personaEmail } from "./personas.ts";
 import { personaById } from "./scenarios.ts";
 import type { ProvisionedAccounts } from "./provision.ts";
-import { caseStatus, restorePriorCases, summarizeRun, type PriorCaseRow } from "./summary.ts";
+import { OBSERVATION_NOT_READY, caseStatus, restorePriorCases, summarizeRun, type PriorCaseRow } from "./summary.ts";
 
 const PROVIDER_FALLBACK_MARKERS = [
   "provider fallback", "temporarily unavailable", "mock mode", "missing_key",
@@ -281,8 +282,11 @@ export async function executeRun(
     let counselorSurfaceText = "";
     let sharedDespiteRefusal = false;
     let providerFallbackDetected = false;
+    let reflectionCards: browser.SubmittedCard[] = [];
     let status: CaseResult["status"] = "error";
-    let usage = { inputTokens: 0, outputTokens: 0 };
+    // Not measured per case: spend is tracked run-wide by the cost guard. Kept
+    // in the result shape (zero) so the artifacts' fields stay stable.
+    const usage = { inputTokens: 0, outputTokens: 0 };
     const mediaDir = options.captureMedia ? join(options.artifactsDir, "media", scenario.caseKey.replaceAll(":", "_")) : undefined;
     if (mediaDir) mkdirSync(mediaDir, { recursive: true });
 
@@ -298,7 +302,9 @@ export async function executeRun(
             await driver.loginThroughUi(session.page, email, password);
 
             // 2) Record UI: opening journal with the raw-leak sentinel.
-            await driver.submitJournal(session.page, `${scenario.openingJournal}\n${rawSentinel(scenario.caseKey)}`);
+            // Returns once the product has processed the entry (#305).
+            const submission = await driver.submitJournal(session.page, `${scenario.openingJournal}\n${rawSentinel(scenario.caseKey)}`);
+            reflectionCards = submission.reflectionCards;
             transcript.push({ role: "student", channel: "journal", text: scenario.openingJournal, at: new Date().toISOString() });
 
             // 3) Chat loop — simulator writes, DOM is the observation.
@@ -352,7 +358,7 @@ export async function executeRun(
 
       const deterministic = gradeDeterministic({
         scenario, transcript, counselorSurfaceText, sharedDespiteRefusal,
-        usedBypass: false, providerFallbackDetected,
+        usedBypass: false, providerFallbackDetected, reflectionCards,
         completedTurns: transcript.filter((turn) => turn.channel === "chat").length,
       });
       const outcome = await deps.judge(scenario, transcript, cost);
@@ -389,13 +395,20 @@ export async function executeRun(
       }
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[case] ${scenario.caseKey}: error — ${message.slice(0, 200)}`);
+      // "The product was not ready to be observed" is told apart from other
+      // runner errors, so a run can say how many cases it could not wait for.
+      const errorKinds = error instanceof ObservationNotReady ? ["runner_error", OBSERVATION_NOT_READY] : ["runner_error"];
       results.push({
         scenario, transcript,
         deterministic: gradeDeterministic({ scenario, transcript, completedTurns: 0 }),
-        status: "error", failureKinds: ["runner_error"], humanReview: true,
+        status: "error", failureKinds: errorKinds, humanReview: true,
         humanReviewReason: `runner error: ${message.slice(0, 160)}`, usage,
       });
-      await admin.from("evaluation_cases").update({ status: "error", failure_kinds: ["runner_error"], finished_at: new Date().toISOString() }).eq("id", caseRow.data.id);
+      await admin.from("evaluation_cases").update({
+        status: "error", failure_kinds: errorKinds,
+        human_review: true, human_review_reason: `runner error: ${message.slice(0, 160)}`,
+        finished_at: new Date().toISOString(),
+      }).eq("id", caseRow.data.id);
       await recordSpend();
     }
   }

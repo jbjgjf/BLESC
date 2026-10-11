@@ -7,7 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { COST_LIMITS, MATRIX, type EvalEnv } from "./config.ts";
 import type { ScenarioCase } from "./contracts.ts";
 import { UnpricedModel, estimateRunUsd } from "./cost.ts";
-import type { ProvisionedAccounts } from "./provision.ts";
+import type { ProvisionedAccounts, ResetReport } from "./provision.ts";
 import type { RunOptions } from "./runner.ts";
 import type { RunSummary } from "./artifacts.ts";
 import { buildMatrix, smokeSelection } from "./scenarios.ts";
@@ -70,12 +70,23 @@ export function selectScenarios(args: CliArgs, all: ScenarioCase[] = buildMatrix
 export interface CliDeps {
   loadEnv(): EvalEnv;
   provisionAccounts(env: EvalEnv): Promise<ProvisionedAccounts>;
-  resetSyntheticData(env: EvalEnv): Promise<{ wipedUsers: number }>;
+  resetSyntheticData(env: EvalEnv): Promise<ResetReport>;
   adminClient(env: EvalEnv): SupabaseClient;
   executeRun(options: RunOptions): Promise<{ runId: string; summary: RunSummary }>;
   now(): Date;
   log(message: string): void;
   error(message: string): void;
+}
+
+/** What a reset did and did not do, for the operator (#375). */
+export function describeReset(report: ResetReport): string[] {
+  const rows = report.deleted.reduce((sum, entry) => sum + (entry.rows ?? 0), 0);
+  const lines = [`[reset] emptied ${report.deleted.length} table(s) for ${report.wipedUsers} synthetic accounts (${rows} rows)`];
+  if (report.missing.length) {
+    lines.push(`[reset] WARNING: ${report.missing.length} table(s) the reset expects are missing from this database — its schema is behind the migrations: ${report.missing.join(", ")}`);
+  }
+  for (const { table, reason } of report.excluded) lines.push(`[reset] not reset: ${table} — ${reason}`);
+  return lines;
 }
 
 /** Runs one CLI invocation and returns the exit code. */
@@ -104,8 +115,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     return 0;
   }
   if (command === "reset") {
-    const { wipedUsers } = await deps.resetSyntheticData(env);
-    deps.log(`[reset] wiped content for ${wipedUsers} synthetic accounts`);
+    for (const line of describeReset(await deps.resetSyntheticData(env))) deps.log(line);
     return 0;
   }
 
@@ -140,7 +150,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     return 2;
   }
 
-  await deps.resetSyntheticData(env);
+  for (const line of describeReset(await deps.resetSyntheticData(env))) deps.log(line);
   const accounts = await deps.provisionAccounts(env);
   const admin = deps.adminClient(env);
   const stamp = deps.now().toISOString().replace(/[:.]/g, "-").slice(0, 19);
