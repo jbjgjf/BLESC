@@ -4,6 +4,14 @@ import { ja } from "../../frontend/src/lib/i18n/ja.ts";
 import { ObservationNotReady, counselorReadOversight, grantConsentIfRequested, submitJournal } from "../src/browser.ts";
 import { FakePage } from "./fakes/page.ts";
 
+// What is tested in browser.ts, and what is not (#385). The waits are: each
+// helper runs against a fake Page where time passes only when the test says, so
+// "returns before the product is done" and "reads a page that never loaded"
+// fail here. The selectors are not: whether `journal-input` or `chat-response`
+// exists is a fact about the product's DOM, and only the product can answer it
+// — a test that greps sentra/frontend for the strings would pass on a dead
+// selector (#288). They have to be checked against a running product.
+//
 // #305: submitJournal "waited" for extraction with `isEnabled()`, an instant
 // query whose result was discarded, plus a fixed 1.5 s sleep. Extraction takes
 // up to ~28 s, so every observation after it was taken against a journal the

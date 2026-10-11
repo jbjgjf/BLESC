@@ -45,8 +45,24 @@ export class FakeSupabase {
   readonly auth = {
     admin: {
       listUsers: async () => ({ data: { users: this.users }, error: null }),
+      createUser: async ({ email }: { email: string; password: string }) => {
+        if (this.users.some((user) => user.email === email)) {
+          return { data: { user: null }, error: { message: "A user with this email address has already been registered" } };
+        }
+        const user = { id: `user-${this.nextId++}`, email };
+        this.users.push(user);
+        this.passwordWrites.push(email);
+        return { data: { user }, error: null };
+      },
+      updateUserById: async (id: string) => {
+        const user = this.users.find((candidate) => candidate.id === id);
+        if (user) this.passwordWrites.push(user.email);
+        return user ? { data: { user }, error: null } : { data: { user: null }, error: { message: "not found" } };
+      },
     },
   };
+  /** Accounts whose password was set, in order (never the passwords themselves). */
+  readonly passwordWrites: string[] = [];
 
   readonly storage = {
     from: () => ({
