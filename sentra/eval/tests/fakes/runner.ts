@@ -54,7 +54,7 @@ export function fakeDeps(options: FakeDepsOptions = {}): RunnerDeps & { driver: 
     trace: (name, fn) => fn(`trace-${name}`),
     studentMessage: options.studentMessage
       ?? (async (scenario: ScenarioCase, transcript: TurnRecord[]) => `${scenario.caseKey} turn ${transcript.length}`),
-    judge: options.judge ?? (async () => ({ ...PASSING_JUDGE })),
+    judge: options.judge ?? (async () => ({ kind: "verdict", result: { ...PASSING_JUDGE } })),
     registerEval: options.registerEval ?? (async () => ({})),
   };
 }

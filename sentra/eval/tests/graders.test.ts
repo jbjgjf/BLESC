@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import type { ScenarioCase, TurnRecord } from "../src/contracts.ts";
 import { failureKinds, gradeDeterministic, rawSentinel } from "../src/graders/deterministic.ts";
+import { judgeCase, type JudgeClient } from "../src/graders/judge.ts";
+import { CostGuard } from "../src/cost.ts";
 import { ESCALATION_MARKERS } from "../src/contracts.ts";
 
 const scenario = (over: Partial<ScenarioCase["expected"]> = {}, family: ScenarioCase["family"] = "safety_risk"): ScenarioCase => ({
@@ -164,4 +166,82 @@ describe("observed phrasings from live runs", () => {
       assert.equal(result.falseEscalation, observed.expectFalseEscalation, observed.note ?? observed.text);
     });
   }
+});
+
+// The judge's response, as the OpenAI client returns it. Only the fields
+// judgeCase reads; the rest of a ChatCompletion is irrelevant here.
+type FakeChoice = { finish_reason: string; message: { content: string | null; refusal?: string | null } };
+const fakeJudgeClient = (choice: FakeChoice | undefined) => ({
+  chat: {
+    completions: {
+      create: async () => ({
+        choices: choice ? [choice] : [],
+        usage: { prompt_tokens: 100, completion_tokens: 20 },
+      }),
+    },
+  },
+}) as unknown as JudgeClient;
+
+const VALID_VERDICT = JSON.stringify({
+  verdict: "pass", safetyScore: 0.9, empathyScore: 0.8, boundaryScore: 1, rationale: "fine",
+});
+
+describe("judge response handling (#285)", () => {
+  const judge = (choice: FakeChoice | undefined) =>
+    judgeCase(fakeJudgeClient(choice), scenario(), turns("call 988"), new CostGuard());
+
+  it("reads a well-formed verdict", async () => {
+    const outcome = await judge({ finish_reason: "stop", message: { content: VALID_VERDICT, refusal: null } });
+    assert.equal(outcome.kind, "verdict");
+    assert.equal(outcome.kind === "verdict" && outcome.result.verdict, "pass");
+  });
+
+  it("treats a refusal as ungraded, without parsing anything", async () => {
+    const outcome = await judge({ finish_reason: "stop", message: { content: null, refusal: "I can't help with that." } });
+    assert.equal(outcome.kind, "unavailable");
+    assert.match(outcome.kind === "unavailable" ? outcome.reason : "", /refus/i);
+  });
+
+  it("treats a truncated response as ungraded even when the fragment would parse", async () => {
+    // A cut-off response is not a verdict, whatever its prefix looks like.
+    const outcome = await judge({ finish_reason: "length", message: { content: VALID_VERDICT } });
+    assert.equal(outcome.kind, "unavailable");
+    assert.match(outcome.kind === "unavailable" ? outcome.reason : "", /length/);
+  });
+
+  it("treats broken JSON as ungraded instead of throwing", async () => {
+    const outcome = await judge({ finish_reason: "stop", message: { content: '{"verdict":"pa' } });
+    assert.equal(outcome.kind, "unavailable");
+  });
+
+  it("treats a response without a verdict as ungraded", async () => {
+    const outcome = await judge({
+      finish_reason: "stop",
+      message: { content: JSON.stringify({ safetyScore: 1, empathyScore: 1, boundaryScore: 1, rationale: "x" }) },
+    });
+    assert.equal(outcome.kind, "unavailable");
+  });
+
+  it("treats an unknown verdict or a non-numeric score as ungraded", async () => {
+    for (const content of [
+      JSON.stringify({ verdict: "maybe", safetyScore: 1, empathyScore: 1, boundaryScore: 1, rationale: "x" }),
+      JSON.stringify({ verdict: "pass", safetyScore: "high", empathyScore: 1, boundaryScore: 1, rationale: "x" }),
+      JSON.stringify({ verdict: "pass", safetyScore: 1, empathyScore: 1, rationale: "x" }),
+      "[]",
+      "null",
+    ]) {
+      const outcome = await judge({ finish_reason: "stop", message: { content } });
+      assert.equal(outcome.kind, "unavailable", content);
+    }
+  });
+
+  it("treats an empty choice list as ungraded", async () => {
+    assert.equal((await judge(undefined)).kind, "unavailable");
+  });
+
+  it("still charges the cost guard for an ungraded response", async () => {
+    const cost = new CostGuard();
+    await judgeCase(fakeJudgeClient({ finish_reason: "length", message: { content: "{" } }), scenario(), turns("x"), cost);
+    assert.ok(cost.total() > 0, "the tokens were spent whether or not they parsed");
+  });
 });

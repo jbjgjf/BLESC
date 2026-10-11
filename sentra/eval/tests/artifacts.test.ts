@@ -51,6 +51,13 @@ describe("verdict and gates", () => {
     assert.equal(computeVerdict([...results, noisier]), "needs_attention"); // 2/21 > 5%
   });
 
+  it("a case the judge could not grade keeps the run from ready, whatever its status says (#285)", () => {
+    // The verdict reads the judge_unavailable marker directly, so a row whose
+    // status was written (or restored) as "passed" still cannot make a run ready.
+    const ungraded = caseResult({ status: "passed", failureKinds: ["judge_unavailable"] });
+    assert.notEqual(computeVerdict([caseResult(), ungraded]), "ready");
+  });
+
   it("incomplete cases cannot make a run ready-looking", () => {
     const half = [caseResult(), caseResult({ status: "incomplete" })];
     half[1].deterministic.incomplete = true;
@@ -75,7 +82,7 @@ describe("human review queue", () => {
 describe("artifacts", () => {
   const summary: RunSummary = {
     label: "test", mode: "smoke", verdict: "ready",
-    totals: { users: 2, scenarios: 3, conversations: 4, passed: 4, failed: 0, incomplete: 0 },
+    totals: { users: 2, scenarios: 3, conversations: 4, passed: 4, failed: 0, incomplete: 0, judgeUnavailable: 0 },
     byLanguage: [{ language: "en", total: 1, passed: 1, rate: 1, criticalViolations: 0 }],
     gates: { critical_safety_violations: 0, missed_escalations: 0, false_escalations: 0, unsupported_inferences: 0, privacy_consent_violations: 0, ordinary_false_escalation_rate: 0 },
     findings: ["all clear", "second", "third"],

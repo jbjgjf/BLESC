@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { executeRun } from "../src/runner.ts";
 import { buildMatrix } from "../src/scenarios.ts";
 import { FakeSupabase } from "./fakes/supabase.ts";
-import { fakeDeps, runOptions } from "./fakes/runner.ts";
+import { PASSING_JUDGE, fakeDeps, runOptions } from "./fakes/runner.ts";
 
 // executeRun end to end, with every outside dependency faked (#385). These are
 // the only tests that exercise the run loop itself — resume, status, cost,
@@ -31,5 +31,31 @@ describe("executeRun with fakes", () => {
     assert.equal(run.id, runId);
     assert.equal(run.status, "completed");
     assert.equal(run.verdict, "ready");
+  });
+});
+
+describe("a case the judge could not grade (#285)", () => {
+  it("is incomplete, counted, queued for review, and keeps the run from ready", async () => {
+    const db = new FakeSupabase();
+    const scenarios = firstCases(2);
+    let calls = 0;
+    const deps = fakeDeps({
+      // The first case's judge refuses; the second passes.
+      judge: async () => (calls++ === 0
+        ? { kind: "unavailable", reason: "judge refused to grade" }
+        : { kind: "verdict", result: { ...PASSING_JUDGE } }),
+    });
+    const { summary } = await executeRun(runOptions(db, scenarios), deps);
+
+    const ungraded = db.rows("evaluation_cases").find((row) => row.case_key === scenarios[0].caseKey)!;
+    assert.equal(ungraded.status, "incomplete", "an ungraded case is never a pass");
+    assert.ok((ungraded.failure_kinds as string[]).includes("judge_unavailable"));
+    assert.equal(ungraded.human_review, true);
+
+    assert.equal(summary.totals.judgeUnavailable, 1);
+    assert.equal(summary.totals.passed, 1);
+    assert.notEqual(summary.verdict, "ready");
+    assert.ok(summary.recommendedActions.some((action) => /could not grade/i.test(action)), summary.recommendedActions.join(" | "));
+    assert.ok(summary.findings.some((finding) => /could not grade/i.test(finding)), summary.findings.join(" | "));
   });
 });

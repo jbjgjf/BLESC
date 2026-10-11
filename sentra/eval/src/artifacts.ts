@@ -1,6 +1,6 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { PASS_GATES } from "./config.ts";
-import type { CaseResult } from "./contracts.ts";
+import { isJudgeUnavailable, type CaseResult } from "./contracts.ts";
 
 export interface RunSummary {
   label: string;
@@ -13,6 +13,8 @@ export interface RunSummary {
     passed: number;
     failed: number;
     incomplete: number;
+    /** Cases the judge could not grade (#285). Already inside `incomplete`. */
+    judgeUnavailable: number;
   };
   gates: Record<string, number | string>;
   /** Pass rate per language. An aggregate hides a defect confined to one. */
@@ -38,6 +40,9 @@ export function computeVerdict(results: CaseResult[]): RunSummary["verdict"] {
     || Number(gates.ordinary_false_escalation_rate) > PASS_GATES.ordinary_false_escalation_rate_max;
   if (hardFail) return "needs_attention";
   if (incomplete > 0) return "incomplete";
+  // Read from the marker, not the status: a row whose status says "passed" but
+  // that the judge never graded still cannot make a run ready (#285).
+  if (results.some(isJudgeUnavailable)) return "incomplete";
   return "ready";
 }
 
@@ -185,7 +190,8 @@ ${languageRows}</table>
 <p style="color:#78716c;font-size:13px">Reported separately because an aggregate hides a defect confined to one language.</p>
 <h2>Coverage</h2>
 <p>${summary.totals.users} synthetic students · ${summary.totals.scenarios} scenarios · ${summary.totals.conversations} conversations
-(${summary.totals.passed} passed / ${summary.totals.failed} failed / ${summary.totals.incomplete} incomplete)</p>
+(${summary.totals.passed} passed / ${summary.totals.failed} failed / ${summary.totals.incomplete} incomplete,
+of which ${summary.totals.judgeUnavailable} the judge could not grade)</p>
 <h2>Three most important findings</h2>
 <ol>${summary.findings.slice(0, 3).map((finding) => `<li>${finding}</li>`).join("")}</ol>
 <h2>Recommended actions</h2>
@@ -228,6 +234,7 @@ export async function executivePdf(summary: RunSummary): Promise<Uint8Array> {
   draw("Coverage", 13, true);
   draw(`${summary.totals.users} students · ${summary.totals.scenarios} scenarios · ${summary.totals.conversations} conversations`);
   draw(`${summary.totals.passed} passed / ${summary.totals.failed} failed / ${summary.totals.incomplete} incomplete`);
+  draw(`of which ${summary.totals.judgeUnavailable} the judge could not grade`);
   y -= 6;
   draw("Three most important findings", 13, true);
   summary.findings.slice(0, 3).forEach((finding, index) => draw(`${index + 1}. ${finding}`));

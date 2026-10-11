@@ -9,7 +9,7 @@ import {
 } from "./artifacts.ts";
 import * as browser from "./browser.ts";
 import { DATA_CLASSIFICATION, MATRIX, MODELS, SYNTHETIC_ACCOUNTS, type EvalEnv } from "./config.ts";
-import type { CaseResult, JudgeResult, ScenarioCase, TurnRecord } from "./contracts.ts";
+import { JUDGE_UNAVAILABLE, type CaseResult, type JudgeOutcome, type ScenarioCase, type TurnRecord } from "./contracts.ts";
 import { CostGuard, CostHardStop, estimateRunUsd } from "./cost.ts";
 import { failureKinds, gradeDeterministic, rawSentinel } from "./graders/deterministic.ts";
 import { judgeCase, registerOpenAiEval, type EvalRow } from "./graders/judge.ts";
@@ -130,7 +130,7 @@ export interface RunnerDeps {
   /** Runs `fn` inside a trace and hands it the trace id (if tracing is on). */
   trace<T>(name: string, fn: (traceId: string | undefined) => Promise<T>, metadata: Record<string, string>): Promise<T>;
   studentMessage(scenario: ScenarioCase, transcript: TurnRecord[], cost: CostGuard): Promise<string>;
-  judge(scenario: ScenarioCase, transcript: TurnRecord[], cost: CostGuard): Promise<JudgeResult>;
+  judge(scenario: ScenarioCase, transcript: TurnRecord[], cost: CostGuard): Promise<JudgeOutcome>;
   registerEval(label: string, rows: EvalRow[]): Promise<{ evalId?: string; runId?: string }>;
 }
 
@@ -289,20 +289,28 @@ export async function executeRun(
         usedBypass: false, providerFallbackDetected,
         completedTurns: transcript.filter((turn) => turn.channel === "chat").length,
       });
-      const judge = await deps.judge(scenario, transcript, cost);
+      const outcome = await deps.judge(scenario, transcript, cost);
       const kinds = failureKinds(deterministic);
-      status = caseStatus(deterministic, kinds, judge);
+      if (outcome.kind === "unavailable") kinds.push(JUDGE_UNAVAILABLE);
+      status = caseStatus(deterministic, kinds, outcome);
+      const judge = outcome.kind === "verdict" ? outcome.result : undefined;
 
       const result: CaseResult = {
         scenario, transcript, deterministic, judge, status,
-        failureKinds: kinds, humanReview: false, usage, traceRef: traceRefCaptured,
+        failureKinds: kinds,
+        // Queued with the reason, so the reviewer sees why there is no verdict.
+        humanReview: outcome.kind === "unavailable",
+        humanReviewReason: outcome.kind === "unavailable" ? `judge unavailable: ${outcome.reason}` : undefined,
+        usage, traceRef: traceRefCaptured,
       };
       results.push(result);
       await admin.from("evaluation_cases").update({
         transcript_json: transcript as unknown as Record<string, unknown>[],
         turn_count: transcript.length,
         deterministic_json: deterministic as unknown as Record<string, unknown>,
-        judge_json: judge as unknown as Record<string, unknown>,
+        // Never a verdict-shaped object for an ungraded case: the dashboard
+        // reads judge_json.verdict, and an absent one shows as absent.
+        judge_json: (judge ?? { unavailable: true, reason: outcome.kind === "unavailable" ? outcome.reason : "" }) as unknown as Record<string, unknown>,
         status, failure_kinds: kinds, trace_ref: traceRefCaptured ?? null,
         finished_at: new Date().toISOString(),
       }).eq("id", caseRow.data.id);
