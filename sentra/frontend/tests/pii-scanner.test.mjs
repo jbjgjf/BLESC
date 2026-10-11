@@ -51,6 +51,67 @@ describe("scanForPii — what it must catch", () => {
   });
 });
 
+/**
+ * The width a Japanese IME happens to be in must not change what is found
+ * (#389). Each case scans the half-width sentence and the full-width one and
+ * compares them, so the half-width result is the expectation rather than a
+ * literal: a full-width phone number that scans as nothing is a row the
+ * reviewer cannot tell apart from a clean one.
+ */
+describe("scanForPii — full-width digits and separators", () => {
+  const PAIRS = [
+    ["phone", "連絡先は 090-1234-5678 です。", "連絡先は ０９０－１２３４－５６７８ です。"],
+    ["phone", "連絡先は 09012345678 です。", "連絡先は ０９０１２３４５６７８ です。"],
+    ["phone", "学校の番号は03-1234-5678", "学校の番号は０３ー１２３４ー５６７８"],
+    ["phone", "連絡先は 090-1234-5678 です。", "連絡先は 090〜1234〜5678 です。"],
+    ["phone", "連絡先は 090-1234-5678 です。", "連絡先は 090－1234－5678 です。"],
+    ["postal_code", "〒150-0001 に住んでいる。", "〒１５０－０００１ に住んでいる。"],
+    ["postal_code", "〒150-0001 に住んでいる。", "〒１５０ー０００１ に住んでいる。"],
+    ["class_identifier", "2年3組の出席番号12番です。", "２年３組の出席番号１２番です。"],
+    ["birth_date", "2009年5月6日生まれ。", "２００９年５月６日生まれ。"],
+    ["birth_date", "2009/5/6生まれ。", "２００９／５／６生まれ。"],
+    ["birth_date", "2009-05-06生まれ。", "２００９－０５－０６生まれ。"],
+  ];
+
+  for (const [kind, half, full] of PAIRS) {
+    it(`finds the same ${kind} in ${full}`, () => {
+      const expected = scanForPii(half);
+      const actual = scanForPii(full);
+      assert.ok(expected.some((finding) => finding.kind === kind), half);
+      assert.deepEqual(actual.map((finding) => finding.kind), expected.map((finding) => finding.kind));
+      assert.deepEqual(actual.map((finding) => finding.confidence), expected.map((finding) => finding.confidence));
+      // Offsets index the string that was scanned, full-width and all: that
+      // is what `forStorage` keeps and what `redactFindings` cuts at.
+      for (const finding of actual) assert.equal(full.slice(finding.start, finding.end), finding.text);
+    });
+  }
+
+  it("redacts a full-width number at its own position", () => {
+    const text = "連絡先は ０９０－１２３４－５６７８ です。";
+    assert.equal(redactFindings(text, scanForPii(text)), "連絡先は [phone] です。");
+  });
+
+  it("keeps offsets right after a character NFKC would lengthen", () => {
+    // 「㌔」 is one code unit and normalises to two; a scanner that normalised
+    // first would report the number one position late.
+    const text = "５㌔走った。電話は０９０－１２３４－５６７８";
+    const [phone] = scanForPii(text).filter((finding) => finding.kind === "phone");
+    assert.equal(text.slice(phone.start, phone.end), "０９０－１２３４－５６７８");
+  });
+
+  it("does not match a phone-length fragment inside a longer full-width run", () => {
+    assert.deepEqual(kinds("注文番号は０８０１２３４５６７８９０１です"), []);
+    assert.deepEqual(kinds("注文番号は080１２３４５６７８９０１です"), []);
+  });
+
+  it("does not turn full-width counts, times or bare dates into findings", () => {
+    assert.deepEqual(kinds("全部で１２００人が参加した"), []);
+    assert.deepEqual(kinds("１０：３０に集合した"), []);
+    assert.deepEqual(kinds("９月６日に体育祭があった"), []);
+    assert.deepEqual(kinds("テストは０点から１００点まで"), []);
+  });
+});
+
 describe("scanForPii — what it must not flag", () => {
   it("does not treat a bare date as a birthdate", () => {
     // A journal is mostly dates. Flagging every one would bury the queue.

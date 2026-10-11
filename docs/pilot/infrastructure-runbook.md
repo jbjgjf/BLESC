@@ -146,7 +146,17 @@ step 3  20260906000100_restrict_entries_raw_text_columns.sql        （SELECTの
         20260907000000_restrict_entries_raw_text_writes.sql         （INSERT/UPDATEの絞り込み）
 ```
 
-**step 3 を step 2 より先に打たない。** step 3 は `entries` の table-wide SELECT を落とす。`raw_text` を明示的に選ぶ旧clientが動いている間に打つと、すべての記録閲覧が `permission denied for table entries` になる。migration の先頭にこの順序が書いてあり、[migration_smoke.sh](../../sentra/supabase/scripts/migration_smoke.sh) の step 4 がその記載の有無を検査する。
+**step 3 を step 2 より先に打たない。** step 3 は `entries` の table-wide SELECT を落とす。`raw_text` を明示的に選ぶ旧clientが動いている間に打つと、すべての記録閲覧が `permission denied for table entries` になる。migration の先頭にこの順序が書いてあり、[migration_smoke.sh](../../sentra/supabase/scripts/migration_smoke.sh) の step 5 がその記載の有無を検査する。
+
+#315（研究期間を28日の1区間に変更）の migration も同じ3段階で入れる。
+
+```
+step 1  20261004000000_pilot_study_days.sql          （study_days の追加と既存行の引き継ぎ。旧コードのまま安全）
+step 2  アプリのデプロイ                               （study_days だけを読む版）
+step 3  20261004000100_drop_pilot_study_split.sql    （#315 以前の baseline_days / observation_days を落とす）
+```
+
+step 3 を step 2 より先に打つと、保護者確認画面・パイロットダッシュボード・研究エクスポートが旧列を選んで 42703 で失敗する。既存の研究行は元の長さを保つ（v2で設定した研究は21日のまま）。v3で運用する研究は、`study_days`・`protocol_version`・`consent_document_version` を設定し直す。
 
 ### 4.1 rollback
 
@@ -168,7 +178,9 @@ supabase start
 ./supabase/scripts/migration_smoke.sh
 ```
 
-5つを見る。新規適用、再適用（冪等性）、RLS/権限テスト、順序の記載、`entries` の列権限。**冪等でない migration は落とす。** 部分適用から復旧できなくなる。
+5つを見る。新規適用（`supabase db reset`）、RLS/権限テスト、再適用（冪等性）、再適用後の RLS/権限テスト、順序の記載。`entries` の列権限は `supabase/tests/entries_column_privileges.test.sql` に移した。**冪等でない migration は落とす。** 部分適用から復旧できなくなる。このスクリプトより前に書かれた再適用できない10本は、スクリプト内の `LEGACY_NOT_IDEMPOTENT` に名前を挙げて2周目から外している。
+
+CI の `supabase-rls` job が同じスクリプトを `--skip-fresh` で走らせる（#378）。ローカル以外の `SUPABASE_DB_URL` は拒否する。
 
 ### 5.2 RLSテスト
 
@@ -258,7 +270,10 @@ PILOT_BASE_URL=https://blesc-pilot.vercel.app CRON_SECRET=... \
 | `PILOT_INVITE_CHECK_LIMIT` | 20 | 1時間 | `/api/pilot/invite/check`。DBへの無料の往復 |
 | `PILOT_INVITE_REDEEM_LIMIT` | 10 | 1時間 | `/api/pilot/redeem`。成功すれば導線が終わるので低め |
 | `PILOT_GUARDIAN_ISSUE_LIMIT` | 20 | 1時間 | 保護者確認リンクの発行。1通=学校の連絡経路1回 |
+| `PILOT_GUARDIAN_CONFIRM_LIMIT` | 20 | 1時間 | `/api/pilot/guardian/confirm`。セッションの無い経路なので送信元単位。実在しないトークンでDBを引かせ続けられないようにする（#246） |
+| `LEGAL_ACCEPTANCE_LIMIT` | 10 | 1時間 | `/api/legal/acceptance`（POST）。アカウント単位。同意は押し直す操作ではない（#253） |
 | `EXTERNAL_MODEL_LIMIT` | 60 | 1時間 | `/api/chat`・`/api/audio/transcriptions`。OpenAIの費用 |
+| `AUTHENTICATED_WRITE_LIMIT` | 600 | 1時間 | `/api/voice/turn`。モデルを呼ばずに行を書く認証済み経路。超過時は何も保存しないが、危機の通知だけは落とさない（#369） |
 
 既定値は**正規の参加者が普通に使って当たらない**よう、実利用の見積もりより大きく取っている。
 上限が実利用を捕まえると、誰かが上限を切るので、それが最悪の結果になる。

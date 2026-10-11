@@ -43,7 +43,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.services.raw_text_crypto import encrypt_raw_text, expiry_from
 
 from ..analytics.graph_features import build_temporal_graph_diff
+from ..ontology.relation_endpoints import relation_source_or_unresolved, relation_target_or_unresolved
 from ..schemas.structured import EntrySubmissionResponse
+from .safety import SAFETY_ASSESSMENT_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -759,9 +761,9 @@ def _insert_model_runs_and_extraction(
                 "artifact_type": "safety_assessment",
                 "artifact_id": str(entry_id),
                 "provider": "rules",
-                "model": "safety-assessment-v1",
-                "prompt_version": "safety-assessment-v1",
-                "schema_version": "safety-assessment-v1",
+                "model": SAFETY_ASSESSMENT_VERSION,
+                "prompt_version": SAFETY_ASSESSMENT_VERSION,
+                "schema_version": SAFETY_ASSESSMENT_VERSION,
                 "pipeline_version": pipeline_version,
                 "temperature": 0,
                 "retrieval_config_json": {
@@ -789,6 +791,24 @@ def _insert_model_runs_and_extraction(
             "safety_flags": _json_safe(extraction.safety_flags_json or []),
         }
     ).execute()
+
+
+def _relation_change_key(relation: Dict[str, Any]) -> str:
+    """`source:type:target` for one `graph_change_events` row (#304).
+
+    The endpoints go through the shared resolver, so a relation in the
+    extractor's `source_node_id` shape and one in the validated `source_id`
+    shape get the same key. Reading `source_id` alone keyed every
+    extractor-shaped relation `None:<type>:None`, which made the rows of one
+    version indistinguishable from each other and from every other version.
+    An endpoint under neither name prints as `UNRESOLVED_ENDPOINT` so the row
+    says it could not be resolved instead of looking like a node called None.
+    """
+    return (
+        f"{relation_source_or_unresolved(relation)}"
+        f":{relation.get('type')}"
+        f":{relation_target_or_unresolved(relation)}"
+    )
 
 
 def _insert_graph_version(
@@ -855,7 +875,7 @@ def _insert_graph_version(
             "graph_version_id": graph_version_id,
             "change_type": "added",
             "entity_type": "relation",
-            "entity_key": f"{relation.get('source_id')}:{relation.get('type')}:{relation.get('target_id')}",
+            "entity_key": _relation_change_key(relation),
             "previous_json": None,
             "current_json": relation,
             "semantic_drift_score": 0,

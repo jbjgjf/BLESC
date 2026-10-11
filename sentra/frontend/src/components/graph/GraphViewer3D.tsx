@@ -202,6 +202,21 @@ export function GraphViewer3D({
   }, [realGraphData, showFallback]);
   const usingFallback = ENABLE_GRAPH_DEBUG && showFallback;
 
+  // Say so when nothing could be drawn between the vertices (#303).
+  //
+  // A layer with vertices and no edges looks like a quiet day. It is also what
+  // a relation shape this adapter cannot resolve looks like, and the two were
+  // indistinguishable for as long as the bug lasted. One line per render where
+  // it happens, in development only.
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    const unresolved = realGraphData.unresolvedLinks ?? 0;
+    if (unresolved === 0) return;
+    console.warn(
+      `[graph] ${unresolved} relation(s) named an endpoint this view does not carry and were not drawn`,
+    );
+  }, [realGraphData]);
+
   // Filtered graph data when focused on a node
   const focusedGraphData = useMemo(() => {
     if (!focusNodeId) return graphData;

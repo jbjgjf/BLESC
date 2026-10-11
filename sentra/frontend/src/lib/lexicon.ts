@@ -1,11 +1,11 @@
 /**
  * Building a matcher from a bilingual term list.
  *
- * Shared by `safety-assessment.ts` and `extraction.ts` so the boundary rule has
- * one implementation. It was written for the safety lexicon first; the fallback
+ * The boundary rule was written for the safety lexicon first; the fallback
  * extraction needed the same thing and had been using a bare alternation
  * instead, which matched `help` inside `helpless` and `rest` inside `restless`
- * — the opposite of the signal it was looking for.
+ * — the opposite of the signal it was looking for. `safety-assessment.ts` keeps
+ * its own copy since #388, because it folds kana and width before matching.
  */
 
 /**

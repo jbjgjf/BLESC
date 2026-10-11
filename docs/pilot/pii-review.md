@@ -4,7 +4,7 @@
 **review queue の運用**。scanner が何を見つけ何を見逃すかはあちらに書いてあり、
 ここでは繰り返さない（2つの版ができると、片方が必ず古くなる）。
 
-- scanner: `sentra/frontend/src/lib/piiScanner.ts`（version `pii-scanner-ja-v1`）
+- scanner: `sentra/frontend/src/lib/piiScanner.ts`（version `pii-scanner-ja-v2`）
 - queue: `sentra/supabase/migrations/20260909030000_pilot_pii_review_and_export.sql`
 
 ---
@@ -84,3 +84,21 @@ exportの可否を決めるのは人。scannerはその順番を決めるだけ�
    false positiveの反証を書く。合成テキストのみ。実在の参加者の本文を入れない。
 3. 旧versionで `clear` / `cleared` になっている行は、`scanner_version` が古い行として
    再scan対象になる。古い版で通ったことは新しい版で通ることを意味しない。
+4. **版を上げても再scanは自動では起きない。** scanは提出の書き込み時にしか走らず、
+   既存の行を再scanするscriptはまだ無い（#389）。再scanされるまでのあいだ、古い版の
+   `clear` / `cleared` はexportの前に人が読む対象として扱う。対象の行は次で数えられる
+   （本文は返らない）。
+
+   ```sql
+   select scanner_version, status, count(*)
+     from pilot_pii_reviews
+    where scanner_version <> 'pii-scanner-ja-v2'
+    group by 1, 2;
+   ```
+
+### 版の履歴
+
+| version | 変わったこと |
+| :--- | :--- |
+| `pii-scanner-ja-v1` | 初版 |
+| `pii-scanner-ja-v2` | `phone` / `postal_code` / `class_identifier` / `birth_date` が全角数字と全角の区切り（`－` `ー` `〜` など）を読む（#389）。v1 では「０９０－１２３４－５６７８」が所見なしだった |

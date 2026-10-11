@@ -16,7 +16,15 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { generateResearchCode, hashInviteCode, inviteCodePrefix, normalizeInviteCode } from "./inviteCodes";
+// `.ts` on the relative import so `node --test` can load this file as it is
+// (tests/pilot-store.test.mjs); Node's resolver does not guess extensions.
+import {
+  generateInviteCode,
+  generateResearchCode,
+  hashInviteCode,
+  inviteCodePrefix,
+  normalizeInviteCode,
+} from "./inviteCodes.ts";
 import type { PilotState } from "@/lib/pilotEnrollment";
 
 export type PilotStudy = {
@@ -26,8 +34,8 @@ export type PilotStudy = {
   status: string;
   protocol_version: string;
   consent_document_version: string;
-  baseline_days: number;
-  observation_days: number;
+  /** One collection period (#315). A dry run sets its own length. */
+  study_days: number;
   is_dry_run: boolean;
 };
 
@@ -74,7 +82,7 @@ export type RedeemResult = {
 export async function loadStudyBySlug(client: SupabaseClient, slug: string): Promise<PilotStudy | null> {
   const result = await client
     .from("pilot_studies")
-    .select("id, slug, title, status, protocol_version, consent_document_version, baseline_days, observation_days, is_dry_run")
+    .select("id, slug, title, status, protocol_version, consent_document_version, study_days, is_dry_run")
     .eq("slug", slug)
     .maybeSingle();
 
@@ -89,7 +97,7 @@ export async function loadStudyBySlug(client: SupabaseClient, slug: string): Pro
 export async function loadStudyById(client: SupabaseClient, studyId: string): Promise<PilotStudy | null> {
   const result = await client
     .from("pilot_studies")
-    .select("id, slug, title, status, protocol_version, consent_document_version, baseline_days, observation_days, is_dry_run")
+    .select("id, slug, title, status, protocol_version, consent_document_version, study_days, is_dry_run")
     .eq("id", studyId)
     .maybeSingle();
 
@@ -364,7 +372,6 @@ export async function issueInvitations(
     isMinor?: boolean;
   },
 ): Promise<{ issued: IssuedInvitation[]; error?: string }> {
-  const { generateInviteCode } = await import("./inviteCodes");
   const issued: IssuedInvitation[] = [];
   const rows: Record<string, unknown>[] = [];
 

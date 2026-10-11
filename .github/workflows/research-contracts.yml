@@ -1,11 +1,42 @@
 name: Research Contracts
 
+# When this runs (#295). `pull_request` is what branch protection reads and is
+# the only trigger a merge depends on. The push trigger is for the time before a
+# pull request exists: the RLS and E2E jobs need a local Supabase stack, most
+# people do not start one, and without a push run the first result arrives when
+# the pull request is opened.
+#
+# The branch list is the naming in CONTRIBUTING.md §1 plus `claude/**`, which
+# is what the agent sessions push to. It used to be `main` and `codex/**`, a
+# prefix no branch on the remote has, so no work branch ever got a push run.
+# Listed rather than inverted with `branches-ignore`: `dependabot/**` always
+# has a pull request, so a push run there is a pure duplicate, and a name
+# outside the convention should not start seven jobs by accident.
+#
+# A branch that already has a pull request runs twice per push, once for each
+# event. That is accepted: the repository is public, so the minutes are not
+# billed, and telling the two apart would take an API call per run. What is
+# not accepted is a queue of runs for commits that have been superseded, which
+# is what `concurrency` below removes.
 on:
   pull_request:
   push:
     branches:
       - main
-      - "codex/**"
+      - "claude/**"
+      - "feat/**"
+      - "fix/**"
+      - "chore/**"
+      - "refactor/**"
+      - "docs/**"
+      - "spike/**"
+
+# One live run per branch and event. A newer push cancels the run for the older
+# commit, except on `main`, where every merge keeps its own result so a red
+# main can be traced to the merge that caused it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Every job here checks out, runs tests, and uploads artifacts. None of that
 # needs the token to be able to write: artifact upload authenticates against the
@@ -24,15 +55,44 @@ jobs:
       run:
         working-directory: sentra/eval
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: sentra/eval/package-lock.json
       - run: npm ci
+      # Before the tests, as in frontend-build (#368). Type-aware rules
+      # (no-floating-promises, await-thenable, no-misused-promises), so it
+      # needs the installed dependencies but nothing else.
+      - run: npm run lint
       - run: npm test
       - run: npm run typecheck
+
+  # Known vulnerabilities in the npm dependency trees (#337). Nothing ran
+  # `npm audit` before, so a critical advisory in `next` sat in the lockfile
+  # where nobody would see it. High and critical fail the job unless accepted,
+  # with the reason, in scripts/ci/npm-audit-accepted.json — `npm audit fix
+  # --force` is never the answer (for braces it is a two-major downgrade of
+  # eslint-config-next). `npm audit` reads the lockfile, so no install.
+  dependency-audit:
+    name: npm audit (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - sentra/frontend
+          - sentra/eval
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Test the audit gate
+        run: node --test scripts/ci/npm-audit-gate.test.mjs
+      - name: Audit dependencies
+        run: node scripts/ci/npm-audit-gate.mjs "${{ matrix.project }}"
 
   backend-research:
     name: Backend research contracts
@@ -42,10 +102,10 @@ jobs:
         working-directory: sentra/backend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -73,7 +133,7 @@ jobs:
 
       - name: Upload the research run artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: research-engine-run
           path: ${{ runner.temp }}/blesc-research-smoke
@@ -100,10 +160,10 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
@@ -145,10 +205,10 @@ jobs:
       # were written, they passed on one laptop, and any migration could have
       # quietly undone them.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up the Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v3
         with:
           version: latest
 
@@ -161,22 +221,16 @@ jobs:
       - name: Apply all migrations
         run: supabase db reset --no-seed
 
-      - name: Run the RLS tests
-        run: |
-          set -euo pipefail
-          status=0
-          for file in supabase/tests/*.test.sql; do
-            echo "--- ${file}"
-            # Each script wraps itself in a transaction and rolls back, so they
-            # are independent and leave no rows behind. `ON_ERROR_STOP` is what
-            # turns a raised assertion into a non-zero exit.
-            if ! psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
-                 -v ON_ERROR_STOP=1 -q -f "${file}"; then
-              echo "FAILED: ${file}"
-              status=1
-            fi
-          done
-          exit "${status}"
+      # The reset above is the fresh apply. This runs the RLS and privilege
+      # scripts in supabase/tests against it, then adds what a single apply
+      # cannot show (#378): that every migration can be applied a second time
+      # (what a rollout that stopped halfway needs), that the scripts still pass
+      # afterwards, and that the deploy-gated migrations state their apply
+      # order. The script was documented in two runbooks and run by no job. It
+      # continues past a failure, so one run lists everything that is broken,
+      # each as an annotation and in the step summary.
+      - name: Run the RLS tests, re-apply the migrations, run them again
+        run: ./supabase/scripts/migration_smoke.sh --skip-fresh
 
   pilot-e2e:
     name: Pilot enrollment gate (E2E)
@@ -190,17 +244,17 @@ jobs:
       # Nothing ran it (#195), so the guarantee the pilot rests on was resting
       # on a suite last executed by hand.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: sentra/frontend/package-lock.json
 
       - name: Set up the Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v3
         with:
           version: latest
 
@@ -230,8 +284,48 @@ jobs:
 
       - name: Upload the Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: sentra/frontend/playwright-report
           if-no-files-found: ignore
+
+  dry-run-sql:
+    name: Pilot dry-run SQL
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sentra
+    steps:
+      # The 10-account dry run (#168) is the last gate before enrollment opens,
+      # and it starts by applying a seed and ends by running thirteen
+      # reconciliation queries. Neither had ever been executed (#384): the one
+      # test that touched the seed read it as a string. Run for the first time,
+      # the seed failed on a primary key, its invitations could not be redeemed
+      # by the application, and one query named a column that does not exist.
+      # A separate job rather than a step of `supabase-rls`, because this one
+      # leaves seed rows behind and the RLS scripts assume a database that has
+      # only migrations in it.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The invitation script imports the application's own hashing module. It
+      # has no dependencies beyond Node, so there is no `npm ci`.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Set up the Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start the local stack
+        run: supabase start
+
+      - name: Apply all migrations
+        run: supabase db reset --no-seed
+
+      - name: Apply the dry-run seed and run the reconciliation queries
+        run: ./supabase/scripts/dry_run_sql_smoke.sh

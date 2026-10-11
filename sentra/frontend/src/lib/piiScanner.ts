@@ -38,8 +38,12 @@
  * after a detector is added are exactly the ones whose version is behind. A
  * clean scan under an older version is not the same assurance as a clean scan
  * under this one.
+ *
+ * v2 reads full-width digits and separators in `phone`, `postal_code`,
+ * `class_identifier` and `birth_date` (#389). Under v1 「０９０－１２３４－５６７８」
+ * scanned as no finding.
  */
-export const PII_SCANNER_VERSION = "pii-scanner-ja-v1";
+export const PII_SCANNER_VERSION = "pii-scanner-ja-v2";
 
 export type PiiKind =
   | "email"
@@ -75,6 +79,28 @@ type Detector = {
 };
 
 /**
+ * A digit in either width. JavaScript's `\d` is `[0-9]` only, and a Japanese
+ * IME in 全角英数 mode types ０-９ (#389).
+ *
+ * The classes are widened rather than the text normalised first: findings
+ * carry offsets into the string that was scanned, `forStorage` keeps only
+ * those offsets, and NFKC changes lengths (「㌔」→「キロ」), so offsets taken
+ * from a normalised copy would point somewhere else in the stored text.
+ */
+const D = "[0-9０-９]";
+const DIGIT = new RegExp(D);
+const NON_DIGITS = new RegExp(`[^0-9０-９]`, "g");
+
+/**
+ * What gets typed between digit groups: the ASCII hyphen, its full-width form
+ * －, the Unicode hyphens and dashes, the minus sign, and the long-vowel mark
+ * ー/ｰ that a kana-mode keyboard produces from the same key. 〜 and ～ are
+ * here too; they are written between the groups of a number often enough that
+ * leaving them out would repeat the miss this class exists to end.
+ */
+const SEP = "[-－‐‑‒–—―−ーｰ〜～]";
+
+/**
  * Japanese phone numbers, with or without hyphens.
  *
  * Anchored on a leading `0` because every domestic number starts with one, and
@@ -82,14 +108,18 @@ type Detector = {
  * an order number like `08012345678901` is not a phone number, and matching
  * its first eleven digits would put a false finding in the queue every time.
  */
-const PHONE = /0\d{1,4}-?\d{1,4}-?\d{3,4}/g;
+const PHONE = new RegExp(`[0０]${D}{1,4}${SEP}?${D}{1,4}${SEP}?${D}{3,4}`, "g");
 
 /**
  * A date carrying a year. A bare 「9月6日」 is when something happened, which
  * is the entire point of a journal; only a year makes it a candidate birthdate.
  * Still `low`: 「2026年9月6日に体育祭があった」 is an event, not a birthday.
  */
-const BIRTH_DATE = /(?:19|20)\d{2}\s*[年/\-.]\s*\d{1,2}\s*[月/\-.]\s*\d{1,2}\s*日?/g;
+const DATE_SEP = `(?:[/／.．]|${SEP})`;
+const BIRTH_DATE = new RegExp(
+  `(?:[1１][9９]|[2２][0０])${D}{2}\\s*(?:年|${DATE_SEP})\\s*${D}{1,2}\\s*(?:月|${DATE_SEP})\\s*${D}{1,2}\\s*日?`,
+  "g",
+);
 
 const DETECTORS: Detector[] = [
   {
@@ -105,14 +135,14 @@ const DETECTORS: Detector[] = [
   {
     kind: "postal_code",
     confidence: "high",
-    pattern: /〒\s*\d{3}-?\d{4}/g,
+    pattern: new RegExp(`〒\\s*${D}{3}${SEP}?${D}{4}`, "g"),
   },
   {
     kind: "phone",
     confidence: "high",
     pattern: PHONE,
     reject: (match, source) => {
-      const digits = match[0].replace(/-/g, "");
+      const digits = match[0].replace(NON_DIGITS, "");
       // Domestic numbers are 10 or 11 digits. Anything else that survived the
       // pattern is a year range, an order number, or a score.
       if (digits.length < 10 || digits.length > 11) return true;
@@ -120,7 +150,7 @@ const DETECTORS: Detector[] = [
       // longer, and the something longer is not a phone number.
       const before = source[match.index - 1];
       const after = source[match.index + match[0].length];
-      return /\d/.test(before ?? "") || /\d/.test(after ?? "");
+      return DIGIT.test(before ?? "") || DIGIT.test(after ?? "");
     },
   },
   {
@@ -162,7 +192,10 @@ const DETECTORS: Detector[] = [
   {
     kind: "class_identifier",
     confidence: "low",
-    pattern: /\d{1,2}\s*年\s*\d{1,2}\s*組|出席番号\s*\d{1,3}|\d{1,2}\s*年\s*\d{1,2}\s*番/g,
+    pattern: new RegExp(
+      `${D}{1,2}\\s*年\\s*${D}{1,2}\\s*組|出席番号\\s*${D}{1,3}|${D}{1,2}\\s*年\\s*${D}{1,2}\\s*番`,
+      "g",
+    ),
   },
   {
     kind: "birth_date",

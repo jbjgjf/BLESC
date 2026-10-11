@@ -125,6 +125,19 @@ export function configChecks(): ConfigCheck[] {
         "専用デプロイで /demo-view とURL/sessionのデモ上書きが生きたままになる(#193)。ビルド時に必要で、後から足しても再デプロイまで効かない。",
     },
     {
+      // The one row that is satisfied by being absent. `configured` still
+      // means "set", so a deployment that has it reads as "set, and wrong".
+      // Written as a literal for the reason in the header: it is inlined at
+      // build time, like NEXT_PUBLIC_PILOT_MODE.
+      name: "NEXT_PUBLIC_API_URL",
+      configured: Boolean(process.env.NEXT_PUBLIC_API_URL),
+      valid: !process.env.NEXT_PUBLIC_API_URL,
+      severity: "blocking",
+      consequence:
+        "設定してはいけない。設定すると日記の送信と音声の文字起こしがFastAPIへ直接向かい、収集専用ゲート(#165)を通らずに本文が外部へ出る(#345)。" +
+        "パイロットのビルドは画面側でこの値を無視して /api に固定するが、値を消して再デプロイすること。",
+    },
+    {
       name: "SAFETY_RECIPIENT_HASH_KEY",
       configured: Boolean(process.env.SAFETY_RECIPIENT_HASH_KEY),
       valid: base64KeyValid(process.env.SAFETY_RECIPIENT_HASH_KEY),
