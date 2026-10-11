@@ -31,6 +31,10 @@ jobs:
           cache: npm
           cache-dependency-path: sentra/eval/package-lock.json
       - run: npm ci
+      # Before the tests, as in frontend-build (#368). Type-aware rules
+      # (no-floating-promises, await-thenable, no-misused-promises), so it
+      # needs the installed dependencies but nothing else.
+      - run: npm run lint
       - run: npm test
       - run: npm run typecheck
 
