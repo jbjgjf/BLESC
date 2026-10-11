@@ -63,6 +63,15 @@ export async function judgeCase(
   return { ...parsed };
 }
 
+/** One graded case as handed to OpenAI Evals. A type alias, not an interface,
+ *  so it satisfies the SDK's `{ [key: string]: unknown }` item type. */
+export type EvalRow = {
+  caseKey: string;
+  transcript: string;
+  contract: string;
+  verdict: string;
+};
+
 /**
  * Register the run as an OpenAI Eval using current testing criteria
  * (score_model / label_model graders inside evals — NOT the legacy
@@ -73,7 +82,7 @@ export async function judgeCase(
 export async function registerOpenAiEval(
   client: OpenAI,
   label: string,
-  rows: Array<{ caseKey: string; transcript: string; contract: string; verdict: string }>,
+  rows: EvalRow[],
 ): Promise<{ evalId?: string; runId?: string }> {
   try {
     const evalDefinition = await client.evals.create({
