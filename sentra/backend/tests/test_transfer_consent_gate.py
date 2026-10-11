@@ -327,7 +327,8 @@ def test_the_synthetic_dry_run_passes_every_check() -> None:
     failed = [check for check in report["checks"] if not check["passed"]]
     assert failed == []
     assert report["passed"] is True
-    assert len(report["checks"]) >= 10
+    # One check per item in the consent matrix's dry-run list.
+    assert len(report["checks"]) == 11
     assert "SYN-" not in json.dumps(report["admitted"])
 
 
