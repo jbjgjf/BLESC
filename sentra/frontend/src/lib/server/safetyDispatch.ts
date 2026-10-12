@@ -153,8 +153,10 @@ export async function dispatchPendingEscalations(
     .in("status", ["pending", "failed"])
     .gte("attempts", MAX_ATTEMPTS);
   // A number is the count; anything else is "not known", never a quiet zero
-  // (the rule `retentionPurge.ts` applies to `purgedCount`).
-  if (exhausted.error || typeof exhausted.count !== "number") {
+  // (the rule `retentionPurge.ts` applies to `purgedCount`), and `readCount`
+  // below is now the one place that rule is written.
+  const stuck = readCount(exhausted);
+  if (stuck === null) {
     const reason = exhausted.error?.message ?? "no_count_returned";
     console.error(
       "[safety-dispatch] could not count exhausted escalations; reporting stuck as unknown, not 0",
@@ -162,7 +164,6 @@ export async function dispatchPendingEscalations(
     );
     return { attempted: rows.length, ...outcomes, stuck: null, stuck_error: reason };
   }
-  const stuck = exhausted.count;
   if (stuck > 0) {
     console.error(
       `[safety-dispatch] ${stuck} escalation(s) have exhausted their attempts and nobody has been told. ` +
@@ -171,4 +172,74 @@ export async function dispatchPendingEscalations(
   }
 
   return { attempted: rows.length, ...outcomes, stuck };
+}
+
+/**
+ * A count that may be unknown, read the one way that cannot turn "unknown"
+ * into a reassuring number (#377, #453).
+ *
+ * `null` and `undefined` are both unknown, and so is a boolean — `typeof true`
+ * is not `"number"`, but `Number(true)` is 1, and a coercion is how a missing
+ * count becomes a count. Only a finite, non-negative integer is a count.
+ *
+ * The same rule `purgedCount` applies in `retentionPurge.ts`, and the same one
+ * `dispatchPendingEscalations` applies to `stuck` above. It is here as a
+ * function because the self-report endpoint needs it too, and the two had
+ * drifted: `GET /api/safety/dispatch` was reporting `owed: count ?? 0` without
+ * looking at `error`, so a failed read answered "nothing is owed" — in the
+ * endpoint whose stated job is to make a gap visible rather than assumed away.
+ */
+export function readCount(result: {
+  error?: { message: string } | null;
+  count?: number | null;
+}): number | null {
+  if (result.error) return null;
+  const count = result.count;
+  if (typeof count !== "number" || !Number.isInteger(count) || count < 0) return null;
+  return count;
+}
+
+/**
+ * What a reader of a dispatch result has to be told, in sentences.
+ *
+ * The five-minute workflow (`.github/workflows/safety-dispatch.yml`) used to
+ * decide this itself, in two shell one-liners:
+ *
+ *     if [ "$(python3 -c "…get('stuck',0)")" != "0" ]; then …exhausted their retries…
+ *
+ * `dict.get(key, 0)` substitutes for a **missing** key, not for a JSON `null`,
+ * so once `stuck` became `number | null` (#377) an unreadable count arrived as
+ * `None`, compared unequal to `"0"`, and raised the warning for the other
+ * condition: "escalations have exhausted their retries" when in fact nothing
+ * was known about them. `stuck_error`, which says why, was never printed.
+ *
+ * So the three states are told apart here, where the types are, and the
+ * workflow prints what it is handed. Nothing is said when there is nothing to
+ * act on: 288 runs a day means a line that is always there is a line nobody
+ * reads.
+ */
+export function dispatchAttention(result: DispatchResult): string[] {
+  const lines: string[] = [];
+
+  if (result.stuck === null) {
+    lines.push(
+      "再送を使い切った escalation の件数が読めませんでした" +
+        `（${result.stuck_error ?? "理由は記録されていません"}）。` +
+        "この実行の送信結果は報告されていますが、滞留している件数は不明です。0件ではありません。",
+    );
+  } else if (result.stuck > 0) {
+    lines.push(
+      `${result.stuck} 件の escalation が再送を使い切り、誰にも届いていません。` +
+        "SAFETY_ALERT_WEBHOOK_URL / RESEND_API_KEY と、該当する参加者の見守り同意を確認してください。",
+    );
+  }
+
+  if (result.pending > 0) {
+    lines.push(
+      `${result.pending} 件の escalation が誰にも届かず、待ち行列に残りました。` +
+        "SAFETY_ALERT_WEBHOOK_URL / RESEND_API_KEY と、名簿の教職員にメールアドレスがあるかを確認してください。",
+    );
+  }
+
+  return lines;
 }

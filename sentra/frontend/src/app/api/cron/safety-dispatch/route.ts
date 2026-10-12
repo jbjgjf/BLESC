@@ -32,7 +32,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { authorizedCron } from "@/lib/server/cronAuth";
-import { dispatchPendingEscalations } from "@/lib/server/safetyDispatch";
+import { dispatchAttention, dispatchPendingEscalations } from "@/lib/server/safetyDispatch";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 
 export const runtime = "nodejs";
@@ -51,5 +51,7 @@ export async function GET(request: NextRequest) {
 
   const result = await dispatchPendingEscalations(service);
   if ("error" in result) return NextResponse.json({ detail: result.error }, { status: 502 });
-  return NextResponse.json(result);
+  // The same body as `/api/safety/dispatch`, `attention` included (#453): two
+  // doors onto one loop should not describe the same run differently.
+  return NextResponse.json({ ...result, attention: dispatchAttention(result) });
 }

@@ -88,6 +88,29 @@ blesc は緊急対応を行いません。危険が差し迫っていると判�
 6回試して届かない行は `stuck` として毎回のdispatchで報告されます。
 そこまで来たら問題はネットワークではなく設定です。
 
+### 件数が読めなかったときは 0 でない（#377, #453）
+
+件数を返すところは3つあり、いずれも「読めなかった」を `0` と言わないことが契約です。
+読めたときだけ数値、それ以外は `null` と理由を返します。
+
+| 読み出し | 成功 | 読めなかったとき |
+| --- | --- | --- |
+| `POST /api/safety/dispatch` の `stuck` | 件数 | `stuck: null` + `stuck_error`。HTTPは 200（この実行の送信結果は正しい） |
+| `GET /api/safety/dispatch` の `owed` | 件数 | `owed: null` + `owed_error`。**HTTPは 502** |
+| `GET /api/safety/dispatch` の `no_recipient` | 件数 | `no_recipient: null` + `no_recipient_error`。**HTTPは 502** |
+
+`GET` が 502 なのは、この endpoint を叩くのが人ではなく監視だからです。
+ステータスコードしか見ない監視にとって、200 は「滞留なし」と同義です。
+本文には `channels` と読めた方の件数が残るので、開けば 502 より多く分かります。
+
+### `attention`
+
+`POST /api/safety/dispatch` と `/api/cron/safety-dispatch` の応答には
+`attention`（文字列の配列）が入ります。人が対応すべきことを文で持ち、何もなければ空配列です。
+5分ごとの workflow（`.github/workflows/safety-dispatch.yml`）はこれを1行ずつ
+`::warning` として出すだけで、`stuck` や `pending` を自分で読みません。
+以前は読んでいて、`stuck: null` を「再送を使い切った」と書いていました（#453）。
+
 ## 設定
 
 ```

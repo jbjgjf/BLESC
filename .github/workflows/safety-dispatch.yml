@@ -101,20 +101,38 @@ jobs:
             exit 1
           fi
 
-          # `stuck` counts escalations that have exhausted their attempts and
-          # reached nobody. It is not a failure of this run, but it is the number
-          # somebody has to act on, so it is raised where run summaries are read.
-          if [ "$(python3 -c "import json;print(json.load(open('${response}')).get('stuck',0))")" != "0" ]; then
-            echo "::warning::Some escalations have exhausted their retries and nobody was told. Check the alert channel configuration."
-          fi
+          # What somebody has to act on, as the dispatcher states it.
+          #
+          # This used to be two shell tests over `stuck` and `pending`, each
+          # reading the JSON with `.get(name, 0)`. That substitutes for a key
+          # that is **missing**, not for one whose value is `null` — so when #377
+          # made `stuck` a `number | null`, an unreadable count arrived as `None`,
+          # compared unequal to "0", and raised the warning for the other
+          # condition: "escalations have exhausted their retries", when in fact
+          # nothing was known about them. `stuck_error`, which says why, was never
+          # printed (#453).
+          #
+          # The three states — none, some, not known — are now decided in
+          # `dispatchAttention()`, next to the types, with unit tests. This step
+          # prints what it is handed and adds nothing of its own. An empty list is
+          # the quiet case, and 288 runs a day is why that has to stay quiet.
+          python3 - "${response}" <<'REPORT'
+          import json, sys
 
-          # `pending` counts rows this run reached nobody for *without
-          # attempting anything* — no channel configured, or consent held by
-          # educators with no address (#203). They never reach `stuck`, because
-          # `stuck` counts exhausted attempts and these deliberately do not
-          # consume one. Without this line a queue of undelivered crises reports
-          # `stuck: 0` forever, which is the assumed-away gap this workflow's
-          # own header says it exists to prevent.
-          if [ "$(python3 -c "import json;print(json.load(open('${response}')).get('pending',0))")" != "0" ]; then
-            echo "::warning::Some escalations reached nobody and stayed queued. Check SAFETY_ALERT_WEBHOOK_URL / RESEND_API_KEY, and that the educators on the roster have an email address."
-          fi
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              report = json.load(handle)
+
+          lines = report.get("attention")
+          if not isinstance(lines, list):
+              # Reached only against a deployment that predates #453. Said out loud,
+              # because the alternative is a green run that checked nothing.
+              print(
+                  "::warning title=No attention report::The dispatcher answered 200 "
+                  "without an `attention` list, so this run did not check for stuck "
+                  "or queued escalations. The deployment predates #453."
+              )
+              sys.exit(0)
+
+          for line in lines:
+              print(f"::warning title=Crisis notifications::{line}")
+          REPORT
