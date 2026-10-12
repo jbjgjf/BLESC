@@ -101,13 +101,25 @@ jobs:
             exit 1
           fi
 
+          # Reading the counts (#453). Each of `stuck` and `pending` has three
+          # states, and each gets its own line:
+          #
+          #   0              nothing to say — no output
+          #   positive int   the warning for that count
+          #   anything else  "not known": `null` from a failed read (#377),
+          #                  absent, or not a number. Its own warning, with
+          #                  `<key>_error` from the response when there is one.
+          #
+          # `.get(key, 0)` used to do this, and its default only applies to an
+          # absent key: `"stuck": null` printed `None`, compared unequal to
+          # `"0"`, and raised the "exhausted their retries" warning for a run
+          # where the count simply could not be read — with `stuck_error`
+          # dropped on the floor.
+          #
           # `stuck` counts escalations that have exhausted their attempts and
           # reached nobody. It is not a failure of this run, but it is the number
           # somebody has to act on, so it is raised where run summaries are read.
-          if [ "$(python3 -c "import json;print(json.load(open('${response}')).get('stuck',0))")" != "0" ]; then
-            echo "::warning::Some escalations have exhausted their retries and nobody was told. Check the alert channel configuration."
-          fi
-
+          #
           # `pending` counts rows this run reached nobody for *without
           # attempting anything* — no channel configured, or consent held by
           # educators with no address (#203). They never reach `stuck`, because
@@ -115,6 +127,39 @@ jobs:
           # consume one. Without this line a queue of undelivered crises reports
           # `stuck: 0` forever, which is the assumed-away gap this workflow's
           # own header says it exists to prevent.
-          if [ "$(python3 -c "import json;print(json.load(open('${response}')).get('pending',0))")" != "0" ]; then
-            echo "::warning::Some escalations reached nobody and stayed queued. Check SAFETY_ALERT_WEBHOOK_URL / RESEND_API_KEY, and that the educators on the roster have an email address."
-          fi
+          #
+          # The block between the PY markers is run against fixed JSON by
+          # scripts/ci/safety-dispatch-report.test.mjs; keep the markers.
+          python3 - "${response}" <<'PY'
+          import json
+          import sys
+
+          MESSAGES = {
+              "stuck": "Some escalations have exhausted their retries and nobody was told. Check the alert channel configuration.",
+              "pending": "Some escalations reached nobody and stayed queued. Check SAFETY_ALERT_WEBHOOK_URL / RESEND_API_KEY, and that the educators on the roster have an email address.",
+          }
+          UNKNOWN = {
+              "stuck": "Could not count escalations that exhausted their retries, so whether any crisis is stuck is unknown.",
+              "pending": "The dispatcher did not report how many escalations stayed queued, so whether any crisis reached nobody is unknown.",
+          }
+
+
+          def escape(text):
+              # Workflow-command data: these three would end or corrupt the annotation.
+              return str(text).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+          with open(sys.argv[1]) as handle:
+              body = json.load(handle)
+
+          for key in ("stuck", "pending"):
+              value = body.get(key) if isinstance(body, dict) else None
+              # `bool` is an `int` in Python; `true` is not a count.
+              if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                  if value > 0:
+                      print(f"::warning::{MESSAGES[key]} ({key}: {value})")
+                  continue
+              reason = body.get(f"{key}_error") if isinstance(body, dict) else None
+              detail = f"{key}_error: {reason}" if reason else f"{key}: {json.dumps(value)}"
+              print(f"::warning::{UNKNOWN[key]} ({escape(detail)})")
+          PY

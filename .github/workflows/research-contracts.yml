@@ -94,6 +94,20 @@ jobs:
       - name: Audit dependencies
         run: node scripts/ci/npm-audit-gate.mjs "${{ matrix.project }}"
 
+  # The five-minute crisis-retry workflow has no checkout, so the code that
+  # reads the dispatcher's answer lives inline in it. This runs that block
+  # against fixed responses (#453): `stuck: null` must not read as "exhausted".
+  workflow-scripts:
+    name: Workflow script checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Test the safety-dispatch report
+        run: node --test scripts/ci/safety-dispatch-report.test.mjs
+
   backend-research:
     name: Backend research contracts
     runs-on: ubuntu-latest
