@@ -172,3 +172,54 @@ export async function dispatchPendingEscalations(
 
   return { attempted: rows.length, ...outcomes, stuck };
 }
+
+/**
+ * What `GET /api/safety/dispatch` reports as still owed (#453).
+ *
+ * The same rule as `stuck` above: a number is the count, anything else is
+ * "not known". Each count carries its own `*_error` so a monitor can tell a
+ * failed read from an empty queue — `0` here means the database said zero.
+ */
+export type DispatchBacklog = {
+  /** `pending` or `failed`: somebody still has to be told. */
+  owed: number | null;
+  owed_error?: string;
+  /** Terminal: nobody holds consent with an address. */
+  no_recipient: number | null;
+  no_recipient_error?: string;
+};
+
+type CountRead = { count: number | null; error: { message?: string } | null };
+
+function readCount(result: CountRead, label: string): { count: number | null; error?: string } {
+  if (result.error || typeof result.count !== "number") {
+    const reason = result.error?.message ?? "no_count_returned";
+    console.error(`[safety-dispatch] could not count ${label} escalations; reporting it as unknown, not 0`, reason);
+    return { count: null, error: reason };
+  }
+  return { count: result.count };
+}
+
+export async function countDispatchBacklog(service: SupabaseClient): Promise<DispatchBacklog> {
+  const owedRead = await service
+    .from("safety_escalations")
+    .select("id", { count: "exact", head: true })
+    .in("status", ["pending", "failed"]);
+  const undeliverableRead = await service
+    .from("safety_escalations")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "no_recipient");
+
+  const owed = readCount(owedRead, "owed");
+  const undeliverable = readCount(undeliverableRead, "no_recipient");
+
+  const backlog: DispatchBacklog = { owed: owed.count, no_recipient: undeliverable.count };
+  if (owed.error) backlog.owed_error = owed.error;
+  if (undeliverable.error) backlog.no_recipient_error = undeliverable.error;
+  return backlog;
+}
+
+/** True when every count in the backlog was actually read. */
+export function backlogKnown(backlog: DispatchBacklog): boolean {
+  return backlog.owed !== null && backlog.no_recipient !== null;
+}
