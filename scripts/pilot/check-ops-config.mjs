@@ -227,6 +227,11 @@ async function deployment(baseUrl, cronSecret) {
     blocking: report.config.blocking ?? [],
     stale: dispatch.stale || !retention.healthy,
     overdue: retention.overdue,
+    // Terminal: nothing will retry these, so a crisis reached nobody (#458).
+    noRecipient: dispatch.no_recipient ?? 0,
+    // The route's own verdict. Read as well as the fields above so a condition
+    // added to `ready` later cannot pass here by not being listed.
+    notReady: report.ready === false,
   };
 }
 
@@ -281,6 +286,8 @@ async function main() {
   if (github.missing.length > 0) problems.push(`GitHub secrets 未設定: ${github.missing.join(", ")}`);
   if (deploy.blocking.length > 0) problems.push(`Vercel 未設定: ${deploy.blocking.join(", ")}`);
   if (deploy.stale) problems.push("定期実行が結果を出していない");
+  if (deploy.noRecipient > 0) problems.push(`宛先不在で終了した危機通知が ${deploy.noRecipient}件ある`);
+  if (deploy.notReady && problems.length === 0) problems.push("/api/pilot/admin/ops が ready: false を返した");
   if (demo === false) problems.push("/demo-view が配信されている");
 
   if (problems.length > 0) {

@@ -12,6 +12,7 @@ import {
   recipientHashKey,
   recordEscalation,
 } from "../src/lib/server/safetyEscalation.ts";
+import { opsAlertMessage } from "../src/lib/server/opsAlert.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (path) => readFileSync(resolve(HERE, path), "utf8");
@@ -461,6 +462,144 @@ describe("delivery", () => {
   });
 });
 
+describe("a recipient lookup that failed is not a consent fact (#458)", () => {
+  const OPS_URL = "https://ops.example.test/alert";
+  const MAIL_ONLY = {
+    SAFETY_ALERT_WEBHOOK_URL: undefined,
+    RESEND_API_KEY: "k",
+    SAFETY_ALERT_EMAIL_FROM: "a@b.test",
+    SAFETY_OPS_ALERT_WEBHOOK_URL: OPS_URL,
+  };
+
+  /**
+   * Deliver once on a mail-only deployment and observe the three things an
+   * operator would read: the status, `last_error`, and the operator alert.
+   *
+   * The alert is fired with `void`, but `reportUndeliverable` builds its body
+   * and calls `fetch` before its first `await`, so the stub has seen it by the
+   * time `deliverEscalation` resolves.
+   */
+  async function observe(rpc) {
+    const client = fakeClient({ rpc });
+    const opsBodies = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      if (url === OPS_URL) opsBodies.push(JSON.parse(init.body).text);
+      return new Response("ok", { status: 200 });
+    };
+    let status;
+    try {
+      status = await withEnv(MAIL_ONLY, () => deliverEscalation(client, ESCALATION, "2A-08"));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    const [update] = client.calls.updates;
+    return { status, update: update.values, opsBodies, client };
+  }
+
+  it("keeps the escalation queued when the lookup fails, and spends no attempt", async () => {
+    const { status, update, client } = await observe({
+      data: null,
+      error: { message: "canceling statement due to statement timeout" },
+    });
+    assert.equal(status, "pending", "a transient failure must not finalise the row");
+    assert.equal(update.status, "pending");
+    // `pending` is what `/api/safety/dispatch` queries; `no_recipient` it never does.
+    assert.equal(update.attempts, ESCALATION.attempts);
+    assert.equal(update.delivered_at, null);
+    assert.equal(client.calls.inserts.length, 0, "nothing was attempted, so nothing is logged as a delivery");
+  });
+
+  it("separates the four ways of reaching nobody in status, last_error and the operator alert", async () => {
+    const cases = [
+      {
+        name: "recipient RPC failed (transient)",
+        rpc: { data: null, error: { message: "canceling statement due to statement timeout" } },
+        status: "pending",
+        lastError: "recipient lookup failed; consent was not checked",
+        kind: "lookup_failed",
+      },
+      {
+        name: "genuinely no consented educator",
+        rpc: { data: [], error: null },
+        status: "no_recipient",
+        lastError: "no recipient with active oversight consent",
+        kind: "no_recipient",
+      },
+      {
+        name: "consented educator, null email (#203)",
+        rpc: { data: [{ educator_user_id: "e1", email: null }], error: null },
+        status: "pending",
+        lastError: "no reachable address for any consented recipient",
+        kind: "no_reachable_address",
+      },
+    ];
+    const lastErrors = new Set();
+    for (const c of cases) {
+      const { status, update, opsBodies } = await observe(c.rpc);
+      assert.equal(status, c.status, c.name);
+      assert.equal(update.last_error, c.lastError, c.name);
+      assert.deepEqual(opsBodies, [opsAlertMessage(c.kind, ESCALATION.id)], `${c.name}: wrong operator alert`);
+      lastErrors.add(update.last_error);
+    }
+    assert.equal(lastErrors.size, cases.length, "each reason needs its own last_error");
+
+    // The fourth, no channel at all, cannot be mail-only by definition.
+    const client = fakeClient({ rpc: { data: [{ educator_user_id: "e1", email: "t@example.test" }], error: null } });
+    const opsBodies = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      if (url === OPS_URL) opsBodies.push(JSON.parse(init.body).text);
+      return new Response("ok", { status: 200 });
+    };
+    try {
+      await withEnv(
+        { ...MAIL_ONLY, RESEND_API_KEY: undefined, SAFETY_ALERT_EMAIL_FROM: undefined },
+        () => deliverEscalation(client, ESCALATION, "2A-08"),
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    assert.deepEqual(opsBodies, [opsAlertMessage("no_channel", ESCALATION.id)]);
+  });
+
+  it("tells the operator the right cause, repair and retry fact for each kind", () => {
+    const text = (kind) => opsAlertMessage(kind, "esc-1");
+    // Only `no_recipient` is terminal, and only it may say so.
+    assert.ok(text("no_recipient").includes("再送の対象になりません"));
+    for (const kind of ["no_channel", "lookup_failed", "no_reachable_address"]) {
+      assert.ok(!text(kind).includes("再送の対象になりません"), `${kind} is still queued`);
+      assert.ok(!text(kind).includes("再送では解決しません"), `${kind} is fixed and then resent`);
+      assert.ok(text(kind).includes("次回の再送"), `${kind} must say it will be sent again`);
+    }
+    // #203: consent is fine, the address is missing.
+    assert.ok(text("no_reachable_address").includes("メールアドレス"));
+    assert.ok(!text("no_reachable_address").includes("同意が有効ではありません"));
+    // #458: consent was never checked.
+    assert.ok(text("lookup_failed").includes("確認できていません"));
+    assert.ok(!text("lookup_failed").includes("同意が有効ではありません"));
+    // Four kinds, four bodies.
+    const bodies = new Set(["no_channel", "lookup_failed", "no_reachable_address", "no_recipient"].map(text));
+    assert.equal(bodies.size, 4);
+  });
+
+  it("still delivers through the webhook when the lookup fails", async () => {
+    // The webhook is addressed to the school, not to a recipient, so a failed
+    // lookup does not stop it — and a delivered row needs no retry.
+    const client = fakeClient({ rpc: { data: null, error: { message: "timeout" } } });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("ok", { status: 200 });
+    try {
+      const status = await withEnv({ SAFETY_ALERT_WEBHOOK_URL: "https://hook.example.test/alert" }, () =>
+        deliverEscalation(client, ESCALATION, "2A-08"),
+      );
+      assert.equal(status, "delivered");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe("the wiring that makes this reach anyone", () => {
   it("escalates from the chat route", () => {
     const route = read("../src/app/api/chat/route.ts");
@@ -760,9 +899,11 @@ describe("telling the operator that nobody was reached (#178)", () => {
     assert.ok(!ops.includes("reasons"));
   });
 
-  it("distinguishes the two causes, because the fixes differ", () => {
+  it("distinguishes the causes, because the fixes differ", () => {
     assert.ok(ops.includes("no_channel"));
     assert.ok(ops.includes("no_recipient"));
+    assert.ok(ops.includes("no_reachable_address"));
+    assert.ok(ops.includes("lookup_failed"));
     const source = read("../src/lib/server/opsAlert.ts");
     assert.ok(source.includes("再送では解決しません"), "no_recipient is terminal");
     assert.ok(source.includes("次回の再送で送られます"), "no_channel resolves once configured");
