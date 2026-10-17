@@ -105,6 +105,11 @@ export async function GET(request: NextRequest) {
   );
   const dispatchStale = oldestOwed !== null && oldestOwed > DISPATCH_STALE_MINUTES;
   const overdue = overdueResult.count ?? 0;
+  // Terminal rows: a crisis that was assessed and told nobody, and that nothing
+  // will retry (#458). Counted into `ready` because "nobody was told" is the
+  // one outcome this deployment exists to prevent, and before this a lost
+  // escalation left the flag at true.
+  const noRecipient = noRecipientResult.count ?? 0;
 
   const gaps = blockingGaps(checks);
 
@@ -112,7 +117,12 @@ export async function GET(request: NextRequest) {
     generated_at: nowIso,
     // False whenever something a participant was promised is not happening.
     // Deliberately one flag: an alert rule should not have to know the list.
-    ready: gaps.length === 0 && !dispatchStale && overdue === 0 && readErrors.length === 0,
+    ready:
+      gaps.length === 0 &&
+      !dispatchStale &&
+      overdue === 0 &&
+      noRecipient === 0 &&
+      readErrors.length === 0,
     config: {
       ok: gaps.length === 0,
       // Full list, not just the failures: an operator confirming a fix wants to
@@ -129,7 +139,7 @@ export async function GET(request: NextRequest) {
         // True means undelivered crisis notifications are sitting in a queue
         // that nothing is draining, whatever `config` says.
         stale: dispatchStale,
-        no_recipient: noRecipientResult.count ?? 0,
+        no_recipient: noRecipient,
       },
       retention_purge: {
         retained_rows: retainedResult.count ?? 0,

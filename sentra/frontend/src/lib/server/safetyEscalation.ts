@@ -32,7 +32,7 @@
 
 import { createHmac } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { reportUndeliverable } from "./opsAlert.ts";
+import { reportUndeliverable, type OpsAlertKind } from "./opsAlert.ts";
 import { KEY_RULES, readBase64Key } from "./base64Key.ts";
 
 /*
@@ -162,19 +162,32 @@ export async function recordEscalation(
   return null;
 }
 
+/**
+ * The answer to "who may be told", or the fact that the question went unanswered.
+ *
+ * Two shapes rather than an array, because an empty array used to answer both
+ * (#458). "Nobody holds consent" is a consent fact and is terminal; "the lookup
+ * failed" is a transient database error and is not. Returning `[]` for the
+ * second filed a `statement timeout` as `no_recipient`, which the dispatcher
+ * never queries again — the third instance of the loss #178 and #203 closed.
+ */
+export type RecipientLookup =
+  | { ok: true; recipients: Recipient[] }
+  | { ok: false; error: string };
+
 /** The educators who may be told, as of now. */
 export async function recipientsFor(
   service: SupabaseClient,
   participantId: string,
-): Promise<Recipient[]> {
+): Promise<RecipientLookup> {
   const result = await service.rpc("safety_escalation_recipients", {
     target_participant: participantId,
   });
   if (result.error) {
     console.error("[safety-escalation] recipient lookup failed", result.error.message);
-    return [];
+    return { ok: false, error: result.error.message };
   }
-  return (result.data ?? []) as Recipient[];
+  return { ok: true, recipients: (result.data ?? []) as Recipient[] };
 }
 
 /**
@@ -384,8 +397,9 @@ export function channelsConfigured(): boolean {
  * `no_recipient` is the only terminal one, and it is terminal because it is a
  * consent fact: no educator holds active oversight of this participant, and
  * asking again will not produce one. Everything else that reached nobody — no
- * channel configured (#178), recipients with no reachable address (#203) — is
- * an operations gap, stays queued, and does not consume an attempt.
+ * channel configured (#178), recipients with no reachable address (#203), a
+ * recipient lookup that failed (#458) — is an operations gap, stays queued,
+ * and does not consume an attempt.
  *
  * None of them is success and none of them is silence. A student is in crisis
  * and this deployment did not tell anyone, so every one of them is logged as an
@@ -396,7 +410,8 @@ export async function deliverEscalation(
   escalation: EscalationRow,
   participantCode: string | null,
 ): Promise<"delivered" | "failed" | "no_recipient" | "pending"> {
-  const recipients = await recipientsFor(service, escalation.participant_id);
+  const lookup = await recipientsFor(service, escalation.participant_id);
+  const recipients = lookup.ok ? lookup.recipients : [];
   const text = notificationText(escalation, participantCode);
   const crisis = escalation.risk_level === "crisis";
 
@@ -498,13 +513,42 @@ export async function deliverEscalation(
    */
   const noReachableAddress = recipients.length > 0;
 
+  /*
+   * A fourth, and the reason `recipientsFor` stopped returning an array (#458).
+   *
+   * When the recipient RPC fails, `recipients` is empty for the same reason it
+   * is empty when nobody holds consent — and with only the mail channel
+   * configured, nothing is attempted either. So a transient database error
+   * landed on `no_recipient`: terminal, never queried again, and logged with
+   * the sentence "This will not be retried", which was true. Consent was never
+   * checked. Nobody may conclude that nobody may be told.
+   */
+  const lookupFailed = !lookup.ok;
+
+  /*
+   * Why nothing was attempted, as one value. The status, `last_error`, the
+   * console line and the operator alert are all derived from it, so they
+   * cannot disagree with each other — which they did before #458: the console
+   * and `last_error` told #203 apart, and the operator alert, the one that
+   * wakes somebody, did not.
+   */
+  const reason: OpsAlertKind | null = anyAttempt
+    ? null
+    : noChannel
+      ? "no_channel"
+      : lookupFailed
+        ? "lookup_failed"
+        : noReachableAddress
+          ? "no_reachable_address"
+          : "no_recipient";
+
   let status: "delivered" | "failed" | "no_recipient" | "pending";
   if (anyDelivered) status = "delivered";
   else if (anyAttempt) status = "failed";
-  else if (noChannel || noReachableAddress) status = "pending";
-  else status = "no_recipient";
+  else if (reason === "no_recipient") status = "no_recipient";
+  else status = "pending";
 
-  if (status === "pending" || status === "no_recipient") {
+  if (reason) {
     /*
      * On a separate channel, because the thing being reported is that the
      * delivery channel did not deliver (#178). A `console.error` alone is not a
@@ -515,23 +559,31 @@ export async function deliverEscalation(
      * a path that is already degraded, and the status below is written either
      * way.
      */
-    void reportUndeliverable(noChannel ? "no_channel" : "no_recipient", escalation.id);
+    void reportUndeliverable(reason, escalation.id);
 
     // Kept inline rather than lifted to a `const`: the #116 UI-language guard
     // exempts strings by `console.*` call, so a developer-facing message that
     // lives outside one has to be allowlisted to say anything in English.
     console.error(
       "[safety-escalation] NOWHERE TO SEND A CRISIS ESCALATION. " +
-        (noChannel
+        (reason === "no_channel"
           ? "No channel is configured: set SAFETY_ALERT_WEBHOOK_URL, or RESEND_API_KEY with " +
             "SAFETY_ALERT_EMAIL_FROM. The escalation stays queued and will be sent once one is set."
-          : noReachableAddress
-            ? "Educators hold active oversight consent, but none of them has an address the " +
-              "configured channels can reach. Check the email column for the accounts on this " +
-              "roster, or set SAFETY_ALERT_WEBHOOK_URL. The escalation stays queued."
-            : "No educator holds active oversight consent for this participant, so there is nobody " +
-              "this may be sent to. This will not be retried."),
-      { escalation: escalation.id, recipients: recipients.length, channels: !noChannel },
+          : reason === "lookup_failed"
+            ? "The recipient lookup failed, so whether anyone holds oversight consent is unknown. " +
+              "The escalation stays queued and the dispatcher will ask again."
+            : reason === "no_reachable_address"
+              ? "Educators hold active oversight consent, but none of them has an address the " +
+                "configured channels can reach. Check the email column for the accounts on this " +
+                "roster, or set SAFETY_ALERT_WEBHOOK_URL. The escalation stays queued."
+              : "No educator holds active oversight consent for this participant, so there is nobody " +
+                "this may be sent to. This will not be retried."),
+      {
+        escalation: escalation.id,
+        recipients: recipients.length,
+        channels: !noChannel,
+        lookup_error: lookup.ok ? null : lookup.error,
+      },
     );
   }
 
@@ -552,11 +604,13 @@ export async function deliverEscalation(
         status === "delivered"
           ? null
           : deliveries.find((d) => d.error)?.error ??
-            (noChannel
+            (reason === "no_channel"
               ? "no delivery channel configured"
-              : noReachableAddress
-                ? "no reachable address for any consented recipient"
-                : "no recipient with active oversight consent"),
+              : reason === "lookup_failed"
+                ? "recipient lookup failed; consent was not checked"
+                : reason === "no_reachable_address"
+                  ? "no reachable address for any consented recipient"
+                  : "no recipient with active oversight consent"),
       delivered_at: status === "delivered" ? new Date().toISOString() : null,
     })
     .eq("id", escalation.id);

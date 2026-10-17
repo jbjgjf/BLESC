@@ -312,6 +312,13 @@ describe("the ops route", () => {
     );
   });
 
+  it("is not ready while a crisis escalation sits terminal with nobody told (#458)", () => {
+    // `no_recipient` is never retried. Before #458 it was reported but did not
+    // move `ready`, so a lost crisis notification read as an all-clear.
+    assert.match(source, /ready:[\s\S]*?noRecipient === 0[\s\S]*?,\n/);
+    assert.ok(source.includes('.eq("status", "no_recipient")'));
+  });
+
   it("requires an operator or the cron secret", () => {
     assert.ok(source.includes("requireOperator"), "no anonymous access");
     assert.ok(source.includes("authorizedCron"), "an uptime check needs a way in that is not a browser session");
