@@ -2,6 +2,7 @@ import hashlib
 import io
 import logging
 import os
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -96,7 +97,27 @@ _ENV_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(_ENV_DIR / ".env.local")
 load_dotenv(_ENV_DIR / ".env")
 
-app = FastAPI(title="Sentra API")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Create the tables and seed them, once, before the first request (#460).
+
+    This was `@app.on_event("startup")`, which FastAPI deprecates in favour of
+    a lifespan handler. The work is unchanged and the order is unchanged:
+    `create_db_and_tables()` then `seed_data()`, because the seed writes rows
+    into the tables the first call creates.
+
+    There is nothing after the `yield`. `on_event("shutdown")` was never
+    registered, and adding teardown here would introduce a closing order this
+    service does not currently have to get right — the engine is module-level
+    in `app/database.py` and outlives any one request.
+    """
+    create_db_and_tables()
+    seed_data()
+    yield
+
+
+app = FastAPI(title="Sentra API", lifespan=lifespan)
 
 # The world-model research API (#140, contract C6). Registered as a router
 # rather than inline: it is owned by the research engine, it fails closed
@@ -220,12 +241,6 @@ class HfResearchBenchmarkRequest(BaseModel):
     methods: Optional[List[str]] = None
     k: int = 2
     include_dataset_rows: bool = False
-
-
-@app.on_event("startup")
-def on_startup():
-    create_db_and_tables()
-    seed_data()
 
 
 @app.get("/api/health")
