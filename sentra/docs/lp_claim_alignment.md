@@ -138,6 +138,57 @@ provenance. ③ is untouched and still open.
 The 2026-09-30 deadline therefore still stands for ③, and the automatic
 conversion on 10-01 still applies to it.
 
+## ⑤–⑪ — option B, decided 2026-10-18
+
+The 2026-10-18 comparison of blesc.jp (`jbjgjf/BLESC-website` `77ab1b6`)
+against what blesc.online runs (`a55ef83`) found seven more claims the
+product does not meet. **The owner chose B for all of them: the page stays,
+the product changes to match it.**
+
+| # | claim on the page | issue | state |
+| --- | --- | --- | --- |
+| ⑤ | 危機時、生徒の画面に相談窓口（24時間子供SOSダイヤル）がすぐ出る | #465 | **in the repository** — see below; not yet checked on blesc.online |
+| ⑥ | 先生に見えるのはクラス・出席番号・表現の種類・時刻だけ | #466 | open |
+| ⑦ | AIが日記を受けて短い問いをひとつ返す | #467 | open |
+| ⑧ | これまでと比べた変化、ためらい・書き直しを捉える | #468 | open — depends on ADR 0001 |
+| ⑨ | 日記をAIモデルの学習に使うことはない | #469 | open |
+| ⑩ | 日本の個人情報保護法に準拠 | `jbjgjf/BLESC-website#24` | open — needs legal sign-off, not only code |
+| ⑪ | 希望者ではなく全生徒が使う | `jbjgjf/BLESC-website#25` | **not started** — see below |
+
+**"Done" in this table now means done on blesc.online.** ② read *done*
+while the code it pointed at ran only in the local FastAPI path; ④ read
+*done* after the page had reverted. Both were true of a repository and false
+of what a school sees. A row moves to **done** only with the production
+commit it was checked against and the date.
+
+### ⑤ — what changed
+
+- `sentra/shared/safety_assessment_conformance.json` carries `hotlines`:
+  24時間子供SOSダイヤル 0120-0-78310, 119 and 110. `CRISIS_HOTLINES` in
+  `safety-assessment.ts` is pinned to it by test.
+- Both canned responses (crisis and elevated) name every hotline by number
+  and no longer carry English glosses. FastAPI reads the same text.
+- The chat and voice floors append the response unless the model's reply
+  already gives the SOS number. They used to accept any reply that named a
+  person, which let a reply through with no number at all.
+- `/journal` — the main way a student writes — showed nothing at crisis.
+  It now shows `CrisisSupport` (the hotlines as `tel:` links) on the
+  completion screen, and does not ask follow-up questions that day.
+- `hotlines_verified_on` is `null`. A person has to confirm each number and
+  its hours against `hotlines_source` and write the date in.
+
+### ⑪ — B cannot mean what the page says
+
+"希望者ではなく全生徒" read as written means a student cannot decline. The
+product opens on consent (`consent_records.app_use`), can be withdrawn,
+and for the pilot needs a guardian's confirmation under 18. Diary text about
+a minor's mental state is 要配慮個人情報, whose acquisition needs the
+person's consent (個人情報保護法 20条2項). Removing the consent gate to
+match the page is not available as an engineering change. What the product
+*can* do is be issued to the whole class by the school, with each student
+choosing whether to use it — which is a change to the page's wording.
+Held for the owner to confirm before anything changes.
+
 ## Related
 
 - `educator_display_policy.md` — why ④ became A and what the product shows now

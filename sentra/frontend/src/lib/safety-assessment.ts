@@ -28,8 +28,35 @@ export function routesToRealPerson(text: string): boolean {
   return REAL_PERSON_ROUTES.some((route) => lowered.includes(route));
 }
 
-const crisisResponse = "まず、あなたの安全がいちばん大切です。blescは緊急時の対応をすることができません。いますぐ危ないと感じるときや、行動してしまいそうなときは、すぐに緊急サービス（emergency services）に電話してください。そして、信頼できる大人（trusted adult）や安全な人のところへ行き、「いま助けが必要です」とはっきり伝えてください。";
-const elevatedResponse = "これは、人に頼ったほうがいいことかもしれません。信頼できる大人（trusted adult）、スクールカウンセラー、保護者など、安全だと思える人に、いま起きていることを話してみてください。危険が差し迫っていると感じたときは、緊急サービス（emergency services）に連絡してください。";
+/**
+ * Where the student is sent at crisis and elevated (#465). Pinned to the shared
+ * contract's `hotlines`; the site (jbjgjf/BLESC-website `trust.ts` `SOS_DIAL`)
+ * promises the first of these by name and number, so changing it here changes
+ * a public claim.
+ */
+export const CRISIS_HOTLINES = [
+  { id: "children_sos_dial", name: "24時間子供SOSダイヤル", number: "0120-0-78310", tel: "tel:0120078310", hours: "24時間・無料", operator: "文部科学省", when: "話を聞いてほしいとき" },
+  { id: "emergency_119", name: "救急", number: "119", tel: "tel:119", hours: "24時間", operator: "消防", when: "いますぐ命が危ないとき" },
+  { id: "police_110", name: "警察", number: "110", tel: "tel:110", hours: "24時間", operator: "警察", when: "いますぐ身の危険があるとき" },
+] as const;
+
+export type CrisisHotline = (typeof CRISIS_HOTLINES)[number];
+
+/**
+ * Whether a reply already gives the student the children's SOS line by number.
+ *
+ * The chat and voice floors used to accept any reply that named a person
+ * (「信頼できる大人」) as covering the support route, so a model reply could
+ * drop the number the site promises. Naming a person is not the same as
+ * giving the student somewhere to call at night.
+ */
+export function carriesCrisisHotline(text: string): boolean {
+  const digits = text.normalize("NFKC").replace(/[^0-9]/g, "");
+  return digits.includes(CRISIS_HOTLINES[0].tel.replace(/[^0-9]/g, ""));
+}
+
+const crisisResponse = "まず、あなたの安全がいちばん大切です。blescは緊急時の対応をすることができません。いますぐ危ないと感じるときや、行動してしまいそうなときは、すぐに119（救急）か110（警察）に電話してください。話を聞いてほしいときは、24時間子供SOSダイヤル（0120-0-78310、24時間・無料）にいつでも電話できます。信頼できる大人のところへ行き、「いま助けが必要です」と伝えてください。";
+const elevatedResponse = "これは、人に頼ったほうがいいことかもしれません。信頼できる大人、スクールカウンセラー、保護者など、安全だと思える人に、いま起きていることを話してみてください。24時間子供SOSダイヤル（0120-0-78310、24時間・無料）でも、いつでも話を聞いてもらえます。危険が差し迫っていると感じたときは、119か110に電話してください。";
 
 const selfHarmTerms = ["hurt myself", "hurting myself", "harm myself", "harming myself", "self-harm", "self harm", "kill myself", "killing myself", "end my life", "ending my life", "want to die", "suicide", "suicidal", "overdose", "自殺", "死にたい", "消えたい", "自分を傷つけ", "自傷"];
 const imminentTerms = ["tonight", "tomorrow", "right now", "now", "today", "have a plan", "made a plan", "cannot stay safe", "can't stay safe", "do not feel safe", "don't feel safe", "not safe tonight", "not safe right now", "今すぐ", "今夜", "今日", "計画がある", "安全でいられない"];

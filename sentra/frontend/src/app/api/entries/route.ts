@@ -422,7 +422,7 @@ export async function POST(request: NextRequest) {
       reflection_cards_json: safetyAssessment.risk_level === "crisis" ? [{
         id: `${entryId}:crisis_suppressed`,
         type: "safety_suppression",
-        title: "Support first",
+        title: "まず、人に助けを",
         body: safetyAssessment.safe_response,
         evidence_refs: [],
         confidence: "high",

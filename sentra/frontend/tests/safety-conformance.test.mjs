@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import {
   SAFETY_ASSESSMENT_VERSION,
   SAFETY_RESPONSES,
+  CRISIS_HOTLINES,
   assessSafety,
   safetyLexiconCanonicalForm,
 } from "../src/lib/safety-assessment.ts";
@@ -48,6 +49,13 @@ describe("safety assessment conformance", () => {
     assert.deepEqual({ ...SAFETY_RESPONSES }, CONTRACT.responses);
     assert.equal(assessSafety("もう死にたい").safe_response, CONTRACT.responses.crisis);
     assert.equal(assessSafety("もう限界").safe_response, CONTRACT.responses.elevated);
+  });
+
+  it("sends the student to the hotlines the contract carries (#465)", () => {
+    assert.deepEqual(CRISIS_HOTLINES.map((hotline) => ({ ...hotline })), CONTRACT.hotlines);
+    for (const response of Object.values(CONTRACT.responses)) {
+      for (const hotline of CONTRACT.hotlines) assert.ok(response.includes(hotline.number), hotline.id);
+    }
   });
 
   it("writes the version the contract names", () => {

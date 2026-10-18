@@ -49,7 +49,8 @@ def test_crisis_response_stays_non_diagnostic_and_direct():
     response = result.safe_response
     assert result.risk_level == "crisis"
     assert "診断" not in response
-    assert "緊急サービス" in response
+    assert "119" in response
+    assert "0120-0-78310" in response
     # The student reads Japanese: the card used to switch to English only in a crisis.
     assert not response.isascii()
     assert len(response) < 200

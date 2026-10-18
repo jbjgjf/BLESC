@@ -16,6 +16,7 @@ import { EMPTY_STATS, type JournalStats } from "@/lib/journalStats";
 import { t } from "@/lib/i18n";
 import type { EventCategory, Mood } from "@/lib/blesc/types";
 import { SelfReportBlock, type SelfReportValues } from "@/components/SelfReportBlock";
+import { CrisisSupport } from "@/components/CrisisSupport";
 import type { SelfReportItemId } from "@/lib/pilotSelfReport";
 import styles from "./journal.module.css";
 
@@ -81,6 +82,9 @@ export default function JournalPage() {
   const [showErrors, setShowErrors] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /** Set when the server's assessment of this entry asks for a person (#465). */
+  const [support, setSupport] = useState<"crisis" | "elevated" | null>(null);
+  const supportRef = useRef<"crisis" | "elevated" | null>(null);
 
   const [phase, setPhase] = useState<"form" | "followup" | "done">("form");
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -314,6 +318,9 @@ export default function JournalPage() {
         }),
       });
       serverCollectionOnly.current = result.collection_only ?? null;
+      const riskLevel = result.extraction?.safety_assessment_json?.risk_level;
+      supportRef.current = riskLevel === "crisis" || riskLevel === "elevated" ? riskLevel : null;
+      setSupport(supportRef.current);
       const savedId = result.supabase_sync?.entry_id ?? null;
       if (!savedId) {
         // createEntry は id なしでは返らない契約だが、契約を二重に確かめる。
@@ -366,8 +373,11 @@ export default function JournalPage() {
     // false なので、それだけで決めると「先読みが間に合わなかった提出」に
     // 追加質問が出る。サーバーの答えが無いのは Supabase 未設定などの場合で、
     // そのときだけ先読みに落とす。
+    //
+    // 危機・要注意と判定された日も出さない。問いを重ねるより先に、相談窓口を
+    // 見せて人へつなぐ（#465）。
     const collectionOnly = serverCollectionOnly.current ?? collecting;
-    if (needsFollowUp() && !collectionOnly) {
+    if (needsFollowUp() && !collectionOnly && !supportRef.current) {
       setPhase("followup");
       askStep(0);
     } else {
@@ -454,7 +464,7 @@ export default function JournalPage() {
   };
 
   /* ── 提出完了 ─────────────────────────────────────── */
-  if (phase === "done") return <DoneScreen userId={userId} demo={demo} />;
+  if (phase === "done") return <DoneScreen userId={userId} demo={demo} support={support} />;
 
   /* ── 入力フォーム（1問ずつ） ───────────────────────── */
   const formStepIndex = FORM_STEPS.indexOf(step);
@@ -820,7 +830,15 @@ const DEMO_STATS: JournalStats = { streak: 7, weekly: 6, totalDays: 24 };
  * 直接書かれていて、初めて提出した生徒にも「連続提出日数 7」と表示していた
  * （#133）。デモは上の固定値、実データは DB — 混ざらないように経路を分ける。
  */
-function DoneScreen({ userId, demo }: { userId: string; demo: boolean }) {
+function DoneScreen({
+  userId,
+  demo,
+  support,
+}: {
+  userId: string;
+  demo: boolean;
+  support: "crisis" | "elevated" | null;
+}) {
   const [stats, setStats] = useState<JournalStats>(demo ? DEMO_STATS : EMPTY_STATS);
 
   useEffect(() => {
@@ -840,6 +858,7 @@ function DoneScreen({ userId, demo }: { userId: string; demo: boolean }) {
   return (
     <div className="bl-wrap">
       <section className={styles.done}>
+        {support && <CrisisSupport level={support} />}
         <div className={styles.doneFlower}>
           <FlowerBloom size={84} />
         </div>

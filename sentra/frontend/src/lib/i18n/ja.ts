@@ -148,6 +148,13 @@ export const ja = {
     observationPrefix: "観測: ",
     observationBasis: "└ 根拠: safety.py の決定的マッチ / 推論なし",
     flagRecorded: "記録あり",
+    /** `CrisisSupport`: what the student reads next to the hotlines (#465). */
+    support: {
+      crisisTitle: "いますぐ、人に助けを求めてください",
+      crisisLead: "blescは緊急時の対応ができません。危ないと感じるときは、下の番号にすぐ電話してください。信頼できる大人や安全な人のところへ行き、「いま助けが必要です」と伝えてください。",
+      elevatedTitle: "ひとりで抱えなくて大丈夫です",
+      elevatedLead: "信頼できる大人、スクールカウンセラー、保護者など、安全だと思える人に話してみてください。夜でも、下の番号で話を聞いてもらえます。",
+    },
   },
 
   /** Counsellor view of the summaries a student chose to share. */

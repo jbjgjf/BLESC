@@ -7,6 +7,8 @@ import {
   escalateAssessment,
   KANA_SPELLING_KEYS,
   routesToRealPerson,
+  carriesCrisisHotline,
+  CRISIS_HOTLINES,
 } from "../src/lib/safety-assessment.ts";
 
 const ESCALATION_MARKERS = [
@@ -18,6 +20,8 @@ const ESCALATION_MARKERS = [
   "stay safe",
   "immediate danger",
   "hotline",
+  "0120-0-78310",
+  "信頼できる大人",
 ];
 
 const hasEscalationMarker = (text) =>
@@ -235,11 +239,48 @@ describe("routesToRealPerson", () => {
     assert.equal(routesToRealPerson("That sounds like a hard week. What helped last time?"), false);
   });
 
-  // /api/chat appends safe_response only when this returns false, so a false
-  // positive here would silence the deterministic floor.
-  it("gates the chat safety floor on the assessment's own response text", () => {
+  it("recognises the assessment's own response text as a route", () => {
     const crisis = assessSafety("I want to die tonight.");
     assert.ok(crisis.safe_response.length > 0);
     assert.equal(routesToRealPerson(crisis.safe_response), true);
+  });
+});
+
+// /api/chat and voice append safe_response only when this returns false, so a
+// false positive here would let a reply through without the number (#465).
+describe("carriesCrisisHotline", () => {
+  it("is false for a reply that names a person but gives no number", () => {
+    assert.equal(carriesCrisisHotline("信頼できる大人に話してみてください。"), false);
+    assert.equal(carriesCrisisHotline("Please call emergency services."), false);
+  });
+
+  it("reads the number however it is written", () => {
+    assert.equal(carriesCrisisHotline("0120-0-78310 に電話できます"), true);
+    assert.equal(carriesCrisisHotline("０１２０ー０ー７８３１０"), true);
+    assert.equal(carriesCrisisHotline("0120078310"), true);
+  });
+
+  it("is true of both canned responses", () => {
+    assert.equal(carriesCrisisHotline(assessSafety("もう死にたい").safe_response), true);
+    assert.equal(carriesCrisisHotline(assessSafety("もう限界").safe_response), true);
+  });
+});
+
+describe("crisis responses (#465)", () => {
+  for (const [level, input] of [["crisis", "もう死にたい"], ["elevated", "もう限界"]]) {
+    it(`names every hotline by number at ${level}`, () => {
+      const { safe_response } = assessSafety(input);
+      for (const hotline of CRISIS_HOTLINES) assert.ok(safe_response.includes(hotline.number), hotline.id);
+      assert.ok(safe_response.includes(CRISIS_HOTLINES[0].name));
+    });
+
+    it(`is Japanese only at ${level}`, () => {
+      assert.doesNotMatch(assessSafety(input).safe_response.replace("blesc", "").replace("SOS", ""), /[A-Za-z]/);
+    });
+  }
+
+  it("carries the same hotline into an escalated conversation", () => {
+    const escalated = escalateAssessment(assessSafety("today was whatever."), "elevated", "journal");
+    assert.equal(carriesCrisisHotline(escalated.safe_response), true);
   });
 });
