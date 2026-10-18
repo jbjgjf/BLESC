@@ -153,7 +153,7 @@ contains. Five gaps; four needed an owner decision, taken on 2026-10-18.
 | # | claim on blesc.jp | decision | state |
 | --- | --- | --- | --- |
 | ⑤ | 危機時、生徒の画面に相談窓口（24時間子供SOSダイヤル）が出る | fix (#465) — product | **done** |
-| ⑥ | 先生に表示されるのはクラス・出席番号・表現の種類・時刻だけ | **B** — change the product (#466) | see below |
+| ⑥ | 先生に表示されるのはクラス・出席番号・表現の種類・時刻だけ | **B** — change the product (#466) | **done** in code; schools must fill in class placements |
 | ⑦ | AIが日記を受けて短い問いをひとつ返す | **A** — change the page (#467) | **done** |
 | ⑧ | 書きぶりの変化と、これまでと比べた変化を捉える | **B** — change the product (#468) | **done**, thresholds unvalidated |
 | ⑨ | 日記をAIモデルの学習に使うことはありません | **A**, with disclosure added (#469) | **done** |
@@ -195,6 +195,31 @@ rewriting — relative to that student's own past. Production now does:
 are engineering choices with no validation; there is no backfill, so the first
 observations appear about 14 qualifying days after deploy; days are bucketed
 in UTC.
+
+### ⑥ — option B (#466)
+
+The page's sentence is a negative promise — 「〜だけです」 — and the roster showed
+the student's name, and the student screen showed 「よく出る話題」 counted from
+the diary graph. Both are gone from the screens and from the educator API
+payload, not only hidden:
+
+- `class_placements` (migration `20261018000100_…`) holds the school's class
+  label and 出席番号 per student; only the org's `org_admin` writes it, for
+  students on that org's roster. `overseen_participants()` returns them in
+  place of `display_name`.
+- Educators see 「2-3 12番」 (or 「クラス未設定」), and for each observation its
+  kind, time, input source and 「根拠: 記述との一致 / 推論なし」, newest first.
+  The writing-change observation (⑧) is shown in the same shape.
+- `tests/educator-fields.test.mjs` fails a build in which the type, the demo or
+  a screen carries a field outside that set.
+
+**Still open:** schools have to supply class placements (there is no import UI
+yet; `educator_oversight.md` has the upsert), so every student reads
+「クラス未設定」 until then. Strict newest-first means an older crisis can sit
+below a newer elevated observation; crisis still raises 要確認 and an alert.
+`/oversight` (summaries a student chose to share) still shows the summary's
+themes — whether the page's sentence covers a student-initiated share is not
+settled.
 
 ### ⑦ — option A (#467)
 
