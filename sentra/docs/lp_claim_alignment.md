@@ -10,11 +10,17 @@ the page (option A).
 | # | claim | decision | state |
 | --- | --- | --- | --- |
 | ① | 医学的研究にもとづき構造化したオントロジー知識グラフ | **B** — build it | open, deadline below |
-| ② | 入力のためらいから心理的リスクを検知 | split | **done** |
+| ② | 入力のためらいから心理的リスクを検知 | split | **done** in the repository; in production only from #468 — see ⑧ |
 | ③ | 科学的な裏付けが解析に厳密な根拠を与える | **B** — wire it | open, deadline below |
 | ④ | 教員画面のリスク判定（高/中/低） | **A** — change the page | **done**, after regressing — see below |
 
 ## ② — split, because the two clauses are not the same kind of claim
+
+> **2026-10-18 (#468).** This row said **done** while blesc.online computed
+> none of it: `writing_dynamics.py` runs in the FastAPI pipeline, which is
+> local-only (ADR 0001). "Done" was true of the repository and false of the
+> product — the ④ failure again. The kept half became true in production with
+> ⑧ below; read the bullets that follow as describing the repository until then.
 
 - *"入力のためらいを捉える"* — **kept.** `writing_dynamics.py` implements it, it
   is wired into the pipeline, and its Japanese path was repaired in D-01. This
@@ -149,7 +155,7 @@ contains. Five gaps; four needed an owner decision, taken on 2026-10-18.
 | ⑤ | 危機時、生徒の画面に相談窓口（24時間子供SOSダイヤル）が出る | fix (#465) — product | **done** |
 | ⑥ | 先生に表示されるのはクラス・出席番号・表現の種類・時刻だけ | **B** — change the product (#466) | see below |
 | ⑦ | AIが日記を受けて短い問いをひとつ返す | **A** — change the page (#467) | **done** |
-| ⑧ | 書きぶりの変化と、これまでと比べた変化を捉える | **B** — change the product (#468) | see below |
+| ⑧ | 書きぶりの変化と、これまでと比べた変化を捉える | **B** — change the product (#468) | **done**, thresholds unvalidated |
 | ⑨ | 日記をAIモデルの学習に使うことはありません | **A**, with disclosure added (#469) | **done** |
 
 ### ⑤ — the promised line was nowhere in the product (#465)
@@ -168,6 +174,27 @@ journal card and voice all carry them; and `jbjgjf/BLESC-website`'s
 **Still open:** the number and hours have not been read off the official page
 by a person. `verification` in `crisis_contacts.json` says so, and stays
 `unverified` until someone fills in who and when.
+
+### ⑧ — option B (#468)
+
+The page says Blesc captures changes in how a student writes — hesitation and
+rewriting — relative to that student's own past. Production now does:
+
+- `frontend/src/lib/writingDynamics.ts` ports `writing_dynamics.py` to the
+  Next.js path, pinned to it by `shared/writing_dynamics_conformance.json`
+  (both suites run it).
+- Each journal submission with telemetry consent writes `writing_features`;
+  once a student has 14 qualifying days of their own, the entry is compared
+  with them, and a feature beyond 2 of the student's own SDs is stored as a
+  `writing_change_observations` row (feature + direction only).
+- Educators see 「観測（書きぶりの変化）」 with the time, the input source and the
+  basis — no number, no text, no inferred state. It does not raise 要確認.
+- Nothing is compared or observed in a collection window.
+
+**Still open:** the 2.0 SD threshold and the 5-edit floor for a qualifying day
+are engineering choices with no validation; there is no backfill, so the first
+observations appear about 14 qualifying days after deploy; days are bucketed
+in UTC.
 
 ### ⑦ — option A (#467)
 
