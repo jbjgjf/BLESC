@@ -3,6 +3,7 @@
  *
  *   node scripts/seed-actors.mjs --count 30
  *   node scripts/seed-actors.mjs --count 30 --roster <org_id> --educator <user_id>
+ *   node scripts/seed-actors.mjs --count 30 --roster <org_id> --educator <user_id> --class 2-3
  *   node scripts/seed-actors.mjs --list
  *   node scripts/seed-actors.mjs --purge <run_id>
  *
@@ -116,6 +117,7 @@ function args() {
     roster: read("--roster"),
     educator: read("--educator"),
     consent: argv.includes("--consent"),
+    className: read("--class"),
     list: argv.includes("--list"),
     purge: read("--purge"),
   };
@@ -163,12 +165,15 @@ async function createOne(client, email, password, runId, index) {
   return { email, userId: user.id, participantId: participant.data.id };
 }
 
-async function seed({ count, prefix, roster, educator, consent }) {
+async function seed({ count, prefix, roster, educator, consent, className }) {
   if (!Number.isInteger(count) || count < 1 || count > 500) {
     fail("--count must be a whole number between 1 and 500.");
   }
   if (consent && !roster) fail("--consent needs --roster: a consent row is scoped to an org.");
   if (roster && !educator) fail("--roster needs --educator: the roster links an educator to a student.");
+  // A class is the school's name for a student on the educator screens (#466),
+  // so it only means something inside an org.
+  if (className && !roster) fail("--class needs --roster: a class and 出席番号 are scoped to an org.");
 
   const client = admin();
   const runId = randomUUID().slice(0, 8);
@@ -193,6 +198,22 @@ async function seed({ count, prefix, roster, educator, consent }) {
     const inserted = await client.from("oversight_roster").insert(rows);
     if (inserted.error) fail(`roster: ${inserted.error.message}`);
     console.error(`  rostered ${rows.length} to org ${roster}`);
+  }
+
+  if (className) {
+    // Educators see class + 出席番号, never a name (#466). Numbered 1..N in the
+    // order created. A class that already has these numbers fails on the
+    // (org, class, number) unique index rather than silently doubling up.
+    const rows = made.map((actor, index) => ({
+      org_id: roster,
+      participant_id: actor.participantId,
+      owner_user_id: actor.userId,
+      class_label: className,
+      attendance_number: index + 1,
+    }));
+    const inserted = await client.from("class_placements").insert(rows);
+    if (inserted.error) fail(`class placements: ${inserted.error.message}`);
+    console.error(`  placed ${rows.length} in class ${className} (出席番号 1–${rows.length})`);
   }
 
   if (consent) {
