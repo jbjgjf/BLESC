@@ -188,7 +188,8 @@ describe("a bulk confirmation from before the answer was itemised", () => {
     const grant = guardianConsentGrant(child.requested, child.record);
     assert.deepEqual(
       [grant.research_analysis, grant.raw_text_retention, grant.model_training_use, grant.guardian_consent],
-      [true, true, true, true],
+      // Training is false even though it was asked: nothing approves it (#469).
+      [true, true, false, true],
     );
     assert.deepEqual(guardianConsentGrant(child.requested, child.record, null), grant);
   });

@@ -31,7 +31,7 @@
 | --- | --- | --- |
 | 日次固定自己評定 5項目 | 保存先のテーブル（例 `daily_self_reports`）、入力UI、export | **これがないと時系列モデルの独立した目盛りがない。** 本文だけでは正しさを本文由来の量で採点することになる |
 | 相対日 / study phase | export時の変換（`collection_started_at` からの差） | 暦日をexportに出さないという要件が満たせない |
-| 学習利用の別opt-in | `consent_records.model_training_use` 相当の列と同意UI | 現状はどの参加者のデータも学習に使えない（安全側） |
+| 学習利用 | `consent_records.model_training_use`（常に false、DB制約） | 学習には使わない。同意も求めない（第15条、#469） |
 | 撤回後のexport除外 | export側のフィルタ | dry runの合格条件（撤回後の書き込み・export 0） |
 | 保護者からの撤回経路 | 受付方法が未決定（consent-pack C4） | 決定待ち |
 

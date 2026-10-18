@@ -31,7 +31,6 @@ export const GUARDIAN_TOKEN_TTL_HOURS = 72;
 export const GUARDIAN_REVIEWABLE_GRANTS = [
   "anonymized_export",
   "raw_text_retention",
-  "model_training_use",
 ] as const;
 
 export type GuardianReviewableGrant = (typeof GUARDIAN_REVIEWABLE_GRANTS)[number];
@@ -41,8 +40,9 @@ export type GuardianReviewableGrant = (typeof GUARDIAN_REVIEWABLE_GRANTS)[number
  *
  * `research_analysis` is not in here and is not optional: it is what the study
  * is, and a participant who declines it is declining to take part rather than
- * configuring their participation. The three that are here are the ones the
- * consent document presents as separable.
+ * configuring their participation. The two that are here are the ones the
+ * consent document presents as separable. Model training was a third until
+ * 2026-10-18; it is no longer offered at all (#469).
  */
 export type RequestedGrants = {
   [K in GuardianReviewableGrant]: boolean;
@@ -201,7 +201,7 @@ export function guardianTokenUsable(row: GuardianVerificationRow | null, now: Da
  * | `research_analysis`  | guardian「アプリ利用」∧ guardian「研究データ利用」            |
  * | `anonymized_export`  | participant asked ∧ `research_analysis`                   |
  * | `raw_text_retention` | participant asked ∧ guardian「原文の保持」∧ research         |
- * | `model_training_use` | never, for a minor — a guardian is not asked about it     |
+ * | `model_training_use` | never — Blesc does not train on participant data (#469)   |
  * | `guardian_consent`   | guardian「アプリ利用」∧ guardian「研究データ利用」            |
  *
  * Nothing the guardian turned on can add to what the participant asked for,
@@ -227,7 +227,7 @@ export function guardianConsentGrant(
       research_analysis: true,
       anonymized_export: requested.anonymized_export === true,
       raw_text_retention: requested.raw_text_retention === true,
-      model_training_use: requested.model_training_use === true,
+      model_training_use: false,
       minor_assent: participantRecord.minor_assent === true,
       guardian_consent: true,
       document_version: requested.document_version,
@@ -284,10 +284,10 @@ export function participantConsentGrant(
    * A minor may narrow what they agreed to, never widen it.
    *
    * Without this, the guardian's confirmation became a permanent yes: a parent
-   * could approve a request with `model_training_use: false`, and the
+   * could approve a request with `anonymized_export: false`, and the
    * participant could then tick that box on `/consent` and get a record saying
-   * both that a guardian consented and that fine-tuning was agreed to — a use
-   * the guardian never saw. Turning a grant back on is a new question for the
+   * both that a guardian consented and that an external release was agreed
+   * to — a use the guardian never saw. Turning a grant back on is a new question for the
    * guardian, so it needs a new verification; turning one off is the
    * participant withdrawing something, which nobody has to approve.
    *
@@ -304,7 +304,7 @@ export function participantConsentGrant(
     research_analysis: wantsResearch && researchAllowed && (!options.guardianRequired || options.approvedScope?.research_analysis === true),
     anonymized_export: withinApprovedScope("anonymized_export"),
     raw_text_retention: withinApprovedScope("raw_text_retention"),
-    model_training_use: withinApprovedScope("model_training_use"),
+    model_training_use: false,
     minor_assent: requested.minor_assent === true,
     // Never from the caller. See the header.
     guardian_consent: options.guardianConfirmed,

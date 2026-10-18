@@ -103,6 +103,12 @@ PIPELINE_VERSION = "research-pipeline-v1"
 EXTRACTION_SCHEMA_VERSION = "sentra-extraction-schema-v1"
 EXTRACTION_PROMPT_VERSION = "sentra-ontology-extractor-v2"
 DEFAULT_CONSENT_VERSION = "research-consent-v1"
+
+#: Whether participant data may be used to train a model: never (#469).
+#: blesc.jp promises 「日記を…AIモデルの学習に使うこともありません」, and the
+#: owner chose on 2026-10-18 to keep it. The fine-tuning export and the
+#: personal-adapter selection below stay as code, closed by this constant.
+MODEL_TRAINING_ALLOWED = False
 DEFAULT_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 DEFAULT_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL") or os.getenv("LLM_MODEL_NAME", "gpt-6-astra")
 CHAT_PROMPT_VERSION = "sentra-research-chat-v1"
@@ -314,7 +320,9 @@ def _consent_snapshot(consent: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "app_use": bool(consent.get("app_use", False)),
         "research_analysis": bool(consent.get("research_analysis", False)),
         "anonymized_export": bool(consent.get("anonymized_export", False)),
-        "model_training_use": bool(consent.get("model_training_use", False)),
+        # Never true, whatever the payload says: Blesc does not train on
+        # participant data (#469, consent-pack 第15条).
+        "model_training_use": False,
         "consent_version": str(consent.get("consent_version", DEFAULT_CONSENT_VERSION)),
     }
 
@@ -1131,7 +1139,8 @@ def get_personalization_profile(
         or os.getenv("SENTRA_PERSONAL_EXTRACTION_MODEL")
     )
     reviewed_count = status_counts.get("reviewed", 0)
-    consent_allows = bool(latest_consent.model_training_use) if latest_consent else False
+    # A stored yes from before #469 is not a permission either.
+    consent_allows = MODEL_TRAINING_ALLOWED and bool(latest_consent and latest_consent.model_training_use)
     return {
         "personalization_version": PERSONALIZATION_VERSION,
         "reviewed_examples": reviewed_count,
@@ -2564,9 +2573,9 @@ def create_fine_tuning_dataset_export(
     session.commit()
     session.refresh(job)
 
-    if not latest_consent or not latest_consent.model_training_use:
+    if not MODEL_TRAINING_ALLOWED or not latest_consent or not latest_consent.model_training_use:
         job.status = "blocked"
-        job.error_message = "Consent scope does not allow future fine-tuning dataset inclusion."
+        job.error_message = "Blesc does not use participant data for model training (#469)."
         session.add(job)
         session.commit()
         session.refresh(job)

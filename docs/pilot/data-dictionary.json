@@ -239,7 +239,7 @@
       "type": "boolean",
       "default": false,
       "implementation": "implemented",
-      "description": "二次利用（AIモデルの学習）への別opt-in。本研究への参加・本文提出とは別に取り、既定はオフ。同意しなくても研究には通常どおり参加できる（consent-pack.md 第15条）。2026-09-20に列名を future_fine_tuning から model_training_use へ改名し、DB・export・辞書・画面が一致した。旧名は「future」が『まだ使っていない』という実装当時の事実を永続的な文言として残してしまい、「fine_tuning」は第15条が問う『モデルの学習』より狭い一手法しか指していなかった。exportでは行ごとに載る（撤回・未成年同意欠如でも false）。",
+      "description": "常に false。Blesc は参加者のデータをAIモデルの学習に用いず、この同意を求めない（consent-pack.md 第15条、2026-10-18 決定、#469）。DB は 20261018000000 以降 true を保存できない。過去の記録を読めるよう列と export の列は残し、export では行ごとに false が載る。2026-09-20に future_fine_tuning から改名した経緯は approvals.md を参照。",
       "code_ref": "public.consent_records.model_training_use -> ResearchRow.model_training_use",
       "column_name_differs": false,
       "in_export": true

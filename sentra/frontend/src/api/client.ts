@@ -657,7 +657,6 @@ export class ApiClient {
       research_analysis: boolean;
       anonymized_export: boolean;
       raw_text_retention: boolean;
-      model_training_use: boolean;
       minor_assent: boolean;
       document_version?: string;
     },

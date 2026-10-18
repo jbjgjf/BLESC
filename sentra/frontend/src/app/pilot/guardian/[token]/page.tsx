@@ -56,7 +56,7 @@ export default async function GuardianVerificationPage({
     document_version: grants?.document_version ?? null,
     study_days: study?.study_days ?? null,
     optional_grants: grants
-      ? (["raw_text_retention", "anonymized_export", "model_training_use"] as const).filter((key) => grants[key])
+      ? (["raw_text_retention", "anonymized_export"] as const).filter((key) => grants[key])
       : [],
     expires_at: record.expires_at,
   };

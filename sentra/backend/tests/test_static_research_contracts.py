@@ -360,7 +360,9 @@ def test_fine_tuning_export_is_consent_and_review_gated():
 
     assert "model_training_use" in pipeline
     assert 'review_status == "reviewed"' in pipeline
-    assert "Consent scope does not allow future fine-tuning dataset inclusion." in pipeline
+    # #469: closed outright, not only by consent.
+    assert "MODEL_TRAINING_ALLOWED = False" in pipeline
+    assert "Blesc does not use participant data for model training (#469)." in pipeline
     assert "client.fine_tuning.jobs.create" in pipeline
     assert "MIN_REVIEWED_EXAMPLES_FOR_PERSONALIZATION" in pipeline
     assert "ready_for_personal_adapter" in pipeline

@@ -489,8 +489,10 @@ describe("modelTrainingUseAllowed", () => {
     ...over,
   });
 
-  it("needs the extra opt-in on top of research use", () => {
-    assert.equal(modelTrainingUseAllowed(normalizeConsent(record())), true);
+  // #469: Blesc does not train on participant data, so a stored yes is not a
+  // permission either.
+  it("is closed even by a record that says yes", () => {
+    assert.equal(modelTrainingUseAllowed(normalizeConsent(record())), false);
     assert.equal(
       modelTrainingUseAllowed(normalizeConsent(record({ model_training_use: false }))),
       false,

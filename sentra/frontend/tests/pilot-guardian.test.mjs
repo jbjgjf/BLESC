@@ -213,7 +213,9 @@ describe("participantConsentGrant", () => {
       approvedScope: null,
     });
     assert.equal(grant.research_analysis, true);
-    assert.equal(grant.model_training_use, true);
+    assert.equal(grant.anonymized_export, true);
+    // Not even an adult can grant training: it is not offered (#469).
+    assert.equal(grant.model_training_use, false);
   });
 
   it("lets an adult through with no guardian at all", () => {

@@ -25,7 +25,8 @@ is allowed to see. The gate does four things, in this order:
    rows of a withdrawn participant are dropped, which is what the research
    export does today (`researchExport.ts`, `isWithdrawn`). Fitting anything —
    a training mean, an AR coefficient, a tuned hyper-parameter — admits only
-   participants with `model_training_use`.
+   participants with `model_training_use`, and on real data it admits nobody:
+   since #469 a real dataset is refused for `fit` outright.
 
 **Why fitting a baseline counts as "training" here.** Whether estimating a
 training-set mean on a participant's self-reports is "model training" in the
@@ -394,6 +395,16 @@ def admit(
     dataset.validate()
 
     real = dataset.source_kind != SOURCE_SYNTHETIC
+    if real and operation == OPERATION_FIT:
+        # #469: Blesc does not train on participant data, with or without
+        # consent, and no longer asks for it (consent-pack 第15条). Fitting is
+        # read as training here (see the header), so a real participant is
+        # never fitted on — the refusal comes before any paperwork is read.
+        raise ContractViolation(
+            TransferCode.OPERATION_NOT_PERMITTED,
+            "実データの参加者には当てはめを行いません。参加者のデータをAIモデルの学習に用いないためです（consent-pack 第15条、#469）。当てはめは合成データで行います。",
+            "operation",
+        )
     if real:
         require_real_data_approval(approvals, operation, required_roles)
         if preregistration is None:

@@ -60,6 +60,7 @@ DEPLOY_GATED=(
   "20260907000000_restrict_entries_raw_text_writes.sql"
   "20261004000000_pilot_study_days.sql"
   "20261004000100_drop_pilot_study_split.sql"
+  "20261018000000_forbid_model_training_use.sql"
 )
 
 # Migrations written before this script existed that cannot be applied twice

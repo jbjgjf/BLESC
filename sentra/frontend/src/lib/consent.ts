@@ -25,7 +25,11 @@ export type ConsentGrants = {
   /** Retain their journal text (encrypted, expiring) for human evaluation of
    *  extraction accuracy — the retention #131 gates on. */
   raw_text_retention: boolean;
-  /** Use their data to train or fine-tune a model later. */
+  /**
+   * Always false. Blesc does not use participant data to train a model, with
+   * or without consent (#469, consent-pack 第15条). The field stays because the
+   * column does: past rows are evidence of what was asked.
+   */
   model_training_use: boolean;
 };
 
@@ -111,7 +115,9 @@ export function normalizeConsent(input: unknown): ConsentState {
     research_analysis: bool(raw.research_analysis),
     anonymized_export: bool(raw.anonymized_export),
     raw_text_retention: bool(raw.raw_text_retention),
-    model_training_use: bool(raw.model_training_use),
+    // Read as false whatever the row says: the database refuses true since
+    // 20261018000000, and a row from before that is not a permission (#469).
+    model_training_use: false,
     minor_assent: bool(raw.minor_assent),
     guardian_consent: bool(raw.guardian_consent),
     consent_version: text(raw.consent_version, CONSENT_VERSION),
@@ -147,22 +153,17 @@ export function rawTextRetentionAllowed(state: ConsentState): boolean {
 }
 
 /**
- * Whether this participant's data may be used to train a model.
+ * Whether this participant's data may be used to train a model: never (#469).
  *
- * Built on `researchUseAllowed` for the same reason retention is: training use
- * is a *further* permission on top of research use, never an alternative route
- * to the same data. A revoked consent, a missing assent or a missing guardian
- * confirmation all close it, and the extra opt-in has to be present on top.
- *
- * The state field is `model_training_use`, which is what the column is called.
- * The name this function carries is the data dictionary's, and it is the one
- * the consent screen's wording supports: the student agrees to
- * 「将来のモデルの学習に使うこと」, which names no particular technique. Reading
- * the column name as the scope of the permission is how a record ends up
- * describing something narrower than what was actually agreed to.
+ * blesc.jp promises 「日記を…AIモデルの学習に使うこともありません」, and on
+ * 2026-10-18 the owner chose to keep that promise rather than qualify it. So
+ * this no longer reads a consent item; there is no item to read. It is kept as
+ * a function so the export and the transfer study ask the question in one
+ * place, and get the same answer.
  */
-export function modelTrainingUseAllowed(state: ConsentState): boolean {
-  return researchUseAllowed(state) && state.model_training_use;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function modelTrainingUseAllowed(_state: ConsentState): boolean {
+  return false;
 }
 
 /** Whether behavioural input telemetry may be stored (#135). */

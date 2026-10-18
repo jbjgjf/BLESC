@@ -180,8 +180,10 @@ def test_eval_review_and_fine_tuning_dataset_export():
             json={"user_id": "test_ft_user"},
         )
         assert export.status_code == 200, export.text
-        assert export.json()["status"] == "completed"
-        assert Path(export.json()["output_path"]).exists()
+        # #469: even a participant whose payload asked for training is never
+        # exported for fine-tuning. Blesc does not train on participant data.
+        assert export.json()["status"] == "blocked"
+        assert "#469" in export.json()["error_message"]
 
 
 def test_chat_and_similarity_are_logged_without_openai_key():

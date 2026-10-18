@@ -32,8 +32,7 @@ import { WithdrawalChoice } from "@/components/WithdrawalChoice";
 type GrantKey =
   | "research_analysis"
   | "raw_text_retention"
-  | "anonymized_export"
-  | "model_training_use";
+  | "anonymized_export";
 
 const GRANTS: Array<{ key: GrantKey; label: string; detail: string }> = [
   {
@@ -53,15 +52,6 @@ const GRANTS: Array<{ key: GrantKey; label: string; detail: string }> = [
     label: "個人が分からない形にしたデータを、研究成果として外部に出すことに同意します",
     detail: "名前・学校名など、あなたが特定できる情報を取り除いたうえで集計します。",
   },
-  {
-    key: "model_training_use",
-    label: "AIモデルの学習に使うことに同意します",
-    // 第15条3項をそのまま言う。「いつでも取り消せます」だけ書くと、
-    // 学習済みモデルから寄与を取り除けることまで約束したことになる。
-    detail:
-      "今回の研究の分析とは別の、任意の項目です。同意しなくても研究には通常どおり参加できます。" +
-      "いつでも取り消せますが、取り消す前に学習が終わったモデルから、そのデータの影響を取り除くことはできません。",
-  },
 ];
 
 export default function ConsentPage() {
@@ -73,7 +63,6 @@ export default function ConsentPage() {
     research_analysis: false,
     raw_text_retention: false,
     anonymized_export: false,
-    model_training_use: false,
   });
   const [assent, setAssent] = useState(false);
   const [isMinor, setIsMinor] = useState(true);
@@ -98,7 +87,6 @@ export default function ConsentPage() {
       research_analysis: current.research_analysis,
       raw_text_retention: current.raw_text_retention,
       anonymized_export: current.anonymized_export,
-      model_training_use: current.model_training_use,
     });
     setAssent(current.minor_assent);
   }, [demo, userId]);
@@ -124,7 +112,6 @@ export default function ConsentPage() {
         research_analysis: checked.research_analysis,
         raw_text_retention: checked.raw_text_retention,
         anonymized_export: checked.anonymized_export,
-        model_training_use: checked.model_training_use,
         minor_assent: assent,
         document_version: CONSENT_DOCUMENT_VERSION,
       });
@@ -148,7 +135,6 @@ export default function ConsentPage() {
         research_analysis: false,
         raw_text_retention: false,
         anonymized_export: false,
-        model_training_use: false,
       });
       setAssent(false);
       setWithdrawing(false);

@@ -126,7 +126,6 @@ export type ConsentGrantInput = {
   research_analysis?: boolean;
   anonymized_export?: boolean;
   raw_text_retention?: boolean;
-  model_training_use?: boolean;
   minor_assent?: boolean;
   guardian_consent?: boolean;
   document_version?: string;
@@ -151,7 +150,8 @@ export async function recordConsent(
     research_analysis: input.research_analysis === true,
     anonymized_export: input.anonymized_export === true,
     raw_text_retention: input.raw_text_retention === true,
-    model_training_use: input.model_training_use === true,
+    // Never true: the database refuses it (#469).
+    model_training_use: false,
     minor_assent: input.minor_assent === true,
     guardian_consent: input.guardian_consent === true,
     consent_version: CONSENT_VERSION,
@@ -187,7 +187,6 @@ export function consentMismatch(claimed: unknown, stored: ConsentState): string[
     "research_analysis",
     "anonymized_export",
     "raw_text_retention",
-    "model_training_use",
     "minor_assent",
     "guardian_consent",
   ] as const;

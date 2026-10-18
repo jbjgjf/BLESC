@@ -210,8 +210,9 @@ curl -X POST http://localhost:8000/api/research/eval-examples/1/review \
   -d '{"user_id":"research_user_01","review_status":"reviewed"}'
 ```
 
-Only reviewed examples and `model_training_use=true` consent can enter the
-fine-tuning JSONL export:
+**Closed since 2026-10-18 (#469):** Blesc does not use participant data for model
+training, so this export always returns `blocked` (`MODEL_TRAINING_ALLOWED = False`).
+It used to admit reviewed examples with `model_training_use=true` consent:
 
 ```bash
 curl -X POST http://localhost:8000/api/research/fine-tuning-dataset \
@@ -234,7 +235,8 @@ Personal adaptation is gated before use. Check readiness with:
 curl "http://localhost:8000/api/research/personalization?user_id=research_user_01"
 ```
 
-The backend requires `model_training_use=true` and at least
+Closed for the same reason (#469): `consent_allows_model_training` is always
+false. It used to require `model_training_use=true` and at least
 `SENTRA_MIN_PERSONALIZATION_EXAMPLES` reviewed Eval Examples before an adapter
 model is selected for extraction. The default threshold is `100`. Once a
 participant-specific model exists, set it through

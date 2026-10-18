@@ -38,7 +38,6 @@ type ConsentRequest = {
   research_analysis?: boolean;
   anonymized_export?: boolean;
   raw_text_retention?: boolean;
-  model_training_use?: boolean;
   minor_assent?: boolean;
   document_version?: string;
   /**
@@ -149,7 +148,7 @@ export async function POST(request: NextRequest) {
   // the caller is told which, so a screen can say "this needs a new
   // confirmation" instead of silently unticking a box the participant ticked.
   const outsideApprovedScope = needsGuardian && guardianConfirmed
-    ? (["research_analysis", "anonymized_export", "raw_text_retention", "model_training_use"] as const)
+    ? (["research_analysis", "anonymized_export", "raw_text_retention"] as const)
         .filter((key) => body[key] === true && grant[key] !== true)
     : [];
 

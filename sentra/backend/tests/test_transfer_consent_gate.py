@@ -141,11 +141,19 @@ def test_the_export_loader_marks_rows_as_real(real_shaped) -> None:
     assert real_shaped.source_kind == SOURCE_PARTICIPANT
 
 
-@pytest.mark.parametrize("operation", [OPERATION_EVALUATE, OPERATION_FIT, OPERATION_AUDIT, OPERATION_READ_TEXT])
+@pytest.mark.parametrize("operation", [OPERATION_EVALUATE, OPERATION_AUDIT, OPERATION_READ_TEXT])
 def test_real_data_without_an_approval_record_is_refused(real_shaped, operation: str) -> None:
     with pytest.raises(ContractViolation) as caught:
         admit(real_shaped, operation)
     assert caught.value.code == TransferCode.APPROVAL_MISSING
+
+
+def test_real_data_is_never_fitted_on_whatever_the_paperwork_says(real_shaped) -> None:
+    """#469: Blesc does not train on participant data (consent-pack 第15条)."""
+    with pytest.raises(ContractViolation) as caught:
+        admit(real_shaped, OPERATION_FIT, approvals=approvals())
+    assert caught.value.code == TransferCode.OPERATION_NOT_PERMITTED
+    assert "第15条" in str(caught.value)
 
 
 @pytest.mark.parametrize(

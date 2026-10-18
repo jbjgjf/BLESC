@@ -50,11 +50,6 @@ const OPTIONAL_GRANTS = [
     label: "個人が特定できない形にしたデータを、研究チーム外と共有することに同意する",
     detail: "氏名・学校名・連絡先は含まれません。",
   },
-  {
-    key: "model_training_use" as const,
-    label: "AIモデルの学習に利用することに同意する",
-    detail: "同意しなくても、研究への参加内容は変わりません。",
-  },
 ];
 
 export default function PilotJoinPage() {
@@ -89,7 +84,6 @@ export default function PilotJoinPage() {
       setOptional({
         raw_text_retention: restored.raw_text_retention === true,
         anonymized_export: restored.anonymized_export === true,
-        model_training_use: restored.model_training_use === true,
       });
     }
     setLoaded(true);
@@ -278,7 +272,6 @@ export default function PilotJoinPage() {
                     minor_assent: true,
                     raw_text_retention: optional.raw_text_retention === true,
                     anonymized_export: optional.anonymized_export === true,
-                    model_training_use: optional.model_training_use === true,
                   });
                   await ApiClient.advancePilotEnrollment(enrollment!.id, "participant_assented");
                   return null;
@@ -325,7 +318,6 @@ export default function PilotJoinPage() {
                       await ApiClient.requestGuardianVerification(enrollment!.id, {
                         raw_text_retention: optional.raw_text_retention === true,
                         anonymized_export: optional.anonymized_export === true,
-                        model_training_use: optional.model_training_use === true,
                       });
                       return null;
                     })

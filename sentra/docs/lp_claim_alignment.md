@@ -151,7 +151,7 @@ the product changes to match it.**
 | ⑥ | 先生に見えるのはクラス・出席番号・表現の種類・時刻だけ | #466 | open |
 | ⑦ | AIが日記を受けて短い問いをひとつ返す | #467 | open |
 | ⑧ | これまでと比べた変化、ためらい・書き直しを捉える | #468 | open — depends on ADR 0001 |
-| ⑨ | 日記をAIモデルの学習に使うことはない | #469 | open |
+| ⑨ | 日記をAIモデルの学習に使うことはない | #469 | **in the repository** — see below; migration applies after the deploy |
 | ⑩ | 日本の個人情報保護法に準拠 | `jbjgjf/BLESC-website#24` | open — needs legal sign-off, not only code |
 | ⑪ | 希望者ではなく全生徒が使う | `jbjgjf/BLESC-website#25` | **not started** — see below |
 
@@ -176,6 +176,23 @@ commit it was checked against and the date.
   completion screen, and does not ask follow-up questions that day.
 - `hotlines_verified_on` is `null`. A person has to confirm each number and
   its hours against `hotlines_source` and write the date in.
+
+### ⑨ — what changed
+
+- The training opt-in is gone from `/consent`, `/pilot/join` and the guardian
+  confirmation. The consent store writes `false`, `normalizeConsent` reads
+  `false`, and `modelTrainingUseAllowed` returns `false`.
+- `20261018000000_forbid_model_training_use.sql` makes the database refuse
+  `true`. It does not rewrite existing rows: if any row holds `true`, it stops
+  and a person decides. It is deploy-gated — apply it after the app.
+- consent-pack 第15条 now says the data is not used for training, with or
+  without consent. v3 is unapproved, so it was edited in place; approvals are
+  taken against this text (`approvals.md`).
+- The export keeps the `model_training_use` column, always `false`, so past
+  exports and the data dictionary stay readable.
+- FastAPI's fine-tuning export and personal-adapter selection are closed by
+  `MODEL_TRAINING_ALLOWED = False`. The transfer study refuses `fit` on real
+  data outright; pre-registration P14 is decided accordingly.
 
 ### ⑪ — B cannot mean what the page says
 
