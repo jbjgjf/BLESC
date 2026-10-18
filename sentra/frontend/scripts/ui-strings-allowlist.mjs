@@ -95,6 +95,9 @@ const WRITE_FAILURES = [
   "extractions insert: ${extractionInsert.error.message}",
   "graph_versions insert: ${versionInsert.error.message}",
   "graph_change_events insert: ${changeInsert.error.message}",
+  // Writing dynamics (#468). Mirror failures, named in `warnings` and logged.
+  "writing_features insert: ${insert.error.message}",
+  "writing_change_observations upsert: ${insert.error.message}",
   "longitudinal_features insert: ${insert.error.message}",
   "eval_examples insert: ${insert.error.message}",
   "pilot_self_reports upsert",

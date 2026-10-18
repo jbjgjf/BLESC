@@ -1,3 +1,5 @@
+import type { WritingChangeObservation } from "@/lib/writingChangeObservation";
+
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export type RecordId = string | number;
 
@@ -137,6 +139,13 @@ export interface EducatorStudentStatus {
   baseline_is_provisional: boolean;
   baseline_days_remaining: number | null;
   baseline_type: string | null;
+  /**
+   * The latest 「書きぶりの変化」 observation (#468): which writing feature moved
+   * against the student's own last fourteen writing days, which way, and when.
+   * Feature and direction only — no z-score, no text. Optional so the demo
+   * roster and any other producer of this type need not know about it.
+   */
+  writing_change?: WritingChangeObservation | null;
 }
 
 /** A row of `safety_escalations` as the alert list reads it. */

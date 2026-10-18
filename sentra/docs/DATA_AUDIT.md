@@ -32,7 +32,8 @@ BLESC tracks extensive data across interactions, memory, graphs, and reflection.
 | Table Name | Notable Columns | Data Type | Generation Source | Update Frequency |
 |---|---|---|---|---|
 | `interaction_events` | `field_name`, `event_type`, `relative_ms`, `metadata_json` | text, int, jsonb | Frontend event listeners | Continuous (during typing/focus) |
-| `writing_features` | `feature_json` | jsonb | `writing_dynamics.py` on submit | Once per entry submission |
+| `writing_features` | `feature_json`, `baseline_comparison_json` | jsonb | Production: `frontend/src/lib/writingDynamics.ts` via `supabaseWriter` (#468); research: `writing_dynamics.py`. Both pinned to `shared/writing_dynamics_conformance.json` | Once per entry submission (telemetry consent required; the comparison is withheld during a collection window) |
+| `writing_change_observations` | `evidence` (feature + direction only), `observed_at`, `surface`, `baseline_days` | jsonb, timestamptz, text, int | `supabaseWriter` when the journal field moved ≥2 of the student's own SDs against their last 14 qualifying days (#468) | Only when a change is observed; educator-readable via `educator_oversees` |
 | `cognitive_probe_features` | `probe_name`, `feature_json` | text, jsonb | `cognitive_probe.py` on submit | Once per entry submission |
 | `entry_embeddings` | `embedding`, `content_hash` | vector(1536), text | `_generate_embedding` (OpenAI) | Once per entry text/graph |
 | `graph_versions` | `nodes_json`, `relations_json` | jsonb | Graph Extraction LLM Pipeline | Per entry or revision |

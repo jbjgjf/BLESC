@@ -150,6 +150,41 @@ export const ja = {
     flagRecorded: "記録あり",
   },
 
+  /**
+   * The 「書きぶりの変化」 observation (#468). Each line says what moved
+   * relative to the student's OWN past and in which direction — never what it
+   * means, never how much in numbers. Nothing measured what a longer pause
+   * means for a particular student, so the wording does not guess.
+   */
+  writingChange: {
+    kind: "書きぶりの変化",
+    observationPrefix: "観測（書きぶりの変化）: ",
+    evidence: {
+      pause_ratio: {
+        higher: "書く途中で手が止まる回数が、本人のふだんより多い",
+        lower: "書く途中で手が止まる回数が、本人のふだんより少ない",
+      },
+      max_pause_ms: {
+        higher: "いちばん長く手が止まった時間が、本人のふだんより長い",
+        lower: "いちばん長く手が止まった時間が、本人のふだんより短い",
+      },
+      deletion_ratio: {
+        higher: "書いて消す（書き直す）回数が、本人のふだんより多い",
+        lower: "書いて消す（書き直す）回数が、本人のふだんより少ない",
+      },
+      chars_per_minute: {
+        higher: "書く速さが、本人のふだんより速い",
+        lower: "書く速さが、本人のふだんより遅い",
+      },
+      final_length: {
+        higher: "書いた分量が、本人のふだんより多い",
+        lower: "書いた分量が、本人のふだんより少ない",
+      },
+    },
+    basis: (days: number) =>
+      `└ 根拠: 本人の過去 ${days} 日分の入力のしかた（時間と文字数のみ）との比較 / 本文は使っていない / 推論なし`,
+  },
+
   /** Counsellor view of the summaries a student chose to share. */
   oversight: {
     eyebrow: "支援担当への引き継ぎ · 生徒が選んで共有",

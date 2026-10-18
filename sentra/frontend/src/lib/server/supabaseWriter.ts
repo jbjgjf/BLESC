@@ -47,6 +47,20 @@ import {
 } from "@/lib/baseline";
 import { extractionFellBack } from "@/lib/extraction";
 import { t } from "@/lib/i18n";
+import {
+  PIPELINE_VERSION,
+  WRITING_CHANGE_FIELD,
+  WRITING_CHANGE_VERSION,
+  educatorEvidence,
+  historyDaysFromRows,
+  writingChangeAgainstBaseline,
+  writingDynamicsForSession,
+  type ComparableDynamics,
+  type WritingChangeOutcome,
+  type WritingDynamicsEvent,
+} from "@/lib/writingDynamics";
+import { WRITING_CHANGE_OBSERVATION_KIND } from "@/lib/writingChangeObservation";
+import { COLLECTION_ONLY_STATUS } from "@/lib/server/collectionMode";
 
 type Json = Record<string, unknown>;
 
@@ -519,6 +533,165 @@ async function buildInsight(params: {
 }
 
 /**
+ * The student's own prior writing days, for the writing-change baseline (#468).
+ *
+ * Read from `writing_features` — this module's own earlier writes — rather than
+ * recomputed from `interaction_events`, so the baseline rests on exactly the
+ * numbers that were stored beside each entry at the time. Only the journal
+ * field, only days before today (UTC, the same day boundary the snapshots and
+ * insights use). `writingChangeAgainstBaseline` takes the most recent fourteen
+ * qualifying days out of what this returns.
+ */
+async function loadWritingHistory(
+  client: SupabaseClient,
+  participantId: string,
+  today: string,
+): Promise<{ history: ComparableDynamics[][]; lookupFailed: boolean; truncated: boolean }> {
+  // A participant who writes several short entries a day can need more than
+  // fourteen rows to reach fourteen qualifying days; `truncated` records the
+  // case where even this was not enough, as `loadBaselineHistory` does.
+  const ROW_LIMIT = 300;
+  const { data, error } = await client
+    .from("writing_features")
+    .select("feature_json, created_at")
+    .eq("participant_id", participantId)
+    .eq("field_name", WRITING_CHANGE_FIELD)
+    .lt("created_at", `${today}T00:00:00.000Z`)
+    .order("created_at", { ascending: false })
+    .limit(ROW_LIMIT);
+  if (error) {
+    console.warn("[writing-dynamics] history lookup failed", error);
+    return { history: [], lookupFailed: true, truncated: false };
+  }
+  const rows = ((data ?? []) as Array<{ feature_json: unknown; created_at: unknown }>).map((row) => ({
+    day: typeof row.created_at === "string" ? new Date(row.created_at).toISOString().slice(0, 10) : "",
+    features: (row.feature_json ?? {}) as ComparableDynamics,
+  }));
+  const history = historyDaysFromRows(rows, today);
+  return { history, lookupFailed: false, truncated: (data?.length ?? 0) >= ROW_LIMIT };
+}
+
+/**
+ * Writing dynamics for one submission, and — outside a collection window — the
+ * change in them against the student's own past (#468).
+ *
+ * Until this, production stored the input telemetry and analysed none of it;
+ * `writing_dynamics.py` ran only on the FastAPI research path, which is not
+ * deployed (ADR 0001). What is written here, in order:
+ *
+ *   1. `writing_features`, one row per field the telemetry names, carrying
+ *      `writingDynamicsForSession` — the TS port pinned to
+ *      `shared/writing_dynamics_conformance.json`. These are measurements of
+ *      timing and length, a re-expression of the `entry_fields.metrics_json`
+ *      written just above, and they are written during a collection window too:
+ *      they are no more a reading of the participant than the telemetry they
+ *      are computed from, and without them a participant would leave the window
+ *      with no writing history to compare against.
+ *
+ *   2. On the journal row, `baseline_comparison_json`: the comparison with the
+ *      student's own last fourteen qualifying days, z-scores included. A
+ *      research record; educators cannot read this table.
+ *
+ *   3. `writing_change_observations`, only when that comparison found a change.
+ *      Feature and direction, time, input source — nothing else. This is the
+ *      one row an educator can read.
+ *
+ * 2 and 3 are **withheld during a collection window**, for the reason the
+ * insight row is (#165, `collectionMode.ts`): a comparison against a baseline
+ * is an interpretation of a participant, and an educator-visible observation
+ * is one somebody can act on. The study said it would not form them while it
+ * measures. Unlike the safety assessment, nothing about a student's immediate
+ * safety rests on this, so the exception made for that does not extend here.
+ *
+ * Gated as a whole on `telemetryAllowed` by the caller: it is computed from
+ * telemetry, and without that consent there is no telemetry to compute from.
+ */
+async function writeWritingDynamics(params: {
+  client: SupabaseClient;
+  ownerUserId: string;
+  participantId: string;
+  entryId: string;
+  entrySessionId: string;
+  telemetry: Json;
+  collectionOnly: boolean;
+  mirror: (label: string, action: () => Promise<void>) => Promise<void>;
+  consentGated: string[];
+  warnings: string[];
+}): Promise<void> {
+  const { client, ownerUserId, participantId, entryId, entrySessionId, telemetry, collectionOnly, mirror, consentGated, warnings } = params;
+  const dynamics = writingDynamicsForSession(
+    (telemetry.field_metrics ?? {}) as Record<string, unknown>,
+    (Array.isArray(telemetry.events) ? telemetry.events : []) as WritingDynamicsEvent[],
+  );
+  if (Object.keys(dynamics).length === 0) return;
+
+  // Server time, not the client's `submitted_at`: the day decides which history
+  // the comparison rests on, and the time is what an educator is shown.
+  const observedAt = new Date().toISOString();
+  const today = observedAt.slice(0, 10);
+  const journal = dynamics[WRITING_CHANGE_FIELD];
+
+  let comparison: Json = {};
+  let outcome: WritingChangeOutcome | null = null;
+  if (journal && collectionOnly) {
+    comparison = { status: COLLECTION_ONLY_STATUS };
+    consentGated.push("collection_only:writing_change_observations");
+  } else if (journal) {
+    const { history, lookupFailed, truncated } = await loadWritingHistory(client, participantId, today);
+    if (lookupFailed) {
+      // A failed read must not become "not enough history": that is a statement
+      // about the student, and this is a statement about the database.
+      comparison = { status: "lookup_failed" };
+      warnings.push("writing_features_history_lookup");
+    } else {
+      outcome = writingChangeAgainstBaseline(journal, history);
+      comparison = { ...outcome, history_window_truncated: truncated };
+    }
+  }
+
+  await mirror("writing_features", async () => {
+    const insert = await client.from("writing_features").insert(
+      Object.values(dynamics).map((features) => ({
+        owner_user_id: ownerUserId,
+        participant_id: participantId,
+        entry_id: entryId,
+        entry_session_id: entrySessionId,
+        field_name: features.field_name,
+        feature_json: features,
+        pipeline_version: PIPELINE_VERSION,
+        baseline_comparison_json: features.field_name === WRITING_CHANGE_FIELD ? comparison : {},
+      })),
+    );
+    if (insert.error) throw new Error(`writing_features insert: ${insert.error.message}`);
+  });
+
+  const evidence = outcome ? educatorEvidence(outcome) : null;
+  if (!outcome || !evidence) return;
+  const observedDays = outcome.observed_days;
+  await mirror("writing_change_observations", async () => {
+    // Upsert on (entry, field): a retried submission that reaches here resolves
+    // to the observation already written rather than a second one.
+    const insert = await client.from("writing_change_observations").upsert(
+      {
+        owner_user_id: ownerUserId,
+        participant_id: participantId,
+        entry_id: entryId,
+        entry_session_id: entrySessionId,
+        kind: WRITING_CHANGE_OBSERVATION_KIND,
+        surface: "journal",
+        field_name: WRITING_CHANGE_FIELD,
+        observed_at: observedAt,
+        evidence,
+        baseline_days: observedDays,
+        pipeline_version: WRITING_CHANGE_VERSION,
+      },
+      { onConflict: "entry_id,field_name" },
+    );
+    if (insert.error) throw new Error(`writing_change_observations upsert: ${insert.error.message}`);
+  });
+}
+
+/**
  * Mirror one computed submission into Supabase. Never throws.
  *
  * The three tables the UI reads are chained by foreign key and reported as one
@@ -865,6 +1038,25 @@ export async function writeEntryResult(
         source_hash: await sha256(`${journalText}\n\n${recallText}`),
       });
       if (linkInsert.error) throw new Error(`entry_research_links insert: ${linkInsert.error.message}`);
+    });
+  }
+
+  // Writing dynamics, and the change in them against the student's own past
+  // (#468). See `writeWritingDynamics` for what is written and what is withheld.
+  const writtenSessionId = entrySessionId as string | null;
+  if (telemetry.session_id && !telemetryPermitted) consentGated.push("writing_features");
+  if (writtenSessionId && telemetryPermitted) {
+    await writeWritingDynamics({
+      client,
+      ownerUserId,
+      participantId,
+      entryId,
+      entrySessionId: writtenSessionId,
+      telemetry,
+      collectionOnly: Boolean(context.collectionOnly),
+      mirror,
+      consentGated,
+      warnings,
     });
   }
 
