@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 import {
@@ -56,6 +58,19 @@ const ENGLISH_CONVERSATION = [
 ];
 
 const topicNames = (messages) => extractTopics(messages).map((entry) => entry.topic);
+
+/** The two route handlers that write `conversation_recall_summaries`. */
+const RECALL_ROUTES = {
+  "api/chat": "../src/app/api/chat/route.ts",
+  "api/research/conversation-recall": "../src/app/api/research/conversation-recall/route.ts",
+};
+
+const source = (relative) =>
+  readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
+
+/** Source with comments removed, so a quoted example in a comment is not a finding. */
+const withoutComments = (text) =>
+  text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
 
 describe("recall topics — the Japanese case that returned nothing", () => {
   it("finds recurring topics in a Japanese conversation", () => {
@@ -150,6 +165,81 @@ describe("recall topics — the Japanese case that returned nothing", () => {
 
   it("tolerates a row with no redacted text", () => {
     assert.deepEqual(extractTopics([{ role: "user", content_redacted: null }]), []);
+  });
+
+  it("keeps a katakana word containing ー in one piece", () => {
+    // `/api/chat` matched Japanese with `[ぁ-んァ-ン一-龥]{2,}`, which stops at
+    // ー (U+30FC) because the class ends at ン. 「コーヒー」 produced nothing at
+    // all — コ, ヒ and ー are each a single character — and 「ラーメン」 came back
+    // as 「メン」. Loanwords are a large part of what a teenager writes, so the
+    // half that got through was also the half that was mislabelled.
+    const names = topicNames([
+      { role: "user", content_redacted: "部活のあとにコーヒーを飲んだ。ラーメンも食べた。" },
+      { role: "user", content_redacted: "またコーヒーを飲みたい。ラーメンはしばらくいい。" },
+    ]);
+    assert.ok(names.includes("コーヒー"), `missing コーヒー in ${JSON.stringify(names)}`);
+    assert.ok(names.includes("ラーメン"), `missing ラーメン in ${JSON.stringify(names)}`);
+    assert.ok(!names.includes("メン"), `メン is a fragment, not a topic: ${JSON.stringify(names)}`);
+  });
+});
+
+describe("one column, one rule — both routes that write the summary", () => {
+  /**
+   * `/api/chat` and `/api/research/conversation-recall` both insert into
+   * `conversation_recall_summaries`, and `/recall` renders whichever answered
+   * last: the page assigns `response.conversation_recall_30` after every turn
+   * and re-reads the research route on 「まとめを更新」.
+   *
+   * They had three different implementations between them — English prose in
+   * both, and two different topic rules, one of which counted hiragana
+   * particles and had no stop words at all. `summary_json` records nothing
+   * about which handler produced it, so a researcher reading the column could
+   * not tell which rule a row was made under.
+   */
+  for (const [name, path] of Object.entries(RECALL_ROUTES)) {
+    it(`${name} builds the summary from lib/conversationRecall`, () => {
+      const code = withoutComments(source(path));
+      assert.match(code, /from "@\/lib\/conversationRecall"/, `${name} does not use the shared module`);
+      assert.match(code, /t\.recall\.memorySummary/, `${name} does not take its wording from the catalogue`);
+    });
+
+    it(`${name} keeps no second copy of the summary or the topic rule`, () => {
+      const code = withoutComments(source(path));
+
+      assert.doesNotMatch(
+        code,
+        /Recent conversation includes|Not enough conversation history/,
+        `${name} still builds the English sentence`,
+      );
+      // A character class over kana or Latin letters inside these handlers is a
+      // topic rule growing back. The matching belongs in one module so that a
+      // fix reaches both routes.
+      assert.doesNotMatch(
+        code,
+        /\[(?:ぁ-ん|ァ-ン|ァ-ヺ|a-z)[^\]]*\]\s*(?:\{|\+|\*)/,
+        `${name} matches words itself instead of calling extractTopics`,
+      );
+      assert.doesNotMatch(code, /stopWords|STOP_WORDS/, `${name} keeps its own stop-word list`);
+    });
+  }
+
+  it("produces the same summary_json for the same window, whichever route ran", () => {
+    // The two handlers now compose the same three calls. Composing them here
+    // is what the routes do, and asserting the result is identical is the
+    // property the research column depends on.
+    const compose = (messages) => {
+      const turns = turnCounts(messages);
+      const latest = latestUserTurn(messages);
+      return {
+        summary: latest
+          ? t.recall.memorySummary.withLatestTurn(turns.user, turns.assistant, latest.slice(0, LATEST_TURN_EXCERPT))
+          : t.recall.memorySummary.counts(turns.user, turns.assistant),
+        topics: extractTopics(messages),
+      };
+    };
+
+    assert.deepEqual(compose(JAPANESE_CONVERSATION), compose([...JAPANESE_CONVERSATION]));
+    assert.ok(compose(JAPANESE_CONVERSATION).topics.length > 1);
   });
 });
 

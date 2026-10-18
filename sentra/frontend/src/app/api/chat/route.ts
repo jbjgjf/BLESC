@@ -10,6 +10,13 @@ import { chatSessionConsentSnapshot } from "@/lib/server/consentStore";
 import { RULES, consumeRateLimit, rateLimitHeaders, rateLimitSubject } from "@/lib/server/rateLimit";
 import { envPositiveInt } from "@/lib/server/envNumber";
 import {
+  LATEST_TURN_EXCERPT,
+  extractTopics,
+  latestUserTurn,
+  turnCounts,
+} from "@/lib/conversationRecall";
+import { t } from "@/lib/i18n";
+import {
   COLLECTION_ONLY_MESSAGE,
   COLLECTION_ONLY_PROVIDER,
   COLLECTION_ONLY_STATUS,
@@ -88,25 +95,31 @@ function fallbackAnswer(mode: ChatPayload["mode"]) {
   return "いまはAIの応答を生成できませんでした。しばらくしてからもう一度お試しください。";
 }
 
+/**
+ * The same summary the research route builds, from the same module (#365).
+ *
+ * This route writes `conversation_recall_summaries` too, and `/recall` shows
+ * what it returns after *every* turn (`app/recall/page.tsx` assigns
+ * `response.conversation_recall_30`), so this is in fact the path a student
+ * reads from most. It had the identical English sentence, and its own third
+ * algorithm for the topics: no stop words at all, and a character class that
+ * matched pure-hiragana runs — so the stored `recurring_topics` filled up with
+ * particles and inflection (「して」「という」) while a katakana word containing ー
+ * was cut in half.
+ *
+ * Two routes writing one research column by two different rules is the part
+ * worth removing, not just the English: `summary_json` is read back without any
+ * record of which handler produced it.
+ */
 function summarize(messages: ChatMessageRow[]) {
-  const counts = new Map<string, number>();
-  for (const message of messages) {
-    for (const word of (message.content_redacted ?? "").toLowerCase().match(/[a-z][a-z'-]{3,}|[ぁ-んァ-ン一-龥]{2,}/g) ?? []) {
-      counts.set(word, (counts.get(word) ?? 0) + 1);
-    }
-  }
-  const topics = Array.from(counts.entries())
-    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-    .slice(0, 5)
-    .map(([topic, count]) => ({ topic, count }));
-  const userMessages = messages.filter((message) => message.role === "user");
-  const assistantMessages = messages.filter((message) => message.role === "assistant");
-  const latest = [...userMessages].reverse().find((message) => message.content_redacted)?.content_redacted ?? "";
+  const turns = turnCounts(messages);
+  const topics = extractTopics(messages);
+  const latest = latestUserTurn(messages);
 
   return {
     summary: latest
-      ? `Recent conversation includes ${userMessages.length} user turns and ${assistantMessages.length} assistant responses. The latest user turn focused on: ${latest.slice(0, 180)}`
-      : `Recent conversation includes ${userMessages.length} user turns and ${assistantMessages.length} assistant responses.`,
+      ? t.recall.memorySummary.withLatestTurn(turns.user, turns.assistant, latest.slice(0, LATEST_TURN_EXCERPT))
+      : t.recall.memorySummary.counts(turns.user, turns.assistant),
     recurring_topics: topics,
     top_topics: topics,
     tone_trends: {},
@@ -151,7 +164,7 @@ async function buildRecall(supabase: SupabaseClient, participantId: string, owne
     summary_json: userTurnCount >= REQUIRED_USER_TURNS
       ? summarize(messages)
       : {
-          summary: "Not enough conversation history.",
+          summary: t.recall.memorySummary.notEnoughHistory,
           recurring_topics: [],
           top_topics: [],
           tone_trends: {},
