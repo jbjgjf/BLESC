@@ -95,6 +95,22 @@ C4 と C5 は技術の判断ではなく、説明責任の判断である。**�
 - 研究エンジン（Python）は本番データを直接読めず、研究エクスポートを経由する。研究の反復は遅くなるが、撤回除外・仮名化を必ず通ることと引き換えである。
 - `deployment_vercel.md` の推奨構成を改める必要がある。
 
+### 4.1 追記（2026-10-18, #468 案B）: 書く行動の分析は TS で本番に入った
+
+この ADR の時点では、書く行動の分析（入力のためらい・書き直し。`backend/app/analytics/writing_dynamics.py`）は FastAPI にしか無く、本番では一度も動いていなかった。Next.js は telemetry を `entry_fields` / `interaction_events` に保存していたが、分析するコードは無く、教員に見える観測は安全レキシコンの決定的マッチだけだった。blesc.jp の「本人の過去と比べた書きぶりの変化」は本番に裏付けが無かった。
+
+オーナーは #468 で、主張を狭める（案A）ではなく本番に持ち込む（案B）を選んだ。持ち込み方は §3.1 と同じ考え方で、**FastAPI は出さず、TS に移植する**。
+
+- 本番の実装: `sentra/frontend/src/lib/writingDynamics.ts`（`writing_dynamics_for_session` の移植と、本人の基準との比較 `writingChangeAgainstBaseline`）。`lib/server/supabaseWriter.ts` が送信時に計算し、`writing_features`（研究記録、z 値を含む、教員は読めない）と `writing_change_observations`（教員が読める唯一の形。特徴量と向き・時刻・入力元だけ）に書く。
+- 適合性契約: `sentra/shared/writing_dynamics_conformance.json`。期待値は Python を実行して生成し（`backend/scripts/generate_writing_dynamics_conformance.py`）、`backend/tests/test_writing_dynamics_conformance.py` と `frontend/tests/writing-dynamics.test.mjs` の両方が同じファイルを検査する。Python の丸め（偶数丸め）と `sum()` の補償加算の差まで固定してある。
+- 基準: 本人の直近 14 日（日記欄の編集が 5 回以上ある日）。graph の baseline と同じ `RAMP_UP_DAYS` を使い、14 日未満では比較しない（#91）。
+- ゲート: telemetry の同意（`telemetryAllowed`）が無ければ何も作らない。収集期間中は特徴量（測定値）だけを残し、比較と観測は作らない（#165、insight と同じ扱い）。
+- マイグレーション: `20261018000000_writing_change_observations.sql`。あわせて `writing_features` の本人による書き込みを止めた（観測を決める基準の入力になったため）。
+
+**FastAPI が本番の外にあることは変わらない。** 参加者データを扱う処理系は引き続き Supabase と Vercel の2つで、この追記は §3.3 の移行条件に触れない。Python 側は研究・評価用の実装のまま、同じ契約に縛られる。
+
+未決: 閾値（本人の標準偏差の 2 倍）と 5 編集の下限は工学的な選択で、検証されていない。
+
 ## 5. 承認されたらやること
 
 - [ ] `sentra/docs/deployment_vercel.md` §バックエンド: 参加者データを持つ配備で FastAPI を公開ホストに置く推奨を取り下げ、本 ADR へのリンクに置き換える

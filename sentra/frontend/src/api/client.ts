@@ -26,6 +26,7 @@ import {
 } from "./models";
 import { supabase } from "@/lib/supabase/client";
 import { attributableThemes } from "@/lib/educatorThemes";
+import { latestWritingChangeByParticipant } from "@/lib/writingChangeObservation";
 import { NO_CONSENT, consentSnapshot, normalizeConsent, type ConsentState } from "@/lib/consent";
 import type { PilotState } from "@/lib/pilotEnrollment";
 import type { GuardianVerificationStatus } from "@/lib/guardianVerification";
@@ -1217,6 +1218,20 @@ export class ApiClient {
       if (!latestSafety.has(row.participant_id)) latestSafety.set(row.participant_id, row);
     }
 
+    // 「書きぶりの変化」 observations (#468). RLS (`educator_oversees`) scopes
+    // them as it scopes insights. A failed read degrades to "none shown" rather
+    // than blanking the roster: the safety column must not depend on this one.
+    const writingResult = await supabase
+      .from("writing_change_observations")
+      .select("participant_id, kind, observed_at, surface, field_name, evidence, baseline_days")
+      .in("participant_id", ids)
+      .order("observed_at", { ascending: false })
+      .limit(400);
+    if (writingResult.error) console.warn("[educator] writing change observations unavailable", writingResult.error.message);
+    const latestWritingChange = latestWritingChangeByParticipant(
+      writingResult.error ? [] : ((writingResult.data ?? []) as Array<Record<string, unknown>>),
+    );
+
     return roster.map((row) => {
       const insight = latestInsight.get(row.participant_id);
       const safety = latestSafety.get(row.participant_id);
@@ -1243,6 +1258,7 @@ export class ApiClient {
         baseline_is_provisional: provenance?.is_provisional ?? true,
         baseline_days_remaining: typeof provenance?.days_remaining === "number" ? provenance.days_remaining : null,
         baseline_type: typeof provenance?.baseline_type === "string" ? provenance.baseline_type : null,
+        writing_change: latestWritingChange.get(row.participant_id) ?? null,
       };
     });
   }

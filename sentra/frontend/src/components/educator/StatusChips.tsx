@@ -1,5 +1,6 @@
 import type { EducatorStudentStatus } from "@/api/models";
 import { t } from "@/lib/i18n";
+import { describeWritingChange } from "@/lib/writingChangeObservation";
 
 export const panel: React.CSSProperties = {
   backgroundColor: "var(--ivory)",
@@ -50,11 +51,41 @@ export function AttentionChip({ student }: { student: EducatorStudentStatus }) {
   );
 }
 
+/**
+ * A 「書きぶりの変化」 observation (#468): which writing feature moved against
+ * the student's own past, which way, when, and on which surface.
+ *
+ * Deliberately NOT part of `hasShowableObservation`: that predicate drives the
+ * 要確認 chip, the flagged filter and the overview tile, which are about the
+ * safety layer asking for a person to look. A change in how someone writes is
+ * context, not a request to intervene, and counting it there would turn it into
+ * the classification the policy removed.
+ */
+export function WritingChangeLine({ student }: { student: EducatorStudentStatus }) {
+  const observation = student.writing_change;
+  if (!observation || observation.evidence.length === 0) return null;
+  const surface = t.safety.surface[observation.surface] ?? observation.surface;
+  return (
+    <div className="text-xs leading-relaxed" style={{ color: "var(--ink-mid)" }}>
+      <div>
+        <span style={{ color: "var(--ink-faint)" }}>{t.writingChange.observationPrefix}</span>
+        {observation.evidence.map(describeWritingChange).join(" / ")}
+        <span style={{ color: "var(--ink-faint)" }}>
+          （{formatTimestamp(observation.observed_at)} · {surface}）
+        </span>
+      </div>
+      <div style={{ color: "var(--ink-faint)" }}>{t.writingChange.basis(observation.baseline_days)}</div>
+    </div>
+  );
+}
+
 /** The observation itself: what was matched, when, on which surface. */
 export function ObservationLine({ student }: { student: EducatorStudentStatus }) {
-  if (!hasShowableObservation(student)) return null;
+  if (!hasShowableObservation(student)) return <WritingChangeLine student={student} />;
   const surface = student.safety_surface ? t.safety.surface[student.safety_surface] ?? student.safety_surface : null;
   return (
+    <>
+    {/* #468: the writing-change line sits under the safety one when both exist. */}
     <div className="text-xs leading-relaxed" style={{ color: "var(--ink-mid)" }}>
       <div>
         <span style={{ color: "var(--ink-faint)" }}>{t.safety.observationPrefix}</span>
@@ -68,6 +99,8 @@ export function ObservationLine({ student }: { student: EducatorStudentStatus })
         {t.safety.observationBasis}
       </div>
     </div>
+    <WritingChangeLine student={student} />
+    </>
   );
 }
 
