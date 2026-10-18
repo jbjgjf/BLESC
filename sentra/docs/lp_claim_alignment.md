@@ -5,14 +5,23 @@ Raised as M-01 in the external technical review of `d7b33e8`.
 
 Four claims on the landing page were checked against the implementation. Two
 are being brought into line by changing the product (option B), two by changing
-the page (option A).
+the page (option A). Seven more were raised on 2026-10-18 (⑤–⑪, below), after
+the page grew a Safety & Privacy page, an FAQ and a rewritten テクノロジー section
+that nothing compared with the product.
 
 | # | claim | decision | state |
 | --- | --- | --- | --- |
 | ① | 医学的研究にもとづき構造化したオントロジー知識グラフ | **B** — build it | open, deadline below |
-| ② | 入力のためらいから心理的リスクを検知 | split | **done** |
-| ③ | 科学的な裏付けが解析に厳密な根拠を与える | **B** — wire it | open, deadline below |
+| ② | 入力のためらいから心理的リスクを検知 | split | **done** for the wording; the kept half does not run in production — see ⑧ |
+| ③ | 科学的な裏付けが解析に厳密な根拠を与える | **B** — wire it | the claim is no longer on the page (checked 2026-10-18); the 10-01 conversion was not recorded here — see below |
 | ④ | 教員画面のリスク判定（高/中/低） | **A** — change the page | **done**, after regressing — see below |
+| ⑤ | 危機時、生徒の画面に相談窓口（24時間子供SOSダイヤル）がすぐ表示される | B proposed — undecided | open — #465 |
+| ⑥ | 先生に表示されるのは、クラス、出席番号、観測された表現の種類、時刻だけ | undecided | open — #466 |
+| ⑦ | AIが日記を受けて、短い問いをひとつだけ返す | undecided | open — #467 |
+| ⑧ | これまでと比べた変化、入力のためらい・書き直しを捉えて届ける | undecided | open — #468 |
+| ⑨ | 日記をAIモデルの学習に使うことはない | undecided | open — #469 |
+| ⑩ | 日本の個人情報保護法に準拠している | A proposed — undecided | open — `jbjgjf/BLESC-website#24` |
+| ⑪ | 希望者ではなく、クラス全員が使う | undecided | open — `jbjgjf/BLESC-website#25` |
 
 ## ② — split, because the two clauses are not the same kind of claim
 
@@ -24,6 +33,14 @@ the page (option A).
   problem in a different place on the same page.
 
 Now reads: 「AIが捉えて可視化します。心理的リスクの判定は行いません」.
+
+**2026-10-18: the kept half is true of this repository, not of blesc.online.**
+`writing_dynamics.py` is wired into the FastAPI pipeline, and FastAPI is
+local-only (ADR 0001). The Next.js path that production runs collects the input
+telemetry but analyses none of it, and the educator surface shows only the
+lexicon's safety reasons. The page now makes this half its central claim (⑧),
+so "done" here no longer answers "is the page correct". The row stays done for
+the wording and points at ⑧ for the behaviour.
 
 ## ④ — option A
 
@@ -137,6 +154,52 @@ provenance. ③ is untouched and still open.
 
 The 2026-09-30 deadline therefore still stands for ③, and the automatic
 conversion on 10-01 still applies to it.
+
+### ③ after the deadline — 2026-10-18
+
+Nothing in this record says what happened on 10-01. The page no longer carries
+the claim: 「科学的な裏付けが解析に厳密な根拠を与える」 and its variants are absent
+from `jbjgjf/BLESC-website` `src/`, and `Technology.tsx` states in a comment
+that it does not say the graph gives the analysis a rigorous basis. The
+conversion has therefore happened on the page. Whether it happened by the
+automatic route or by a decision is for the owner to record; until then ③ reads
+"not on the page" rather than "converted".
+
+## ⑤–⑪ — raised 2026-10-18
+
+`jbjgjf/BLESC-website#15` made the page check itself against this file, and the
+check works for what it was built for: band vocabulary, conditions as the
+object of 検知/判定/診断/解析, unpermitted institution names. Every one of
+those is a word the page must not use.
+
+The page has since gained claims of the opposite kind — positive statements of
+what the product does — in the Safety & Privacy page (`128d9c9`), the FAQ
+(`47a83c7`), 仕組み (`b63f5d0`) and テクノロジー (`a618115`). None of them uses a
+forbidden word, so none of them was compared with the product. Compared on
+2026-10-18 against `main` `a55ef83`:
+
+| # | where on the page | what the product does | issue |
+| --- | --- | --- | --- |
+| ⑤ | `trust.ts:60` — the student immediately sees crisis support, e.g. 24時間子供SOSダイヤル 0120-0-78310 | the crisis response (`safety-assessment.ts:31-32`) names no service and no number, and mixes in English | #465 |
+| ⑥ | `trust.ts:84`, `ReportMock` — class, roll number, kind of expression, time; newest first | the roster shows `display_name`; the student page shows themes drawn from the diary. There is no class or roll number | #466 |
+| ⑦ | 仕組み, `Product.tsx`, FAQ — one short question, generated from the entry | a fixed script (`followup-script-v1`) of up to three questions | #467 |
+| ⑧ | テクノロジー, FAQ, `ReportMock` — change against the student's own history, hesitation and rewriting | not computed in production; see ② above | #468 |
+| ⑨ | `trust.ts:85` — never used to train an AI model | the consent pack carries an optional training consent (第15条, `model_training_use`) | #469 |
+| ⑩ | `trust.ts` — compliant with the APPI | `/legal` is an unapproved draft; storage abroad and the external AI are not described on the page | `jbjgjf/BLESC-website#24` |
+| ⑪ | 仕組み, FAQ — every student, not volunteers | use is consent-gated and revocable; research participation is voluntary | `jbjgjf/BLESC-website#25` |
+
+⑤ is marked "B proposed" because the alternative — taking the promise of a
+crisis line off the page — is not one that makes a student safer. ⑩ is marked
+"A proposed" because a statement of legal compliance is the page's to correct
+until a legal review exists. Every other row needs an owner decision, in the
+same A / B terms as ①–④, recorded here.
+
+The structural gap — positive claims are not compared with the product when the
+copy changes — is tracked in `jbjgjf/BLESC-website#26`: a register of
+product-behaviour claims with the product evidence for each, a marker in the
+page source, and a check that fails when a marked sentence changes without the
+register being updated. Until that exists, rows ⑤–⑪ are only as current as the
+date above.
 
 ## Related
 
