@@ -138,6 +138,57 @@ provenance. ③ is untouched and still open.
 The 2026-09-30 deadline therefore still stands for ③, and the automatic
 conversion on 10-01 still applies to it.
 
+## 2026-10-18 — the site against production, not against the repository
+
+Raised by comparing blesc.jp (`jbjgjf/BLESC-website` `77ab1b6`) with what
+blesc.online actually runs (`a55ef83`), rather than with what this repository
+contains. Five gaps; four needed an owner decision, taken on 2026-10-18.
+
+| # | claim on blesc.jp | decision | state |
+| --- | --- | --- | --- |
+| ⑤ | 危機時、生徒の画面に相談窓口（24時間子供SOSダイヤル）が出る | fix (#465) — product | **done** |
+| ⑥ | 先生に表示されるのはクラス・出席番号・表現の種類・時刻だけ | **B** — change the product (#466) | see below |
+| ⑦ | AIが日記を受けて短い問いをひとつ返す | **A** — change the page (#467) | **done** |
+| ⑧ | 書きぶりの変化と、これまでと比べた変化を捉える | **B** — change the product (#468) | see below |
+| ⑨ | 日記をAIモデルの学習に使うことはありません | **A**, with disclosure added (#469) | **done** |
+
+### ⑤ — the promised line was nowhere in the product (#465)
+
+The page names 文部科学省「24時間子供SOSダイヤル」 0120-0-78310. The product's
+crisis and elevated responses named no line and no number, glossed half their
+words in English, and the journal screen did not render them at all.
+
+The lines now live in `sentra/shared/crisis_contacts.json` and
+`frontend/src/lib/crisisContacts.ts` (pinned to each other by
+`crisis-contacts.test.mjs`). Both responses are built from them; chat, the
+journal card and voice all carry them; and `jbjgjf/BLESC-website`'s
+`scripts/check-crisis-contacts.mjs` fails that repository's CI when the site's
+`SOS_DIAL` and this file disagree.
+
+**Still open:** the number and hours have not been read off the official page
+by a person. `verification` in `crisis_contacts.json` says so, and stays
+`unverified` until someone fills in who and when.
+
+### ⑦ — option A (#467)
+
+The journal asks a fixed script (`followup-script-v1`) of up to three
+questions, only on hard days or short entries, and not at all in a pilot's
+collection window. None of it is generated from the entry. The page said an AI
+read the diary and returned one question. The page now describes the script;
+generating a question per entry would need its own cost, safety-review and
+versioning decisions (#133), none of which were wanted for this.
+
+### ⑨ — option A, and the page now says where the text goes (#469)
+
+The optional, opt-in model-training consent (consent pack §15,
+`consent_records.model_training_use`) stays. 「学習に使うことはありません」 could not
+stand beside it, so the page now says a diary is never used for training
+without that separate consent. The page also now states, which it did not,
+that outside a collection window the text is sent to an external AI provider
+(OpenAI, United States) for extraction, and that data is stored with Supabase
+(Singapore). The site, the consent pack and the export's
+`model_training_use` column take the same position.
+
 ## Related
 
 - `educator_display_policy.md` — why ④ became A and what the product shows now
