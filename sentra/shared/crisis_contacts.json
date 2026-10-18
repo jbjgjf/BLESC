@@ -1,0 +1,24 @@
+{
+  "contract": "crisis_contacts",
+  "version": 1,
+  "purpose": "The support lines a student sees when the safety assessment returns crisis or elevated (#465). One list, read three ways: frontend/src/lib/crisisContacts.ts holds the same values and its test compares them field by field; the two canned responses in safety_assessment_conformance.json must name every line here; and jbjgjf/BLESC-website's scripts/check-crisis-contacts.mjs fetches this file and compares it with SOS_DIAL in src/lib/trust.ts, because blesc.jp promises this exact dial by name and number.",
+  "verification": {
+    "status": "unverified",
+    "verified_on": null,
+    "verified_by": null,
+    "source": "文部科学省「24時間子供SOSダイヤル」の公式案内 https://www.mext.go.jp/ijime/detail/dial.htm",
+    "note": "The number matches docs/static_safety_school_support_reference.md and the site, but nobody has yet read it off the official page for this file. Whoever does fills in verified_on (YYYY-MM-DD) and verified_by, and sets status to verified. A changed number or hours means changing this file, crisisContacts.ts and both responses together."
+  },
+  "sos_dial": {
+    "name": "24時間子供SOSダイヤル",
+    "operator": "文部科学省",
+    "number": "0120-0-78310",
+    "tel": "tel:0120078310",
+    "hours": "24時間",
+    "fee": "無料"
+  },
+  "emergency": [
+    { "name": "救急", "number": "119", "tel": "tel:119" },
+    { "name": "警察", "number": "110", "tel": "tel:110" }
+  ]
+}

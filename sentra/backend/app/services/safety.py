@@ -22,9 +22,13 @@ SAFETY_POLICY_REFS = [
 # contract rather than written here a second time: this used to be an English
 # paragraph next to an extraction prompt that asks for Japanese, and the copy in
 # the Next.js path is pinned to the same file by its own test.
-_RESPONSES = json.loads(_CONFORMANCE_PATH.read_text(encoding="utf-8"))["responses"]
+_CONTRACT = json.loads(_CONFORMANCE_PATH.read_text(encoding="utf-8"))
+_RESPONSES = _CONTRACT["responses"]
 CRISIS_RESPONSE: str = _RESPONSES["crisis"]
 ELEVATED_RESPONSE: str = _RESPONSES["elevated"]
+#: Headings of the journal's support card, Japanese like its body (#239, #465).
+CRISIS_CARD_TITLE: str = _CONTRACT["card_titles"]["crisis"]
+ELEVATED_CARD_TITLE: str = _CONTRACT["card_titles"]["elevated"]
 
 SELF_HARM_TERMS = (
     "hurt myself", "hurting myself", "harm myself", "harming myself", "self-harm", "self harm",

@@ -1,4 +1,5 @@
 import type { SafetyAssessment } from "@/api/models";
+import { EMERGENCY_PHRASE, SOS_DIAL_PHRASE } from "./crisisContacts.ts";
 
 /**
  * Bump when a detector is added, removed, or a verdict changes.
@@ -28,8 +29,15 @@ export function routesToRealPerson(text: string): boolean {
   return REAL_PERSON_ROUTES.some((route) => lowered.includes(route));
 }
 
-const crisisResponse = "まず、あなたの安全がいちばん大切です。blescは緊急時の対応をすることができません。いますぐ危ないと感じるときや、行動してしまいそうなときは、すぐに緊急サービス（emergency services）に電話してください。そして、信頼できる大人（trusted adult）や安全な人のところへ行き、「いま助けが必要です」とはっきり伝えてください。";
-const elevatedResponse = "これは、人に頼ったほうがいいことかもしれません。信頼できる大人（trusted adult）、スクールカウンセラー、保護者など、安全だと思える人に、いま起きていることを話してみてください。危険が差し迫っていると感じたときは、緊急サービス（emergency services）に連絡してください。";
+/*
+ * What the student reads on every surface — chat, the journal's support card,
+ * and voice (#465). Each names the dial and the emergency numbers from
+ * `crisisContacts.ts` rather than retyping them, so a corrected number reaches
+ * all three at once. They used to say 「緊急サービス（emergency services）」 and
+ * 「信頼できる大人（trusted adult）」: no line to call, and English in a crisis.
+ */
+const crisisResponse = `まず、あなたの安全がいちばん大切です。blescは緊急時の対応をすることができません。いますぐ危ないと感じるときや、行動してしまいそうなときは、すぐに${EMERGENCY_PHRASE}に電話してください。話を聞いてほしいときは、${SOS_DIAL_PHRASE}に電話できます。そして、信頼できる大人や安全な人のところへ行き、「いま助けが必要です」とはっきり伝えてください。`;
+const elevatedResponse = `これは、人に頼ったほうがいいことかもしれません。信頼できる大人、スクールカウンセラー、保護者など、安全だと思える人に、いま起きていることを話してみてください。${SOS_DIAL_PHRASE}でも、話を聞いてもらえます。危険が差し迫っていると感じたときは、${EMERGENCY_PHRASE}に電話してください。`;
 
 const selfHarmTerms = ["hurt myself", "hurting myself", "harm myself", "harming myself", "self-harm", "self harm", "kill myself", "killing myself", "end my life", "ending my life", "want to die", "suicide", "suicidal", "overdose", "自殺", "死にたい", "消えたい", "自分を傷つけ", "自傷"];
 const imminentTerms = ["tonight", "tomorrow", "right now", "now", "today", "have a plan", "made a plan", "cannot stay safe", "can't stay safe", "do not feel safe", "don't feel safe", "not safe tonight", "not safe right now", "今すぐ", "今夜", "今日", "計画がある", "安全でいられない"];
@@ -181,6 +189,12 @@ export function safetyLexiconCanonicalForm(): string {
 
 /** What the student reads; pinned to the shared contract, which FastAPI reads. */
 export const SAFETY_RESPONSES = { crisis: crisisResponse, elevated: elevatedResponse } as const;
+
+/**
+ * The heading over the journal's support card. Japanese, like the body under
+ * it: the crisis card was the one card titled in English (#239, #465).
+ */
+export const SAFETY_CARD_TITLE = { crisis: "まず、あなたの安全を", elevated: "話を聞いてくれる場所があります" } as const;
 
 const LEXICONS = {
   selfHarm: lexicon(SAFETY_LEXICON_SPELLINGS.self_harm),

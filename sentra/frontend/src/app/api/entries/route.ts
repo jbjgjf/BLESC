@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assessSafety, SAFETY_ASSESSMENT_VERSION } from "@/lib/safety-assessment";
+import { assessSafety, SAFETY_ASSESSMENT_VERSION, SAFETY_CARD_TITLE } from "@/lib/safety-assessment";
+import type { ReflectionCard, SafetyAssessment } from "@/api/models";
 import {
   fallbackExtraction,
   normalizeModelExtraction,
@@ -290,6 +291,47 @@ async function embeddingArtifact(
   }
 }
 
+/**
+ * The journal's support card: the canned response for the level, which names
+ * the dial and the emergency numbers (#465).
+ *
+ * Only a crisis used to get one, so an elevated entry — 「もう限界」 — came
+ * back with no card and nothing to call. Elevated now carries the same kind of
+ * card with the elevated text; it is `active` rather than `suppressed` because
+ * an elevated entry does not pause reflection cards (`escalation_required` is
+ * false). The title used to be English, on the one card a student
+ * in trouble reads (#239).
+ */
+function safetySupportCards(entryId: string, safety: SafetyAssessment): ReflectionCard[] {
+  if (safety.risk_level === "crisis") {
+    return [{
+      id: `${entryId}:crisis_suppressed`,
+      type: "safety_suppression",
+      title: SAFETY_CARD_TITLE.crisis,
+      body: safety.safe_response,
+      evidence_refs: [],
+      confidence: "high",
+      status: "suppressed",
+      prompt_version: SAFETY_ASSESSMENT_VERSION,
+      policy_refs: safety.policy_refs,
+    }];
+  }
+  if (safety.risk_level === "elevated") {
+    return [{
+      id: `${entryId}:safety_support`,
+      type: "safety_support",
+      title: SAFETY_CARD_TITLE.elevated,
+      body: safety.safe_response,
+      evidence_refs: [],
+      confidence: "medium",
+      status: "active",
+      prompt_version: SAFETY_ASSESSMENT_VERSION,
+      policy_refs: safety.policy_refs,
+    }];
+  }
+  return [];
+}
+
 export async function POST(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const userId = searchParams.get("user_id") || "research_user_01";
@@ -419,17 +461,7 @@ export async function POST(request: NextRequest) {
         model: "deterministic-rules",
         status: "complete",
       },
-      reflection_cards_json: safetyAssessment.risk_level === "crisis" ? [{
-        id: `${entryId}:crisis_suppressed`,
-        type: "safety_suppression",
-        title: "Support first",
-        body: safetyAssessment.safe_response,
-        evidence_refs: [],
-        confidence: "high",
-        status: "suppressed",
-        prompt_version: SAFETY_ASSESSMENT_VERSION,
-        policy_refs: safetyAssessment.policy_refs,
-      }] : [],
+      reflection_cards_json: safetySupportCards(entryId, safetyAssessment),
       safety_flags_json: safetyAssessment.reasons,
       safety_assessment_json: safetyAssessment,
       extractor_version: PIPELINE_VERSION,

@@ -49,10 +49,17 @@ def test_crisis_response_stays_non_diagnostic_and_direct():
     response = result.safe_response
     assert result.risk_level == "crisis"
     assert "診断" not in response
-    assert "緊急サービス" in response
-    # The student reads Japanese: the card used to switch to English only in a crisis.
+    # A line to call, by number, not 「緊急サービス」 (#465).
+    assert "119" in response
+    assert "0120-0-78310" in response
+    # The student reads Japanese: the card used to switch to English only in a
+    # crisis, and later carried English glosses in brackets (#465).
     assert not response.isascii()
-    assert len(response) < 200
+    assert "emergency" not in response.lower()
+    assert "trusted adult" not in response.lower()
+    # Short enough to read in a crisis. 200 before the numbers were added; the
+    # dial's name, number and hours cost about 40 characters.
+    assert len(response) < 240
 
 
 # The spelling a Japanese keyboard happens to produce must not change the

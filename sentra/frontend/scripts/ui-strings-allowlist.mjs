@@ -50,7 +50,7 @@ const MODEL_INSTRUCTIONS = [
   "Briefly reflect the user's latest answer, avoid clinical certainty, then keep the interview moving.",
   "Current user turn: ${nextUserTurnCount}/${MAX_USER_TURNS}.",
   "Next guided question candidate: ${nextQuestionForTurn(nextUserTurnCount)}",
-  "Say this to the student now, in your own voice and without preamble: ${safeResponse}",
+  "Say this to the student now, in your own voice and without preamble. Keep every phone number and read each one digit by digit, slowly: ${safeResponse}",
   "Safety comes before every other goal in this conversation.",
   "Never promise secrecy, exclusivity, or permanence. Do not say you will always be there, that the student needs only you, or that you will keep something from a trusted adult.",
   // Rewritten when escalation notifications shipped: the previous wording ended

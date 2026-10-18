@@ -17,6 +17,8 @@ import { t } from "@/lib/i18n";
 import type { EventCategory, Mood } from "@/lib/blesc/types";
 import { SelfReportBlock, type SelfReportValues } from "@/components/SelfReportBlock";
 import type { SelfReportItemId } from "@/lib/pilotSelfReport";
+import { SafetySupportPanel } from "@/components/SafetySupportPanel";
+import { safetySupportFrom, type SafetySupport } from "@/lib/safetySupport";
 import styles from "./journal.module.css";
 
 /* ── 4-6 対話型AIサポートの台本 ─────────────────────────────
@@ -83,6 +85,12 @@ export default function JournalPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const [phase, setPhase] = useState<"form" | "followup" | "done">("form");
+  /**
+   * 危機・要注意と判定された提出で、完了画面の先頭に出す相談窓口（#465）。
+   * ref は submit が同じ tick で読むため。state は描画のため。
+   */
+  const [support, setSupport] = useState<SafetySupport | null>(null);
+  const supportRef = useRef<SafetySupport | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [stepIndex, setStepIndex] = useState(0);
   const [thinking, setThinking] = useState(false);
@@ -323,6 +331,8 @@ export default function JournalPage() {
       }
       setEntryId(savedId);
       setEntrySessionId(result.supabase_sync?.entry_session_id ?? null);
+      supportRef.current = safetySupportFrom(result.extraction);
+      setSupport(supportRef.current);
       return true;
     } catch (error) {
       const message =
@@ -367,7 +377,10 @@ export default function JournalPage() {
     // 追加質問が出る。サーバーの答えが無いのは Supabase 未設定などの場合で、
     // そのときだけ先読みに落とす。
     const collectionOnly = serverCollectionOnly.current ?? collecting;
-    if (needsFollowUp() && !collectionOnly) {
+    // 相談窓口を出す提出では、追加質問を挟まずに完了画面へ進む（#465）。
+    // 窓口は「すぐに」出すと約束しているので、3問の台本の後ろに回さない。
+    // 窓口の文面は決まった文で、AIの応答ではないので、収集専用モードでも出す。
+    if (needsFollowUp() && !collectionOnly && !supportRef.current) {
       setPhase("followup");
       askStep(0);
     } else {
@@ -454,7 +467,7 @@ export default function JournalPage() {
   };
 
   /* ── 提出完了 ─────────────────────────────────────── */
-  if (phase === "done") return <DoneScreen userId={userId} demo={demo} />;
+  if (phase === "done") return <DoneScreen userId={userId} demo={demo} support={support} />;
 
   /* ── 入力フォーム（1問ずつ） ───────────────────────── */
   const formStepIndex = FORM_STEPS.indexOf(step);
@@ -820,7 +833,7 @@ const DEMO_STATS: JournalStats = { streak: 7, weekly: 6, totalDays: 24 };
  * 直接書かれていて、初めて提出した生徒にも「連続提出日数 7」と表示していた
  * （#133）。デモは上の固定値、実データは DB — 混ざらないように経路を分ける。
  */
-function DoneScreen({ userId, demo }: { userId: string; demo: boolean }) {
+function DoneScreen({ userId, demo, support }: { userId: string; demo: boolean; support: SafetySupport | null }) {
   const [stats, setStats] = useState<JournalStats>(demo ? DEMO_STATS : EMPTY_STATS);
 
   useEffect(() => {
@@ -840,6 +853,7 @@ function DoneScreen({ userId, demo }: { userId: string; demo: boolean }) {
   return (
     <div className="bl-wrap">
       <section className={styles.done}>
+        {support ? <SafetySupportPanel support={support} /> : null}
         <div className={styles.doneFlower}>
           <FlowerBloom size={84} />
         </div>

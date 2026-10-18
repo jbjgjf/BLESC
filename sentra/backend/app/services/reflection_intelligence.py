@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional
 
 from app.models.safety import SafetyAssessmentInput, SafetyAssessmentReturn
-from app.services.safety import assess_safety
+from app.services.safety import CRISIS_CARD_TITLE, ELEVATED_CARD_TITLE, assess_safety
 
 PROMPT_VERSION = "reflection-extraction-v1"
 CARD_PROMPT_VERSION = "reflection-cards-v1"
@@ -302,7 +302,7 @@ def generate_reflection_cards(
             {
                 "id": f"{reflection_id}:crisis_suppressed",
                 "type": "safety_suppression",
-                "title": "Support first",
+                "title": CRISIS_CARD_TITLE,
                 "body": "Reflection cards are paused because this entry may need immediate human support.",
                 "evidence_refs": evidence_refs[:1],
                 "confidence": "high",
@@ -436,6 +436,21 @@ def analyze_reflection(
     if safety_assessment.risk_level == "crisis":
         cards[0]["body"] = safety_assessment.safe_response
         cards[0]["policy_refs"] = safety_assessment.policy_refs
+    elif safety_assessment.risk_level == "elevated":
+        # The elevated card carries the support lines too (#465), ahead of the
+        # reflection cards an elevated entry still gets. Mirrors
+        # frontend/src/app/api/entries/route.ts `safetySupportCards`.
+        cards.insert(0, {
+            "id": f"{reflection_id}:safety_support",
+            "type": "safety_support",
+            "title": ELEVATED_CARD_TITLE,
+            "body": safety_assessment.safe_response,
+            "evidence_refs": [],
+            "confidence": "medium",
+            "status": "active",
+            "prompt_version": CARD_PROMPT_VERSION,
+            "policy_refs": safety_assessment.policy_refs,
+        })
 
     return {
         "reflection_id": reflection_id,

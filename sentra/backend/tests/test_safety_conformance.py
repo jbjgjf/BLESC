@@ -46,5 +46,38 @@ def test_shows_the_student_the_responses_the_contract_carries():
     assert _assess("もう限界").safe_response == CONTRACT["responses"]["elevated"]
 
 
+CONTACTS = json.loads(
+    (Path(__file__).resolve().parents[2] / "shared" / "crisis_contacts.json").read_text(encoding="utf-8")
+)
+
+
+@pytest.mark.parametrize("level", ["crisis", "elevated"])
+def test_every_response_names_every_support_line(level):
+    """#465: the site promises the dial by name and number; both levels give it."""
+    response = CONTRACT["responses"][level]
+    assert CONTACTS["sos_dial"]["name"] in response
+    assert CONTACTS["sos_dial"]["number"] in response
+    for line in CONTACTS["emergency"]:
+        assert line["number"] in response
+    assert "（emergency" not in response and "（trusted" not in response
+
+
+def test_elevated_entry_carries_the_support_card_first():
+    from app.services.reflection_intelligence import analyze_reflection
+
+    cards = analyze_reflection("support-card", "もう限界")["reflection_cards"]
+    assert cards[0]["type"] == "safety_support"
+    assert cards[0]["title"] == CONTRACT["card_titles"]["elevated"]
+    assert CONTACTS["sos_dial"]["number"] in cards[0]["body"]
+
+
+def test_crisis_card_is_titled_in_japanese():
+    from app.services.reflection_intelligence import analyze_reflection
+
+    cards = analyze_reflection("support-card", "もう死にたい")["reflection_cards"]
+    assert cards[0]["title"] == CONTRACT["card_titles"]["crisis"]
+    assert CONTACTS["sos_dial"]["number"] in cards[0]["body"]
+
+
 def test_writes_the_version_the_contract_names():
     assert safety.SAFETY_ASSESSMENT_VERSION == CONTRACT["assessment_version"]

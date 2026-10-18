@@ -414,6 +414,7 @@ export const ja = {
       small_next_step: "小さな次の一歩",
       reflection_question: "考えてみる問い",
       safety_suppression: "安全のため非表示",
+      safety_support: "相談できるところ",
     } as Record<string, string>,
     confidenceLevel: {
       low: "低い",

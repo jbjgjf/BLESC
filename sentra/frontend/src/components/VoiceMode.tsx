@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Mic, MicOff, X, Zap } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { routesToRealPerson } from "@/lib/safety-assessment";
+import { namesSosDial } from "@/lib/crisisContacts";
 import styles from "./VoiceMode.module.css";
 import { t } from "@/lib/i18n";
 
@@ -114,13 +114,15 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
         if (!response.ok) return;
         const data = (await response.json()) as { safe_response?: string };
         const safeResponse = data.safe_response?.trim();
-        if (!safeResponse || routesToRealPerson(reply)) return;
+        // Steps aside only when the reply already said the dial's number; a
+        // reply that merely mentioned a trusted adult used to be enough (#465).
+        if (!safeResponse || namesSosDial(reply)) return;
         sendEvent({
           type: "conversation.item.create",
           item: {
             type: "message",
             role: "system",
-            content: [{ type: "input_text", text: `Say this to the student now, in your own voice and without preamble: ${safeResponse}` }],
+            content: [{ type: "input_text", text: `Say this to the student now, in your own voice and without preamble. Keep every phone number and read each one digit by digit, slowly: ${safeResponse}` }],
           },
         });
         injectedRef.current = true;

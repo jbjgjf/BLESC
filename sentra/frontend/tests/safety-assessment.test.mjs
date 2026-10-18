@@ -18,6 +18,9 @@ const ESCALATION_MARKERS = [
   "stay safe",
   "immediate danger",
   "hotline",
+  // The canned responses are Japanese and name lines by number (#465).
+  "119",
+  "0120-0-78310",
 ];
 
 const hasEscalationMarker = (text) =>

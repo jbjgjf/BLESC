@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SafetyAssessment } from "@/api/models";
-import { routesToRealPerson } from "@/lib/safety-assessment";
+import { namesSosDial } from "@/lib/crisisContacts";
 import { assessConversation, recordSafetyAudit, RISK_DIRECTIVES, SAFETY_GUARDRAILS } from "@/lib/server/safety";
 import { fetchWithTimeout, isMissingTable, jsonError, JsonValue, openAIKey, providerError, requireUser, sha256 } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
@@ -276,11 +276,16 @@ async function callOpenAI(
 
 /**
  * The floor: when the assessment carries a safe response and the model's reply
- * never points at a real person, append it. A degraded provider, a refusal, or
- * a model that simply drops the thread cannot silence the support routes.
+ * does not already give the dial's number, append it. A degraded provider, a
+ * refusal, or a model that simply drops the thread cannot silence the support
+ * routes.
+ *
+ * This used to step aside for any reply that mentioned a real person, so
+ * 「信頼できる大人に話してみて」 from the model was enough to drop the only text
+ * carrying a number (#465).
  */
 function withSafetyFloor(answer: string, safety: SafetyAssessment): string {
-  if (!safety.safe_response || routesToRealPerson(answer)) return answer;
+  if (!safety.safe_response || namesSosDial(answer)) return answer;
   return `${answer.trim()}\n\n${safety.safe_response}`;
 }
 

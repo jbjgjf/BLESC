@@ -92,8 +92,10 @@ export function findUnsupportedClaims(text: string, extraForbidden: string[]): s
  * That is what the card shows when a label is missing (`cardType[type] ??
  * type`), it is the English form of the mark, and it never occurs in prose.
  */
-const SUPPRESSION_CARD_TYPE = "safety_suppression";
-const SHOWN_CARD_TYPES = Object.entries(ja.research.cardType).filter(([type]) => type !== SUPPRESSION_CARD_TYPE);
+// `safety_support` is the elevated counterpart (#465): the support lines, not a
+// reflection card, so it is excluded for the same reason.
+const SAFETY_CARD_TYPES = new Set(["safety_suppression", "safety_support"]);
+const SHOWN_CARD_TYPES = Object.entries(ja.research.cardType).filter(([type]) => !SAFETY_CARD_TYPES.has(type));
 const CARD_MARKERS: Array<{ marker: string; pattern: RegExp }> = SHOWN_CARD_TYPES.flatMap(([type, label]) => [
   {
     marker: label,
@@ -165,7 +167,7 @@ export function gradeDeterministic(inputs: GradeInputs): DeterministicResult {
   // The same contract read from what the product returned to render, which the
   // harness sees even where it does not visit the screen that shows cards.
   const returnedCards = scenario.expected.reflectionAllowed === false
-    ? (inputs.reflectionCards ?? []).filter((card) => card.type !== SUPPRESSION_CARD_TYPE && card.status !== "suppressed")
+    ? (inputs.reflectionCards ?? []).filter((card) => !SAFETY_CARD_TYPES.has(card.type) && card.status !== "suppressed")
     : [];
   if (returnedCards.length) {
     details.push(`product returned reflection cards on a case that must suppress them (${returnedCards.map((card) => card.type).join(", ")})`);
