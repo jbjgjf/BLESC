@@ -30,7 +30,7 @@ const row = (overrides = {}) => ({
   surface: "journal",
   field_name: "journal_entry",
   evidence: [{ feature: "max_pause_ms", direction: "higher" }],
-  baseline_days: 14,
+  baseline_window_days: 14,
   ...overrides,
 });
 
@@ -39,7 +39,7 @@ describe("parseWritingChangeObservation", () => {
     const parsed = parseWritingChangeObservation(row());
     assert.equal(parsed?.kind, "writing_change");
     assert.deepEqual(parsed?.evidence, [{ feature: "max_pause_ms", direction: "higher" }]);
-    assert.equal(parsed?.baseline_days, 14);
+    assert.equal(parsed?.baseline_window_days, 14);
   });
 
   it("drops a row with no evidence, unknown evidence, or no time (rule 2)", () => {

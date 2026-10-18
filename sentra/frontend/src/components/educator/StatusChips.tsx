@@ -74,7 +74,7 @@ export function WritingChangeLine({ student }: { student: EducatorStudentStatus 
           （{formatTimestamp(observation.observed_at)} · {surface}）
         </span>
       </div>
-      <div style={{ color: "var(--ink-faint)" }}>{t.writingChange.basis(observation.baseline_days)}</div>
+      <div style={{ color: "var(--ink-faint)" }}>{t.writingChange.basis(observation.baseline_window_days)}</div>
     </div>
   );
 }

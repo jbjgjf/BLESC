@@ -1232,7 +1232,7 @@ export class ApiClient {
     // than blanking the roster: the safety column must not depend on this one.
     const writingResult = await supabase
       .from("writing_change_observations")
-      .select("participant_id, kind, observed_at, surface, field_name, evidence, baseline_days")
+      .select("participant_id, kind, observed_at, surface, field_name, evidence, baseline_window_days")
       .in("participant_id", ids)
       .order("observed_at", { ascending: false })
       .limit(400);

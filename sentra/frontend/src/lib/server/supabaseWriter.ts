@@ -682,7 +682,7 @@ async function writeWritingDynamics(params: {
         field_name: WRITING_CHANGE_FIELD,
         observed_at: observedAt,
         evidence,
-        baseline_days: observedDays,
+        baseline_window_days: observedDays,
         pipeline_version: WRITING_CHANGE_VERSION,
       },
       { onConflict: "entry_id,field_name" },

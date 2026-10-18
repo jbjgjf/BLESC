@@ -110,7 +110,7 @@ create table if not exists public.writing_change_observations (
   evidence jsonb not null,
 
   -- 比べた本人の過去の日数（基準を満たした日）。「何と比べたか」の根拠。
-  baseline_days integer not null,
+  baseline_window_days integer not null,
 
   pipeline_version text not null,
   created_at timestamptz not null default now(),
@@ -142,7 +142,7 @@ alter table public.writing_change_observations
   drop constraint if exists writing_change_observations_baseline_days_check;
 alter table public.writing_change_observations
   add constraint writing_change_observations_baseline_days_check
-  check (baseline_days >= 14);
+  check (baseline_window_days >= 14);
 
 create index if not exists writing_change_observations_participant_idx
   on public.writing_change_observations(participant_id, observed_at desc);

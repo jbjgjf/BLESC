@@ -33,7 +33,7 @@ export type WritingChangeObservation = {
   /** What moved, and which way. Never empty — see `parseWritingChangeObservation`. */
   evidence: WritingChange[];
   /** How many of the student's own days the comparison rested on. */
-  baseline_days: number;
+  baseline_window_days: number;
 };
 
 /**
@@ -67,7 +67,7 @@ export function parseWritingChangeObservation(row: unknown): WritingChangeObserv
     surface: typeof candidate.surface === "string" ? candidate.surface : "journal",
     field_name: typeof candidate.field_name === "string" ? candidate.field_name : "journal_entry",
     evidence,
-    baseline_days: typeof candidate.baseline_days === "number" ? candidate.baseline_days : 0,
+    baseline_window_days: typeof candidate.baseline_window_days === "number" ? candidate.baseline_window_days : 0,
   };
 }
 
