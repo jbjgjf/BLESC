@@ -42,10 +42,11 @@ fails if either opens.
   is 未決定; only what the issues already decide is filled in. A test keeps each
   document's item table identical to the code.
 - The educator-facing invariant — `app/ontology/educator_exposure.py` for any
-  producer (a learned output is withheld while Stage 3 is closed), and
-  `frontend/src/lib/educatorThemes.ts` for the one graph-derived output the
-  production educator screen shows. The full list of educator outputs and their
-  checks is in `educator_display_policy.md`.
+  producer (a learned output is withheld while Stage 3 is closed). The
+  production educator screen shows no graph-derived output since #466 (its
+  recurring themes and `frontend/src/lib/educatorThemes.ts` were removed). The
+  full list of educator outputs and their checks is in
+  `educator_display_policy.md`.
 
 **What has to exist before either gate can open** — none of it can be supplied
 by code:

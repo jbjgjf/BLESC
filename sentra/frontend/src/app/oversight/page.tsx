@@ -7,7 +7,7 @@ import { AlertCircle, FileText, Loader2, ShieldAlert } from "lucide-react";
 import { ApiClient } from "@/api/client";
 import { t } from "@/lib/i18n";
 import type { CounselorSummarySection, EducatorStudentStatus, SharedSupportSummary } from "@/api/models";
-import { AttentionChip, BaselineContextLine, NonDiagnosticNotice, ObservationLine, panel } from "@/components/educator/StatusChips";
+import { AttentionChip, NonDiagnosticNotice, ObservationLine, panel } from "@/components/educator/StatusChips";
 import { useAuth } from "@/lib/auth";
 
 const SECTION_ORDER: CounselorSummarySection["key"][] = [
@@ -172,7 +172,6 @@ export default function OversightPage() {
                       counselor cannot trace to something the student wrote
                       reads as a measurement and is not one. */}
                   <ObservationLine student={selectedStudent} />
-                  <BaselineContextLine student={selectedStudent} />
                   <div style={{ color: "var(--ink-faint)" }}>
                     {t.oversight.lastEntry(selectedStudent.last_active_day ? new Date(selectedStudent.last_active_day).toLocaleDateString("ja-JP") : "—")}
                   </div>

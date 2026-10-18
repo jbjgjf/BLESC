@@ -77,40 +77,40 @@ export const ja = {
     roster: {
       filterAll: (count: number) => `すべて（${count}人）`,
       filterFlagged: "要確認",
-      filterInactive: "記録が途切れている",
+      // 「記録が途切れている」の絞り込みと、生徒ごとの「最後の記録」は #466 で外した。
+      // どちらも、サイトが約束する表示項目（クラス・出席番号・観測の種類・時刻）の外にある。
       emptyNoConsent: "まだ生徒から共有されている情報はありません。",
       emptyNoMatch: "この条件に当てはまる生徒はいません。",
-      lastEntry: (date: string) => `最後の記録 ${date}`,
-      noEntries: "まだ記録がありません",
+      noObservation: "根拠を提示できる観測はありません",
+      orderNote: "観測の新しい順に並んでいます。",
       loadFailed: "名簿を読み込めませんでした。",
+    },
+    /**
+     * How a student is identified to an educator (#466): class and attendance
+     * number, never a name. When the school has not set them yet, a neutral
+     * placeholder — falling back to the name is exactly what this replaced.
+     */
+    identity: {
+      classAndNumber: (classLabel: string, attendanceNumber: number) => `${classLabel} ${attendanceNumber}番`,
+      classOnly: (classLabel: string) => `${classLabel} 出席番号未設定`,
+      numberOnly: (attendanceNumber: number) => `クラス未設定 ${attendanceNumber}番`,
+      unset: "クラス未設定",
     },
     student: {
       notShared: "この生徒からは共有されていません（担当の登録と本人の同意が必要です）。",
       backToRoster: "名簿に戻る",
       rosterCrumb: "名簿",
       subtitle: "生徒の状況 · 本人が共有した範囲のみ",
-      safetyFlags: "安全に関する記録",
+      safetyFlags: "観測の記録（新しい順）",
+      noObservations: "根拠を提示できる観測はありません。",
       safetyRouting:
         "危機に関する記録は、学校で定められた担当者へつないでください。手順はアラート画面に記載しています。",
-      recentSignals: "最近の観測",
-      noEntries: "まだ記録がありません。",
-      recurringThemes: "繰り返し見られる話題",
-      noThemes: "繰り返し見られる話題はまだありません。",
-      themesNote:
-        "話題のラベルは記録から抽出したもので、本人の書いた文章そのものではありません。より詳しい内容は、生徒本人が「支援サマリー」から共有を選んだ場合にのみ見られます。教員の側から作成することはできません。",
+      // 「最近の観測」（記録した日の一覧）と「繰り返し見られる話題」は #466 で外した。
+      // 話題は日記の内容から作られたもので、サイトの約束（観測された表現の種類と
+      // 時刻だけ）を超えていた。
       accessLogged:
         "この画面を開いたことは記録され、生徒本人も確認できます。共有の同意は、生徒がいつでも取り消せます。",
       loadFailed: "生徒の状況を読み込めませんでした。",
-    },
-    baseline: {
-      learning: "基準値の学習中",
-      learningRemaining: (days: number) => `（残り ${days} 日）`,
-      learningNote: "この期間は比較を表示しません",
-      /** Which history the comparison used. Was the raw `baseline_type` value. */
-      source: {
-        user: "この生徒自身の記録との比較",
-        none: "比較できる記録がまだありません",
-      } as Record<string, string>,
     },
   },
 
@@ -146,7 +146,13 @@ export const ja = {
     } as Record<string, string>,
     attentionChip: "要確認",
     observationPrefix: "観測: ",
-    observationBasis: "└ 根拠: safety.py の決定的マッチ / 推論なし",
+    /**
+     * Wording matches blesc.jp's educator mock (#466). It used to name the
+     * file (`safety.py`), which says the same thing to an engineer and nothing
+     * to a teacher: the observation is a match against what the student wrote,
+     * and no model inferred it.
+     */
+    observationBasis: "└ 根拠: 記述との一致 / 推論なし",
     flagRecorded: "記録あり",
   },
 
@@ -1082,7 +1088,6 @@ export const ja = {
     loadCohortInsights: "クラスの記録を読み込めませんでした",
     loadCohortSafety: "安全に関する記録を読み込めませんでした",
     loadAlertAcknowledgements: "確認済みのアラートを読み込めませんでした",
-    loadStudentSignals: "生徒の記録を読み込めませんでした",
     loadStudentSafety: "生徒の安全に関する記録を読み込めませんでした",
     loadEducatorAccessLog: "閲覧の記録を読み込めませんでした",
     loadCounselors: "担当者の一覧を読み込めませんでした",
@@ -1169,8 +1174,8 @@ export const ja = {
       },
       {
         title: "教員が観測を受け取る",
-        body: "共有に同意した生徒の一覧と、安全に関する観測。",
-        watchFor: "出るのは「観測された記述とその時刻」だけで、リスクの判定は表示しません。根拠のない観測は最初から出ません。",
+        body: "共有に同意した生徒の一覧と、安全に関する観測。生徒はクラスと出席番号で表示され、名前は出ません。",
+        watchFor: "出るのは「クラス・出席番号と、観測された表現の種類・時刻・入力元」だけで、リスクの判定は表示しません。根拠のない観測は最初から出ません。",
       },
       {
         title: "生徒がサマリーを作り、共有を決める",

@@ -28,8 +28,10 @@ Withheld outputs come back with their reasons. A consumer that cannot see what
 was withheld will present what it received as complete.
 
 The production educator screen does not call this module — it reads Supabase
-from the browser. The same rule is applied there to the one graph-derived
-output it shows (`sentra/frontend/src/lib/educatorThemes.ts`).
+from the browser. It used to show one graph-derived output (recurring themes,
+filtered by `sentra/frontend/src/lib/educatorThemes.ts`); #466 removed both, so
+it now shows no graph-derived output at all (`docs/educator_display_policy.md`,
+"The field set").
 """
 
 from __future__ import annotations

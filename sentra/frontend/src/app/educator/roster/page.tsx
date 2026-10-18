@@ -7,26 +7,44 @@ import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
 import { ApiClient } from "@/api/client";
 import { t } from "@/lib/i18n";
 import type { EducatorStudentStatus } from "@/api/models";
-import { AttentionChip, BaselineContextLine, NonDiagnosticNotice, ObservationLine, hasShowableObservation, panel } from "@/components/educator/StatusChips";
+import {
+  AttentionChip,
+  NonDiagnosticNotice,
+  ObservationLine,
+  byNewestObservation,
+  hasShowableObservation,
+  panel,
+  studentIdentity,
+} from "@/components/educator/StatusChips";
 
-type Filter = "all" | "flagged" | "inactive";
+/*
+ * 名簿の一行に出すのは、クラス・出席番号と、観測（種類・時刻・入力元・根拠）だけ
+ * （#466）。blesc.jp の約束 「先生に表示されるのは、クラス、出席番号、観測された
+ * 表現の種類、時刻だけです。」 に合わせている。
+ *
+ * #466 で外したもの:
+ *   - 生徒の名前（`display_name ?? code`）。API の返り値からも外した。
+ *   - 内部コード（`code`）の併記。
+ *   - 「最後の記録 YYYY/MM/DD」と「記録が途切れている」の絞り込み。どちらも
+ *     生徒ごとの記録状況で、約束した表示項目の外にある。
+ *   - 基準値の学習状況の行。
+ */
+type Filter = "all" | "flagged";
 
-// Ordering is by observation only. Ranking by the inferred band would put the
-// classification back into the interface through the sort order.
-
-function needsAttention(student: EducatorStudentStatus): number {
-  const safety = student.safety_level === "crisis" ? 8 : student.safety_level === "elevated" ? 4 : 0;
-  return safety;
-}
-
-function isInactive(student: EducatorStudentStatus, referenceTime: number): boolean {
-  if (!student.last_active_day) return true;
-  return referenceTime - new Date(student.last_active_day).getTime() > 7 * 24 * 60 * 60 * 1000;
-}
+/*
+ * 並び順は観測の新しい順（#466）。観測のある生徒が先に来て、その中では時刻が
+ * 新しいものが上。観測のない生徒はクラス・出席番号順。
+ *
+ * 以前は crisis=8 / elevated=4 の重みで並べていた。危機の観測を上に出すという
+ * 意図は分かるが、サイトのモックは新しい順で、並びの規則は一つのほうが教員に
+ * 説明できる。危機の観測は行の右の「要確認」と、プッシュ通知
+ * （docs/crisis_escalation.md）で届く。推定された帯で並べないこと
+ * （educator_display_policy.md 規則 1）は変わらない。実装は
+ * `lib/educatorIdentity.ts` の `byNewestObservation`。
+ */
 
 export default function EducatorRosterPage() {
   const [roster, setRoster] = useState<EducatorStudentStatus[] | null>(null);
-  const [loadedAt, setLoadedAt] = useState(0);
   const [filter, setFilter] = useState<Filter>("all");
   const [error, setError] = useState<string | null>(null);
   const logged = useRef(false);
@@ -37,7 +55,6 @@ export default function EducatorRosterPage() {
       .then((students) => {
         if (cancelled) return;
         setRoster(students);
-        setLoadedAt(Date.now());
         setError(null);
         if (!logged.current && students.length) {
           logged.current = true;
@@ -53,13 +70,9 @@ export default function EducatorRosterPage() {
 
   const visible = useMemo(() => {
     if (!roster) return [];
-    const filtered = roster.filter((student) =>
-      filter === "all" ? true
-      : filter === "flagged" ? hasShowableObservation(student)
-      : isInactive(student, loadedAt),
-    );
-    return [...filtered].sort((a, b) => needsAttention(b) - needsAttention(a) || a.code.localeCompare(b.code));
-  }, [roster, filter, loadedAt]);
+    const filtered = roster.filter((student) => (filter === "all" ? true : hasShowableObservation(student)));
+    return [...filtered].sort(byNewestObservation);
+  }, [roster, filter]);
 
   if (error) {
     return <div className="flex items-center gap-2 px-6 py-4 text-sm" style={{ ...panel, color: "var(--sienna)" }}><AlertCircle className="h-4 w-4" />{error}</div>;
@@ -70,8 +83,8 @@ export default function EducatorRosterPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        {(["all", "flagged", "inactive"] as Filter[]).map((option) => (
+      <div className="flex flex-wrap items-center gap-2">
+        {(["all", "flagged"] as Filter[]).map((option) => (
           <button
             key={option}
             type="button"
@@ -84,13 +97,10 @@ export default function EducatorRosterPage() {
               cursor: "pointer",
             }}
           >
-            {option === "all"
-              ? t.educator.roster.filterAll(roster.length)
-              : option === "flagged"
-                ? t.educator.roster.filterFlagged
-                : t.educator.roster.filterInactive}
+            {option === "all" ? t.educator.roster.filterAll(roster.length) : t.educator.roster.filterFlagged}
           </button>
         ))}
+        <span className="text-xs" style={{ color: "var(--ink-faint)" }}>{t.educator.roster.orderNote}</span>
       </div>
 
       {roster.length === 0 ? (
@@ -112,17 +122,14 @@ export default function EducatorRosterPage() {
             >
               <div className="min-w-0">
                 <div className="font-semibold" style={{ color: "var(--ink)" }}>
-                  {student.display_name ?? student.code}
-                  <span className="ml-2 font-mono text-xs" style={{ color: "var(--ink-faint)" }}>{student.code}</span>
-                </div>
-                <div className="mt-1 text-xs" style={{ color: "var(--ink-faint)" }}>
-                  {student.last_active_day
-                    ? t.educator.roster.lastEntry(new Date(student.last_active_day).toLocaleDateString("ja-JP"))
-                    : t.educator.roster.noEntries}
+                  {studentIdentity(student)}
                 </div>
                 <div className="mt-1.5 space-y-0.5">
-                  <ObservationLine student={student} />
-                  {hasShowableObservation(student) ? <BaselineContextLine student={student} /> : null}
+                  {hasShowableObservation(student) ? (
+                    <ObservationLine student={student} />
+                  ) : (
+                    <div className="text-xs" style={{ color: "var(--ink-faint)" }}>{t.educator.roster.noObservation}</div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2">

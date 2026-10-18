@@ -3,6 +3,82 @@
 **Decided 2026-08-06.** The educator surface shows observations. It does not
 show a risk classification.
 
+**Narrowed 2026-10-18 (#466).** The educator surface shows a fixed set of
+fields and nothing else — see [The field set](#the-field-set-466).
+
+## The field set (#466)
+
+blesc.jp promises:
+
+> 先生に表示されるのは、クラス、出席番号、観測された表現の種類、時刻だけです。
+
+and its educator mock shows, for each observation, the input source
+(ジャーナル／チャット／音声) and 「根拠: 記述との一致 / 推論なし」, newest first.
+Until #466 the product did not match: the roster and the student screen showed
+the student's **name** (`participants.display_name`), the student screen listed
+**繰り返し見られる話題** counted from the student's diary graph, and neither
+screen had a class or attendance number to show instead. On 2026-10-18 the
+owner chose to change the product rather than the site (option B).
+
+What an educator screen (`/educator`, `/educator/roster`,
+`/educator/student/[participantId]`) may show about a student:
+
+| field | source | when unset |
+| --- | --- | --- |
+| クラス | `class_placements.class_label`, via `overseen_participants()` | 「クラス未設定」 |
+| 出席番号 | `class_placements.attendance_number`, via `overseen_participants()` | 「出席番号未設定」 |
+| 観測の種類 | the matched safety reasons (`t.safety.reason`) | the observation is not shown (rule 2) |
+| 時刻 | when the observation was recorded | — |
+| 入力元 | `journal` / `chat` / `voice` (`t.safety.surface`) | omitted |
+| 根拠 | fixed: 「根拠: 記述との一致 / 推論なし」 | — |
+
+Lists are ordered **newest observation first**; students with no showable
+observation follow, by class and number. The 「要確認」 chip, the crisis routing
+note, the access-logged notice and the non-diagnostic notice stay — they are
+about the screen, not about the student.
+
+The overview's three tiles are counts over the cohort (consented students,
+recorded in the last 7 days, observations), suppressed below three students.
+They are not per-student fields and stay.
+
+**Never a fallback to the name.** A student with no class or number set reads
+「クラス未設定」. It does not fall back to `display_name`, and it does not fall
+back to the internal `code` either — an id on a teacher's screen invites a
+lookup table, which is a name list by another route.
+
+**Enforced in the payload, not only in the JSX** — the lesson recorded below,
+twice. `overseen_participants()` no longer returns `display_name`
+(`supabase/migrations/20261018000000_class_placements_and_minimal_roster.sql`).
+`EducatorStudentStatus` has no name field and no baseline fields;
+`getStudentOverviewForEducator` returns `{ student, observations }` and no
+longer reads `insights` at all, so neither themes nor the days written reach the
+browser. `frontend/tests/educator-fields.test.mjs` pins the exact keys of the
+type and the demo payload, the migration's return columns, and which student
+properties the screens read.
+
+Removed from the educator screens in the same change, because they are outside
+the field set:
+
+- the student's name, and the internal `code` printed beside it;
+- 繰り返し見られる話題 (themes) and the module that filtered them,
+  `src/lib/educatorThemes.ts` (#100), which had no other caller;
+- the list of days the student wrote (「最近の観測」);
+- 「最後の記録 YYYY/MM/DD」 on each roster row, and the 「記録が途切れている」
+  filter, which disclosed the same thing by list membership;
+- the baseline context line (rule 4).
+
+`code`, `org_id`, `owner_user_id` and `participant_id` are still in the payload:
+they route the link, key alerts and the access log, and match shared
+summaries. They are not rendered. `last_active_day` is still in the payload for
+the overview's suppressed 7-day count and the derived inactivity alert.
+
+**Not covered by #466: `/oversight`.** The counsellor view of support summaries
+a student *chose* to share still shows the summary's sections (including its
+recent themes), the internal `student_code` and the last entry date. It is a
+separate, student-initiated share rather than what an educator sees by default,
+and whether the site's sentence is meant to cover it is an open question for the
+owner.
+
 ## The distinction
 
 Two different products can be built from the same data:
@@ -47,10 +123,15 @@ retroactively justify the band.
 2. **Every observation carries its evidence and timestamp.** An observation
    with no reasons is not displayed at all — a flag an educator cannot trace
    back to something the student wrote is worse than no flag.
-3. **Provenance is stated.** "safety.py の決定的マッチ / 推論なし" appears under
+3. **Provenance is stated.** 「根拠: 記述との一致 / 推論なし」 appears under
    each observation, so an educator can tell a lexicon match from a model
-   judgement.
-4. **Context only against a settled baseline.** While
+   judgement. (Until #466 it read 「safety.py の決定的マッチ」, which named a file
+   to a teacher; the wording now matches the site.)
+4. **No baseline context on the educator surface (#466).** The comparison
+   line is not one of the promised fields, so it was removed from the educator
+   screens, and the baseline fields are off `EducatorStudentStatus`. The rule
+   it replaced is kept for the record, because if context ever returns it
+   returns under it: *context only against a settled baseline* — while
    `baseline_provenance.is_provisional` is true, the comparison line is
    replaced by "基準値の学習中（残り N 日）", and no score reaches the band or
    the alert list. Originally this was because the ramp-up comparison ran
@@ -136,10 +217,10 @@ that exists. Where each one is produced, and what enforces the rule there:
 
 | output | produced in | check |
 | --- | --- | --- |
-| 繰り返し見られる話題 (themes) on `/educator/student/[participantId]` | `ApiClient.getStudentOverviewForEducator` → `src/lib/educatorThemes.ts` | **Added.** Counted only from `key_nodes` on an insight row that names its entry and day; fallback-template nodes and the `Observation N` placeholder are withheld. Before this, a day on which extraction fell back stored 「いまの気持ち」「日記を書いた」「最初に思い出したこと」 and the screen counted them as the student's recurring themes. `tests/educator-themes.test.mjs` |
-| days written (`signals`) | same function | the day of an insight row is itself the observation |
-| safety observation on the roster / alerts | `getCohortRoster`, `hasShowableObservation` | rule 2 above — no reasons, no display |
-| safety history (`safetyRuns`) on the student screen | `getStudentOverviewForEducator` | **not checked for reasons.** Left as it is: withholding a safety display has its own risk, and the safety lexicon has its own owner. Needs a decision |
+| ~~繰り返し見られる話題 (themes) on `/educator/student/[participantId]`~~ | — | **Removed (#466).** Was counted from `key_nodes` through `src/lib/educatorThemes.ts`, which withheld fallback-template nodes (#100). The output itself is now outside the field set, so the output and its filter are both gone, and the query no longer reads `insights` |
+| ~~days written (`signals`)~~ | — | **Removed (#466)**, outside the field set |
+| safety observation on the roster / alerts | `getCohortRoster`, `hasShowableObservation` (`src/lib/educatorIdentity.ts`) | rule 2 above — no reasons, no display |
+| safety history (`observations`) on the student screen | `getStudentOverviewForEducator` | now carries the reasons and the surface, so each row shows kind, time, input source and evidence like the roster. A row **without** reasons (written before reasons were stored) is still shown, with the level's wording in place of the kind: withholding a safety display has its own risk, and the safety lexicon has its own owner. Needs a decision |
 | relation paths, `GET /api/graph/traverse?audience=educator` (FastAPI, local only) | `traversal.walk.filter_reportable` (#96) | paths without a source snapshot, or for a participant whose cross-day identity is unusable, are withheld with reasons |
 | any future model output | `app/ontology/educator_exposure.py` | needs a resolvable observation of the same participant and a breakdown; a **learned** output is also withheld while the Stage 3 entry gate (`learning_gates.evaluate_stage3_entry_gate`) is closed, which it is |
 
@@ -147,12 +228,25 @@ The demo library (`src/lib/blesc`) is fictional data and is not in this table.
 
 ## Relationship to the landing page
 
-Rows ② (second clause) and ④ of the LP's technical claims are changed to match
+The field set above is the product side of the LP sentence
+「先生に表示されるのは、クラス、出席番号、観測された表現の種類、時刻だけです。」
+(#466). Rows ② (second clause) and ④ of the LP's technical claims are changed to match
 this policy. Leaving the LP claiming a risk judgement the product no longer
 makes would be the least defensible of the available states. See
 `M-01` in the external review and `docs/lp_claim_alignment.md`.
 
 ## Open
+
+- How schools load class and attendance numbers at scale (CSV import, or a
+  school-information-system integration). Until then an org admin sets them
+  through RLS-checked writes to `class_placements`; see
+  `educator_oversight.md` → 「クラス・出席番号の設定」.
+- Whether `/oversight` (student-initiated summary sharing) falls under the
+  field set. See above.
+- Ordering is newest-first, as the site shows. Before #466 crisis observations
+  were weighted to the top of the roster; a crisis older than an elevated
+  observation can now sit below it. Crisis observations are still pushed
+  (`crisis_escalation.md`) and carry the 「要確認」 chip.
 
 - Legal review of retention and SaMD applicability, before deployment.
 - M-02 remains open, but is no longer a blocker for the educator surface.
