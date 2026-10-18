@@ -145,9 +145,16 @@ describe("the wiring", () => {
   });
 
   it("shows the educator the same participant the student screens follow", () => {
+    // The educator screen used to show this student's days written and the
+    // themes counted from their diary; #466 removed both. What stays is that
+    // the observation the educator sees is from the same diary the student
+    // screens show — its time is one of the student's own submissions.
     const overview = demoStudentOverview(demoCohortRoster()[0].participant_id);
     assert.ok(overview);
-    assert.equal(overview.signals.length, MY_ENTRIES.length);
-    assert.ok(overview.themes.length > 0);
+    assert.ok(overview.observations.length > 0);
+    const submitted = new Set(MY_ENTRIES.map((entry) => entry.submittedAt));
+    for (const observation of overview.observations) {
+      assert.ok(submitted.has(observation.occurred_at), `${observation.occurred_at} is not one of the student's entries`);
+    }
   });
 });

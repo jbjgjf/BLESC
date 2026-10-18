@@ -106,12 +106,42 @@ export interface OversightRequest {
   revoked_at: string | null;
 }
 
+/**
+ * What an educator's browser receives about one student (#466).
+ *
+ * blesc.jp promises 「先生に表示されるのは、クラス、出席番号、観測された表現の
+ * 種類、時刻だけです。」 This type is held to that promise, not only the screens
+ * that read it: a field that reaches the browser is one property access away
+ * from being rendered, and `docs/educator_display_policy.md` records that
+ * happening twice.
+ *
+ * - `display_name` (the student's name) was a field here until #466. It is no
+ *   longer returned by `overseen_participants()` at all.
+ * - The baseline fields (`baseline_is_provisional`, `baseline_days_remaining`,
+ *   `baseline_type`) went at the same time: the line they fed is not one of
+ *   the promised fields.
+ * - Recurring themes never lived on this type, but they rode alongside it on
+ *   `getStudentOverviewForEducator`; they are gone from there too.
+ *
+ * `participant_id`, `org_id` and `owner_user_id` are routing and access-log
+ * keys; `code` is an internal pseudonymous id used to key alerts and to match
+ * shared summaries. None of them is rendered on an educator screen —
+ * `tests/educator-fields.test.mjs` checks which properties the screens read.
+ */
 export interface EducatorStudentStatus {
   participant_id: string;
   org_id: string;
   owner_user_id: string;
   code: string;
-  display_name: string | null;
+  /** クラス, as the school writes it ("2-3", "2年A組"). Null until the school sets it. */
+  class_label: string | null;
+  /** 出席番号. Null until the school sets it. */
+  attendance_number: number | null;
+  /**
+   * The last day the student wrote. Not rendered per student (#466); it feeds
+   * only the overview's 7-day count, which is suppressed for small cohorts,
+   * and the derived inactivity alert.
+   */
   last_active_day: string | null;
   /** Internal only. Computed and stored, never rendered to an educator — a
    *  three-band classification of a minor is an inference about their internal
@@ -135,10 +165,6 @@ export interface EducatorStudentStatus {
   safety_reasons: string[];
   /** Which surface it was written on: journal, chat or voice. */
   safety_surface: string | null;
-  /** Whether the baseline behind any context line is still provisional. */
-  baseline_is_provisional: boolean;
-  baseline_days_remaining: number | null;
-  baseline_type: string | null;
   /**
    * The latest 「書きぶりの変化」 observation (#468): which writing feature moved
    * against the student's own last fourteen writing days, which way, and when.
@@ -146,6 +172,33 @@ export interface EducatorStudentStatus {
    * roster and any other producer of this type need not know about it.
    */
   writing_change?: WritingChangeObservation | null;
+}
+
+/**
+ * One safety observation on the student screen (#466): kind, time, input
+ * source. The evidence line is fixed copy, because every one of these is a
+ * deterministic lexicon match and never a model judgement.
+ */
+export interface EducatorObservation {
+  level: string;
+  /** What was matched; rendered as the observation kind. May be empty for rows written before reasons were stored. */
+  reasons: string[];
+  surface: string | null;
+  occurred_at: string;
+}
+
+/**
+ * The whole of what `getStudentOverviewForEducator` returns (#466).
+ *
+ * `signals` (the days the student wrote) and `themes` (labels counted from
+ * the student's diary graph, 「よく出る話題」) were here until #466. Neither is
+ * one of the fields the site promises, and themes are derived from what the
+ * student wrote — the closest thing to diary content an educator could see.
+ */
+export interface EducatorStudentOverview {
+  student: EducatorStudentStatus;
+  /** Newest first. */
+  observations: EducatorObservation[];
 }
 
 /** A row of `safety_escalations` as the alert list reads it. */

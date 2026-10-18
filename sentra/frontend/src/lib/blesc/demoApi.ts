@@ -32,6 +32,8 @@ import type {
   ChatResponse,
   AnomalyResult,
   CounselorSupportSummary,
+  EducatorObservation,
+  EducatorStudentOverview,
   EducatorStudentStatus,
   Entry,
   ExtractionNode,
@@ -581,6 +583,18 @@ function shiftDay(day: string, offset: number): string {
 
 const TODAY_DEMO = DAYS[DAYS.length - 1].date;
 
+/*
+ * クラスと出席番号（#466）。fixtures の 2年 A組 をそのまま使い、出席番号は
+ * `s-08` → 8番。デモで追う生徒は 34番（`DEMO_PARTICIPANT_CODE` と同じ理由で、
+ * 33人の級友の誰とも重ならない番号）。
+ *
+ * 教員画面は名前を出さなくなったので、`CLASS_ROSTER` の名前はここで返す行に
+ * 載せない。載せないことが要点で、`EducatorStudentStatus` にはもう名前の欄が
+ * ない。
+ */
+const DEMO_CLASS_LABEL = `${CURRENT_STUDENT.grade}${CURRENT_STUDENT.className}`;
+const DEMO_PARTICIPANT_NUMBER = 34;
+
 export function demoCohortRoster(): EducatorStudentStatus[] {
   const classmates = CLASS_ROSTER.map((student) => {
     const observation = OBSERVED[student.id];
@@ -589,15 +603,13 @@ export function demoCohortRoster(): EducatorStudentStatus[] {
       org_id: DEMO_ORG_ID,
       owner_user_id: `demo-owner-${student.id}`,
       code: `2A-${student.id.replace("s-", "")}`,
-      display_name: student.name,
+      class_label: `${student.grade}${student.className}`,
+      attendance_number: Number.parseInt(student.id.replace("s-", ""), 10),
       last_active_day: student.lastEntry,
       safety_level: observation ? observation.level : null,
       safety_at: observation ? `${shiftDay(TODAY_DEMO, observation.dayOffset)}T22:10:00` : null,
       safety_reasons: observation ? observation.reasons : [],
       safety_surface: observation ? observation.surface : null,
-      baseline_is_provisional: student.missedDays > 0,
-      baseline_days_remaining: student.missedDays > 0 ? student.missedDays : null,
-      baseline_type: student.missedDays > 0 ? "none" : "user",
     };
   });
 
@@ -610,45 +622,50 @@ export function demoCohortRoster(): EducatorStudentStatus[] {
       org_id: DEMO_ORG_ID,
       owner_user_id: "demo-owner",
       code: DEMO_PARTICIPANT_CODE,
-      display_name: `${CURRENT_STUDENT.name}`,
+      class_label: DEMO_CLASS_LABEL,
+      attendance_number: DEMO_PARTICIPANT_NUMBER,
       last_active_day: DAYS[DAYS.length - 1].date,
       safety_level: strained ? "elevated" : null,
       safety_reasons: strained ? ["distress_without_explicit_danger"] : [],
       safety_at: strained ? strained.submittedAt : null,
       safety_surface: strained ? "journal" : null,
-      baseline_is_provisional: false,
-      baseline_days_remaining: null,
-      baseline_type: "user",
     },
     ...classmates,
   ];
 }
 
-export function demoStudentOverview(participantId: string) {
+/**
+ * The demo's student screen, in the same shape production returns (#466):
+ * the roster row and the observations, newest first. No themes and no days
+ * written — production stopped returning both, and a demo that showed them
+ * would be a demo of a product nobody ships (the lesson of #175).
+ */
+export function demoStudentOverview(participantId: string): EducatorStudentOverview | null {
   const student = demoCohortRoster().find((row) => row.participant_id === participantId);
   if (!student) return null;
 
-  const isDemoParticipant = participantId === DEMO_PARTICIPANT_ID;
-  const timeline = isDemoParticipant ? demoTimeline() : [];
-  const themeCounts = new Map<string, number>();
-  if (isDemoParticipant) {
-    for (const entry of DAYS) {
-      for (const node of nodesFor(entry).slice(0, 3)) {
-        themeCounts.set(node.label, (themeCounts.get(node.label) ?? 0) + 1);
-      }
-    }
-  }
+  const observations: EducatorObservation[] =
+    participantId === DEMO_PARTICIPANT_ID
+      // Every day of the story that the roster's observation is drawn from,
+      // not only the latest, so the student screen shows the history.
+      ? observedDays().map((entry) => ({
+          level: "elevated",
+          reasons: ["distress_without_explicit_danger"],
+          surface: "journal",
+          occurred_at: entry.submittedAt,
+        }))
+      : student.safety_at && student.safety_level
+        ? [{
+            level: student.safety_level,
+            reasons: student.safety_reasons,
+            surface: student.safety_surface,
+            occurred_at: student.safety_at,
+          }]
+        : [];
 
   return {
     student,
-    // Days only, no score — the demo has to show the same thing production
-    // shows, or the demo is of a product nobody ships (#175).
-    signals: [...timeline].reverse().map((row) => ({ day: row.day })),
-    themes: [...themeCounts.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .slice(0, 5)
-      .map(([label, count]) => ({ label, count })),
-    safetyRuns: student.safety_at ? [{ level: student.safety_level ?? "unknown", occurred_at: student.safety_at }] : [],
+    observations: observations.sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)),
   };
 }
 

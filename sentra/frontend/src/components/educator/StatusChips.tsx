@@ -1,6 +1,11 @@
-import type { EducatorStudentStatus } from "@/api/models";
+import type { EducatorObservation, EducatorStudentStatus } from "@/api/models";
 import { t } from "@/lib/i18n";
 import { describeWritingChange } from "@/lib/writingChangeObservation";
+import { hasShowableObservation } from "@/lib/educatorIdentity";
+
+// Re-exported so the screens keep one import for the educator display pieces.
+// The functions live in `lib/educatorIdentity.ts`, where the tests can reach them.
+export { byNewestObservation, compareByClassAndNumber, hasShowableObservation, studentIdentity } from "@/lib/educatorIdentity";
 
 export const panel: React.CSSProperties = {
   backgroundColor: "var(--ivory)",
@@ -26,18 +31,6 @@ function formatTimestamp(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
-/**
- * Whether this student has anything an educator should be shown at all.
- *
- * An observation without reasons cannot be traced back to something the
- * student actually wrote, so it is not rendered — a flag an educator cannot
- * explain is worse than no flag.
- */
-export function hasShowableObservation(student: EducatorStudentStatus): boolean {
-  if (!student.safety_level || student.safety_level === "none") return false;
-  return student.safety_reasons.length > 0 && Boolean(student.safety_at);
 }
 
 /** Draws attention without classifying the student. */
@@ -79,19 +72,28 @@ export function WritingChangeLine({ student }: { student: EducatorStudentStatus 
   );
 }
 
-/** The observation itself: what was matched, when, on which surface. */
-export function ObservationLine({ student }: { student: EducatorStudentStatus }) {
-  if (!hasShowableObservation(student)) return <WritingChangeLine student={student} />;
-  const surface = student.safety_surface ? t.safety.surface[student.safety_surface] ?? student.safety_surface : null;
+/**
+ * One observation, in the fields the site promises (#466): what kind of
+ * expression was matched, when, on which input (ジャーナル／チャット／音声),
+ * and the evidence line 「根拠: 記述との一致 / 推論なし」.
+ *
+ * An observation with no reasons renders the level's wording in place of the
+ * kind. That only happens for safety-history rows written before reasons were
+ * stored; withholding a safety record has its own risk, so it is shown rather
+ * than dropped (see `educator_display_policy.md`, outputs table).
+ */
+export function ObservationDetail({ observation }: { observation: EducatorObservation }) {
+  const surface = observation.surface ? t.safety.surface[observation.surface] ?? observation.surface : null;
+  const kind = observation.reasons.length
+    ? observation.reasons.map((reason) => t.safety.reason[reason] ?? reason).join(" / ")
+    : t.safety.level[observation.level] ?? t.safety.flagRecorded;
   return (
-    <>
-    {/* #468: the writing-change line sits under the safety one when both exist. */}
     <div className="text-xs leading-relaxed" style={{ color: "var(--ink-mid)" }}>
       <div>
         <span style={{ color: "var(--ink-faint)" }}>{t.safety.observationPrefix}</span>
-        {student.safety_reasons.map((reason) => t.safety.reason[reason] ?? reason).join(" / ")}
+        {kind}
         <span style={{ color: "var(--ink-faint)" }}>
-          （{formatTimestamp(student.safety_at!)}
+          （{formatTimestamp(observation.occurred_at)}
           {surface ? ` · ${surface}` : ""}）
         </span>
       </div>
@@ -99,35 +101,37 @@ export function ObservationLine({ student }: { student: EducatorStudentStatus })
         {t.safety.observationBasis}
       </div>
     </div>
-    <WritingChangeLine student={student} />
-    </>
   );
 }
 
 /**
- * Context relative to the student's own history — shown ONLY once their
- * baseline is their own. During the ramp-up the comparison is against guessed
- * population statistics, so the line would look like evidence while carrying
- * none.
+ * The latest observations on a roster row: the safety one, and under it the
+ * writing-change one (#468) when both exist.
  */
-export function BaselineContextLine({ student }: { student: EducatorStudentStatus }) {
-  if (student.baseline_is_provisional) {
-    return (
-      <div className="text-xs" style={{ color: "var(--ink-faint)" }}>
-        {t.educator.baseline.learning}
-        {typeof student.baseline_days_remaining === "number"
-          ? t.educator.baseline.learningRemaining(student.baseline_days_remaining)
-          : ""}
-        {` · ${t.educator.baseline.learningNote}`}
-      </div>
-    );
-  }
+export function ObservationLine({ student }: { student: EducatorStudentStatus }) {
+  if (!hasShowableObservation(student)) return <WritingChangeLine student={student} />;
   return (
-    <div className="text-xs" style={{ color: "var(--ink-faint)" }}>
-      {t.educator.baseline.source[student.baseline_type ?? "user"] ?? t.educator.baseline.source.user}
-    </div>
+    <>
+      <ObservationDetail
+        observation={{
+          level: student.safety_level!,
+          reasons: student.safety_reasons,
+          surface: student.safety_surface,
+          occurred_at: student.safety_at!,
+        }}
+      />
+      <WritingChangeLine student={student} />
+    </>
   );
 }
+
+/*
+ * `BaselineContextLine` stood here: 「基準値の学習中（残り N 日）」 or
+ * 「この生徒自身の記録との比較」 under each observation. #466 removed it. It is
+ * not one of the fields blesc.jp promises an educator sees, and the baseline
+ * fields that fed it are off `EducatorStudentStatus` with it, so the next
+ * screen cannot render it by accident.
+ */
 
 /** Fixed footer on every educator surface. */
 export function NonDiagnosticNotice() {

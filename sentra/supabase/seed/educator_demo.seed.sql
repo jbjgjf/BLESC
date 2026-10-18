@@ -82,6 +82,14 @@ insert into public.oversight_roster (org_id, educator_user_id, participant_id, o
 select '11111111-0000-0000-0000-000000000001', '11111111-0000-0000-0000-00000000000e', p.id, p.owner_user_id, 'active'
 from public.participants p where p.id::text like '11111111-%';
 
+-- Class and attendance number (#466): educators see these, never the name.
+-- YU is left unset on purpose, to show 「クラス未設定」 once consent is granted.
+insert into public.class_placements (org_id, participant_id, owner_user_id, class_label, attendance_number)
+values
+  ('11111111-0000-0000-0000-000000000001', '11111111-0000-0000-0000-0000000000a1', '11111111-0000-0000-0000-0000000000aa', '2-1', 1),
+  ('11111111-0000-0000-0000-000000000001', '11111111-0000-0000-0000-0000000000b1', '11111111-0000-0000-0000-0000000000bb', '2-1', 2),
+  ('11111111-0000-0000-0000-000000000001', '11111111-0000-0000-0000-0000000000c1', '11111111-0000-0000-0000-0000000000cc', '2-1', 3);
+
 -- Consents: KO, RI, HA grant; YU stays pending (default-deny demo).
 insert into public.oversight_consents (participant_id, owner_user_id, org_id)
 select p.id, p.owner_user_id, '11111111-0000-0000-0000-000000000001'

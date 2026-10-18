@@ -6,15 +6,31 @@ import { useParams } from "next/navigation";
 import { AlertCircle, ArrowLeft, Loader2, ShieldAlert } from "lucide-react";
 
 import { ApiClient } from "@/api/client";
+import type { EducatorStudentOverview } from "@/api/models";
 import { t } from "@/lib/i18n";
-import { AttentionChip, BaselineContextLine, NonDiagnosticNotice, ObservationLine, panel } from "@/components/educator/StatusChips";
+import { AttentionChip, NonDiagnosticNotice, ObservationDetail, panel, studentIdentity } from "@/components/educator/StatusChips";
 
-type Overview = Awaited<ReturnType<typeof ApiClient.getStudentOverviewForEducator>>;
-
+/*
+ * 生徒一人の画面。出すのは、クラス・出席番号と、観測の記録（種類・時刻・
+ * 入力元・根拠）を新しい順に並べたものだけ（#466）。
+ *
+ * #466 で外したもの、と理由:
+ *   - 生徒の名前。blesc.jp は「先生に表示されるのは、クラス、出席番号、観測された
+ *     表現の種類、時刻だけです」と約束している。API の返り値からも外した。
+ *   - 「繰り返し見られる話題」。日記の内容から数えたラベルで、約束の範囲を
+ *     いちばん大きく超えていた。`getStudentOverviewForEducator` はもう
+ *     `insights` を読まない。
+ *   - 「最近の観測」として出していた、記録した日の一覧。
+ *     （その前は日ごとの異常スコアを出していて、#175 で消えている。）
+ *   - 基準値の学習状況の行。
+ *
+ * 残したもの: 「要確認」の表示、危機の記録を担当者へつなぐ案内、閲覧が記録される
+ * ことの告知、診断ではないことの告知。
+ */
 export default function EducatorStudentPage() {
   const params = useParams<{ participantId: string }>();
   const participantId = params.participantId;
-  const [overview, setOverview] = useState<Overview | undefined>(undefined);
+  const [overview, setOverview] = useState<EducatorStudentOverview | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -44,7 +60,8 @@ export default function EducatorStudentPage() {
     );
   }
 
-  const { student, signals, themes, safetyRuns } = overview;
+  const { student, observations } = overview;
+  const hasCrisis = observations.some((observation) => observation.level === "crisis");
 
   return (
     <div className="space-y-5">
@@ -56,8 +73,7 @@ export default function EducatorStudentPage() {
         <div>
           <div className="inscription mb-1">{t.educator.student.subtitle}</div>
           <div className="text-xl font-bold" style={{ color: "var(--ink)" }}>
-            {student.display_name ?? student.code}
-            <span className="ml-2 font-mono text-xs font-normal" style={{ color: "var(--ink-faint)" }}>{student.code}</span>
+            {studentIdentity(student)}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -65,85 +81,30 @@ export default function EducatorStudentPage() {
         </div>
       </section>
 
-      <section className="space-y-1 px-7 py-4" style={panel}>
-        <ObservationLine student={student} />
-        <BaselineContextLine student={student} />
-      </section>
-
-      {safetyRuns.length ? (
-        <section className="px-7 py-5" style={{ ...panel, borderLeft: "3px solid var(--terracotta)" }}>
-          <div className="mb-2 flex items-center gap-2 font-semibold" style={{ color: "var(--sienna)" }}>
-            <ShieldAlert className="h-4 w-4" />{t.educator.student.safetyFlags}
-          </div>
-          <ul className="space-y-1 text-sm" style={{ color: "var(--ink-mid)" }}>
-            {safetyRuns.map((run) => (
-              <li key={run.occurred_at}>
-                {new Date(run.occurred_at).toLocaleDateString("ja-JP")} · {t.safety.level[run.level] ?? run.level}
+      <section
+        className="px-7 py-5"
+        style={observations.length ? { ...panel, borderLeft: "3px solid var(--terracotta)" } : panel}
+      >
+        <div className="mb-2 flex items-center gap-2 font-semibold" style={{ color: observations.length ? "var(--sienna)" : "var(--ink-mid)" }}>
+          <ShieldAlert className="h-4 w-4" />{t.educator.student.safetyFlags}
+        </div>
+        {observations.length ? (
+          <ul className="space-y-2">
+            {observations.map((observation) => (
+              <li key={`${observation.occurred_at}-${observation.level}`}>
+                <ObservationDetail observation={observation} />
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs" style={{ color: "var(--ink-faint)" }}>
+        ) : (
+          <p className="text-sm italic" style={{ color: "var(--ink-faint)" }}>{t.educator.student.noObservations}</p>
+        )}
+        {observations.length ? (
+          <p className="mt-3 text-xs" style={{ color: hasCrisis ? "var(--sienna)" : "var(--ink-faint)" }}>
             {t.educator.student.safetyRouting}
           </p>
-        </section>
-      ) : null}
-
-      <div className="grid gap-5 md:grid-cols-2">
-        <section style={panel}>
-          <header className="px-6 py-4" style={{ borderBottom: "1px solid var(--limestone)" }}>
-            <div className="inscription">{t.educator.student.recentSignals}</div>
-          </header>
-          {/*
-            * The day a student wrote, and nothing beside it.
-            *
-            * This column used to render `signal.score.toFixed(2)` — the anomaly
-            * score, per day, next to a named student's name. That is
-            * `latest_score`, which `docs/educator_display_policy.md` rule 1 says
-            * is computed and stored but never shown (#175).
-            *
-            * It survived the 2026-08-06 policy change because that change was
-            * applied to the roster and the class list, and this screen was not
-            * read. `PERSIST_ANOMALY_SCORE` has been false since, so new rows
-            * carry 0 — but rows written before it still hold real scores, and a
-            * column of `0.00` for every day is not better: it presents a number
-            * as a finding where there is no finding.
-            *
-            * The dates stay. "They wrote on these days" is an observation.
-            */}
-          {signals.length ? (
-            <ul>
-              {signals.slice(0, 10).map((signal) => (
-                <li key={signal.day} className="px-6 py-2.5 text-sm" style={{ borderBottom: "1px solid var(--limestone)", color: "var(--ink-mid)" }}>
-                  {new Date(signal.day).toLocaleDateString("ja-JP")}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="px-6 py-6 text-sm italic" style={{ color: "var(--ink-faint)" }}>{t.educator.student.noEntries}</p>
-          )}
-        </section>
-
-        <section style={panel}>
-          <header className="px-6 py-4" style={{ borderBottom: "1px solid var(--limestone)" }}>
-            <div className="inscription">{t.educator.student.recurringThemes}</div>
-          </header>
-          {themes.length ? (
-            <ul>
-              {themes.map((theme) => (
-                <li key={theme.label} className="flex items-center justify-between px-6 py-2.5 text-sm" style={{ borderBottom: "1px solid var(--limestone)", color: "var(--ink-mid)" }}>
-                  <span>{theme.label}</span>
-                  <span className="text-xs" style={{ color: "var(--ink-faint)" }}>{theme.count}×</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="px-6 py-6 text-sm italic" style={{ color: "var(--ink-faint)" }}>{t.educator.student.noThemes}</p>
-          )}
-          <p className="px-6 py-4 text-xs leading-relaxed" style={{ color: "var(--ink-faint)", borderTop: "1px solid var(--limestone)" }}>
-            {t.educator.student.themesNote}
-          </p>
-        </section>
-      </div>
+        ) : null}
+      </section>
 
       <p className="px-1 text-xs" style={{ color: "var(--ink-faint)" }}>
         {t.educator.student.accessLogged}

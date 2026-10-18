@@ -17,6 +17,8 @@ import {
   RecordId,
   CohortAlert,
   EscalationAlertRow,
+  EducatorObservation,
+  EducatorStudentOverview,
   EducatorStudentStatus,
   OrgCounselor,
   OversightRequest,
@@ -25,7 +27,6 @@ import {
   StudentAccessRecord,
 } from "./models";
 import { supabase } from "@/lib/supabase/client";
-import { attributableThemes } from "@/lib/educatorThemes";
 import { latestWritingChangeByParticipant } from "@/lib/writingChangeObservation";
 import { NO_CONSENT, consentSnapshot, normalizeConsent, type ConsentState } from "@/lib/consent";
 import type { PilotState } from "@/lib/pilotEnrollment";
@@ -1188,20 +1189,21 @@ export class ApiClient {
     if (readDemoFlag()) return demo.demoCohortRoster();
     const rosterResult = await supabase.rpc("overseen_participants");
     if (rosterResult.error) throwSupabaseError(t.apiError.loadCohortRoster, rosterResult.error);
-    type RosterRow = { participant_id: string; org_id: string; owner_user_id: string; code: string; display_name: string | null };
+    // No `display_name` (#466). The function stopped returning it, and this
+    // type does not name it either, so a read cannot quietly bring it back.
+    type RosterRow = {
+      participant_id: string;
+      org_id: string;
+      owner_user_id: string;
+      code: string;
+      class_label: string | null;
+      attendance_number: number | null;
+    };
     const roster = (rosterResult.data ?? []) as RosterRow[];
     if (!roster.length) return [];
     const ids = roster.map((row) => row.participant_id);
 
-    type InsightRowLite = {
-      participant_id: string;
-      day: string;
-      anomaly_score: number | null;
-      baseline_deviation_json: {
-        baseline_available?: boolean;
-        baseline_provenance?: { is_provisional?: boolean; days_remaining?: number; baseline_type?: string };
-      } | null;
-    };
+    type InsightRowLite = { participant_id: string; day: string };
     type SafetyRowLite = { participant_id: string; retrieval_config_json: Record<string, JsonValue> | null; created_at: string };
 
     // Each student's newest row, however much the rest of the cohort wrote
@@ -1210,7 +1212,9 @@ export class ApiClient {
     const [insightsResult, safetyResult] = await Promise.all([
       latestRowPerParticipant<InsightRowLite>(supabase, {
         table: "insights",
-        columns: "participant_id, day, anomaly_score, baseline_deviation_json",
+        // The day only. `baseline_deviation_json` was read for the baseline
+        // context line, which #466 took off the educator screens.
+        columns: "participant_id, day",
         participantIds: ids,
         newestBy: "day",
       }),
@@ -1244,7 +1248,6 @@ export class ApiClient {
     return roster.map((row) => {
       const insight = latestInsight.get(row.participant_id);
       const safety = latestSafety.get(row.participant_id);
-      const provenance = insight?.baseline_deviation_json?.baseline_provenance;
       const config = safety?.retrieval_config_json ?? null;
       const reasons = Array.isArray(config?.reasons)
         ? (config!.reasons as JsonValue[]).filter((reason): reason is string => typeof reason === "string")
@@ -1254,7 +1257,8 @@ export class ApiClient {
         org_id: row.org_id,
         owner_user_id: row.owner_user_id,
         code: row.code,
-        display_name: row.display_name,
+        class_label: row.class_label ?? null,
+        attendance_number: typeof row.attendance_number === "number" ? row.attendance_number : null,
         last_active_day: insight?.day ?? null,
         safety_level: typeof safety?.retrieval_config_json?.risk_level === "string"
           ? String(safety.retrieval_config_json.risk_level)
@@ -1262,11 +1266,6 @@ export class ApiClient {
         safety_at: safety?.created_at ?? null,
         safety_reasons: reasons,
         safety_surface: typeof config?.surface === "string" ? String(config.surface) : null,
-        // A missing provenance means the row predates D-04; treat it as
-        // provisional rather than assuming a settled baseline.
-        baseline_is_provisional: provenance?.is_provisional ?? true,
-        baseline_days_remaining: typeof provenance?.days_remaining === "number" ? provenance.days_remaining : null,
-        baseline_type: typeof provenance?.baseline_type === "string" ? provenance.baseline_type : null,
         writing_change: latestWritingChange.get(row.participant_id) ?? null,
       };
     });
@@ -1455,68 +1454,64 @@ export class ApiClient {
     if (error) console.warn("[oversight] cohort access log insert skipped", error);
   }
 
-  /** Minimized per-student view for educators (issue #36). */
-  static async getStudentOverviewForEducator(participantId: string): Promise<{
-    student: EducatorStudentStatus;
-    /**
-     * The days this student wrote on. No score.
-     *
-     * `anomaly_score` used to be selected here and rendered beside each day
-     * (#175). Removing it from the query rather than only from the JSX is the
-     * point: a value that reaches the browser can be rendered again by the next
-     * change to this screen, and `docs/educator_display_policy.md` records that
-     * this exact rule was already re-broken once by being enforced in one
-     * implementation and not the other.
-     */
-    signals: Array<{ day: string }>;
-    themes: Array<{ label: string; count: number }>;
-    safetyRuns: Array<{ level: string; occurred_at: string }>;
-  } | null> {
+  /**
+   * Minimized per-student view for educators (issue #36, narrowed by #466).
+   *
+   * Returns the student's roster row (class, attendance number, latest
+   * observation) and their safety observations, newest first — nothing else.
+   *
+   * Two things were here until #466, and both are gone from the query, not
+   * only from the screen:
+   *
+   * - `themes` — 繰り返し見られる話題, labels counted from
+   *   `insights.graph_summary_json.key_nodes`. They are derived from what the
+   *   student wrote, and blesc.jp promises an educator sees the kind of
+   *   expression observed and its time, not topics from the diary. The filter
+   *   that kept fallback-template labels out of them (`educatorThemes.ts`,
+   *   #100) went with them: it had no other caller.
+   * - `signals` — the days the student wrote. Not one of the promised fields
+   *   either; `insights` is no longer read here at all.
+   *
+   * `anomaly_score` was removed from this query earlier (#175), for the same
+   * reason: a value that reaches the browser can be rendered again by the next
+   * change to this screen.
+   */
+  static async getStudentOverviewForEducator(participantId: string): Promise<EducatorStudentOverview | null> {
     if (readDemoFlag()) return demo.demoStudentOverview(participantId);
     const roster = await this.getCohortRoster();
     const student = roster.find((row) => row.participant_id === participantId);
     if (!student) return null;
 
-    const [insightsResult, safetyResult] = await Promise.all([
-      supabase
-        .from("insights")
-        .select("day, entry_id, graph_summary_json")
-        .eq("participant_id", participantId)
-        .order("day", { ascending: false })
-        .limit(30),
-      supabase
-        .from("model_runs")
-        .select("retrieval_config_json, created_at")
-        .eq("artifact_type", "safety_assessment")
-        .eq("participant_id", participantId)
-        .order("created_at", { ascending: false })
-        .limit(10),
-    ]);
-    if (insightsResult.error) throwSupabaseError(t.apiError.loadStudentSignals, insightsResult.error);
+    const safetyResult = await supabase
+      .from("model_runs")
+      .select("retrieval_config_json, created_at")
+      .eq("artifact_type", "safety_assessment")
+      .eq("participant_id", participantId)
+      .order("created_at", { ascending: false })
+      .limit(10);
     if (safetyResult.error) throwSupabaseError(t.apiError.loadStudentSafety, safetyResult.error);
-
-    type InsightRowLite = { day: string; entry_id: string | null; graph_summary_json: Record<string, JsonValue> | null };
-    const rows = (insightsResult.data ?? []) as InsightRowLite[];
-    // Counted only from occurrences that trace back to an entry the student
-    // wrote (#100). Every label used to be counted, so on a day extraction fell
-    // back to its template, 「いまの気持ち」「日記を書いた」 became this student's
-    // recurring themes. `entry_id` is selected for that check alone; it is an id,
-    // and the educator RLS policy already covers the row.
-    const { themes } = attributableThemes(rows);
 
     void this.recordEducatorAccess(student, "student_overview");
 
-    return {
-      student,
-      signals: rows.map((row) => ({ day: row.day })),
-      themes,
-      safetyRuns: ((safetyResult.data ?? []) as Array<{ retrieval_config_json: Record<string, JsonValue> | null; created_at: string }>)
-        .map((row) => ({
-          level: typeof row.retrieval_config_json?.risk_level === "string" ? String(row.retrieval_config_json.risk_level) : "unknown",
+    type SafetyRow = { retrieval_config_json: Record<string, JsonValue> | null; created_at: string };
+    const observations: EducatorObservation[] = ((safetyResult.data ?? []) as SafetyRow[])
+      .map((row) => {
+        const config = row.retrieval_config_json;
+        return {
+          level: typeof config?.risk_level === "string" ? String(config.risk_level) : "unknown",
+          reasons: Array.isArray(config?.reasons)
+            ? (config!.reasons as JsonValue[]).filter((reason): reason is string => typeof reason === "string")
+            : [],
+          surface: typeof config?.surface === "string" ? String(config.surface) : null,
           occurred_at: row.created_at,
-        }))
-        .filter((run) => run.level !== "none" && run.level !== "low"),
-    };
+        };
+      })
+      .filter((observation) => observation.level !== "none" && observation.level !== "low")
+      // 新しい順。The query already orders by `created_at desc`; sorting again
+      // keeps the promise if the query is ever changed.
+      .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at));
+
+    return { student, observations };
   }
 
   /** Student-facing view of who looked at their data (issue #31). */
