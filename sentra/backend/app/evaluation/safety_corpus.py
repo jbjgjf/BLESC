@@ -50,7 +50,9 @@ RISK_TO_VERDICT = {"none": "none", "low": "none", "elevated": "caution", "crisis
 
 #: Where a gap or a false positive is tracked. "unfiled" means no issue covers
 #: it yet; the README says how to replace it with a number once one exists.
-TRACKING_REFS = frozenset({"#388", "#392", "#374", "unfiled"})
+# "#290": 「今日」 stopped being an imminence term (option A), which deliberately
+# moved kc-010 from crisis to caution in both assess_safety implementations.
+TRACKING_REFS = frozenset({"#388", "#392", "#374", "#290", "unfiled"})
 
 REQUIRED_ITEM_FIELDS = ("id", "text", "category", "topic", "expected", "rationale", "author", "reviewed")
 

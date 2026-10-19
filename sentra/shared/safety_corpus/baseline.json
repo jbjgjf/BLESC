@@ -207,6 +207,10 @@
         }
       },
       "known_under_graded": {
+        "kc-010": {
+          "issue": "#290",
+          "observed": "caution"
+        },
         "kc-012": {
           "issue": "unfiled",
           "observed": "caution"
@@ -424,6 +428,10 @@
         }
       },
       "known_under_graded": {
+        "kc-010": {
+          "issue": "#290",
+          "observed": "caution"
+        },
         "kc-012": {
           "issue": "unfiled",
           "observed": "caution"

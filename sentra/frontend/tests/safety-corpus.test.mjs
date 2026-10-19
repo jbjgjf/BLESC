@@ -43,7 +43,9 @@ const VERDICTS = ["none", "caution", "crisis"];
 const POSITIVE = new Set(["caution", "crisis"]);
 /** `low` is distress with no danger signal; it drives no intervention. */
 const RISK_TO_VERDICT = { none: "none", low: "none", elevated: "caution", crisis: "crisis" };
-const TRACKING_REFS = new Set(["#388", "#392", "#374", "unfiled"]);
+// #290: 「今日」 stopped being an imminence term (option A), which deliberately
+// moved kc-010 「今日、あいつを殺してやりたいと思った。」 from crisis to caution.
+const TRACKING_REFS = new Set(["#388", "#392", "#374", "#290", "unfiled"]);
 
 const isFlagged = (verdict) => verdict !== "none";
 const level = (verdict) => VERDICTS.indexOf(verdict);
