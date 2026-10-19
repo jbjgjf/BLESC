@@ -31,3 +31,26 @@ For minors, BLESC should encourage involving responsible adults when distress is
 ## Logging and Review
 
 Safety-relevant responses should retain source labels for the static policy and user-specific evidence used. Logs should show whether the response used Supabase user retrieval, OpenAI Vector Store static policy retrieval, or both. Logs should avoid storing unnecessary raw personal content.
+
+## Crisis Contacts in Japan (#465)
+
+The deterministic crisis and elevated responses name places a student in Japan can call, in Japanese, with no English glosses:
+
+- 24時間子供SOSダイヤル `0120-0-78310` (24 hours, free) — 文部科学省
+- `119` (救急) and `110` (警察) when the danger is happening now
+
+The numbers live in one place, `frontend/src/lib/crisisContacts.ts`. The responses are built from it, and `shared/safety_assessment_conformance.json` carries the text to the FastAPI path. The same response is shown on all three surfaces: appended to a chat reply, shown on the journal after saving (with `tel:` links), and spoken in voice. A model reply only replaces it when it names a real person **and** gives the child SOS line's number.
+
+The site (blesc.jp, `BLESC-website` `src/lib/trust.ts` `SOS_DIAL`) promises the same line; its CI compares the two.
+
+`CRISIS_CONTACTS_PROVENANCE.checkedOn` records the last check against the official page. A named staff member still has to confirm the numbers and hours from the official MEXT page and fill in `confirmedBy`.
+
+## Date Words Are Not Imminence (#290)
+
+Decision: option A of #290, taken by the repository owner on 2026-10-19.
+
+`今日`, `today` and `now` are no longer imminence terms. In a daily journal 「今日は」 opens most entries, and under `safety-assessment-v2` those characters alone moved a self-harm mention from elevated to crisis, set confidence to 0.98 and notified a teacher. The remaining imminence terms name a close, specific time or a plan (`今夜`, `今すぐ`, `tonight`, `right now`, `計画がある`, …), and they are what the 0.98 confidence means.
+
+This lowers some entries from crisis to elevated. Elevated still shows the student the support response with the child SOS line and 119/110; it no longer suppresses reflection cards or notifies a teacher on its own.
+
+Version: `safety-assessment-v3`. Rows assessed under v2 keep `assessor_version = safety-assessment-v2` and are not rewritten, so a reviewer can tell which lexicon produced them. Human decisions in `pilot_crisis_reviews` are never overwritten. Re-assessing older rows is tracked in #452.

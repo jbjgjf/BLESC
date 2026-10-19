@@ -148,6 +148,16 @@ export const ja = {
     observationPrefix: "観測: ",
     observationBasis: "└ 根拠: safety.py の決定的マッチ / 推論なし",
     flagRecorded: "記録あり",
+    /**
+     * The title of the card a crisis entry gets in place of reflection cards.
+     * It sat in `api/entries` as "Support first" — English above a Japanese
+     * body, on the screen a student sees right after writing it (#239).
+     */
+    crisisCardTitle: "まずは、あなたの安全を",
+    /** Above the support response on the journal's completion screen (#465). */
+    supportNoticeTitle: "ひとりで抱えこまないで",
+    /** The link text for each number, read by a screen reader as well. */
+    callLink: (name: string, number: string) => `${name}（${number}）に電話する`,
   },
 
   /** Counsellor view of the summaries a student chose to share. */

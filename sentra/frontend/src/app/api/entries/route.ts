@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assessSafety, SAFETY_ASSESSMENT_VERSION } from "@/lib/safety-assessment";
+import { t } from "@/lib/i18n";
 import {
   fallbackExtraction,
   normalizeModelExtraction,
@@ -400,6 +401,9 @@ export async function POST(request: NextRequest) {
       temporal_summary: extraction.temporal_summary,
       emotional_state_json: {
         reflection_id: entryId,
+        // "und" (undetermined) on purpose: this deterministic path detects no
+        // language, and writing "ja" would claim a detection that never ran.
+        // It describes the entry, not the UI, which is Japanese either way (#239).
         locale: "und",
         primary_emotions: [],
         intensity: safetyAssessment.risk_level === "crisis" ? 5 : safetyAssessment.risk_level === "elevated" ? 4 : 2,
@@ -422,7 +426,7 @@ export async function POST(request: NextRequest) {
       reflection_cards_json: safetyAssessment.risk_level === "crisis" ? [{
         id: `${entryId}:crisis_suppressed`,
         type: "safety_suppression",
-        title: "Support first",
+        title: t.safety.crisisCardTitle,
         body: safetyAssessment.safe_response,
         evidence_refs: [],
         confidence: "high",
@@ -555,10 +559,14 @@ export async function POST(request: NextRequest) {
   // `self_report` echoes what was accepted and what was not. A client that sent
   // an out-of-range value gets told so rather than seeing its slider silently
   // become a blank in the dataset (#165).
+  // `safe_response` is non-empty for crisis and elevated, and the journal shows
+  // it on the completion screen (#465). Sent at the top level so it does not
+  // depend on which extraction path filled `computed`.
   const body = {
     ...computed,
     supabase_sync: supabaseSync,
     collection_only: collectionOnly,
+    safe_response: safetyAssessment.safe_response,
     self_report: {
       schema_version: selfReport.schema_version,
       answered: selfReport.answered,

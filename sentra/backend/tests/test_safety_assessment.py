@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from app.models.safety import SafetyAssessmentInput
@@ -49,10 +51,15 @@ def test_crisis_response_stays_non_diagnostic_and_direct():
     response = result.safe_response
     assert result.risk_level == "crisis"
     assert "診断" not in response
-    assert "緊急サービス" in response
+    # A number a student in Japan can dial, not "emergency services" (#465).
+    assert "0120-0-78310" in response
+    assert "119" in response
     # The student reads Japanese: the card used to switch to English only in a crisis.
     assert not response.isascii()
-    assert len(response) < 200
+    # "blesc" and 「24時間子供SOSダイヤル」 are names, not English glosses.
+    assert not re.search(r"[A-Za-z]{3,}", response.replace("blesc", "").replace("24時間子供SOSダイヤル", ""))
+    # Short enough to read in a crisis, with room for the two numbers.
+    assert len(response) < 240
 
 
 # The spelling a Japanese keyboard happens to produce must not change the
@@ -147,8 +154,23 @@ def test_the_kana_spelling_table_stays_honest():
 
 
 def test_no_imminence_term_is_given_a_reading():
-    """#290 is an open false positive on 「今日」; this must not get louder."""
+    """#290 had to take 「今日」 out of imminence; the rest must not widen."""
     from app.services.safety import KANA_SPELLINGS
 
     for key in ("今すぐ", "今夜", "今日", "計画がある"):
         assert key not in KANA_SPELLINGS, key
+
+
+@pytest.mark.parametrize(
+    ("plain", "dated"),
+    [
+        ("部活でミスして、もう消えたいと思った。", "今日は部活でミスして、もう消えたいと思った。"),
+        ("I want to hurt myself.", "I want to hurt myself today."),
+        ("I want to hurt myself.", "I want to hurt myself now."),
+    ],
+)
+def test_date_words_do_not_decide_crisis(plain, dated):
+    """#290, option A: the same entry with a date word gets the same answer."""
+    a = assess_safety(SafetyAssessmentInput(reflection_id="a", content=plain))
+    b = assess_safety(SafetyAssessmentInput(reflection_id="b", content=dated))
+    assert (b.risk_level, b.escalation_required, b.confidence) == (a.risk_level, a.escalation_required, a.confidence)

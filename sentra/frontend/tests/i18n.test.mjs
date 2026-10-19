@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
@@ -73,5 +75,37 @@ describe("the message catalogue", () => {
   it("has no empty messages", () => {
     const empty = leaves(t).filter(([, text]) => !text.trim()).map(([path]) => path);
     assert.deepEqual(empty, [], `Empty catalogue entries:\n${empty.join("\n")}`);
+  });
+});
+
+/**
+ * Text an API route produces as data and a screen then renders (#239).
+ *
+ * `scripts/ui-strings.mjs` skips `src/app/api` as a whole — route handlers
+ * mostly answer other programs, and #371 is the work to classify the rest. The
+ * crisis card's "Support first" got through that gap: a title the research
+ * screen rendered as-is, above a Japanese body. Until #371 lands, the fields a
+ * screen renders verbatim are checked here directly.
+ */
+describe("display text written by API routes (#239)", () => {
+  const API = "src/app/api";
+  const routes = readdirSync(API, { recursive: true }).filter((path) => path.endsWith("route.ts"));
+
+  it("gives no rendered title or body an English-only literal", () => {
+    const found = [];
+    for (const path of routes) {
+      const source = readFileSync(join(API, path), "utf8");
+      for (const match of source.matchAll(/\b(title|body|label):\s*"([^"]*)"/g)) {
+        if (/[A-Za-z]{2,}/.test(match[2]) && !/[぀-ヿ一-鿿]/.test(match[2])) found.push(`${path}: ${match[0]}`);
+      }
+    }
+    assert.deepEqual(found, []);
+  });
+
+  it("takes the crisis card's title from the catalogue", () => {
+    const entries = readFileSync(join(API, "entries/route.ts"), "utf8");
+    assert.ok(entries.includes("title: t.safety.crisisCardTitle"));
+    assert.ok(!entries.includes("Support first"));
+    assert.match(t.safety.crisisCardTitle, /[぀-ヿ一-鿿]/);
   });
 });

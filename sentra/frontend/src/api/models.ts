@@ -378,6 +378,13 @@ export interface EntrySubmissionResponse {
    */
   collection_only?: boolean;
   /**
+   * The support response for this entry, with the child SOS line and 119/110
+   * in it (#465). Empty unless the deterministic assessment was crisis or
+   * elevated. The journal shows it on the completion screen; it is sent even in
+   * collection-only mode, because that mode withholds extraction, not support.
+   */
+  safe_response?: string;
+  /**
    * What the backend wrote to Supabase for this submission (#2). `written`
    * carries the row ids; `skipped` means no Supabase was configured, which is
    * the local-development path; `failed` means the entry computed but is not

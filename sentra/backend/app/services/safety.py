@@ -9,7 +9,7 @@ from app.models.safety import SafetyAssessmentInput, SafetyAssessmentReturn
 #: The same string `frontend/src/lib/safety-assessment.ts` writes. One name must
 #: mean one behaviour (#374): the two are held to the same answers by
 #: `sentra/shared/safety_assessment_conformance.json`, which both test suites run.
-SAFETY_ASSESSMENT_VERSION = "safety-assessment-v2"
+SAFETY_ASSESSMENT_VERSION = "safety-assessment-v3"
 
 _CONFORMANCE_PATH = Path(__file__).resolve().parents[3] / "shared" / "safety_assessment_conformance.json"
 
@@ -32,11 +32,15 @@ SELF_HARM_TERMS = (
     "suicide", "suicidal", "overdose",
     "自殺", "死にたい", "消えたい", "自分を傷つけ", "自傷",
 )
+# Not 「今日」, "today" or "now" (#290): in a daily journal they open most
+# entries, and they alone used to move a self-harm mention from elevated to
+# crisis. The same list as the Next.js path; the shared contract's digest holds
+# the two together.
 IMMINENCE_TERMS = (
-    "tonight", "tomorrow", "right now", "now", "today", "have a plan", "made a plan",
+    "tonight", "tomorrow", "right now", "have a plan", "made a plan",
     "cannot stay safe", "can't stay safe", "do not feel safe", "don't feel safe",
     "not safe tonight", "not safe right now",
-    "今すぐ", "今夜", "今日", "計画がある", "安全でいられない",
+    "今すぐ", "今夜", "計画がある", "安全でいられない",
 )
 VIOLENCE_TERMS = (
     "hurt them", "kill them", "make them pay", "attack them", "shoot them",
@@ -113,9 +117,9 @@ def fold_writing(value: str) -> str:
 #: Both would fire on sentences with nothing to do with danger. The kanji
 #: spellings of those two stay matched; only the readings are left out.
 #:
-#: ``IMMINENCE_TERMS`` is deliberately given no readings. 「今日」 already raises
-#: a false imminence signal (#290), and widening it before that is settled would
-#: only make the same mistake louder.
+#: ``IMMINENCE_TERMS`` is deliberately given no readings. A reading such as
+#: 「こんや」 is ordinary text, and widening imminence is the mistake #290 had to
+#: undo for 「今日」.
 KANA_SPELLINGS = {
     "自殺": ("じさつ",),
     "死にたい": ("しにたい",),
