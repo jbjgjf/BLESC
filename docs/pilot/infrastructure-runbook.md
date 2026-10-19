@@ -280,6 +280,7 @@ PILOT_BASE_URL=https://blesc-pilot.vercel.app CRON_SECRET=... \
 | `PILOT_GUARDIAN_CONFIRM_LIMIT` | 20 | 1時間 | `/api/pilot/guardian/confirm`。セッションの無い経路なので送信元単位。実在しないトークンでDBを引かせ続けられないようにする（#246） |
 | `LEGAL_ACCEPTANCE_LIMIT` | 10 | 1時間 | `/api/legal/acceptance`（POST）。アカウント単位。同意は押し直す操作ではない（#253） |
 | `EXTERNAL_MODEL_LIMIT` | 60 | 1時間 | `/api/chat`・`/api/audio/transcriptions`。OpenAIの費用 |
+| `REALTIME_SESSION_LIMIT` | 12 | 1時間 | `/api/voice/realtime-session`。アカウント単位。1回の発行で最大10分の音声会話になり、最も費用が大きい。`EXTERNAL_MODEL_LIMIT` とは別に数える（#240） |
 | `AUTHENTICATED_WRITE_LIMIT` | 600 | 1時間 | `/api/voice/turn`。モデルを呼ばずに行を書く認証済み経路。超過時は何も保存しないが、危機の通知だけは落とさない（#369） |
 
 既定値は**正規の参加者が普通に使って当たらない**よう、実利用の見積もりより大きく取っている。

@@ -219,7 +219,7 @@ describe("limits are configurable", () => {
       assert.ok(source.includes(name), `${name} should be overridable`);
     }
     const runbook = read("../../../docs/pilot/infrastructure-runbook.md");
-    for (const name of ["PILOT_INVITE_CHECK_LIMIT", "EXTERNAL_MODEL_LIMIT"]) {
+    for (const name of ["PILOT_INVITE_CHECK_LIMIT", "EXTERNAL_MODEL_LIMIT", "REALTIME_SESSION_LIMIT"]) {
       assert.ok(runbook.includes(name), `${name} should be in the runbook`);
     }
   });
@@ -256,6 +256,7 @@ describe("the routes that carry a limit", () => {
   const limited = [
     ["../src/app/api/chat/route.ts", "externalModel"],
     ["../src/app/api/audio/transcriptions/route.ts", "externalModel"],
+    ["../src/app/api/voice/realtime-session/route.ts", "realtimeSession"],
     ["../src/app/api/pilot/redeem/route.ts", "inviteRedeem"],
     ["../src/app/api/pilot/guardian/issue/route.ts", "guardianIssue"],
     ["../src/app/api/pilot/invite/check/route.ts", "inviteCheck"],
@@ -268,6 +269,16 @@ describe("the routes that carry a limit", () => {
       assert.ok(source.includes("429"), `${path} should answer 429 when over`);
     });
   }
+
+  it("counts a realtime session after sign-in, before anything is looked up or minted (#240)", () => {
+    const source = code("../src/app/api/voice/realtime-session/route.ts");
+    const signedIn = source.indexOf("requireUser(request)");
+    const counted = source.indexOf("RULES.realtimeSession");
+    assert.ok(signedIn >= 0 && signedIn < counted, "count per account, after requireUser");
+    assert.ok(counted < source.indexOf("collectionOnlyForUser("), "count before the collection check");
+    assert.ok(counted < source.indexOf("fetchWithTimeout("), "count before the secret is minted");
+    assert.match(source, /rateLimitSubject\(request, auth\.user\.id\)/);
+  });
 
   it("answers with the message the catalogue already had", () => {
     // 「試行回数が多すぎます」 has been in `ja.ts` with no path that produced it.

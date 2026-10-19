@@ -24,6 +24,7 @@ const { generateGuardianToken, hashGuardianToken } = await import("../src/lib/se
 const { LEGAL_ENACTED_VERSION } = await import("../src/lib/legalEnactment.ts");
 const confirm = await import("../src/app/api/pilot/guardian/confirm/route.ts");
 const acceptance = await import("../src/app/api/legal/acceptance/route.ts");
+const realtime = await import("../src/app/api/voice/realtime-session/route.ts");
 
 const TOO_MANY = "試行回数が多すぎます。しばらく待ってからもう一度お試しください。";
 
@@ -226,6 +227,44 @@ describe("POST /api/legal/acceptance (#253)", () => {
   });
 });
 
+describe("POST /api/voice/realtime-session (#240)", () => {
+  let service;
+
+  beforeEach(() => {
+    // No OpenAI key, so an admitted request stops at 503 and nothing is minted.
+    // What is observed is whether the limit answers first.
+    delete process.env.OPENAI_API_KEY;
+    service = fakeSupabase({ rpc: { bump_rate_limit: counter() } });
+    setServiceClient(service);
+    setSignedInUser({ id: "user-alice" }, fakeSupabase());
+  });
+
+  const mint = (address) => realtime.POST(post("/api/voice/realtime-session", {}, address));
+
+  it("is not counted for a caller who is not signed in", async () => {
+    setSignedInUser(null);
+    assert.equal((await mint()).status, 401);
+    assert.equal(service.rpcCalls.length, 0);
+  });
+
+  it("answers 429 past the limit, per account", async () => {
+    for (let attempt = 0; attempt < RULES.realtimeSession.limit; attempt += 1) {
+      assert.notEqual((await mint()).status, 429);
+    }
+    const refused = await mint("198.51.100.99");
+    assert.equal(refused.status, 429);
+    assert.deepEqual(await refused.json(), { detail: TOO_MANY, code: "rate_limited" });
+    assert.equal(refused.headers.get("x-ratelimit-limit"), String(RULES.realtimeSession.limit));
+
+    setSignedInUser({ id: "user-bob" }, fakeSupabase());
+    assert.notEqual((await mint()).status, 429, "another account was limited by alice's sessions");
+  });
+
+  it("does not share its counter with chat", () => {
+    assert.notEqual(RULES.realtimeSession.route, RULES.externalModel.route);
+  });
+});
+
 describe("the two limits are adjustable per deployment", () => {
   afterEach(() => {
     delete process.env.PILOT_GUARDIAN_CONFIRM_LIMIT;
@@ -277,6 +316,7 @@ describe("every API route has an answer to 'is this limited?'", () => {
     "pilot/guardian/issue": "guardianIssue",
     "pilot/invite/check": "inviteCheck",
     "pilot/redeem": "inviteRedeem",
+    "voice/realtime-session": "realtimeSession",
     "voice/turn": "authenticatedWrite",
   };
 
@@ -300,7 +340,9 @@ describe("every API route has an answer to 'is this limited?'", () => {
 
   /**
    * Nobody has decided yet. Not a claim that these are fine — a list that is
-   * only allowed to shrink. `voice/realtime-session` is #240.
+   * only allowed to shrink. `entries` calls OpenAI outside collection-only
+   * mode, so it is the one most in need of a decision; limiting it needs the
+   * same "never drop the crisis path" handling `voice/turn` has.
    */
   const UNDECIDED = [
     "consent",
@@ -318,7 +360,6 @@ describe("every API route has an answer to 'is this limited?'", () => {
     "research/identity-map",
     "research/pilot-dashboard",
     "research/world-model",
-    "voice/realtime-session",
   ];
 
   it("no route is missing from the three lists, and no list names a route that is gone", () => {
