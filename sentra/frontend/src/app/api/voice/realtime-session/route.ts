@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchWithTimeout, jsonError, openAIKey, providerError, requireUser, sha256 } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
+import { enrollmentGate, outsideEnrollmentResponse, ownParticipantId } from "@/lib/server/enrollmentGate";
 import { COLLECTION_ONLY_MESSAGE, collectionOnlyForUser } from "@/lib/server/collectionMode";
 import { SAFETY_GUARDRAILS } from "@/lib/server/safety";
 import { envPositiveInt } from "@/lib/server/envNumber";
@@ -36,6 +37,14 @@ export async function POST(request: NextRequest) {
       { status: 429, headers: rateLimitHeaders(limited) },
     );
   }
+
+  // Enrollment first, on a pilot deployment (#344): an account that is
+  // withdrawn, finished, not yet in its window, or never enrolled gets no
+  // model call here, the same answer `/api/chat` and `/api/entries` give.
+  // Nothing is assessed because nothing has been said yet — the audio is not
+  // read for a refused request.
+  const gate = await enrollmentGate(auth.user.id, await ownParticipantId(serviceRoleClient(), auth.user.id));
+  if (!gate.allowed) return outsideEnrollmentResponse(gate);
 
   // No realtime session is minted for a participant inside a collection window
   // (#165). This route hands the browser a client secret that talks to OpenAI

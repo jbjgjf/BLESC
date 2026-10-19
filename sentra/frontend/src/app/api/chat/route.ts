@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SafetyAssessment } from "@/api/models";
-import { replyCoversSafeResponse } from "@/lib/safety-assessment";
+import { assessSafety, replyCoversSafeResponse } from "@/lib/safety-assessment";
 import { assessConversation, recordSafetyAudit, RISK_DIRECTIVES, SAFETY_GUARDRAILS } from "@/lib/server/safety";
 import { fetchWithTimeout, isMissingTable, jsonError, type JsonValue, openAIKey, providerError, requireUser, sha256 } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 import { escalate, notifiableLevel } from "@/lib/server/safetyEscalation";
+import { enrollmentGate, outsideEnrollmentResponse } from "@/lib/server/enrollmentGate";
 import { chatSessionConsentSnapshot } from "@/lib/server/consentStore";
 import { RULES, consumeRateLimit, rateLimitHeaders, rateLimitSubject } from "@/lib/server/rateLimit";
 import { envPositiveInt } from "@/lib/server/envNumber";
@@ -318,6 +319,38 @@ export async function POST(request: NextRequest) {
   if (participantResult.error) return jsonError(participantResult.error.message, 502);
   const participant = participantResult.data as ParticipantRow | null;
   if (!participant) return jsonError("Participant was not found.", 404);
+
+  // Enrollment, on a pilot deployment (#344). Asked here, after the participant
+  // is known, because the gate's last step is whether *this participant's*
+  // window is open. A refused account sends nothing to OpenAI and writes no
+  // chat row — but its message is still assessed with the local rules, and a
+  // crisis is still escalated: withdrawing from the study must not mean a
+  // student's crisis goes unseen. The assessment needs no external call.
+  const gate = await enrollmentGate(auth.user.id, participant.id);
+  if (!gate.allowed) {
+    const refusedSafety = assessSafety(message);
+    const refusedNotifiable = notifiableLevel(refusedSafety.risk_level);
+    const service = serviceRoleClient();
+    if (refusedNotifiable && service) {
+      await escalate(service, {
+        ownerUserId: auth.user.id,
+        participantId: participant.id,
+        participantCode: participant.code,
+        riskLevel: refusedNotifiable,
+        reasons: refusedSafety.reasons,
+        surface: "chat",
+        sourceArtifactId: null,
+      });
+    } else if (refusedNotifiable) {
+      console.error(
+        "[safety-escalation] a crisis was assessed on a refused chat and Supabase is not configured; nobody will be told",
+        { participant: participant.id },
+      );
+    }
+    // The support response travels with the refusal, so a student in crisis
+    // still sees where to call even though the conversation is closed.
+    return outsideEnrollmentResponse(gate, { safe_response: refusedSafety.safe_response });
+  }
 
   const recentMessagesResult = await auth.client
     .from("chat_messages")

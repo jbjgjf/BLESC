@@ -148,7 +148,11 @@ describe("one place per decision", () => {
 
   it("the proxy does not re-decide collection; the enrollment gate stays in pilotGate", () => {
     assert.doesNotMatch(proxy, /pilotGate|gateForUser|pilot_enrollments|pilot_collection_open/);
-    assert.match(code(read("../src/app/journal/layout.tsx")), /gateForUser\(/);
+    assert.match(code(read("../src/lib/server/pilotPageGate.ts")), /gateForUser\(/);
+    // /chat and /recall are behind the same server-side gate as /journal (#344).
+    for (const route of ["journal", "chat", "recall"]) {
+      assert.match(code(read(`../src/app/${route}/layout.tsx`)), /requirePilotCollection\(/, route);
+    }
   });
 
   it("the proxy's rules are routeAccess's rules", () => {

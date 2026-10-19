@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { openAIKey, requireUser } from "@/lib/server/api";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
+import { enrollmentGate, outsideEnrollmentResponse, ownParticipantId } from "@/lib/server/enrollmentGate";
 import { COLLECTION_ONLY_MESSAGE, collectionOnlyForUser } from "@/lib/server/collectionMode";
 import { RULES, consumeRateLimit, rateLimitHeaders, rateLimitSubject } from "@/lib/server/rateLimit";
 import { envPositiveInt } from "@/lib/server/envNumber";
@@ -46,6 +47,14 @@ export async function POST(request: NextRequest) {
       { status: 429, headers: rateLimitHeaders(limited) },
     );
   }
+
+  // Enrollment first, on a pilot deployment (#344): an account that is
+  // withdrawn, finished, not yet in its window, or never enrolled gets no
+  // model call here, the same answer `/api/chat` and `/api/entries` give.
+  // Nothing is assessed because nothing has been said yet — the audio is not
+  // read for a refused request.
+  const gate = await enrollmentGate(auth.user.id, await ownParticipantId(serviceRoleClient(), auth.user.id));
+  if (!gate.allowed) return outsideEnrollmentResponse(gate);
 
   // A pilot participant's voice recording is not sent for transcription while
   // their collection window is open (#165). Checked before the body is even
