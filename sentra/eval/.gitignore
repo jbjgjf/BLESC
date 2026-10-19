@@ -1,3 +1,7 @@
 node_modules/
 artifacts/
 .playwright/
+.env
+.env.local
+.env.*.local
+!.env.example
