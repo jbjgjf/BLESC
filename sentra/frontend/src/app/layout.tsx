@@ -10,6 +10,9 @@ import { A11Y_BOOT_SCRIPT } from "@/lib/a11y";
 export const metadata: Metadata = {
   title: "blesc",
   description: "生徒の変化に気づき、支援につなげるプラットフォーム",
+  // 既定は索引しない（#249）。未成年が参加する研究の画面の URL を検索に
+  // 載せないため。索引させたい画面は、自分の metadata で明示的に開ける。
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({
