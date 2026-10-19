@@ -6,7 +6,7 @@ import { CheckCircle2, Copy, Download, Loader2, Send, ShieldAlert } from "lucide
 import { ApiClient } from "@/api/client";
 import type { CounselorSupportSummary, OrgCounselor, OversightRequest } from "@/api/models";
 import { useAuth } from "@/lib/auth";
-import { counselorSummaryToText } from "@/lib/counselor-summary";
+import { counselorSummaryToText, safetyFlagParts } from "@/lib/counselor-summary";
 import { t } from "@/lib/i18n";
 
 const panel: React.CSSProperties = {
@@ -159,13 +159,16 @@ export default function SupportSummaryPage() {
           {summary.safety_flags.length ? (
             <div role="alert" className="px-7 py-5" style={{ borderBottom: "1px solid var(--terracotta)", backgroundColor: "rgba(244,63,94,0.08)" }}>
               <div className="mb-2 flex items-center gap-2 font-semibold" style={{ color: "var(--sienna)" }}><ShieldAlert className="h-5 w-5" />{t.supportSummary.safetyFlags}</div>
-              {summary.safety_flags.map((flag) => (
-                <p key={`${flag.event_id}-${flag.timestamp}`} className="text-sm" style={{ color: "var(--ink-mid)" }}>
-                  {new Date(flag.timestamp).toLocaleDateString("ja-JP")} · {t.safety.level[flag.level] ?? flag.level}
-                  {" · "}
-                  {flag.reasons.map((reason) => t.safety.reason[reason] ?? reason).join("、") || t.safety.flagRecorded}
-                </p>
-              ))}
+              {summary.safety_flags.map((flag) => {
+                const parts = safetyFlagParts(flag);
+                return (
+                  <p key={`${flag.event_id}-${flag.timestamp}`} className="text-sm" style={{ color: "var(--ink-mid)" }}>
+                    {parts.date} · {parts.level}
+                    {" · "}
+                    {parts.reasons}
+                  </p>
+                );
+              })}
             </div>
           ) : null}
 

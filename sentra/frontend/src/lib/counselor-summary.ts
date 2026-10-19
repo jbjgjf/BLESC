@@ -1,4 +1,8 @@
 import type { CounselorSupportSummary, CounselorSummarySection } from "@/api/models";
+// Relative, with the extension: `tests/counselor-summary.test.mjs` loads this
+// file directly under `node --experimental-strip-types`, which resolves the
+// `@/` alias only for type-only imports. `t` is a value.
+import { DEFAULT_LOCALE, t } from "./i18n/index.ts";
 
 export interface CounselorTimelineEvent {
   event_id: string;
@@ -76,13 +80,48 @@ export function generateCounselorSummary(events: CounselorTimelineEvent[], now =
   };
 }
 
+export type CounselorSafetyFlag = CounselorSupportSummary["safety_flags"][number];
+
+/**
+ * 安全に関する記録の1件を、人が読む3つの部分にする（#471）。
+ *
+ * `flag.level` は `safety_assessment_json.risk_level`、`flag.reasons` は
+ * `safety-assessment.ts` が積む識別子で、どちらも機械が読む語である。訳語は
+ * `i18n/ja.ts` の `safety.level` / `safety.reason` に全件ある。
+ *
+ * この関数が要るのは、同じ3行の式が `/support-summary` と `/oversight` に
+ * 複製されていて、**テキスト版だけが複製を受け取っていなかった**ためである。
+ * 生徒がコピーして支援担当に渡す本文には `- crisis: self_harm_or_suicide_risk`
+ * が出ていた。訳し忘れを1か所に閉じるために、画面もここを通す。
+ *
+ * 訳語の無いコードは素のまま返す。表に無い区分が来たときに節ごと消すより、
+ * 読めない語がそのまま見えるほうが、受け取った側が気づける。
+ */
+export function safetyFlagParts(flag: CounselorSafetyFlag): { date: string; level: string; reasons: string } {
+  return {
+    date: new Date(flag.timestamp).toLocaleDateString(DEFAULT_LOCALE),
+    level: t.safety.level[flag.level] ?? flag.level,
+    reasons: flag.reasons.map((reason) => t.safety.reason[reason] ?? reason).join("、") || t.safety.flagRecorded,
+  };
+}
+
 export function counselorSummaryToText(summary: CounselorSupportSummary) {
+  // ロケールを明示する。既定ロケールのままにすると、生徒の端末の設定で
+  // `2026/7/1` が `7/1/2026` になり、受け取った側が日付を取り違える。
   const range = summary.date_range.from && summary.date_range.to
-    ? `${new Date(summary.date_range.from).toLocaleDateString()} – ${new Date(summary.date_range.to).toLocaleDateString()}`
+    ? `${new Date(summary.date_range.from).toLocaleDateString(DEFAULT_LOCALE)} – ${new Date(summary.date_range.to).toLocaleDateString(DEFAULT_LOCALE)}`
     : "記録の期間が取得できません";
   const lines = [`支援用のまとめ`, `${range} ・ ${summary.reflection_count}件の記録`, ""];
   for (const item of summary.sections) lines.push(item.title, ...(item.items.length ? item.items.map((value) => `- ${value}`) : ["- 該当する記録はありません。"]), "");
-  if (summary.safety_flags.length) lines.push("安全に関する記録", ...summary.safety_flags.map((flag) => `- ${flag.level}: ${flag.reasons.join("、") || "記録あり"}`), "");
+  if (summary.safety_flags.length) {
+    // 日付も出す。画面は1件ごとに日付を出しており、渡される側だけ「いつの
+    // 記録か」が落ちていた。
+    const flags = summary.safety_flags.map((flag) => {
+      const { date, level, reasons } = safetyFlagParts(flag);
+      return `- ${date} · ${level} · ${reasons}`;
+    });
+    lines.push("安全に関する記録", ...flags, "");
+  }
   lines.push("この資料について", summary.limitations);
   return lines.join("\n");
 }

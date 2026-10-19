@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { counselorSummaryToText, generateCounselorSummary } from "../src/lib/counselor-summary.ts";
+import { counselorSummaryToText, generateCounselorSummary, safetyFlagParts } from "../src/lib/counselor-summary.ts";
+import { t } from "../src/lib/i18n/index.ts";
 
 const event = (index, overrides = {}) => ({
   event_id: `event-${index}`,
@@ -48,5 +49,80 @@ describe("generateCounselorSummary", () => {
     assert.match(text, /music/);
     assert.doesNotMatch(text, /you have|diagnosed with|clinical diagnosis/);
     assert.match(text, /診断や臨床的な評価ではありません/);
+  });
+});
+
+/**
+ * The text form is what a student copies or downloads and hands to the person
+ * supporting them (#471). It used to print `flag.level` and `flag.reasons` as
+ * they are stored — `- crisis: self_harm_or_suicide_risk` — while the two
+ * screens rendering the same data translated both.
+ */
+describe("safetyFlagParts", () => {
+  const flag = (overrides = {}) => ({
+    level: "crisis",
+    reasons: ["inability_to_stay_safe"],
+    timestamp: "2026-07-02T09:00:00.000Z",
+    event_id: "event-1",
+    ...overrides,
+  });
+
+  it("translates the level and the reasons", () => {
+    const parts = safetyFlagParts(flag({ reasons: ["self_harm_or_suicide_risk", "inability_to_stay_safe"] }));
+    assert.equal(parts.level, t.safety.level.crisis);
+    assert.equal(
+      parts.reasons,
+      `${t.safety.reason.self_harm_or_suicide_risk}、${t.safety.reason.inability_to_stay_safe}`,
+    );
+  });
+
+  it("formats the date in the catalogue's locale", () => {
+    assert.equal(safetyFlagParts(flag()).date, new Date("2026-07-02T09:00:00.000Z").toLocaleDateString("ja-JP"));
+  });
+
+  it("says a record exists when the assessment carried no reason", () => {
+    assert.equal(safetyFlagParts(flag({ reasons: [] })).reasons, t.safety.flagRecorded);
+  });
+
+  // A level or a reason the catalogue does not have is shown as it is. The
+  // alternative — dropping it — would hide that something was recorded.
+  it("falls back to the raw code for a level or reason with no translation", () => {
+    const parts = safetyFlagParts(flag({ level: "unmapped_level", reasons: ["unmapped_reason"] }));
+    assert.equal(parts.level, "unmapped_level");
+    assert.equal(parts.reasons, "unmapped_reason");
+  });
+});
+
+describe("counselorSummaryToText safety section", () => {
+  const crisis = () =>
+    generateCounselorSummary([
+      event(0),
+      event(1, { safety_level: "crisis", safety_reasons: ["inability_to_stay_safe", "self_harm_or_suicide_risk"] }),
+    ]);
+
+  it("carries no stored code into the text a counsellor is handed", () => {
+    const text = counselorSummaryToText(crisis());
+    assert.doesNotMatch(text, /crisis/);
+    assert.doesNotMatch(text, /inability_to_stay_safe/);
+    assert.doesNotMatch(text, /self_harm_or_suicide_risk/);
+  });
+
+  it("names the level, the reasons and the day of each flag", () => {
+    const summary = crisis();
+    const text = counselorSummaryToText(summary);
+    const parts = safetyFlagParts(summary.safety_flags[0]);
+    assert.ok(text.includes("安全に関する記録"), "the section heading is missing");
+    assert.ok(text.includes(`- ${parts.date} · ${parts.level} · ${parts.reasons}`), text);
+  });
+
+  it("states the period in the catalogue's locale", () => {
+    const summary = crisis();
+    const from = new Date(summary.date_range.from).toLocaleDateString("ja-JP");
+    const to = new Date(summary.date_range.to).toLocaleDateString("ja-JP");
+    assert.ok(counselorSummaryToText(summary).includes(`${from} – ${to}`), "the period is not in ja-JP");
+  });
+
+  it("leaves the section out when nothing was flagged", () => {
+    assert.doesNotMatch(counselorSummaryToText(generateCounselorSummary([event(0)])), /安全に関する記録/);
   });
 });

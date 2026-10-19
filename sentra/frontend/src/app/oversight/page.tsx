@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, FileText, Loader2, ShieldAlert } from "lucide-react";
 
 import { ApiClient } from "@/api/client";
+import { safetyFlagParts } from "@/lib/counselor-summary";
 import { t } from "@/lib/i18n";
 import type { CounselorSummarySection, EducatorStudentStatus, SharedSupportSummary } from "@/api/models";
 import { AttentionChip, BaselineContextLine, NonDiagnosticNotice, ObservationLine, panel } from "@/components/educator/StatusChips";
@@ -137,13 +138,16 @@ export default function OversightPage() {
                   <div className="mb-1 flex items-center gap-2 font-semibold" style={{ color: "var(--sienna)" }}>
                     <ShieldAlert className="h-4 w-4" />{t.oversight.safetyFlags}
                   </div>
-                  {selected.summary_json.safety_flags.map((flag) => (
-                    <p key={`${flag.event_id}-${flag.timestamp}`} className="text-sm" style={{ color: "var(--ink-mid)" }}>
-                      {new Date(flag.timestamp).toLocaleDateString("ja-JP")} · {t.safety.level[flag.level] ?? flag.level}
-                      {" · "}
-                      {flag.reasons.map((reason) => t.safety.reason[reason] ?? reason).join("、") || t.safety.flagRecorded}
-                    </p>
-                  ))}
+                  {selected.summary_json.safety_flags.map((flag) => {
+                    const parts = safetyFlagParts(flag);
+                    return (
+                      <p key={`${flag.event_id}-${flag.timestamp}`} className="text-sm" style={{ color: "var(--ink-mid)" }}>
+                        {parts.date} · {parts.level}
+                        {" · "}
+                        {parts.reasons}
+                      </p>
+                    );
+                  })}
                 </div>
               ) : null}
 
