@@ -208,6 +208,8 @@ grep -rl "$(printf 'service_role')" .next/static 2>/dev/null && echo "LEAK" || e
 
 client bundleにservice-role keyの実値が含まれていないことを、**値そのものではなく検索で**確認する。CIでも同じ検査を行う。
 
+`GET /api/health` は、認証なしでは `{"status":"ok","environment":…}` だけを 200 で返す。どの資格情報が設定済みか（`config`）と `commit` は、`PILOT_OPERATOR_USER_IDS` に入っている運営者のセッションでだけ返る（#245）。外形監視は従来どおり 200 を見ればよい。
+
 ### 5.4 Vercel preview でのE2E
 
 `sentra/eval` の browser driver（playwright）で、招待→登録→説明→assent→（未成年なら保護者確認）→提出→撤回 を通す。preview保護は `x-vercel-protection-bypass` で越える（`sentra/eval/src/browser.ts` が対応済み）。
