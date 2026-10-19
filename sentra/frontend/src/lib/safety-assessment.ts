@@ -1,4 +1,5 @@
 import type { SafetyAssessment } from "@/api/models";
+import { CHILD_SOS_DIAL, EMERGENCY_NUMBERS, mentionsChildSosDial } from "./crisisContacts.ts";
 
 /**
  * Bump when a detector is added, removed, or a verdict changes.
@@ -13,8 +14,13 @@ import type { SafetyAssessment } from "@/api/models";
  * v2 reads the spelling variants a Japanese keyboard produces (#388). Under v1
  * only the kanji spelling of each Japanese term was matched, so 「しにたい」
  * assessed as `none` where 「死にたい」 assessed as `crisis`.
+ *
+ * v3 stops reading the date words 「今日」, "today" and "now" as imminence
+ * (#290), and the responses name the child SOS line and 119/110 instead of
+ * "emergency services" in English (#465). Rows assessed under v2 keep their
+ * version; see `docs/safety_escalation_policy.md`, "Date Words Are Not Imminence".
  */
-export const SAFETY_ASSESSMENT_VERSION = "safety-assessment-v2";
+export const SAFETY_ASSESSMENT_VERSION = "safety-assessment-v3";
 export const SAFETY_POLICY_REFS = [
   "docs/safety_escalation_policy.md",
   "docs/static_safety_school_support_reference.md",
@@ -28,11 +34,36 @@ export function routesToRealPerson(text: string): boolean {
   return REAL_PERSON_ROUTES.some((route) => lowered.includes(route));
 }
 
-const crisisResponse = "まず、あなたの安全がいちばん大切です。blescは緊急時の対応をすることができません。いますぐ危ないと感じるときや、行動してしまいそうなときは、すぐに緊急サービス（emergency services）に電話してください。そして、信頼できる大人（trusted adult）や安全な人のところへ行き、「いま助けが必要です」とはっきり伝えてください。";
-const elevatedResponse = "これは、人に頼ったほうがいいことかもしれません。信頼できる大人（trusted adult）、スクールカウンセラー、保護者など、安全だと思える人に、いま起きていることを話してみてください。危険が差し迫っていると感じたときは、緊急サービス（emergency services）に連絡してください。";
+/**
+ * Whether a reply already does what the canned response does, so the floor
+ * need not add it (#465): it points at a real person **and** gives the child
+ * SOS line's number. Pointing at a person alone used to be enough, which let a
+ * model reply that said 「信頼できる大人に話して」 stand in for a response that
+ * names somewhere to call at 2 a.m.
+ */
+export function replyCoversSafeResponse(reply: string): boolean {
+  return routesToRealPerson(reply) && mentionsChildSosDial(reply);
+}
+
+// What the student reads, and in voice what they hear. Built from
+// `crisisContacts.ts` so the numbers exist in one place. No English glosses:
+// the student reads Japanese, and 「緊急サービス（emergency services）」 named no
+// number a student in Japan could dial (#465).
+const { ambulance, police } = EMERGENCY_NUMBERS;
+const sosLine = `${CHILD_SOS_DIAL.name}（${CHILD_SOS_DIAL.number}、${CHILD_SOS_DIAL.hours}）`;
+const emergencyLine = `${ambulance.number}（${ambulance.name}）か${police.number}（${police.name}）`;
+const crisisResponse = `まず、あなたの安全がいちばん大切です。blescは緊急時の対応をすることができません。いますぐ危ないと感じるときや、行動してしまいそうなときは、すぐに${emergencyLine}に電話してください。話を聞いてほしいときは、${sosLine}に電話できます。そして、信頼できる大人や安全な人のところへ行き、「いま助けが必要です」とはっきり伝えてください。`;
+const elevatedResponse = `これは、人に頼ったほうがいいことかもしれません。信頼できる大人、スクールカウンセラー、保護者など、安全だと思える人に、いま起きていることを話してみてください。${sosLine}でも相談できます。危険が差し迫っていると感じたときは、${emergencyLine}に電話してください。`;
 
 const selfHarmTerms = ["hurt myself", "hurting myself", "harm myself", "harming myself", "self-harm", "self harm", "kill myself", "killing myself", "end my life", "ending my life", "want to die", "suicide", "suicidal", "overdose", "自殺", "死にたい", "消えたい", "自分を傷つけ", "自傷"];
-const imminentTerms = ["tonight", "tomorrow", "right now", "now", "today", "have a plan", "made a plan", "cannot stay safe", "can't stay safe", "do not feel safe", "don't feel safe", "not safe tonight", "not safe right now", "今すぐ", "今夜", "今日", "計画がある", "安全でいられない"];
+// Not 「今日」, "today" or "now" (#290). This is a daily journal: 「今日は」 opens
+// most entries, and under v2 those three characters alone moved
+// 「部活でミスして、もう消えたいと思った」 from elevated to crisis, raised the
+// confidence to 0.98 and notified a teacher. What stays names a time that is
+// close and specific (今夜, 今すぐ, right now) or a plan; those are what the
+// 0.98 below is for. Decided under option A of #290; the record is in
+// `docs/safety_escalation_policy.md`.
+const imminentTerms = ["tonight", "tomorrow", "right now", "have a plan", "made a plan", "cannot stay safe", "can't stay safe", "do not feel safe", "don't feel safe", "not safe tonight", "not safe right now", "今すぐ", "今夜", "計画がある", "安全でいられない"];
 const violenceTerms = ["hurt them", "kill them", "make them pay", "attack them", "shoot them", "あいつを殺", "相手を傷つけ", "襲う"];
 const abuseTerms = ["abusing me", "hurting me", "hits me", "hit me", "domestic violence", "assaulted me", "sexual abuse", "暴力を受け", "殴られ", "虐待", "性的暴力"];
 const concealmentTerms = ["don't tell anyone", "do not tell anyone", "keep this a secret", "keep it secret", "hide this", "誰にも言わないで", "秘密にして", "隠して"];
@@ -97,9 +128,9 @@ function foldWriting(value: string): string {
  * cries wolf is one §4.4's reviewers learn to click past. The kanji spellings
  * of those two stay matched; only the readings are left out.
  *
- * `imminentTerms` is deliberately not given readings. 「今日」 already raises a
- * false imminence signal (#290), and widening it before that is settled would
- * only make the same mistake louder.
+ * `imminentTerms` is deliberately not given readings. A reading such as
+ * 「こんや」 or 「いますぐ」 is ordinary text, and widening imminence is the
+ * mistake #290 had to undo for 「今日」.
  */
 const KANA_SPELLINGS: Readonly<Record<string, readonly string[]>> = {
   "自殺": ["じさつ"],
@@ -262,6 +293,8 @@ export function assessSafety(rawContent: string): SafetyAssessment {
   if (passive) reasons.push("possible_suicide_risk");
 
   if (reasons.length) {
+    // 0.98 when a close, specific time or a plan was named; with the date words
+    // gone from `imminentTerms` (#290), that is what `imminent` now means.
     return { risk_level: "crisis", confidence: imminent ? 0.98 : 0.92, escalation_required: true, reasons: [...new Set(reasons)], safe_response: crisisResponse, policy_refs: SAFETY_POLICY_REFS };
   }
 

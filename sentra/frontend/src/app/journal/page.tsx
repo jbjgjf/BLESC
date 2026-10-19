@@ -16,6 +16,7 @@ import { EMPTY_STATS, type JournalStats } from "@/lib/journalStats";
 import { t } from "@/lib/i18n";
 import type { EventCategory, Mood } from "@/lib/blesc/types";
 import { SelfReportBlock, type SelfReportValues } from "@/components/SelfReportBlock";
+import { SupportNotice } from "@/components/SupportNotice";
 import type { SelfReportItemId } from "@/lib/pilotSelfReport";
 import styles from "./journal.module.css";
 
@@ -100,6 +101,8 @@ export default function JournalPage() {
    * 追加質問の回答を保存する宛先も、これが取れていることに依存する。
    */
   const [entryId, setEntryId] = useState<string | null>(null);
+  // 危機・要注意の日記のあとに出す相談先（#465）。サーバーの判定をそのまま使う。
+  const [supportMessage, setSupportMessage] = useState("");
   const [entrySessionId, setEntrySessionId] = useState<string | null>(null);
 
   /**
@@ -322,6 +325,7 @@ export default function JournalPage() {
         return false;
       }
       setEntryId(savedId);
+      setSupportMessage(result.safe_response?.trim() ?? "");
       setEntrySessionId(result.supabase_sync?.entry_session_id ?? null);
       return true;
     } catch (error) {
@@ -454,7 +458,7 @@ export default function JournalPage() {
   };
 
   /* ── 提出完了 ─────────────────────────────────────── */
-  if (phase === "done") return <DoneScreen userId={userId} demo={demo} />;
+  if (phase === "done") return <DoneScreen userId={userId} demo={demo} supportMessage={supportMessage} />;
 
   /* ── 入力フォーム（1問ずつ） ───────────────────────── */
   const formStepIndex = FORM_STEPS.indexOf(step);
@@ -466,6 +470,9 @@ export default function JournalPage() {
         <h1 className="bl-h1">今日の日記</h1>
         <p className="bl-meta">{formatDate(TODAY)}</p>
       </header>
+
+      {/* 追加質問が続く場合も、相談先は保存の直後に出す（#465）。 */}
+      {phase === "followup" && <SupportNotice message={supportMessage} />}
 
       {phase === "form" && (
         <>
@@ -820,7 +827,7 @@ const DEMO_STATS: JournalStats = { streak: 7, weekly: 6, totalDays: 24 };
  * 直接書かれていて、初めて提出した生徒にも「連続提出日数 7」と表示していた
  * （#133）。デモは上の固定値、実データは DB — 混ざらないように経路を分ける。
  */
-function DoneScreen({ userId, demo }: { userId: string; demo: boolean }) {
+function DoneScreen({ userId, demo, supportMessage }: { userId: string; demo: boolean; supportMessage: string }) {
   const [stats, setStats] = useState<JournalStats>(demo ? DEMO_STATS : EMPTY_STATS);
 
   useEffect(() => {
@@ -847,6 +854,8 @@ function DoneScreen({ userId, demo }: { userId: string; demo: boolean }) {
         <h1 className="bl-h1 bl-rise" style={{ animationDelay: "480ms" }}>
           {t.journal.doneTitle}
         </h1>
+        {/* 相談先は遅らせずに出す。記録の数字より先に読まれるべきもの。 */}
+        <SupportNotice message={supportMessage} />
         <p className="bl-body bl-rise" style={{ animationDelay: "560ms" }}>
           {formatDate(TODAY)}の記録です。書いてくれてありがとう。
         </p>

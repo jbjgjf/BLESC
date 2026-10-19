@@ -6,10 +6,16 @@ import {
   assessSafety,
   escalateAssessment,
   KANA_SPELLING_KEYS,
+  replyCoversSafeResponse,
   routesToRealPerson,
+  SAFETY_RESPONSES,
 } from "../src/lib/safety-assessment.ts";
+import { CHILD_SOS_DIAL, EMERGENCY_NUMBERS, mentionsChildSosDial } from "../src/lib/crisisContacts.ts";
 
 const ESCALATION_MARKERS = [
+  // The numbers a student in Japan can dial (#465).
+  CHILD_SOS_DIAL.number,
+  "119",
   "988",
   "emergency services",
   "crisis",
@@ -62,8 +68,10 @@ describe("word-boundary matching", () => {
     }
   });
 
-  it("still fires on a genuine 'now'", () => {
-    assert.equal(assessSafety("I want to die, I know it now.").risk_level, "crisis");
+  it("still fires on a genuine 'tonight'", () => {
+    // "now" was the example here until #290 took it out of the imminence terms.
+    assert.equal(assessSafety("I might hurt myself, I know it tonight.").risk_level, "crisis");
+    assert.equal(assessSafety("I want to die, I know it now.").risk_level, "crisis", "want to die is lethal on its own");
   });
 });
 
@@ -190,8 +198,8 @@ describe("the kana spelling table stays honest", () => {
     assert.deepEqual(stale, [], `KANA_SPELLINGS keys naming no live term:\n${stale.join("\n")}`);
   });
 
-  // #290 is an open false positive on 「今日」. Giving the imminence terms
-  // readings before that is settled would make the same mistake louder.
+  // #290 had to take 「今日」 out of the imminence terms. Giving the rest
+  // readings would widen the same signal again.
   it("gives no reading to an imminence term", () => {
     for (const key of KANA_SPELLING_KEYS) {
       assert.ok(!["今すぐ", "今夜", "今日", "計画がある"].includes(key), key);
@@ -241,5 +249,87 @@ describe("routesToRealPerson", () => {
     const crisis = assessSafety("I want to die tonight.");
     assert.ok(crisis.safe_response.length > 0);
     assert.equal(routesToRealPerson(crisis.safe_response), true);
+  });
+});
+
+/**
+ * 「今日」 does not decide crisis (#290, option A).
+ *
+ * The same entry with and without a date word must get the same answer. Under
+ * v2 the three characters 「今日は」 moved a self-harm mention from elevated to
+ * crisis, raised confidence to 0.98 and notified a teacher.
+ */
+describe("date words are not imminence (#290)", () => {
+  const pairs = [
+    ["部活でミスして、もう消えたいと思った。", "今日は部活でミスして、もう消えたいと思った。"],
+    ["自分を傷つけてしまった", "今日、自分を傷つけてしまった"],
+    ["I want to hurt myself.", "I want to hurt myself today."],
+    ["I want to hurt myself.", "I want to hurt myself now."],
+    ["あいつを殺してやりたい", "今日、あいつを殺してやりたい"],
+  ];
+
+  for (const [plain, dated] of pairs) {
+    it(`grades ${JSON.stringify(dated)} the same as without the date`, () => {
+      const a = assessSafety(plain);
+      const b = assessSafety(dated);
+      assert.equal(b.risk_level, a.risk_level);
+      assert.equal(b.escalation_required, a.escalation_required);
+      assert.equal(b.confidence, a.confidence);
+    });
+  }
+
+  it("still reads a close, specific time as imminent", () => {
+    for (const text of ["今夜、自分を傷つけてしまいそう。", "今すぐ消えたい", "I want to hurt myself tonight.", "I will hurt myself right now."]) {
+      const result = assessSafety(text);
+      assert.equal(result.risk_level, "crisis", text);
+      assert.equal(result.confidence, 0.98, text);
+    }
+  });
+});
+
+/**
+ * The responses name somewhere to call (#465), in Japanese only.
+ */
+describe("crisis contacts in the responses (#465)", () => {
+  for (const level of ["crisis", "elevated"]) {
+    it(`the ${level} response gives the child SOS line and 119/110`, () => {
+      const text = SAFETY_RESPONSES[level];
+      assert.ok(text.includes(CHILD_SOS_DIAL.name), "names the line");
+      assert.ok(text.includes(CHILD_SOS_DIAL.number), "gives its number");
+      assert.ok(text.includes(CHILD_SOS_DIAL.hours), "says when it answers");
+      assert.ok(text.includes(EMERGENCY_NUMBERS.ambulance.number));
+      assert.ok(text.includes(EMERGENCY_NUMBERS.police.number));
+    });
+
+    it(`the ${level} response carries no English gloss`, () => {
+      // "blesc" and the line's own name 「…SOSダイヤル」 are names, not glosses.
+      const text = SAFETY_RESPONSES[level].replace("blesc", "").replace(CHILD_SOS_DIAL.name, "");
+      assert.doesNotMatch(text, /[A-Za-z]{3,}/);
+    });
+  }
+
+  it("is what assessSafety hands back on both levels", () => {
+    assert.ok(mentionsChildSosDial(assessSafety("もう死にたい").safe_response));
+    assert.ok(mentionsChildSosDial(assessSafety("もう限界").safe_response));
+  });
+
+  it("keeps the tel: link and the written number in agreement", () => {
+    assert.equal(CHILD_SOS_DIAL.tel, `tel:${CHILD_SOS_DIAL.number.replace(/\D/g, "")}`);
+    for (const contact of Object.values(EMERGENCY_NUMBERS)) {
+      assert.equal(contact.tel, `tel:${contact.number}`);
+    }
+  });
+
+  it("recognises the number written full-width or without hyphens", () => {
+    assert.ok(mentionsChildSosDial("０１２０－０－７８３１０"));
+    assert.ok(mentionsChildSosDial("0120078310"));
+    assert.ok(!mentionsChildSosDial("0120-0-78311"));
+  });
+
+  it("does not let a reply that only names a person stand in for the response", () => {
+    // The chat and voice floors skip the canned response when the reply
+    // already covers it. Naming a trusted adult used to be enough.
+    assert.equal(replyCoversSafeResponse("信頼できる大人に話してみてね。"), false);
+    assert.equal(replyCoversSafeResponse(`信頼できる大人に話してみてね。${CHILD_SOS_DIAL.number}もあるよ。`), true);
   });
 });

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Mic, MicOff, X, Zap } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { routesToRealPerson } from "@/lib/safety-assessment";
+import { replyCoversSafeResponse } from "@/lib/safety-assessment";
 import styles from "./VoiceMode.module.css";
 import { t } from "@/lib/i18n";
 
@@ -114,7 +114,10 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
         if (!response.ok) return;
         const data = (await response.json()) as { safe_response?: string };
         const safeResponse = data.safe_response?.trim();
-        if (!safeResponse || routesToRealPerson(reply)) return;
+        // Spoken unless the model's own reply already gave a real person and
+        // the child SOS line's number (#465). The number is in the text the
+        // session is told to say, so it is read aloud.
+        if (!safeResponse || replyCoversSafeResponse(reply)) return;
         sendEvent({
           type: "conversation.item.create",
           item: {

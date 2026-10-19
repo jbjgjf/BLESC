@@ -84,6 +84,15 @@ export const RULES = {
   /** Routes that call OpenAI and therefore spend money. */
   externalModel: rule("external-model", "EXTERNAL_MODEL_LIMIT", 60, 3600),
   /**
+   * Minting a Realtime client secret (#240). Its own counter rather than a
+   * share of `externalModel`: one secret buys up to ten minutes of realtime
+   * audio, the most expensive call this app makes, and nothing server-side
+   * sees the session once the secret is handed over. Back-to-back sessions for
+   * a whole hour are six; twelve leaves room for reconnects after a dropped
+   * network, and a long text chat cannot use up the voice allowance.
+   */
+  realtimeSession: rule("realtime-session", "REALTIME_SESSION_LIMIT", 12, 3600),
+  /**
    * Signed-in routes that write rows from client-supplied text without calling
    * a model (#369). `/api/voice/turn` is the first; the limit is per user, so
    * other such routes can share it.

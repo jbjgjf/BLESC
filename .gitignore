@@ -1,7 +1,15 @@
 __pycache__/
 *.py[cod]
 *.pyo
+# Environment files (#339). One rule for every package and the root, so a
+# directory cannot be the one that was missed. `.env.example` stays tracked.
 .env
+.env.local
+.env.*.local
+.env.test
+.env.production
+.env.development
+!.env.example
 *.db
 .venv/
 venv/

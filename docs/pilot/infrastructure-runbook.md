@@ -208,6 +208,8 @@ grep -rl "$(printf 'service_role')" .next/static 2>/dev/null && echo "LEAK" || e
 
 client bundleにservice-role keyの実値が含まれていないことを、**値そのものではなく検索で**確認する。CIでも同じ検査を行う。
 
+`GET /api/health` は、認証なしでは `{"status":"ok","environment":…}` だけを 200 で返す。どの資格情報が設定済みか（`config`）と `commit` は、`PILOT_OPERATOR_USER_IDS` に入っている運営者のセッションでだけ返る（#245）。外形監視は従来どおり 200 を見ればよい。
+
 ### 5.4 Vercel preview でのE2E
 
 `sentra/eval` の browser driver（playwright）で、招待→登録→説明→assent→（未成年なら保護者確認）→提出→撤回 を通す。preview保護は `x-vercel-protection-bypass` で越える（`sentra/eval/src/browser.ts` が対応済み）。
@@ -280,6 +282,7 @@ PILOT_BASE_URL=https://blesc-pilot.vercel.app CRON_SECRET=... \
 | `PILOT_GUARDIAN_CONFIRM_LIMIT` | 20 | 1時間 | `/api/pilot/guardian/confirm`。セッションの無い経路なので送信元単位。実在しないトークンでDBを引かせ続けられないようにする（#246） |
 | `LEGAL_ACCEPTANCE_LIMIT` | 10 | 1時間 | `/api/legal/acceptance`（POST）。アカウント単位。同意は押し直す操作ではない（#253） |
 | `EXTERNAL_MODEL_LIMIT` | 60 | 1時間 | `/api/chat`・`/api/audio/transcriptions`。OpenAIの費用 |
+| `REALTIME_SESSION_LIMIT` | 12 | 1時間 | `/api/voice/realtime-session`。アカウント単位。1回の発行で最大10分の音声会話になり、最も費用が大きい。`EXTERNAL_MODEL_LIMIT` とは別に数える（#240） |
 | `AUTHENTICATED_WRITE_LIMIT` | 600 | 1時間 | `/api/voice/turn`。モデルを呼ばずに行を書く認証済み経路。超過時は何も保存しないが、危機の通知だけは落とさない（#369） |
 
 既定値は**正規の参加者が普通に使って当たらない**よう、実利用の見積もりより大きく取っている。

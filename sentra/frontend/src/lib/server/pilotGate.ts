@@ -45,9 +45,9 @@ export type GateOutcome =
 
 /** Where a refused visitor is sent. Never an error page: each of these is a
  *  step in the join flow, and the join screen is what explains which one. */
-export function redirectFor(outcome: GateOutcome): string | null {
+export function redirectFor(outcome: GateOutcome, next = "/journal"): string | null {
   if (outcome.allowed) return null;
-  return outcome.reason === "no_session" ? "/login?next=%2Fjournal" : "/pilot/join";
+  return outcome.reason === "no_session" ? `/login?next=${encodeURIComponent(next)}` : "/pilot/join";
 }
 
 /**
