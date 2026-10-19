@@ -34,7 +34,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
-import { dispatchPendingEscalations } from "@/lib/server/safetyDispatch";
+import { backlogKnown, countDispatchBacklog, dispatchPendingEscalations } from "@/lib/server/safetyDispatch";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -74,6 +74,9 @@ export async function POST(request: NextRequest) {
  * Booleans and counts only, so it can be polled by an uptime check without
  * handing anything out. A deployment where `channels` is false is one where a
  * crisis has nowhere to go, and that is worth alerting on by itself.
+ *
+ * 200 — both counts were read. 502 — at least one was not; it is `null` and
+ * `owed_error` / `no_recipient_error` says why. 503 — no service-role client.
  */
 export async function GET(request: NextRequest) {
   if (!authorized(request)) {
@@ -82,21 +85,18 @@ export async function GET(request: NextRequest) {
   const service = serviceRoleClient();
   if (!service) return NextResponse.json({ detail: "supabase_not_configured" }, { status: 503 });
 
-  const owed = await service
-    .from("safety_escalations")
-    .select("id", { count: "exact", head: true })
-    .in("status", ["pending", "failed"]);
-  const undeliverable = await service
-    .from("safety_escalations")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "no_recipient");
-
-  return NextResponse.json({
+  const backlog = await countDispatchBacklog(service);
+  const body = {
     channels: Boolean(
       process.env.SAFETY_ALERT_WEBHOOK_URL ||
         (process.env.RESEND_API_KEY && process.env.SAFETY_ALERT_EMAIL_FROM),
     ),
-    owed: owed.count ?? 0,
-    no_recipient: undeliverable.count ?? 0,
-  });
+    ...backlog,
+  };
+
+  // A count that could not be read is reported as `null` with its reason, and
+  // the response is a 502 (#453). An uptime check reads status codes, and a
+  // 200 here is what used to let a failed read arrive as "nothing owed".
+  // `channels` is still in the body: it does not depend on the database.
+  return NextResponse.json(body, { status: backlogKnown(backlog) ? 200 : 502 });
 }
