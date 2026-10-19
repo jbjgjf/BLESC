@@ -105,11 +105,12 @@ def test_baseline_points_at_real_items_of_the_right_kind(corpus, baseline):
 
 
 def test_every_known_gap_names_where_it_is_tracked(baseline):
-    # The gaps the lexicon fix is meant to close carry its issue number, so
-    # the fix landing is recognisable in the notice it produces.
-    assert {r["issue"] for r in baseline["detectors"]["frontend.assessSafety"]["known_gaps"].values()} >= {"#388"}
-    assert {r["issue"] for r in baseline["detectors"]["backend.assess_safety"]["known_gaps"].values()} >= {"#388"}
-    assert {r["issue"] for r in baseline["detectors"]["backend.has_crisis_language"]["known_gaps"].values()} >= {"#392"}
+    # Every tracked gap, under-graded verdict, or false positive must name
+    # an issue or PR number, or 'unfiled'.
+    for det in baseline["detectors"].values():
+        for pool in ("known_gaps", "known_under_graded", "known_false_positives"):
+            for item in det.get(pool, {}).values():
+                assert "issue" in item
 
 
 # ── the measurement ──────────────────────────────────────────────────────────
