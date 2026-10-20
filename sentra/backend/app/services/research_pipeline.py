@@ -28,11 +28,8 @@ from ..analytics.graph_index import (
 )
 from ..analytics.memory_objects import (
     MEMORY_OBJECT_VERSION,
-    NEGATIVE_TONE_TERMS,
     PriorMemoryObject,
-    PROTECTIVE_TONE_TERMS,
     RecallMessage,
-    TOPIC_STOPWORDS,
     build_summary as build_memory_summary,
     build_topic_label,
     cosine_similarity as memory_cosine_similarity,
@@ -41,6 +38,7 @@ from ..analytics.memory_objects import (
     emotional_tone,
     find_duplicate,
     jaccard as memory_jaccard,
+    message_tone,
     score_confidence as score_memory_confidence,
     score_importance,
     score_recurrence,
@@ -128,10 +126,11 @@ RAW_TEXT_EXPORT_KEYS = {
     "transcript",
 }
 IDENTIFIER_EXPORT_KEYS = {"user_id", "participant_code", "owner_user_id", "participant_id"}
-# TOPIC_STOPWORDS / NEGATIVE_TONE_TERMS / PROTECTIVE_TONE_TERMS now live in
-# analytics/memory_objects.py (single source of truth, imported above) so the
-# conversation-memory-object scoring and the legacy tone/topic helpers below
-# can't drift apart.
+# TOPIC_STOPWORDS / NEGATIVE_TONE_TERMS / PROTECTIVE_TONE_TERMS live in
+# analytics/memory_objects.py, and so now do the helpers that read them: the
+# conversation summary below calls `memory_topic_tokens` / `message_tone`
+# rather than keeping its own copies. Sharing only the word lists was what
+# allowed the two tokenisers to drift apart (#476).
 RECALL_RECURRENCE_LOOKBACK = int(os.getenv("SENTRA_RECALL_RECURRENCE_LOOKBACK", "200"))
 
 
@@ -1401,19 +1400,17 @@ def _conversation_message_window(
     return list(reversed(rows))
 
 
-def _topic_tokens(text: str) -> List[str]:
-    return [
-        token for token in _tokenize(text)
-        if len(token) >= 3 and token not in TOPIC_STOPWORDS and not token.isdigit()
-    ]
-
-
-def _message_tone(text: str) -> Dict[str, int]:
-    tokens = set(_tokenize(text))
-    return {
-        "negative": len(tokens.intersection(NEGATIVE_TONE_TERMS)),
-        "protective": len(tokens.intersection(PROTECTIVE_TONE_TERMS)),
-    }
+# The two helpers that used to live here read the shared vocabularies through
+# `_tokenize`, which splits on whitespace — so for Japanese they intersected a
+# one-token sentence with a list of words and always came back empty (#476).
+# Sharing the vocabularies was never enough on its own: the tokenisers drifted
+# instead. They now call the same functions `analytics/memory_objects.py`
+# exposes, so there is one tokeniser and one tone count for both.
+#
+# `_tokenize` itself is deliberately left where it is. Its other ten call sites
+# are graph retrieval and benchmark scoring, where changing what a token is
+# moves the conformance baselines those tests pin — a judgement about the
+# measurement, not a bug fix. It stays open on #476 with that reason recorded.
 
 
 def _conversation_summary_from_messages(messages: List[ChatMessage]) -> Dict[str, Any]:
@@ -1425,8 +1422,8 @@ def _conversation_summary_from_messages(messages: List[ChatMessage]) -> Dict[str
     for index, message in enumerate(messages):
         text = message.content_redacted or ""
         role_counts[message.role] += 1
-        topic_counter.update(_topic_tokens(text))
-        tone = _message_tone(text)
+        topic_counter.update(memory_topic_tokens(text))
+        tone = message_tone(text)
         tone_by_message.append(
             {
                 "index": index,

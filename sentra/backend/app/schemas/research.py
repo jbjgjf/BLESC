@@ -347,4 +347,8 @@ class ConversationMemoryObject(SQLModel, table=True):
     superseded_by_id: Optional[int] = Field(default=None, foreign_key="conversationmemoryobject.id", index=True)
     contradiction_status: str = Field(default="none", index=True)
     contradiction_detail_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
-    pipeline_version: str = "conversation-memory-object-v1"
+    # Kept in step with `analytics.memory_objects.MEMORY_OBJECT_VERSION`, which
+    # is what the writer actually passes; this default only covers a row made
+    # without one. v2 since the tone and topic metrics moved off whitespace
+    # splitting onto the shared tokeniser (#476).
+    pipeline_version: str = "conversation-memory-object-v2"

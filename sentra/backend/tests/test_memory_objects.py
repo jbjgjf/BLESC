@@ -1,4 +1,4 @@
-"""Unit tests for the dependency-free conversation-memory-object scorer."""
+"""Unit tests for the deterministic conversation-memory-object scorer."""
 
 from datetime import datetime
 
@@ -7,6 +7,7 @@ import pytest
 from app.analytics.memory_objects import (
     CRISIS_TERMS,
     IMPORTANCE_WEIGHTS,
+    build_topic_label,
     PriorMemoryObject,
     RecallMessage,
     decay_factor,
@@ -20,6 +21,18 @@ from app.analytics.memory_objects import (
     score_importance,
     score_recurrence,
     segment_window,
+    tokenize,
+    topic_tokens,
+)
+from app.analytics.tokenize import japanese_analysis_available
+
+# The convention `test_tokenize_and_probe.py` sets: a Japanese assertion skips
+# where the multi-megabyte dictionary is not installed, and that file's
+# CI-only test is what keeps a missing install from turning this suite green
+# with fewer tests.
+requires_dictionary = pytest.mark.skipif(
+    not japanese_analysis_available(),
+    reason="fugashi/unidic-lite not installed",
 )
 
 
@@ -205,3 +218,157 @@ def test_jaccard_handles_empty_sets():
     assert jaccard(set(), {"a"}) == 0.0
     assert jaccard({"a"}, set()) == 0.0
     assert jaccard({"a", "b"}, {"b", "c"}) == 1 / 3
+
+
+# ── Japanese reaches the vocabularies (#476) ──────────────────────────────────
+#
+# Every metric in this module is set membership against a hand-written word
+# list, and the tokeniser used to split on whitespace — which Japanese does not
+# use between words. '最近不安でつらい' arrived as one token and matched nothing,
+# so each of these read 0 for every participant in a Japanese pilot while still
+# returning a number. The English cases above all passed throughout; that is why
+# nothing surfaced. These tests pair a Japanese case with the English case that
+# already worked, so a regression to whitespace splitting fails here rather than
+# shipping as a quiet zero.
+
+
+@requires_dictionary
+def test_tokenize_splits_a_japanese_sentence_into_words():
+    """The regression itself: one token for a whole sentence is the bug."""
+    assert len(tokenize("最近ずっとテストのプレッシャーで不安")) > 1
+
+
+@pytest.mark.parametrize(
+    ("japanese", "expected"),
+    [
+        ("今日は孤独で悲しい気持ちになった", "negative"),
+        ("最近不安でつらい", "negative"),
+        ("夜は怖いし眠れない", "negative"),
+        ("友達に相談したら安心した", "protective"),
+        ("よく休んだら安心した", "protective"),
+        ("今日は体育祭だった", "neutral"),
+    ],
+)
+@requires_dictionary
+def test_emotional_tone_reads_japanese_like_english(japanese, expected):
+    assert emotional_tone(japanese)["dominant"] == expected
+
+
+@requires_dictionary
+def test_tone_terms_match_the_inflection_a_student_writes():
+    """`NEGATIVE_TONE_TERMS` lists 疲れ; a student writes 疲れてる.
+
+    UniDic's lemma for 疲れ inside 疲れてる is 疲れる, so matching the lemma
+    alone would miss the term the list actually names. Both forms are compared.
+    """
+    assert emotional_tone("ずっと疲れててしんどい")["negative"] >= 1
+    assert emotional_tone("もう疲れた")["negative"] >= 1
+
+
+@requires_dictionary
+def test_tone_intensity_is_not_structurally_zero_for_japanese():
+    """The heaviest component of the importance score (0.35) used to be 0."""
+    _, breakdown = score_importance([_msg(1, "user", "今日は孤独で悲しい気持ちになった")])
+    assert breakdown["components"]["tone_intensity"] > 0.0
+
+    _, calm = score_importance([_msg(1, "user", "今日は体育祭だった")])
+    assert calm["components"]["tone_intensity"] == 0.0
+
+
+@requires_dictionary
+def test_japanese_and_english_disclosures_score_comparably():
+    """The same disclosure in either language must not score an order apart."""
+    japanese, _ = score_importance([_msg(1, "user", "最近ずっと不安でつらい")])
+    english, _ = score_importance([_msg(1, "user", "I have been anxious and stressed and tired")])
+    assert japanese > 0.0
+    assert abs(japanese - english) < 0.35
+
+
+def test_score_importance_records_whether_japanese_could_be_analysed():
+    """Stored as `score_breakdown_json`, so a degraded run is identifiable."""
+    _, breakdown = score_importance([_msg(1, "user", "今日は孤独で悲しい気持ちになった")])
+    assert isinstance(breakdown["japanese_analysis_available"], bool)
+
+
+@requires_dictionary
+def test_recurrence_sees_the_same_japanese_topic_across_days():
+    """Topic Jaccard was 0 unless two segments were character-identical."""
+    new_tokens = set(topic_tokens("テストのプレッシャーがきつい"))
+    prior = PriorMemoryObject(
+        id=1,
+        topic_tokens=set(topic_tokens("またテストのプレッシャーで眠れない")),
+        embedding=[],
+    )
+    unrelated = PriorMemoryObject(
+        id=2,
+        topic_tokens=set(topic_tokens("部活の試合で勝った")),
+        embedding=[],
+    )
+
+    score, count, matched = score_recurrence(new_tokens, None, [prior, unrelated])
+    assert count == 1
+    assert matched == [1]
+    assert score > 0.0
+
+
+@requires_dictionary
+def test_segment_window_splits_a_japanese_topic_shift():
+    messages = [
+        _msg(1, "user", "ずっとテストのプレッシャーで不安だった"),
+        _msg(2, "assistant", "それはしんどいですね"),
+        _msg(3, "user", "ところで、最近は眠れない日が続いている"),
+        _msg(4, "assistant", "眠れないのはつらいですね"),
+    ]
+    segments = segment_window(messages)
+    assert len(segments) == 2
+    assert [m.id for m in segments[0]] == [1, 2]
+    assert [m.id for m in segments[1]] == [3, 4]
+
+
+# ── the label the student reads (#476) ────────────────────────────────────────
+@requires_dictionary
+def test_topic_label_is_words_not_the_whole_sentence():
+    text = "サッカー部の練習がきつい。コーヒーを飲んで落ち着いた。"
+    label = build_topic_label([_msg(1, "user", text)])
+    assert label != text
+    assert len(label) < len(text)
+    assert "サッカー" in label
+
+
+@requires_dictionary
+def test_topic_label_never_prints_a_unidic_gloss():
+    """`tokenize` returns lemmas, and UniDic's lemma for サッカー is サッカー-soccer.
+
+    That is the right identity for the Jaccard maths and must not reach the
+    memory card, which renders this string verbatim.
+    """
+    label = build_topic_label([_msg(1, "user", "サッカーとテストとプレッシャーの話")])
+    assert "-soccer" not in label
+    assert "-test" not in label
+    assert "-代名詞" not in label
+
+
+@requires_dictionary
+def test_topic_label_ranks_what_the_segment_repeats():
+    """It used to rank a deduplicated set, i.e. three arbitrary words."""
+    segment = [
+        _msg(1, "user", "テストのことばかり考える"),
+        _msg(2, "user", "テストが終わらない"),
+        _msg(3, "user", "ずっとテストの話をしている"),
+    ]
+    assert build_topic_label(segment, max_terms=1) == "テスト"
+
+
+def test_a_missing_dictionary_is_recorded_rather_than_scored_as_calm(monkeypatch):
+    """`tokenize.py` asks callers to record the degradation; this is where.
+
+    With no dictionary the Japanese tone terms are unreachable again and the
+    score falls back to what it was before #476. That is not avoidable here —
+    but it must not be indistinguishable from a genuinely calm entry, so the
+    flag travels with the numbers into `score_breakdown_json`.
+    """
+    import app.analytics.memory_objects as module
+
+    monkeypatch.setattr(module, "japanese_analysis_available", lambda: False)
+    _, breakdown = score_importance([_msg(1, "user", "今日は孤独で悲しい気持ちになった")])
+    assert breakdown["japanese_analysis_available"] is False

@@ -8,12 +8,18 @@ with its own explainable importance/recurrence/confidence score, plus the merge
 and contradiction logic needed to keep memories from duplicating or going stale
 across overlapping windows.
 
-Everything here is intentionally dependency-free and deterministic by default,
-following the same convention as pattern_mining.py: no numpy, no LLM-trusted
-numbers. An LLM may optionally propose segment boundaries / topic / summary text
-upstream (behind the caller's `_has_openai_key()` gate), but every *score* in this
-module is always computed from the segmented text itself, never blended from a
-model output, so every score stays inspectable via its breakdown dict.
+Everything here is deterministic by default, following the same convention as
+pattern_mining.py: no numpy, no LLM-trusted numbers. An LLM may optionally
+propose segment boundaries / topic / summary text upstream (behind the caller's
+`_has_openai_key()` gate), but every *score* in this module is always computed
+from the segmented text itself, never blended from a model output, so every
+score stays inspectable via its breakdown dict.
+
+The one dependency is `analytics/tokenize.py`, and through it the optional
+fugashi/unidic-lite pair. It is not optional in effect: without a dictionary
+Japanese text has no word boundaries to read, so every vocabulary metric below
+reads 0 (#476). That degradation is deterministic, logged by `tokenize.py`, and
+recorded in `score_importance`'s breakdown rather than left to look like calm.
 
 This module has no DB/session dependency on purpose: it takes plain dataclasses
 and dicts in, returns plain dicts out, so it is trivial to unit test and safe to
@@ -31,8 +37,14 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from ..clock import utcnow
 from ..services.safety import fold_writing, spellings
+from .tokenize import Token, analyze, contains_japanese, japanese_analysis_available
 
-MEMORY_OBJECT_VERSION = "conversation-memory-object-v1"
+# v2: the tone and topic metrics are read off the shared morphological
+# tokeniser rather than off whitespace (#476), so a score from before this
+# change and one from after are not the same measurement. Stored per row as
+# `pipeline_version`, which is what lets the two be told apart; re-scoring the
+# rows already written is #452's question, not this module's.
+MEMORY_OBJECT_VERSION = "conversation-memory-object-v2"
 
 # ── thresholds ───────────────────────────────────────────────────────────────
 SEGMENT_TOPIC_JACCARD_THRESHOLD = 0.25   # below this, a new turn starts a new segment
@@ -107,30 +119,84 @@ class PriorMemoryObject:
 
 
 # ── text helpers ──────────────────────────────────────────────────────────────
-def _normalize_text(value: Any) -> str:
-    text = str(value or "").lower()
-    text = re.sub(r"[^a-z0-9_\-\sぁ-んァ-ン一-龥]", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+# `analytics/tokenize.py` is "the one place that decides what a token is", and
+# this module ignored it: it split on whitespace, which is not where Japanese
+# puts its word boundaries. 「最近不安でつらい」 arrived as one token, matched
+# nothing in `NEGATIVE_TONE_TERMS`, and every metric below built on set
+# membership read 0 for every Japanese participant — with a number still
+# returned, so nothing surfaced as a failure (#476). #68 moved
+# `cognitive_probe.py` and `scoring.py` onto the shared tokeniser and left this
+# module, `pattern_mining.py` and `graph_index.py` behind.
+#
+# The arithmetic underneath is unchanged, deliberately. Every count keeps the
+# unit it had — distinct tokens, distinct vocabulary terms — so ASCII text
+# scores exactly what it scored before and only the segmentation of Japanese
+# moves. `pattern_mining.py`, `graph_index.py` and `research_pipeline._tokenize`
+# still split on whitespace and still drop ー / ヴ / 々 from the character
+# class; that is #476's remainder and #477.
+
+
+def _words(value: Any) -> List[Token]:
+    """The analysed words of one text, filtered the way this module always has.
+
+    `analyze` already drops Japanese particles and auxiliaries, so the length
+    floor is left doing the only job it did here: dropping ASCII fragments too
+    short to be a topic (`me`, `ok`) while keeping two-character Japanese
+    content words (`不安`, `友達`).
+    """
+    return [
+        word
+        for word in analyze(str(value or ""))
+        if len(word.canonical) >= 3 or contains_japanese(word.canonical)
+    ]
 
 
 def tokenize(value: Any) -> Set[str]:
-    normalized = _normalize_text(value)
-    return {
-        part
-        for part in normalized.replace("_", " ").replace("-", " ").split()
-        if len(part) >= 3 or re.search(r"[ぁ-んァ-ン一-龥]", part)
-    }
+    """One canonical form per distinct word — the set the Jaccard maths uses."""
+    return {word.canonical for word in _words(value)}
+
+
+def _is_stopword(word: Token) -> bool:
+    """`TOPIC_STOPWORDS` is written in surface forms, so both forms are checked.
+
+    UniDic's lemma for ある is 有る and for した is する, so filtering the
+    canonical form alone would let the words the list names back in.
+    """
+    return bool({word.surface, word.canonical} & TOPIC_STOPWORDS)
 
 
 def topic_tokens(text: str) -> List[str]:
-    return [token for token in tokenize(text) if token not in TOPIC_STOPWORDS and not token.isdigit()]
+    """Distinct content words. Deduplicated, as every caller reads it as a set."""
+    return sorted({
+        word.canonical
+        for word in _words(text)
+        if not _is_stopword(word) and not word.canonical.isdigit()
+    })
+
+
+def _terms_present(words: Sequence[Token], vocabulary: Set[str]) -> Set[str]:
+    """Which vocabulary terms the text uses, matching surface *or* lemma.
+
+    Both forms, for the reason `tokenize.py` gives: UniDic's lemma for 疲れ
+    inside 疲れてる is 疲れる, so matching the lemma alone would leave the
+    「疲れ」 that `NEGATIVE_TONE_TERMS` actually lists unreachable. For ASCII
+    the two forms are the same string, which is why this is identical to the
+    set intersection it replaces.
+    """
+    forms = {form for word in words for form in word.forms}
+    return vocabulary & forms
 
 
 def message_tone(text: str) -> Dict[str, int]:
-    tokens = tokenize(text)
+    """How many distinct tone terms the text uses, per polarity.
+
+    Distinct terms rather than positions: the unit this returned before, and
+    the one `score_importance` divides by a distinct-token count.
+    """
+    words = _words(text)
     return {
-        "negative": len(tokens.intersection(NEGATIVE_TONE_TERMS)),
-        "protective": len(tokens.intersection(PROTECTIVE_TONE_TERMS)),
+        "negative": len(_terms_present(words, NEGATIVE_TONE_TERMS)),
+        "protective": len(_terms_present(words, PROTECTIVE_TONE_TERMS)),
     }
 
 
@@ -204,8 +270,21 @@ def segment_window(
 
 
 def build_topic_label(segment: Sequence[RecallMessage], max_terms: int = 3) -> str:
+    """The heading the student reads on the memory card, so it prints surfaces.
+
+    Not `topic_tokens`, for two reasons. A UniDic lemma carries a
+    disambiguating gloss — サッカー comes back as `サッカー-soccer` and 私 as
+    `私-代名詞` — which is the right identity for the Jaccard maths above and
+    the wrong thing to show anyone. And `topic_tokens` is deduplicated, so the
+    `most_common` here was ranking a set: three arbitrary words rather than the
+    three the segment actually repeats.
+    """
     combined = " ".join(message.text for message in segment)
-    counts = Counter(topic_tokens(combined))
+    counts = Counter(
+        word.surface
+        for word in _words(combined)
+        if not _is_stopword(word) and not word.canonical.isdigit()
+    )
     top_terms = [term for term, _ in counts.most_common(max_terms)]
     return ", ".join(top_terms) if top_terms else "general reflection"
 
@@ -236,6 +315,16 @@ def score_importance(segment: Sequence[RecallMessage]) -> Tuple[float, Dict[str,
     ) else 0.0
 
     topic_toks = topic_tokens(combined_text)
+    # Still not comparable across languages, and left that way on purpose.
+    # This is (distinct content words / distinct words), so what it measures is
+    # how much of the text `TOPIC_STOPWORDS` removed. `analyze` already drops
+    # Japanese particles and auxiliaries before the list is consulted, so a
+    # Japanese segment has almost nothing left to remove and sits near 1.0
+    # while an English one of the same substance sits near 0.8. Correcting it
+    # means dividing by every word including the function words, which changes
+    # what the 0.20 component means for text already scored — a decision about
+    # the measurement rather than a bug. Recorded on #476 rather than taken
+    # here.
     specificity = (len(set(topic_toks)) / len(tokens)) if tokens else 0.0
     crisis_flag = 1.0 if any(has_crisis_language(message.text) for message in segment) else 0.0
 
@@ -246,7 +335,17 @@ def score_importance(segment: Sequence[RecallMessage]) -> Tuple[float, Dict[str,
         "crisis_or_safety_flag": crisis_flag,
     }
     score = sum(IMPORTANCE_WEIGHTS[key] * value for key, value in components.items())
-    breakdown = {"components": components, "weights": dict(IMPORTANCE_WEIGHTS)}
+    # Recorded alongside the numbers, as `tokenize.py` asks callers to do: with
+    # no dictionary installed, Japanese falls back to whitespace splitting and
+    # `tone_intensity` is under-counted the way #476 describes. The breakdown is
+    # stored as `score_breakdown_json`, so a deployment that was missing
+    # fugashi/unidic-lite is identifiable in the research data afterwards
+    # instead of being indistinguishable from a quiet zero.
+    breakdown = {
+        "components": components,
+        "weights": dict(IMPORTANCE_WEIGHTS),
+        "japanese_analysis_available": japanese_analysis_available(),
+    }
     return round(min(1.0, score), 4), breakdown
 
 
