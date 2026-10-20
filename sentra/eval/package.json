@@ -24,7 +24,7 @@
     "@types/node": "^26",
     "eslint": "^9.39.4",
     "tsx": "^4.23.15",
-    "typescript": "^5",
+    "typescript": "^7",
     "typescript-eslint": "^8.58.0"
   }
 }
