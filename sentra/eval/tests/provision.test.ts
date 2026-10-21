@@ -18,15 +18,20 @@ describe("synthetic account contract", () => {
     assert.equal(SYNTHETIC_ACCOUNTS.orgName, "BLESC Evaluation Lab");
   });
 
-  it("refuses to target the production Supabase project", () => {
+  it("answers the question it was asked when another variable is also missing", () => {
     const prior = process.env.EVAL_SUPABASE_URL;
     const priorKey = process.env.BLESC_EVAL_RUNNER_OPENAI_API_KEY;
     // Deleted on purpose: the guard has to answer the question it was asked
     // even when an unrelated variable is also missing (#181). With the check at
     // the end of `loadEnv`, this environment answered "no OpenAI key" and said
-    // nothing about being pointed at production.
+    // nothing about being pointed somewhere it must not write.
     delete process.env.BLESC_EVAL_RUNNER_OPENAI_API_KEY;
-    process.env.EVAL_SUPABASE_URL = "https://kvcrkveaxlrijhzyayeg.supabase.co";
+    // A placeholder, not the production ref. `assertTargetAllowed` is an
+    // allowlist compared by exact host, so any host outside
+    // `ALLOWED_SUPABASE_HOSTS` proves the same thing — naming the real
+    // production project added no test power and committed its ref to a public
+    // repository (#479).
+    process.env.EVAL_SUPABASE_URL = "https://not-on-the-allowlist.supabase.co";
     try {
       assert.throws(() => loadEnv(), /Refusing to run evaluation/i);
     } finally {

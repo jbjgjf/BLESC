@@ -108,6 +108,11 @@ jobs:
       - name: Test the safety-dispatch report
         run: node --test scripts/ci/safety-dispatch-report.test.mjs
 
+      # No Supabase project ref but the evaluation project's may be committed
+      # (#479). Reads tracked files only, so it needs no install.
+      - name: Check for committed Supabase project refs
+        run: node --test scripts/ci/supabase-project-ref.test.mjs
+
   backend-research:
     name: Backend research contracts
     runs-on: ubuntu-latest
@@ -169,8 +174,18 @@ jobs:
     defaults:
       run:
         working-directory: sentra/frontend
+    # `next build` prerenders pages that import src/lib/supabase/client.ts, so
+    # the build needs both variables set. Both are placeholders, and the host
+    # has to be one that cannot resolve (#479). It used to be the production
+    # project's ref, which put that ref in a public repository and in every
+    # public Actions log — client.ts:32 prints the configured URL — and aimed a
+    # CI build at the project holding participant data. `.invalid` is the
+    # reservation client.ts already relies on for the same reason:
+    #
+    #   `.invalid` is reserved by RFC 2606 and cannot resolve, so an accidental
+    #   request fails as a network error rather than reaching someone's host.
     env:
-      NEXT_PUBLIC_SUPABASE_URL: https://kvcrkveaxlrijhzyayeg.supabase.co
+      NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.invalid
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
     steps:
       - name: Checkout
