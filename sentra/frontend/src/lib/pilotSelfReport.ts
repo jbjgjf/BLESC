@@ -144,7 +144,30 @@ export type SelfReportRejection =
   /** An id that is not part of this schema version. */
   | "unknown_item";
 
+/**
+ * The stored row: one key per item, always complete. `null` is "not answered".
+ *
+ * Total on purpose. A row is written for every item of the schema version, so
+ * an absent key would be a third way of saying "no reading" that no analysis
+ * would know to look for.
+ */
 export type SelfReportValues = Record<SelfReportItemId, number | null>;
+
+/**
+ * What the participant has entered so far, before it is submitted.
+ *
+ * Partial on purpose, and that is the whole difference from `SelfReportValues`:
+ * a draft can hold `undefined` for an item the participant has not reached yet,
+ * which the stored row cannot. The screen shows those two differently — an
+ * untouched item has nothing selected, a declined one has 「答えない」 selected
+ * (`components/SelfReportBlock.tsx`) — so the type it draws from has to be able
+ * to tell them apart.
+ *
+ * `normalizeSelfReport` collapses both to `null` when it builds the row. Whether
+ * a decline should survive that is #484; this type only makes the distinction
+ * visible in the name rather than in a `Partial` somebody has to notice.
+ */
+export type SelfReportDraft = Partial<Record<SelfReportItemId, number | null>>;
 
 export type NormalizedSelfReport = {
   schema_version: string;

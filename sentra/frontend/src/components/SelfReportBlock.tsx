@@ -33,13 +33,11 @@
  *      study does not get to hold their entry hostage.
  */
 
-import { SELF_REPORT_ITEMS, type SelfReportItemId } from "@/lib/pilotSelfReport";
+import { SELF_REPORT_ITEMS, type SelfReportDraft, type SelfReportItemId } from "@/lib/pilotSelfReport";
 import styles from "./SelfReportBlock.module.css";
 
-export type SelfReportValues = Partial<Record<SelfReportItemId, number | null>>;
-
 type Props = {
-  values: SelfReportValues;
+  values: SelfReportDraft;
   onChange: (id: SelfReportItemId, value: number | null) => void;
   disabled?: boolean;
 };
