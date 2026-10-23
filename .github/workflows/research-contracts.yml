@@ -108,6 +108,13 @@ jobs:
       - name: Test the safety-dispatch report
         run: node --test scripts/ci/safety-dispatch-report.test.mjs
 
+      # The reading half of `unlanded-work.mjs` (#464). The command itself asks
+      # GitHub which issues are open, so it is run by hand; what is checked
+      # here is how it tells finished-but-unlanded work from the residue squash
+      # merge leaves behind, which is where the count silently goes wrong.
+      - name: Test the unlanded-work reading
+        run: node --test scripts/ci/unlanded-work.test.mjs
+
   backend-research:
     name: Backend research contracts
     runs-on: ubuntu-latest

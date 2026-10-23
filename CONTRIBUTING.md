@@ -33,6 +33,16 @@ A branch with an open pull request therefore gets two runs per push. The list of
 
 **Experimental/spike branches:** prefix `spike/`, max lifespan 3 days, never merged directly — if the spike works, cut a clean `feat/` branch and PR from that. Delete spike branches after.
 
+**Finding work that never landed:** a branch pushed without a pull request merges nothing, and because the issue stays open the next contributor — or the next agent run — writes the same fix again ([#464](https://github.com/jbjgjf/BLESC/issues/464) records five confirmed rebuilds).
+
+```bash
+node scripts/ci/unlanded-work.mjs
+```
+
+It lists the branches that close a still-open issue and have no pull request. Do not use "branches ahead of `main`" for this: §2 settles on squash merge, so a merged branch's commits never enter `main`'s history and it stays ahead forever — on 2026-10-22 that was 133 of 136 branches, almost all of it residue.
+
+A branch level with `main` can be opened as a pull request as it stands. One far behind is usually an old base that happens to name a long-lived epic; read it before calling it outstanding.
+
 ---
 
 ## 2. Pull Request Rules
