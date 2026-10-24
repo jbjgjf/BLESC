@@ -11,7 +11,13 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
-import { decideAccess, demoApplies, isPublicRoute, requiredRole } from "../src/lib/routeAccess.ts";
+import {
+  decideAccess,
+  demoApplies,
+  isPublicRoute,
+  requiredRole,
+  safeNextPath,
+} from "../src/lib/routeAccess.ts";
 
 const read = (relative) => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
 const code = (text) => text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
@@ -140,6 +146,77 @@ describe("demo and local development are unchanged", () => {
 
   it("with no Supabase there is nothing to verify, and nothing is redirected", () => {
     assert.deepEqual(decide("/educator/roster", { supabaseConfigured: false }), { action: "next" });
+  });
+});
+
+describe("the `next` a redirected visitor comes back with (#488)", () => {
+  const ELSEWHERE = "elsewhere.example";
+
+  it("keeps a path on this site, query and fragment included", () => {
+    for (const path of [
+      "/",
+      "/journal",
+      "/educator/roster?tab=alerts",
+      "/research/world-model#summary",
+      "/pilot/triage?day=3&view=open",
+      "/demo-view/meet-rusk",
+    ]) {
+      assert.equal(safeNextPath(path), path);
+    }
+  });
+
+  it("refuses anything that leaves this site", () => {
+    for (const value of [
+      `https://${ELSEWHERE}/`,
+      `http://${ELSEWHERE}/`,
+      // Protocol-relative: starts with "/" and is still another origin.
+      `//${ELSEWHERE}/`,
+      `///${ELSEWHERE}/`,
+      // A browser reads "\" as "/" in the authority position.
+      `/\\${ELSEWHERE}/`,
+      `/\\/${ELSEWHERE}/`,
+      // Tab, LF and CR are removed from a URL wherever they appear, so each of
+      // these is "//elsewhere.example" by the time anything navigates.
+      `/\t/${ELSEWHERE}/`,
+      `/\n/${ELSEWHERE}/`,
+      `/\r/${ELSEWHERE}/`,
+      `/\t\\${ELSEWHERE}/`,
+      "javascript:alert(1)",
+      "data:text/html,<script>alert(1)</script>",
+      `${ELSEWHERE}/journal`,
+      ` //${ELSEWHERE}/`,
+    ]) {
+      assert.equal(safeNextPath(value), "/", JSON.stringify(value));
+    }
+  });
+
+  it("refuses an absent, empty or non-string value", () => {
+    for (const value of [null, undefined, "", "   "]) {
+      assert.equal(safeNextPath(value), "/");
+    }
+  });
+
+  it("refuses /login, which is the page that reads it", () => {
+    for (const value of ["/login", "/login/", "/login?next=%2Fjournal", "/login/retry"]) {
+      assert.equal(safeNextPath(value), "/");
+    }
+    // Not a prefix match on the string: /loginzzz is an ordinary path.
+    assert.equal(safeNextPath("/loginzzz"), "/loginzzz");
+  });
+
+  it("round-trips what decideAccess itself writes", () => {
+    const decision = decide("/educator/roster", { search: "?tab=alerts" });
+    assert.equal(decision.action, "redirect");
+    const next = new URL(decision.location, "https://blesc.online").searchParams.get("next");
+    assert.equal(safeNextPath(next), "/educator/roster?tab=alerts");
+  });
+
+  it("is what both screens reading `next` pass it through", () => {
+    for (const file of ["../src/app/login/page.tsx", "../src/components/AuthShell.tsx"]) {
+      const source = code(read(file));
+      assert.match(source, /safeNextPath\(\s*searchParams\.get\("next"\)\s*\)/, file);
+      assert.doesNotMatch(source, /replace\(\s*searchParams\.get\("next"\)/, file);
+    }
   });
 });
 

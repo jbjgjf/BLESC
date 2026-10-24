@@ -93,6 +93,45 @@ export function isPublicRoute(pathname: string): boolean {
   return [...PUBLIC_ROUTES, ...STATIC_EXPORT_ROUTES].some((route) => under(pathname, route));
 }
 
+/** Where `/login` sends someone who arrived with no `next`, or a refused one. */
+export const DEFAULT_NEXT_PATH = "/";
+
+/**
+ * The `next` query value, if it is somewhere on this site (#488).
+ *
+ * `decideAccess` below writes `next` so a redirected visitor lands back where
+ * they were going. It is a query parameter, so what comes back is whatever the
+ * person who made the link put there — and until this existed, `/login` handed
+ * it straight to `router.replace`. `?next=https://elsewhere.example/` is a full
+ * navigation off this site *at the moment the student has just typed their
+ * password*, under this site's own domain in the address bar. That is the whole
+ * of a credential-phishing link, and the audience is high-school students who
+ * reach `/pilot/join` by following one.
+ *
+ * So: a path on this origin, or `/`. Not an allowlist of screens — pages are
+ * still being added, and a list of them would be out of date by the time it
+ * mattered. The three refusals that are easy to miss:
+ *
+ * - `//elsewhere.example` is protocol-relative. It starts with `/` and is not
+ *   on this origin.
+ * - `/\elsewhere.example` is the same thing to a browser, which reads `\` as
+ *   `/` in the authority position.
+ * - Tab, LF and CR are removed from a URL wherever they appear, so
+ *   `/<TAB>/elsewhere.example` is `//elsewhere.example` by the time anything
+ *   navigates. They are stripped here before the test rather than after.
+ *
+ * `/login` itself is refused because the page reading this is `/login`.
+ */
+export function safeNextPath(value: string | null | undefined): string {
+  if (typeof value !== "string") return DEFAULT_NEXT_PATH;
+  const path = value.replace(/[\t\n\r]/g, "");
+  if (!path.startsWith("/")) return DEFAULT_NEXT_PATH;
+  if (path.startsWith("//") || path.startsWith("/\\")) return DEFAULT_NEXT_PATH;
+  const [pathname] = path.split(/[?#]/);
+  if (under(pathname, "/login")) return DEFAULT_NEXT_PATH;
+  return path;
+}
+
 export function requiredRole(pathname: string): Role | null {
   return ROLE_ROUTES.find((route) => under(pathname, route.prefix))?.role ?? null;
 }

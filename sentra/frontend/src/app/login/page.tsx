@@ -9,6 +9,7 @@ import { Icon } from "@/components/ui/Icon";
 import { t } from "@/lib/i18n";
 import { localizeAuthError } from "@/lib/i18n/authError";
 import { loginLegalNotice } from "@/lib/legalNotices";
+import { safeNextPath } from "@/lib/routeAccess";
 import styles from "./login.module.css";
 
 export default function LoginPage() {
@@ -103,7 +104,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.replace(searchParams.get("next") || "/");
+    router.replace(safeNextPath(searchParams.get("next")));
   };
 
   return (
