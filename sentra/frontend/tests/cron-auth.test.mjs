@@ -19,8 +19,13 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
+import { setServiceClient } from "./helpers/route-loader.mjs";
 import { authorizedCron, cronSecretConfigured } from "../src/lib/server/cronAuth.ts";
-import { purgeExpiredRawText, purgedCount } from "../src/lib/server/retentionPurge.ts";
+import { purgeExpiredRawText, purgeRateLimitCounters, purgedCount } from "../src/lib/server/retentionPurge.ts";
+
+// After `route-loader.mjs`, which is what lets a route file's `@/` imports
+// resolve and hands it the client the test sets.
+const retentionRoute = await import("../src/app/api/cron/retention-purge/route.ts");
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (path) => readFileSync(resolve(HERE, path), "utf8");
@@ -183,6 +188,44 @@ describe("purging expired raw text", () => {
   });
 });
 
+describe("purging the spent rate-limit counters (#494)", () => {
+  const client = (outcome) => {
+    const calls = [];
+    return {
+      calls,
+      rpc(name) {
+        calls.push(name);
+        return Promise.resolve(outcome);
+      },
+    };
+  };
+
+  it("calls the function the migration granted to service_role", async () => {
+    /*
+     * 20260921000000 said this function "is called by the existing retention
+     * cron, so this table does not grow without bound and does not need its own
+     * schedule". Nothing called it, and `rate_limit_counters` takes a row per
+     * (bucket, window) on every request to a limited route.
+     */
+    const service = client({ data: 120, error: null });
+    const result = await purgeRateLimitCounters(service);
+    assert.deepEqual(service.calls, ["purge_rate_limit_counters"]);
+    assert.deepEqual(result, { purged: 120 });
+  });
+
+  it("reports a database error rather than a purge of zero", async () => {
+    const service = client({ data: null, error: { message: "permission denied" } });
+    assert.deepEqual(await purgeRateLimitCounters(service), { error: "permission denied" });
+  });
+
+  it("reports a missing count as a failure", async () => {
+    // Same rule as the raw-text purge: "nothing to delete" and "that call did
+    // not do what we think it did" must not look identical.
+    const service = client({ data: null, error: null });
+    assert.ok("error" in (await purgeRateLimitCounters(service)));
+  });
+});
+
 describe("the routes behind the gate", () => {
   it("both cron routes check authorisation before doing anything", () => {
     for (const path of ["retention-purge", "safety-dispatch"]) {
@@ -207,11 +250,109 @@ describe("the routes behind the gate", () => {
     }
   });
 
-  it("keeps the purge call testable outside a Next runtime", () => {
-    // If the RPC moves back inline, this file can no longer assert anything
+  it("keeps the purge calls testable outside a Next runtime", () => {
+    // If an RPC moves back inline, this file can no longer assert anything
     // about it, which is the state #204 was filed against.
     const route = read("../src/app/api/cron/retention-purge/route.ts");
     assert.ok(route.includes("purgeExpiredRawText"));
+    assert.ok(route.includes("purgeRateLimitCounters"));
     assert.ok(!route.includes('rpc("purge_expired_raw_text")'));
+    assert.ok(!route.includes('rpc("purge_rate_limit_counters")'));
+  });
+});
+
+/**
+ * What the scheduled run actually does, through the handler (#494).
+ *
+ * The migration's claim was about a *call*, so the thing to assert is that the
+ * call happens on the schedule — not that the route file mentions a function.
+ * These drive `GET` with a valid secret and read which RPCs the service client
+ * was asked for.
+ */
+describe("the retention run purges both tables", () => {
+  const SECRET = "cron-secret-for-the-retention-run";
+
+  /** A service client that answers each RPC from `outcomes`, recording the order. */
+  const client = (outcomes) => {
+    const calls = [];
+    return {
+      calls,
+      rpc(name) {
+        calls.push(name);
+        return Promise.resolve(outcomes[name] ?? { data: null, error: { message: `unexpected rpc ${name}` } });
+      },
+    };
+  };
+
+  const run = (service) =>
+    withEnv({ CRON_SECRET: SECRET }, async () => {
+      setServiceClient(service);
+      try {
+        return await retentionRoute.GET(request(`Bearer ${SECRET}`));
+      } finally {
+        setServiceClient(null);
+      }
+    });
+
+  it("calls both purges and reports both counts", async () => {
+    const service = client({
+      purge_expired_raw_text: { data: 3, error: null },
+      purge_rate_limit_counters: { data: 120, error: null },
+    });
+    const response = await run(service);
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(service.calls, ["purge_expired_raw_text", "purge_rate_limit_counters"]);
+    assert.deepEqual(await response.json(), { purged: 3, rate_limit_counters: 120 });
+  });
+
+  it("does not let a failed counter purge report as a failure to delete text", async () => {
+    /*
+     * The status code answers the one question this job exists for. A counter
+     * table that did not shrink is housekeeping — nothing in it is participant
+     * data — so it is reported beside the raw-text count, with its reason, and
+     * never as a quiet zero.
+     */
+    const service = client({
+      purge_expired_raw_text: { data: 3, error: null },
+      purge_rate_limit_counters: { data: null, error: { message: "permission denied" } },
+    });
+    const response = await run(service);
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      purged: 3,
+      rate_limit_counters: null,
+      rate_limit_counters_error: "permission denied",
+    });
+  });
+
+  it("still purges the counters when the raw-text purge fails", async () => {
+    // Separate RPCs: a problem with one says nothing about the other, and
+    // skipping the second would make a bad day into a growing table as well.
+    const service = client({
+      purge_expired_raw_text: { data: null, error: { message: "statement timeout" } },
+      purge_rate_limit_counters: { data: 7, error: null },
+    });
+    const response = await run(service);
+
+    assert.equal(response.status, 502);
+    assert.deepEqual(service.calls, ["purge_expired_raw_text", "purge_rate_limit_counters"]);
+    assert.deepEqual(await response.json(), { detail: "statement timeout", rate_limit_counters: 7 });
+  });
+
+  it("purges nothing at all without the secret", async () => {
+    const service = client({});
+    const response = await withEnv({ CRON_SECRET: undefined }, async () => {
+      setServiceClient(service);
+      try {
+        return await retentionRoute.GET(request(`Bearer ${SECRET}`));
+      } finally {
+        setServiceClient(null);
+      }
+    });
+
+    assert.equal(response.status, 403);
+    assert.deepEqual(service.calls, []);
   });
 });

@@ -30,9 +30,23 @@
 -- ## Retention
 --
 -- Rows are garbage after their window closes. `purge_rate_limit_counters()`
--- deletes anything older than a day and is called by the existing retention
--- cron, so this table does not grow without bound and does not need its own
--- schedule.
+-- deletes anything older than a day, and it rides the existing retention cron
+-- rather than having a schedule of its own.
+--
+-- That last sentence was written here before anything called the function
+-- (#494). For the first weeks it described an intention: the only mentions of
+-- `purge_rate_limit_counters` in the repository were this comment, the
+-- definition below, its grants, and one line of the runbook repeating the
+-- claim. `/api/cron/retention-purge` called `purge_expired_raw_text()` and
+-- nothing else, so this table grew with every request to a limited route —
+-- the same shape as the gap #185 found, where the function was the contract
+-- and no scheduler existed.
+--
+-- The caller is now `purgeRateLimitCounters()` in
+-- `sentra/frontend/src/lib/server/retentionPurge.ts`, invoked by
+-- `/api/cron/retention-purge` beside the raw-text purge and reported
+-- separately from it. `tests/cron-auth.test.mjs` drives the handler and fails
+-- if either call stops happening.
 
 create table if not exists public.rate_limit_counters (
   -- `<route>:<identifier>` — see `rateLimit.ts`. The identifier is an IP hash

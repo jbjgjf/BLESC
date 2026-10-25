@@ -130,7 +130,12 @@ const DELIVERY_FAILURES = [
  * without the scheduler's bearer token they answer 403 to everything, before
  * they touch Supabase.
  */
-const SCHEDULED_JOB_FAILURES = ["purge_expired_raw_text returned no count"];
+const SCHEDULED_JOB_FAILURES = [
+  "purge_expired_raw_text returned no count",
+  // The second purge on the same schedule (#494). It is reported beside the
+  // raw-text count rather than in place of it, and reaches the same one reader.
+  "purge_rate_limit_counters returned no count",
+];
 
 /** A programming mistake, raised where only a developer can see it. */
 const DEVELOPER_ERRORS = ["useAuth must be used inside AuthProvider"];

@@ -291,7 +291,12 @@ PILOT_BASE_URL=https://blesc-pilot.vercel.app CRON_SECRET=... \
 **ここが認可でないから許される判断**であり、本当の関門（`requireUser`・`requireOperator`・
 収集ゲート・RLS）はすべて別の場所にあり、すべて fail-closed である。
 
-行は `purge_rate_limit_counters()` が1日より古い窓を消す。
+行は `purge_rate_limit_counters()` が1日より古い窓を消す。呼ぶのは日次の
+`/api/cron/retention-purge`（§5.5）で、原文 purge の隣で走り、結果は
+レスポンスの `rate_limit_counters` に別立てで出る（#494）。読めなかった場合は
+`rate_limit_counters: null` と `rate_limit_counters_error` になり、黙った 0 には
+ならない。カウンタ掃除の失敗は HTTP の成否を変えない — この経路の成否が答えるのは
+「期限切れの原文を消したか」だけである。
 
 ## 5.7 「誰にも届かなかった」の通知（#178）
 
