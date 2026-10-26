@@ -1,3 +1,21 @@
+/*
+ * `eslint-plugin-react-hooks` is pinned to 7.0.1 in `package.json` `overrides`,
+ * not here, because the version is what decides which rules exist (#502).
+ *
+ * `eslint-config-next` depends on it with a caret, so a lockfile refresh moves
+ * it on its own. 7.1 added `react-hooks/set-state-in-effect` and
+ * `react-hooks/refs`, which error in 15 places this repository already has —
+ * `void load()` inside an effect on ten screens, and the lazily-initialised
+ * refs in `journal/page.tsx` and `VoiceMode.tsx`. They are not false positives
+ * and they are not this pin's business to argue with; they are a React change
+ * across twelve files, which CONTRIBUTING §2 says is its own pull request.
+ *
+ * The pin exists so that #498 — three advisories in `next`, two of them
+ * unauthenticated RCE — could ship as a version bump rather than wait behind
+ * that refactor. It is temporary by construction: #502 removes it, and until
+ * then this file is linting under the 7.0 rule set while the rest of the tree
+ * is on 16.4.
+ */
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";

@@ -13,9 +13,9 @@
     "reset": "tsx src/cli.ts reset"
   },
   "dependencies": {
-    "@openai/agents": "^0.18.0",
+    "@openai/agents": "^0.21.0",
     "@supabase/supabase-js": "^2.117.2",
-    "openai": "^7.27.0",
+    "openai": "^7.43.0",
     "pdf-lib": "^1.17.1",
     "playwright": "^1.63.0"
   },
