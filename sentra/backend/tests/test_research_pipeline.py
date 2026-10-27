@@ -22,6 +22,7 @@ from app.schemas.research import (
     ConversationRecallSummary,
     CognitiveProbeFeature,
     EntryEmbedding,
+    EntryField,
     EntrySession,
     EvalExample,
     GraphVersion,
@@ -732,3 +733,50 @@ def test_search_relevant_memory_objects_round_trips_through_sqlite_json_storage(
         assert isinstance(latest_event.result_refs_json, list)
         for ref in latest_event.result_refs_json:
             assert isinstance(ref.get("created_at"), str) or ref.get("created_at") is None
+
+
+def test_entry_fields_and_writing_features_agree_on_pauses():
+    """The same submission must not carry two `pause_count`s (#503).
+
+    The client measured gaps of 300 / 1800 / 400 ms and counted no pause (its
+    rule is "over 2500ms"). v1 replaced that 0 with a recount at 1500ms and
+    stored pause_count=1, max_pause_ms=1800 in `writing_features`, while
+    `entry_fields.metrics_json` kept the client's 0.
+    """
+    payload = _payload("pytest-session-pause-agreement")
+    times = [0, 300, 2100, 2500]
+    payload["telemetry"]["events"] = [
+        {
+            "field_name": "journal_entry",
+            "event_type": "input",
+            "occurred_at": "2026-06-11T00:00:00Z",
+            "relative_ms": at,
+            "value_length": index + 1,
+        }
+        for index, at in enumerate(times)
+    ]
+    payload["telemetry"]["field_metrics"]["journal_entry"].update(
+        {"input_count": 4, "revision_count": 0, "pause_count": 0, "max_pause_ms": 0}
+    )
+    with TestClient(app) as client:
+        response = client.post("/api/entries?user_id=test_pause_user&observation_type=daily", json=payload)
+        assert response.status_code == 200, response.text
+
+    with Session(engine) as session:
+        entry_session = session.exec(
+            select(EntrySession).where(EntrySession.client_session_id == "pytest-session-pause-agreement")
+        ).first()
+        assert entry_session is not None
+        fields = {
+            row.field_name: row.metrics_json
+            for row in session.exec(select(EntryField).where(EntryField.entry_session_id == entry_session.id)).all()
+        }
+        features = {
+            row.field_name: row
+            for row in session.exec(select(WritingFeature).where(WritingFeature.entry_session_id == entry_session.id)).all()
+        }
+        for field_name in ("journal_entry", "first_recall_30"):
+            assert features[field_name].pipeline_version == "writing-dynamics-v2"
+            stored = features[field_name].feature_json
+            assert stored["pause_count"] == fields[field_name]["pause_count"] == 0
+            assert stored["max_pause_ms"] == fields[field_name]["max_pause_ms"] == 0

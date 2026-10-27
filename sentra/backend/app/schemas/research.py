@@ -70,7 +70,7 @@ class WritingFeature(SQLModel, table=True):
     participant_code: str = Field(index=True)
     field_name: str = Field(index=True)
     feature_json: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
-    pipeline_version: str = "writing-dynamics-v1"
+    pipeline_version: str = "writing-dynamics-v2"
     created_at: datetime = Field(default_factory=utcnow)
 
 
