@@ -162,7 +162,7 @@
         "in_export": true,
         "implementation": "implemented",
         "code_ref": "FieldMetrics.pause_count (src/lib/telemetry.ts)",
-        "description": "フィールドごと。2500ms を超える入力の間隙を1回と数える。"
+        "description": "フィールドごと。2500ms を超える入力の間隙を1回と数える。この定義は収集面（`PAUSE_THRESHOLD_MS` / src/lib/telemetry.ts）と、研究用の行を作る `app/analytics/writing_dynamics.py`（`PAUSE_THRESHOLD_MS`）の両方に同じ値で置かれている。収集面が測った値は `entry_fields.metrics_json` にそのまま入り、`writing_features.feature_json` にも同じ値が入る（#503 までは後者だけ 1500ms で測り直されていた）。"
       },
       {
         "id": "revision_count",
@@ -170,7 +170,7 @@
         "in_export": true,
         "implementation": "implemented",
         "code_ref": "FieldMetrics.revision_count (src/lib/telemetry.ts)",
-        "description": "フィールドごと。"
+        "description": "フィールドごと。間隙の後に入力が再開したことを1回と数える（src/lib/telemetry.ts）。`writing_features.feature_json` には比（`revision_ratio` = revision_count / input_count）として入る。研究コンソール（src/app/research/page.tsx）は同じ名前を `abs(delta) > 1` で数えるが、パイロットが集めるのは収集面のほう。"
       },
       {
         "id": "field_order",
@@ -202,6 +202,11 @@
         "skipped"
       ],
       "code_ref": "EntryTelemetryCollector (src/lib/telemetry.ts)"
+    },
+    "stored_research_value": {
+      "code_ref": "app/analytics/writing_dynamics.py (writing_features.feature_json)",
+      "pipeline_version": "writing-dynamics-v2",
+      "description": "収集面の値を整形して `writing_features` に入れる。キーが届いているときは 0 でもその値を使い、届いていないフィールドだけ上のしきい値で測り直す。v1 の行はしきい値が 1500ms で、`max_pause_ms` が「間隙の最大」ではなく「打鍵間隔の最大」なので、v2 の行と並べて読めない（#503）。"
     }
   },
   "consent": {

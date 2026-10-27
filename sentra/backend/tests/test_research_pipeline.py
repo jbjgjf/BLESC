@@ -1,5 +1,6 @@
 import os
 import json
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from app.schemas.research import (
     ConversationRecallSummary,
     CognitiveProbeFeature,
     EntryEmbedding,
+    EntryField,
     EntrySession,
     EvalExample,
     GraphVersion,
@@ -150,6 +152,76 @@ def test_submission_creates_research_artifacts():
         assert len(session.exec(select(EntryEmbedding)).all()) >= 5
         assert len(session.exec(select(EvalExample)).all()) >= 1
         assert len(session.exec(select(ModelRun)).all()) >= 6
+
+
+def test_the_two_tables_report_the_same_writing_process():
+    """`entry_fields` and `writing_features` cannot disagree about one field (#503).
+
+    The collector's figures land in `entry_fields.metrics_json` unchanged and are
+    reshaped into `writing_features.feature_json`. This posts a submission whose
+    `journal_entry` was typed continuously — gaps of 300ms, 1800ms and 400ms, none
+    over the documented 2500ms threshold, so the collector reports no pause — and
+    reads both rows back.
+
+    Under `writing-dynamics-v1` the second table said `pause_count: 1` and
+    `max_pause_ms: 1800` for this submission, because a reported `0` was falsy and
+    the recomputation ran at `>= 1500ms`.
+    """
+    session_id = "pytest-session-writing-dynamics"
+    payload = deepcopy(_payload(session_id))
+    payload["telemetry"]["events"] = [
+        {
+            "field_name": "journal_entry",
+            "event_type": "input",
+            "occurred_at": "2026-06-11T00:00:01Z",
+            "relative_ms": at,
+            "value_length": length,
+        }
+        for at, length in ((1000, 10), (1300, 20), (3100, 30), (3500, 40))
+    ]
+    payload["telemetry"]["field_metrics"] = {
+        "journal_entry": {
+            "focus_count": 1,
+            "blur_count": 1,
+            "input_count": 4,
+            "deletion_count": 0,
+            "paste_count": 0,
+            "revision_count": 0,
+            "pause_count": 0,
+            "max_pause_ms": 0,
+            "active_typing_ms": 2500,
+        }
+    }
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/entries?user_id=test_writing_dynamics_user&observation_type=daily",
+            json=payload,
+        )
+        assert response.status_code == 200, response.text
+
+    with Session(engine) as session:
+        entry_session = session.exec(
+            select(EntrySession).where(EntrySession.client_session_id == session_id)
+        ).one()
+        field = session.exec(
+            select(EntryField)
+            .where(EntryField.entry_session_id == entry_session.id)
+            .where(EntryField.field_name == "journal_entry")
+        ).one()
+        feature = session.exec(
+            select(WritingFeature)
+            .where(WritingFeature.entry_session_id == entry_session.id)
+            .where(WritingFeature.field_name == "journal_entry")
+        ).one()
+
+    collected = field.metrics_json
+    stored = feature.feature_json
+    assert collected["pause_count"] == 0
+    assert collected["max_pause_ms"] == 0
+    for key in ("pause_count", "max_pause_ms", "input_count", "paste_count", "focus_count", "blur_count"):
+        assert stored[key] == collected[key], key
+    assert feature.pipeline_version == "writing-dynamics-v2"
 
 
 def test_eval_review_and_fine_tuning_dataset_export():
