@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
-import { decideAccess, demoApplies, isPublicRoute, requiredRole } from "../src/lib/routeAccess.ts";
+import { decideAccess, demoApplies, isPublicRoute, requiredRole, safeNextPath } from "../src/lib/routeAccess.ts";
 
 const read = (relative) => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
 const code = (text) => text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
@@ -166,5 +166,62 @@ describe("one place per decision", () => {
 
   it("exports the Next 16 convention, not the deprecated one", () => {
     assert.match(proxy, /export async function proxy\(/);
+  });
+});
+
+describe("the post-sign-in destination stays on this origin (#488)", () => {
+  const cases = [
+    // [next, expected]
+    ["/educator/roster?tab=alerts", "/educator/roster?tab=alerts"],
+    ["/journal", "/journal"],
+    ["/recall#latest", "/recall#latest"],
+    ["/", "/"],
+    ["https://example.invalid/blesc/", "/"],
+    ["http://example.invalid", "/"],
+    ["//example.invalid/", "/"],
+    ["/\\example.invalid", "/"],
+    ["http:/\\/\\example.invalid", "/"],
+    ["javascript:alert(1)", "/"],
+    ["JaVaScRiPt:alert(1)", "/"],
+    ["data:text/html,hi", "/"],
+    [" //example.invalid", "/"],
+    ["/\t/example.invalid", "/"],
+    ["/\n/example.invalid", "/"],
+    ["journal", "/"],
+    ["", "/"],
+    [null, "/"],
+    [undefined, "/"],
+    ["/login", "/"],
+    ["/login?next=%2Fjournal", "/"],
+    ["/login/", "/"],
+    ["/loginhelp", "/loginhelp"],
+  ];
+
+  for (const [next, expected] of cases) {
+    it(`${JSON.stringify(next)} → ${expected}`, () => {
+      assert.equal(safeNextPath(next), expected);
+    });
+  }
+
+  it("keeps every `next` that decideAccess writes, unchanged", () => {
+    for (const [pathname, search] of [
+      ["/educator/roster", "?tab=alerts"],
+      ["/journal", ""],
+      ["/pilot/triage", "?a=1&b=%2F%2Fx"],
+      ["/recall", "?q=%E6%97%A5%E6%9C%AC"],
+    ]) {
+      const decision = decide(pathname, { search });
+      assert.equal(decision.action, "redirect");
+      const next = new URL(decision.location, "http://x").searchParams.get("next");
+      assert.equal(safeNextPath(next), `${pathname}${search}`);
+    }
+  });
+
+  it("both places that read `next` pass it through safeNextPath", () => {
+    for (const file of ["../src/app/login/page.tsx", "../src/components/AuthShell.tsx"]) {
+      const source = code(read(file));
+      assert.match(source, /safeNextPath\(searchParams\.get\("next"\)\)/, file);
+      assert.doesNotMatch(source, /replace\(searchParams\.get\("next"\)/, file);
+    }
   });
 });
