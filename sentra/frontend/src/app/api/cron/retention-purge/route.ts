@@ -30,7 +30,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { authorizedCron } from "@/lib/server/cronAuth";
-import { purgeExpiredRawText } from "@/lib/server/retentionPurge";
+import { runRetentionPurge } from "@/lib/server/retentionPurge";
 import { serviceRoleClient } from "@/lib/server/supabaseWriter";
 
 export const runtime = "nodejs";
@@ -47,9 +47,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ detail: "supabase_not_configured" }, { status: 503 });
   }
 
-  // The call itself lives in `lib/server/retentionPurge.ts` so it can be
-  // exercised without a Next runtime (#204).
-  const result = await purgeExpiredRawText(service);
-  if ("error" in result) return NextResponse.json({ detail: result.error }, { status: 502 });
-  return NextResponse.json(result);
+  // The calls themselves live in `lib/server/retentionPurge.ts` so they can be
+  // exercised without a Next runtime (#204). Expired rate-limit windows are
+  // cleared on the same run (#494); that result is reported alongside, but the
+  // status follows the raw-text purge, the promise made to participants.
+  const { rawText, rateLimitCounters } = await runRetentionPurge(service);
+  if ("error" in rawText) {
+    return NextResponse.json({ detail: rawText.error, rate_limit_counters: rateLimitCounters }, { status: 502 });
+  }
+  return NextResponse.json({ ...rawText, rate_limit_counters: rateLimitCounters });
 }

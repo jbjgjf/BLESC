@@ -61,3 +61,72 @@ export async function purgeExpiredRawText(service: SupabaseClient): Promise<Purg
   if (purged > 0) console.info(`[cron:retention] purged ${purged} expired raw-text row(s)`);
   return { purged };
 }
+
+/**
+ * Clearing expired rate-limit windows (#494).
+ *
+ * `20260921000000_rate_limit_counters.sql` said this table "is called by the
+ * existing retention cron, so this table does not grow without bound and does
+ * not need its own schedule". Nothing called it: the retention cron only ever
+ * ran `purge_expired_raw_text()`. The judgement that it needs no schedule of
+ * its own stands; what was missing was the call, and it is here.
+ *
+ * Same rules as the raw-text purge: a count is a finite number, anything else
+ * is a failure with a message, never a quiet zero. Like
+ * `purge_expired_raw_text()`, the function is SECURITY INVOKER with EXECUTE
+ * granted only to `service_role`.
+ */
+export async function purgeRateLimitCounters(service: SupabaseClient): Promise<PurgeResult> {
+  let data: unknown;
+  let error: { message: string } | null;
+  try {
+    ({ data, error } = await service.rpc("purge_rate_limit_counters"));
+  } catch (thrown) {
+    error = { message: thrown instanceof Error ? thrown.message : String(thrown) };
+  }
+
+  if (error) {
+    console.error("[cron:retention] rate-limit counter purge failed", error.message);
+    return { error: error.message };
+  }
+
+  const purged = purgedCount(data);
+  if (purged === null) {
+    console.error(
+      "[cron:retention] purge_rate_limit_counters() did not return a count; " +
+        "treating this as a failure rather than reporting a purge of zero",
+      { received: typeof data },
+    );
+    return { error: "purge_rate_limit_counters returned no count" };
+  }
+
+  if (purged > 0) console.info(`[cron:retention] purged ${purged} expired rate-limit window(s)`);
+  return { purged };
+}
+
+export type RetentionRun = {
+  /** The heavier promise: decides the route's status. */
+  rawText: PurgeResult;
+  rateLimitCounters: PurgeResult;
+};
+
+/**
+ * Everything the retention cron runs, each reported on its own (#494).
+ *
+ * The two calls are independent. A failed raw-text purge does not skip the
+ * counters, and a failed counter purge does not hide or change the raw-text
+ * result, which is the promise made to participants and so the one the
+ * route's status follows.
+ */
+export async function runRetentionPurge(service: SupabaseClient): Promise<RetentionRun> {
+  let rawText: PurgeResult;
+  try {
+    rawText = await purgeExpiredRawText(service);
+  } catch (thrown) {
+    const message = thrown instanceof Error ? thrown.message : String(thrown);
+    console.error("[cron:retention] purge failed; retained text is past its expiry", message);
+    rawText = { error: message };
+  }
+  const rateLimitCounters = await purgeRateLimitCounters(service);
+  return { rawText, rateLimitCounters };
+}

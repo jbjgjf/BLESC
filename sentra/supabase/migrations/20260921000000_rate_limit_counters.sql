@@ -30,9 +30,12 @@
 -- ## Retention
 --
 -- Rows are garbage after their window closes. `purge_rate_limit_counters()`
--- deletes anything older than a day and is called by the existing retention
--- cron, so this table does not grow without bound and does not need its own
--- schedule.
+-- deletes anything older than a day. It is called by the retention cron,
+-- `/api/cron/retention-purge` (`runRetentionPurge` in
+-- `src/lib/server/retentionPurge.ts`), on the same run as
+-- `purge_expired_raw_text()`, so this table does not grow without bound and
+-- does not need its own schedule. (Until #494 nothing called it; this comment
+-- said it was called before it was.)
 
 create table if not exists public.rate_limit_counters (
   -- `<route>:<identifier>` — see `rateLimit.ts`. The identifier is an IP hash
