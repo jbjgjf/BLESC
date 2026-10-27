@@ -20,7 +20,12 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 import { authorizedCron, cronSecretConfigured } from "../src/lib/server/cronAuth.ts";
-import { purgeExpiredRawText, purgedCount } from "../src/lib/server/retentionPurge.ts";
+import {
+  purgeExpiredRawText,
+  purgeRateLimitCounters,
+  purgedCount,
+  runRetentionPurge,
+} from "../src/lib/server/retentionPurge.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (path) => readFileSync(resolve(HERE, path), "utf8");
@@ -183,6 +188,87 @@ describe("purging expired raw text", () => {
   });
 });
 
+describe("the retention cron also clears rate-limit windows (#494)", () => {
+  /** A client whose answer depends on which function is called. */
+  const client = (outcomes) => {
+    const calls = [];
+    return {
+      calls,
+      rpc(name) {
+        calls.push(name);
+        const outcome = outcomes[name];
+        if (outcome instanceof Error) return Promise.reject(outcome);
+        return Promise.resolve(outcome);
+      },
+    };
+  };
+
+  it("calls both functions the migrations granted to service_role", async () => {
+    const service = client({
+      purge_expired_raw_text: { data: 3, error: null },
+      purge_rate_limit_counters: { data: 120, error: null },
+    });
+    const result = await runRetentionPurge(service);
+    assert.deepEqual(service.calls, ["purge_expired_raw_text", "purge_rate_limit_counters"]);
+    assert.deepEqual(result, { rawText: { purged: 3 }, rateLimitCounters: { purged: 120 } });
+  });
+
+  it("a failed counter purge does not touch the raw-text result", async () => {
+    const service = client({
+      purge_expired_raw_text: { data: 3, error: null },
+      purge_rate_limit_counters: { data: null, error: { message: "permission denied" } },
+    });
+    const result = await runRetentionPurge(service);
+    assert.deepEqual(result.rawText, { purged: 3 });
+    assert.deepEqual(result.rateLimitCounters, { error: "permission denied" });
+  });
+
+  it("a failed raw-text purge does not skip the counters", async () => {
+    for (const failure of [{ data: null, error: { message: "boom" } }, new Error("network down")]) {
+      const service = client({
+        purge_expired_raw_text: failure,
+        purge_rate_limit_counters: { data: 0, error: null },
+      });
+      const result = await runRetentionPurge(service);
+      assert.ok("error" in result.rawText);
+      assert.deepEqual(result.rateLimitCounters, { purged: 0 });
+      assert.deepEqual(service.calls, ["purge_expired_raw_text", "purge_rate_limit_counters"]);
+    }
+  });
+
+  it("reads the counter count by the same rule: a missing count is a failure, not zero", async () => {
+    for (const data of [null, undefined, "12"]) {
+      const result = await purgeRateLimitCounters(client({ purge_rate_limit_counters: { data, error: null } }));
+      assert.ok("error" in result, `${String(data)} is not a count`);
+    }
+    assert.deepEqual(
+      await purgeRateLimitCounters(client({ purge_rate_limit_counters: { data: 0, error: null } })),
+      { purged: 0 },
+    );
+  });
+
+  it("a thrown counter call is reported, not raised", async () => {
+    const result = await purgeRateLimitCounters(client({ purge_rate_limit_counters: new Error("socket hang up") }));
+    assert.deepEqual(result, { error: "socket hang up" });
+  });
+
+  it("the route runs both and keeps its status on the raw-text result", () => {
+    const route = read("../src/app/api/cron/retention-purge/route.ts");
+    assert.ok(route.includes("runRetentionPurge(service)"));
+    assert.match(route, /if \("error" in rawText\)/);
+    assert.ok(route.includes("rate_limit_counters"));
+  });
+
+  it("the migration and runbook point at the caller that exists", () => {
+    const migration = read("../../supabase/migrations/20260921000000_rate_limit_counters.sql");
+    const runbook = read("../../../docs/pilot/infrastructure-runbook.md");
+    for (const text of [migration, runbook]) {
+      assert.ok(text.includes("/api/cron/retention-purge"));
+      assert.ok(text.includes("purge_rate_limit_counters()"));
+    }
+  });
+});
+
 describe("the routes behind the gate", () => {
   it("both cron routes check authorisation before doing anything", () => {
     for (const path of ["retention-purge", "safety-dispatch"]) {
@@ -211,7 +297,8 @@ describe("the routes behind the gate", () => {
     // If the RPC moves back inline, this file can no longer assert anything
     // about it, which is the state #204 was filed against.
     const route = read("../src/app/api/cron/retention-purge/route.ts");
-    assert.ok(route.includes("purgeExpiredRawText"));
+    assert.ok(route.includes("runRetentionPurge"));
     assert.ok(!route.includes('rpc("purge_expired_raw_text")'));
+    assert.ok(!route.includes('rpc("purge_rate_limit_counters")'));
   });
 });
