@@ -162,7 +162,7 @@
         "in_export": true,
         "implementation": "implemented",
         "code_ref": "FieldMetrics.pause_count (src/lib/telemetry.ts)",
-        "description": "フィールドごと。2500ms を超える入力の間隙を1回と数える。"
+        "description": "フィールドごと。2500ms を超える入力の間隙を1回と数える。収集面の値は entry_fields.metrics_json にそのまま入る。writing_features.feature_json に保存される値を計算しているのは sentra/backend/app/analytics/writing_dynamics.py（writing-dynamics-v2）で、収集面が送った値を 0 も含めてそのまま採用し、送られていないときだけ同じ規則（2500ms を超える間隙）で数え直す（#503）。max_pause_ms も同じで、間隙が無ければ 0。"
       },
       {
         "id": "revision_count",
@@ -170,7 +170,7 @@
         "in_export": true,
         "implementation": "implemented",
         "code_ref": "FieldMetrics.revision_count (src/lib/telemetry.ts)",
-        "description": "フィールドごと。"
+        "description": "フィールドごと。収集面では、間隙（2500ms 超）の後の入力の再開を1回と数える。writing_features.feature_json に保存される値を計算しているのは sentra/backend/app/analytics/writing_dynamics.py（writing-dynamics-v2）で、収集面が送った値を 0 も含めてそのまま採用する（#503）。送られていないときの数え直し（metadata.delta の絶対値が 1 を超える入力）は研究コンソール (src/app/research/page.tsx) の定義で、収集面は metadata を付けないので生徒の提出では使われない。"
       },
       {
         "id": "field_order",

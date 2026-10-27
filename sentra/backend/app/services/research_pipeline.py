@@ -55,6 +55,7 @@ from ..analytics.pattern_mining import (
     summarize_patterns,
 )
 from ..analytics.cognitive_probe import cognitive_probe_features
+from ..analytics.writing_dynamics import PIPELINE_VERSION as WRITING_DYNAMICS_PIPELINE_VERSION
 from ..analytics.writing_dynamics import writing_dynamics_for_session
 from ..ontology.relation_endpoints import (
     relation_source_id as _relation_source_id,
@@ -111,7 +112,7 @@ GRAPH_RAG_VERSION = "sentra-graph-rag-v2"
 SEMANTIC_RAG_VERSION = "sentra-semantic-rag-v2"
 PATTERN_RAG_VERSION = "sentra-pattern-rag-v1"
 STATIC_KNOWLEDGE_RAG_VERSION = "blesc-static-knowledge-rag-v1"
-WRITING_DYNAMICS_VERSION = "writing-dynamics-v1"
+WRITING_DYNAMICS_VERSION = WRITING_DYNAMICS_PIPELINE_VERSION
 COGNITIVE_PROBE_VERSION = "cognitive-probe-v1"
 CONVERSATION_RECALL_VERSION = "conversation-recall-30-v1"
 CONVERSATION_RECALL_WINDOW_TURNS = int(os.getenv("SENTRA_CONVERSATION_RECALL_TURNS", "30"))
