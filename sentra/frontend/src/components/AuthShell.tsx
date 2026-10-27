@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useDemoMode } from "@/lib/demo";
 import { isDemoOnlyRoute } from "@/lib/demoOnlyRoutes";
+import { safeNextPath } from "@/lib/routeAccess";
 import { contextForPath } from "@/lib/blesc/context";
 import { useIsHydrated } from "@/lib/hydration";
 import { Icon } from "@/components/ui/Icon";
@@ -50,7 +51,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     }
     if (authed && isLoginRoute) {
-      router.replace(searchParams.get("next") || "/");
+      router.replace(safeNextPath(searchParams.get("next")));
     }
   }, [authed, isLoading, isLoginRoute, isPublicRoute, pathname, router, searchParams]);
 

@@ -89,6 +89,30 @@ function under(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
+/**
+ * Where to go after signing in, from the `next` query parameter (#488).
+ *
+ * `next` is only text in a URL, so anyone can write anything into it, and it
+ * is followed right after a student has typed their password. Only a path on
+ * this origin is kept: it must start with a single `/`. `//host` and `/\host`
+ * are read by browsers as another host, so they are refused, and so is any
+ * control character, since browsers drop tabs and newlines from a URL (`/\t/host`
+ * becomes `//host`). Everything else — an absolute or scheme URL, the empty
+ * string, `null` — goes to `/`.
+ *
+ * This is a shape check, not a list of pages, so new pages need no change here.
+ * A `next` pointing at `/login` itself would loop and also goes to `/`.
+ */
+export function safeNextPath(value: string | null | undefined): string {
+  if (typeof value !== "string") return "/";
+  if (!value.startsWith("/")) return "/";
+  if (value[1] === "/" || value[1] === "\\") return "/";
+  if (/[\u0000-\u001f\u007f]/.test(value)) return "/";
+  const path = value.split(/[?#]/, 1)[0];
+  if (under(path, "/login")) return "/";
+  return value;
+}
+
 export function isPublicRoute(pathname: string): boolean {
   return [...PUBLIC_ROUTES, ...STATIC_EXPORT_ROUTES].some((route) => under(pathname, route));
 }
