@@ -42,11 +42,11 @@ import {
   type ExportEntryRow,
   type ExportSelfReportRow,
 } from "@/lib/researchExport";
+import { fetchAllRows } from "@/lib/server/pagedSelect";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const MAX_ROWS = 1000;
 const DEFAULT_TIMEZONE = "Asia/Tokyo";
 
 function studyTimezone(): string {
@@ -71,7 +71,13 @@ export async function GET(request: NextRequest) {
 
   const includeRawText = request.nextUrl.searchParams.get("include_raw_text") === "1";
   const researchCode = request.nextUrl.searchParams.get("research_code");
-  const limit = Math.min(Number(request.nextUrl.searchParams.get("limit") ?? 200) || 200, MAX_ROWS);
+  // `limit` is gone (#509). It used to cap `entries` at a caller-chosen number,
+  // itself capped at 1,000 — below the pilot's 50 x 28 = 1,400 — and the
+  // response could not say whether it had been cut. The export now reads every
+  // row in scope or fails; the only way to narrow it is `research_code`, which
+  // the audit row records. A caller still sending `limit` is refused rather than
+  // silently handed more than it asked for.
+  const limitRequested = request.nextUrl.searchParams.has("limit");
 
   const audit = async (
     status: "completed" | "denied" | "failed",
@@ -84,7 +90,11 @@ export async function GET(request: NextRequest) {
       // The scope is recorded as the pseudonym the caller asked for. Writing a
       // `participant_id` here would put the identifier this export exists to
       // avoid into the audit log of the export that avoided it.
-      participant_scope_json: { research_code: researchCode, limit },
+      //
+      // `complete: true` marks rows written after #509: the read behind
+      // `row_count` was the whole scope, never a cap. Older rows carry `limit`
+      // instead, and theirs may have been cut at it.
+      participant_scope_json: { research_code: researchCode, complete: true },
       row_count: rowCount,
       included_raw_text: includeRawText,
       status,
@@ -98,22 +108,37 @@ export async function GET(request: NextRequest) {
     return jsonError("この操作は許可されていません。", 403);
   }
 
+  if (limitRequested) {
+    await audit("failed", 0, "limit parameter is no longer supported");
+    return jsonError(
+      "limit は廃止されました。エクスポートは範囲内の全件を返します。絞り込むには research_code を指定してください。",
+      400,
+    );
+  }
+
   // Enrollments first. They carry the pseudonym, the window start every day
   // index is measured from, and the withdrawal flag — so a caller scoping by
   // `research_code` is resolved here and never has to name a participant id.
-  let enrollmentQuery = service
-    .from("pilot_enrollments")
-    .select(
-      "participant_id, research_code, cohort, study_id, state, collection_started_at, collection_ends_at, withdrawn_at",
-    );
-  if (researchCode) enrollmentQuery = enrollmentQuery.eq("research_code", researchCode);
-
-  const enrollmentResult = await enrollmentQuery;
-  if (enrollmentResult.error) {
-    await audit("failed", 0, enrollmentResult.error.message);
-    return jsonError(enrollmentResult.error.message, 502);
+  //
+  // Every read below that can grow with the pilot goes through `fetchAllRows`
+  // (#509): PostgREST caps a response at `db-max-rows` without reporting it, so
+  // a plain select returns a shorter list as a success. A read that cannot be
+  // completed fails the export instead of shortening it.
+  const enrollmentResult = await fetchAllRows<ExportEnrollmentRow>((from, to) => {
+    let query = service
+      .from("pilot_enrollments")
+      .select(
+        "participant_id, research_code, cohort, study_id, state, collection_started_at, collection_ends_at, withdrawn_at",
+        { count: "exact" },
+      );
+    if (researchCode) query = query.eq("research_code", researchCode);
+    return query.order("id", { ascending: true }).range(from, to);
+  });
+  if ("error" in enrollmentResult) {
+    await audit("failed", 0, enrollmentResult.error);
+    return jsonError(enrollmentResult.error, 502);
   }
-  const enrollments = (enrollmentResult.data ?? []) as ExportEnrollmentRow[];
+  const enrollments = enrollmentResult.rows;
 
   if (enrollments.length === 0) {
     await audit("completed", 0, "no enrollments in scope");
@@ -149,37 +174,54 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const entryResult = await service
-    .from("entries")
-    .select(
-      "id, participant_id, created_at, observation_type, extraction_json, raw_text_ciphertext, raw_text_expires_at",
-    )
-    .in("participant_id", activeParticipantIds)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (entryResult.error) {
-    await audit("failed", 0, entryResult.error.message);
-    return jsonError(entryResult.error.message, 502);
+  const entryResult = await fetchAllRows<ExportEntryRow>((from, to) =>
+    service
+      .from("entries")
+      .select(
+        "id, participant_id, created_at, observation_type, extraction_json, raw_text_ciphertext, raw_text_expires_at",
+        { count: "exact" },
+      )
+      .in("participant_id", activeParticipantIds)
+      .order("created_at", { ascending: false })
+      // `id` makes the order total, so consecutive ranges neither overlap nor skip.
+      .order("id", { ascending: false })
+      .range(from, to),
+  );
+  if ("error" in entryResult) {
+    await audit("failed", 0, entryResult.error);
+    return jsonError(entryResult.error, 502);
   }
-  const entries = (entryResult.data ?? []) as ExportEntryRow[];
+  const entries = entryResult.rows;
 
   // Consent per participant, read now — not inherited from whatever was true
   // when the row was written. One lookup per distinct participant.
   const consentByParticipant = new Map<string, ExportConsentState>();
   const participantIds = Array.from(new Set(entries.map((row) => row.participant_id)));
   if (participantIds.length > 0) {
-    const consentRows = await service
-      .from("consent_records")
-      .select(
-        "participant_id, app_use, research_analysis, anonymized_export, raw_text_retention, model_training_use, minor_assent, guardian_consent, consent_version, document_version, status, granted_at, revoked_at, created_at",
-      )
-      .in("participant_id", participantIds)
-      .order("granted_at", { ascending: false });
-    if (consentRows.error) {
-      await audit("failed", 0, consentRows.error.message);
-      return jsonError(consentRows.error.message, 502);
+    // Consent history, not one row per participant: grants, revocations and a
+    // guardian's item-by-item answers all add rows. Cut at `db-max-rows`, the
+    // global newest-first order drops whoever consented earliest and never
+    // changed it, and they would be counted as `no_research_consent` — a false
+    // reason in the audit row, not just a shorter dataset (#509).
+    const consentRows = await fetchAllRows<Record<string, unknown>>((from, to) =>
+      service
+        .from("consent_records")
+        .select(
+          "participant_id, app_use, research_analysis, anonymized_export, raw_text_retention, model_training_use, minor_assent, guardian_consent, consent_version, document_version, status, granted_at, revoked_at, created_at",
+          { count: "exact" },
+        )
+        .in("participant_id", participantIds)
+        .order("granted_at", { ascending: false })
+        // A tie-break for paging, as in the dashboard; not a rule about which
+        // consent row is current (#272).
+        .order("id", { ascending: false })
+        .range(from, to),
+    );
+    if ("error" in consentRows) {
+      await audit("failed", 0, consentRows.error);
+      return jsonError(consentRows.error, 502);
     }
-    for (const record of (consentRows.data ?? []) as Array<Record<string, unknown>>) {
+    for (const record of consentRows.rows) {
       const key = String(record.participant_id);
       // Ordered newest first, so the first row seen for a participant is the
       // current one and later ones are superseded history.
@@ -228,6 +270,9 @@ export async function GET(request: NextRequest) {
   }
 
   // The fixed daily self-report, keyed to the entry it was submitted with.
+  //
+  // Still one `in("entry_id", …)` without paging: that read is #451's, and is
+  // fixed there rather than here (#509 §3).
   //
   // Scoped by `entry_id` and not by participant: an entry excluded above — a
   // day outside the window, a withdrawn participant — must not pull its

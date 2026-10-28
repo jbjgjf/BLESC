@@ -3,6 +3,10 @@
  * use: `.from(table)` with select / insert / update and the filters below, and
  * `.rpc(name, args)`.
  *
+ * Reads are capped at `maxRows` per response (default unlimited) the way
+ * PostgREST caps them at `db-max-rows`: silently, with a success and, when the
+ * select asked for `{ count: "exact" }`, the full count beside the short page.
+ *
  * It applies the filters to real rows rather than recording that they were
  * called, so a test can state the behaviour ("the withdrawn row is not
  * returned") instead of the query text. A filter it does not implement throws:
@@ -17,13 +21,16 @@ class Query {
     this.columns = null;
     this.action = "select";
     this.payload = null;
-    this.ordering = null;
+    this.ordering = [];
     this.max = null;
+    this.window = null;
+    this.countRequested = false;
     this.cardinality = null;
   }
 
-  select(columns = "*") {
+  select(columns = "*", options = {}) {
     this.columns = columns;
+    this.countRequested = options.count === "exact";
     return this;
   }
   insert(rows) {
@@ -40,6 +47,11 @@ class Query {
     this.filters.push((row) => row[column] === value);
     return this;
   }
+  in(column, values) {
+    const allowed = new Set(values);
+    this.filters.push((row) => allowed.has(row[column]));
+    return this;
+  }
   is(column, value) {
     if (value !== null) throw new Error("fake-supabase: .is() supports null only");
     this.filters.push((row) => row[column] === null || row[column] === undefined);
@@ -52,7 +64,12 @@ class Query {
     return this;
   }
   order(column, { ascending = true } = {}) {
-    this.ordering = { column, ascending };
+    // Successive calls add sort keys, first call primary, as in PostgREST.
+    this.ordering.push({ column, ascending });
+    return this;
+  }
+  range(from, to) {
+    this.window = { from, to };
     return this;
   }
   limit(count) {
@@ -89,13 +106,20 @@ class Query {
     }
     if (this.action === "update") matched.forEach((row) => Object.assign(row, this.payload));
 
-    if (this.ordering) {
-      const { column, ascending } = this.ordering;
-      matched = [...matched].sort(
-        (a, b) => (a[column] < b[column] ? -1 : a[column] > b[column] ? 1 : 0) * (ascending ? 1 : -1),
-      );
+    if (this.ordering.length > 0) {
+      matched = [...matched].sort((a, b) => {
+        for (const { column, ascending } of this.ordering) {
+          const order = a[column] < b[column] ? -1 : a[column] > b[column] ? 1 : 0;
+          if (order !== 0) return ascending ? order : -order;
+        }
+        return 0;
+      });
     }
+    const total = matched.length;
+    if (this.window) matched = matched.slice(this.window.from, this.window.to + 1);
     if (this.max !== null) matched = matched.slice(0, this.max);
+    if (this.action === "select" && this.db.maxRows !== null) matched = matched.slice(0, this.db.maxRows);
+    const count = this.countRequested ? { count: total } : {};
 
     // Only the selected columns come back, as from PostgREST: a column the
     // store did not ask for cannot reach its caller.
@@ -105,7 +129,7 @@ class Query {
       wanted ? Object.fromEntries(wanted.map((name) => [name, row[name] ?? null])) : { ...row },
     );
 
-    if (!this.cardinality) return { data: projected, error: null };
+    if (!this.cardinality) return { data: projected, error: null, ...count };
     if (projected.length > 1 || (this.cardinality === "exactly" && projected.length === 0)) {
       return { data: null, error: { code: "PGRST116", message: "the result is not a single row" } };
     }
@@ -118,9 +142,10 @@ class Query {
  * @param rpc     `{ function_name: (args, callIndex) => ({ data, error }) }`.
  * @param defaults `{ table_name: (rowCount) => row }`, the column defaults an
  *                 insert gets — an id, a timestamp.
+ * @param maxRows  the per-response cap on reads (`db-max-rows`); null for none.
  */
-export function fakeSupabase({ tables = {}, rpc = {}, defaults = {} } = {}) {
-  const db = { tables, calls: [], rpcCalls: [], failures: new Map(), defaults };
+export function fakeSupabase({ tables = {}, rpc = {}, defaults = {}, maxRows = null } = {}) {
+  const db = { tables, calls: [], rpcCalls: [], failures: new Map(), defaults, maxRows };
 
   return {
     tables,
