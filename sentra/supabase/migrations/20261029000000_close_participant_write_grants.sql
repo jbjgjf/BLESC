@@ -100,6 +100,13 @@ revoke delete on public.entries from authenticated;
 -- `eval_examples` は、Supabase 側では書き込みも読み出しもコードから一度も
 -- 行われていない（`export_jobs` の扱いは #515）。
 --
+-- `followup_responses` はこの一覧に**入れない**。アプリの書き込みは
+-- `POST /api/entries/followups` の service role だけだが、`#133` の RLS 契約
+-- （`supabase/tests/pilot_consent_rls.test.sql:173`）が「参加者が自分の
+-- 追加質問の答えを insert できる」ことを検査している。契約がある権限を
+-- migration で黙って落とすのは、この migration がやっていることの逆である。
+-- サーバー経路だけに寄せるかどうかは #514 に残した判断で、決まってから閉じる。
+--
 -- 行の見え方は変わらない：`*_select_own` の `using` は `*_own_all` と同じ
 -- `(select auth.uid()) = owner_user_id` である。
 
@@ -127,9 +134,7 @@ begin
     'longitudinal_patterns',
     -- 20260621000000_graph_index_and_memory_objects.sql
     'graph_nodes',
-    'graph_edges',
-    -- 20260906000000_pilot_consent_and_submission_integrity.sql
-    'followup_responses'
+    'graph_edges'
   ] loop
     execute format('drop policy if exists %I on public.%I', target || '_own_all', target);
     execute format('drop policy if exists %I on public.%I', target || '_select_own', target);

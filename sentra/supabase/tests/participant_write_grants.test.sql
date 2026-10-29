@@ -20,6 +20,10 @@
 --   2. その表の select は残っている — 1 が「全部落とした」で通らないこと
 --   3. ブラウザが書いている表は、書けるまま（この migration が行きすぎていないこと）
 --   4. `service_role` は何も失っていない
+--
+-- `followup_responses` はここに入らない。アプリの書き込みは service role だけ
+-- だが、#133 の RLS 契約（`pilot_consent_rls.test.sql:173`）が参加者の insert を
+-- 検査している。閉じるかどうかは #514 に残した判断である。
 
 begin;
 
@@ -34,8 +38,8 @@ insert into server_written values
   ('cognitive_probe_features'), ('entry_research_links'), ('extractions'),
   ('graph_versions'), ('graph_change_events'), ('entry_embeddings'),
   ('retrieval_events'), ('longitudinal_features'), ('eval_examples'), ('export_jobs'),
-  -- 20260614140000 / 20260621000000 / 20260906000000
-  ('longitudinal_patterns'), ('graph_nodes'), ('graph_edges'), ('followup_responses'),
+  -- 20260614140000 / 20260621000000
+  ('longitudinal_patterns'), ('graph_nodes'), ('graph_edges'),
   -- 20260529000100, 命令ごとに policy が分かれている2表
   ('insights'), ('graph_snapshots'),
   -- 20260927020000 が先に閉じた表。ここで戻っていないことを確かめる
