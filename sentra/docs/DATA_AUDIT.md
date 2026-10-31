@@ -42,6 +42,12 @@ BLESC tracks extensive data across interactions, memory, graphs, and reflection.
 
 *Note: All JSONB structures above aggregate the specific metric keys outlined in the Data Inventory (e.g., `negative_self_focus_score` is stored inside `cognitive_probe_features.feature_json`).*
 
+### The `day` columns: study-timezone calendar days
+
+`graph_snapshots.day`, `insights.day` and `longitudinal_features.window_start` / `window_end` are **calendar days in the study timezone (`Asia/Tokyo`, `STUDY_TIME_ZONE` in `frontend/src/lib/pilotOps.ts`)**, not UTC days. An entry written at 08:00 JST and one written at 21:00 JST on the same school day carry the same `day`. `created_at` columns stay UTC instants. The convention is declared once, in `frontend/src/lib/studyDay.ts` (`studyDay()`), and the research export's `day_index` counts on the same calendar (#521).
+
+Rows written before #521 carry the **UTC** calendar day; entries submitted between 00:00 and 09:00 JST in those rows sit one day early. Migrating or discarding them is a separate decision.
+
 ---
 
 ## 3. Data Flow Mapping

@@ -45,6 +45,16 @@ work. A sequence of snapshots is not a temporal graph:
 | `TemporalEvent` | append-only record of every change (see below) |
 | `AssemblyReport` | what the assembler could not do: legacy ids, dangling relations, ambiguities, contradictions, diff cross-checks, warnings |
 
+### Which calendar a "day" is
+
+Every `day` this layer reads (`graph_snapshots.day`) is a **calendar day in the
+study timezone (`Asia/Tokyo`)**, not a UTC day (#521). A school day is a JST
+day: an entry at 08:00 JST and one at 21:00 JST are the same day, and an entry
+at 00:30 JST belongs to that JST date, not the previous UTC one. The writer
+derives it with `studyDay()` (`frontend/src/lib/studyDay.ts`); the export's
+`day_index` counts on the same calendar. Rows written before #521 used the UTC
+day and are not migrated here.
+
 ### Observation intervals, not spans
 
 A concept seen on Monday and Friday but not Wednesday has **two intervals**,
