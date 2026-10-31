@@ -47,6 +47,7 @@ import {
 } from "@/lib/baseline";
 import { extractionFellBack } from "@/lib/extraction";
 import { t } from "@/lib/i18n";
+import { studyDay } from "@/lib/studyDay";
 
 type Json = Record<string, unknown>;
 
@@ -674,7 +675,7 @@ export async function writeEntryResult(
 
     if (computed.graph_snapshot && !context.collectionOnly) {
       const snapshot = computed.graph_snapshot;
-      const day = asDay(snapshot.day) ?? new Date().toISOString().slice(0, 10);
+      const day = asDay(snapshot.day) ?? studyDay();
       const { diff: temporalDiff, previousDayGraph } = await temporalDiffAgainstSupabase(
         client,
         participantId,
@@ -713,7 +714,7 @@ export async function writeEntryResult(
       insightDay =
         asDay(computed.anomaly_result?.day) ??
         asDay(computed.explanation?.day) ??
-        new Date().toISOString().slice(0, 10);
+        studyDay();
       // Not copied from `computed`: the route handler emits an empty
       // placeholder there precisely because it cannot see history. The real
       // deviation is estimated here, against the rows just read.
@@ -1151,7 +1152,7 @@ export async function writeEntryResult(
   else await mirror("longitudinal_features", async () => {
     const snapshot = computed.graph_snapshot;
     const day =
-      asDay(snapshot?.day) ?? asDay(computed.anomaly_result?.day) ?? new Date().toISOString().slice(0, 10);
+      asDay(snapshot?.day) ?? asDay(computed.anomaly_result?.day) ?? studyDay();
     const nodes = snapshot?.nodes_json ?? [];
     const relations = snapshot?.relations_json ?? [];
     const nodeCount = nodes.length;
@@ -1161,6 +1162,10 @@ export async function writeEntryResult(
     const addedNodes = (snapshot?.temporal_diff_json?.added_nodes ?? []) as unknown[];
 
     const rows = [7, 30].map((windowDays) => {
+      // Calendar arithmetic on the study-timezone day label (#521): `day` is
+      // already a JST date, and midnight UTC on that label is only a vehicle
+      // for subtracting whole days — no instant is converted here, so the
+      // window stays on the same calendar the `day` column uses.
       const end = new Date(`${day}T00:00:00.000Z`);
       const start = new Date(end);
       start.setUTCDate(start.getUTCDate() - windowDays + 1);
