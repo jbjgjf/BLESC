@@ -59,6 +59,17 @@ does not, because students do not write daily.
 writes Monday and Wednesday has no gap in their own series; treating calendar
 absence as disappearance would render every weekend as a remission.
 
+### Which day a day is
+
+Every `day` here — `observed_days`, `first_day`/`last_day`, the key on
+`graph_snapshots` the assembler reads — is a **calendar day of the study
+timezone** (`Asia/Tokyo`), produced by `studyDay()` in
+`sentra/frontend/src/lib/studyDay.ts` (#521). Not UTC's: JST is UTC+9, so a
+submission between 00:00 and 09:00 JST falls on the previous UTC date, and
+keying it there would split one school day into two observations and diff the
+evening entry against the morning one as "yesterday". The gap is the
+phenomenon, so the boundary that defines a gap has to be the student's.
+
 ### Directed, typed edges
 
 `(source_id, target_id, relation_type)` is the edge key. `causes` and `buffers`

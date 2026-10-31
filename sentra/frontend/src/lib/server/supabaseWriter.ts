@@ -32,6 +32,7 @@ import {
 import { hasSelfReportContent, type NormalizedSelfReport } from "@/lib/pilotSelfReport";
 import { PII_SCANNER_VERSION, forStorage, scanForPii, summarizePii } from "@/lib/piiScanner";
 import { SAFETY_ASSESSMENT_VERSION } from "@/lib/safety-assessment";
+import { studyDay } from "@/lib/studyDay";
 import { consentMismatch, loadConsentState } from "@/lib/server/consentStore";
 import { encryptRawText, rawTextExpiryFrom } from "@/lib/server/rawTextCrypto";
 import {
@@ -674,7 +675,7 @@ export async function writeEntryResult(
 
     if (computed.graph_snapshot && !context.collectionOnly) {
       const snapshot = computed.graph_snapshot;
-      const day = asDay(snapshot.day) ?? new Date().toISOString().slice(0, 10);
+      const day = asDay(snapshot.day) ?? studyDay();
       const { diff: temporalDiff, previousDayGraph } = await temporalDiffAgainstSupabase(
         client,
         participantId,
@@ -713,7 +714,7 @@ export async function writeEntryResult(
       insightDay =
         asDay(computed.anomaly_result?.day) ??
         asDay(computed.explanation?.day) ??
-        new Date().toISOString().slice(0, 10);
+        studyDay();
       // Not copied from `computed`: the route handler emits an empty
       // placeholder there precisely because it cannot see history. The real
       // deviation is estimated here, against the rows just read.
@@ -1151,7 +1152,7 @@ export async function writeEntryResult(
   else await mirror("longitudinal_features", async () => {
     const snapshot = computed.graph_snapshot;
     const day =
-      asDay(snapshot?.day) ?? asDay(computed.anomaly_result?.day) ?? new Date().toISOString().slice(0, 10);
+      asDay(snapshot?.day) ?? asDay(computed.anomaly_result?.day) ?? studyDay();
     const nodes = snapshot?.nodes_json ?? [];
     const relations = snapshot?.relations_json ?? [];
     const nodeCount = nodes.length;

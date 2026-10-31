@@ -42,6 +42,17 @@ BLESC tracks extensive data across interactions, memory, graphs, and reflection.
 
 *Note: All JSONB structures above aggregate the specific metric keys outlined in the Data Inventory (e.g., `negative_self_focus_score` is stored inside `cognitive_probe_features.feature_json`).*
 
+### `day` のタイムゾーン
+
+`graph_snapshots.day`、`insights.day`、および `longitudinal_features` がそこから導く
+窓の両端は、いずれも**研究タイムゾーン（`Asia/Tokyo`）の暦日**である。UTC の暦日では
+ない。値を決めているのは `sentra/frontend/src/lib/studyDay.ts` の `studyDay()` 1か所
+だけで、そこが規約の置き場でもある（#521）。
+
+同じ行の `created_at` は UTC の instant のままである。時刻は時刻で、日付ではない。
+JST は UTC+9 なので、0:00〜9:00 JST の提出はこの2列で暦日が1日食い違う — 食い違って
+いるのが正しい。`day` は学校日、`created_at` は時点を指す。
+
 ---
 
 ## 3. Data Flow Mapping

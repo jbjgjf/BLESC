@@ -14,6 +14,7 @@ import {
   collectionOnlyForParticipant,
 } from "@/lib/server/collectionMode";
 import { normalizeSelfReport } from "@/lib/pilotSelfReport";
+import { studyDay } from "@/lib/studyDay";
 import { recordSubmissionFailure } from "@/lib/server/submissionFailures";
 import { escalate, notifiableLevel } from "@/lib/server/safetyEscalation";
 import { gateForUser, pilotGateEnforced } from "@/lib/server/pilotGate";
@@ -365,7 +366,10 @@ export async function POST(request: NextRequest) {
   const entryId = `prod_${idSeed.slice(0, 16)}`;
   const { extraction, provider, model, status } = await extractWithOpenAI(entryText, collectionOnly);
   const safetyAssessment = assessSafety(entryText);
-  const day = createdAt.slice(0, 10);
+  // The study-timezone calendar day, not `createdAt`'s UTC one (#521): a
+  // submission at 00:30 JST belongs to the school day the student is in, and
+  // `slice(0, 10)` on a UTC instant filed it under the one before.
+  const day = studyDay(createdAt);
   const graphSummary = {
     node_count: extraction.nodes.length,
     relation_count: extraction.relations.length,

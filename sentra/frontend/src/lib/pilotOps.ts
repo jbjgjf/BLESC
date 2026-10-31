@@ -22,18 +22,15 @@
 // does not resolve the `@/` alias for anything that is not a type-only import.
 import { dayIndex } from "./researchExport.ts";
 import { localDayKey } from "./journalStats.ts";
+import { STUDY_TIME_ZONE } from "./studyDay.ts";
 
 /**
- * The study's timezone, and the reason it is a constant.
- *
- * The pilot runs in Japanese schools, and a school day is a JST day. Reading it
- * from the browser would make a participant's device clock evidence, and
- * reading it from the serverless region would make it whatever region answered.
- *
- * The same value the export uses, so a day the dashboard calls missing is the
- * same day the export does not contain.
+ * The study's timezone, re-exported from where the `day` rule is declared
+ * (`studyDay.ts`, #521) so that a day the dashboard calls missing is the same
+ * day the stored snapshots are keyed by. It used to be defined here, which put
+ * it behind this module's imports and out of reach of the write path.
  */
-export const STUDY_TIME_ZONE = "Asia/Tokyo";
+export { STUDY_TIME_ZONE };
 
 /**
  * Days since collection opened, counting the opening day as 0.
