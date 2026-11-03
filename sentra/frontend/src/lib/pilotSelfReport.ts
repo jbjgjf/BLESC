@@ -144,7 +144,20 @@ export type SelfReportRejection =
   /** An id that is not part of this schema version. */
   | "unknown_item";
 
+/**
+ * A stored self-report row: every item present, `null` meaning not answered.
+ * This is what `NormalizedSelfReport.values` carries and what is persisted.
+ */
 export type SelfReportValues = Record<SelfReportItemId, number | null>;
+
+/**
+ * A self-report still being filled in on the journal screen (#486). Unlike
+ * `SelfReportValues`, an item may be absent (`undefined` — not reached yet) as
+ * well as `null` (the participant chose 「答えない」) or a number. Keeping the
+ * two under different names stops a draft from being passed where a stored row
+ * is meant, and makes the undefined/null distinction visible at the call site.
+ */
+export type SelfReportDraft = Partial<Record<SelfReportItemId, number | null>>;
 
 export type NormalizedSelfReport = {
   schema_version: string;
