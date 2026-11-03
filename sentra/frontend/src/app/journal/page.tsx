@@ -15,8 +15,8 @@ import { EntryTelemetryCollector, clientTimeZone, newSessionId } from "@/lib/tel
 import { EMPTY_STATS, type JournalStats } from "@/lib/journalStats";
 import { t } from "@/lib/i18n";
 import type { EventCategory, Mood } from "@/lib/blesc/types";
-import { SelfReportBlock, type SelfReportValues } from "@/components/SelfReportBlock";
-import type { SelfReportItemId } from "@/lib/pilotSelfReport";
+import { SelfReportBlock } from "@/components/SelfReportBlock";
+import type { SelfReportDraft, SelfReportItemId } from "@/lib/pilotSelfReport";
 import styles from "./journal.module.css";
 
 /* ── 4-6 対話型AIサポートの台本 ─────────────────────────────
@@ -110,7 +110,7 @@ export default function JournalPage() {
    * 「研究対象でない人の回答が保存される」は起こらない。
    */
   const [collecting, setCollecting] = useState(false);
-  const [selfReport, setSelfReport] = useState<SelfReportValues>({});
+  const [selfReport, setSelfReport] = useState<SelfReportDraft>({});
 
   /**
    * サーバーがこの提出について実際に使った判定（#165）。
