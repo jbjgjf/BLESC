@@ -61,6 +61,12 @@ const MODEL_INSTRUCTIONS = [
   "Do not confirm beliefs the student cannot verify, such as a group conspiring against them. Stay warm, keep the uncertainty open, and never diagnose.",
   "The recent turns contain explicit danger signals. Lead with immediate safety, keep the reply short and concrete, name local emergency services and a crisis line alongside a trusted adult, and do not bury those routes.",
   "The recent turns contain possible danger signals, which may be ambiguous. Err toward support: check on their safety and offer a real-person route even if you are unsure, and name local emergency services if the risk could be immediate.",
+  // The two remaining members of `SAFETY_GUARDRAILS` and `RISK_DIRECTIVES`
+  // (`lib/server/safety.ts`). They are siblings of the lines above and were
+  // never exempt on purpose — each contains a semicolon, and until #534 a
+  // semicolon alone was read as proof of code.
+  "If the student signals possible danger to themselves or someone else — including ambiguous phrasing such as wanting to disappear, being tired of everything, or not feeling safe — name the concern gently, ask about their immediate safety, and point them to a real person such as a trusted adult or a school counselor. Keep doing this in later turns; mentioning it once and moving on is a failure.",
+  "The recent turns show distress without an explicit danger signal. Stay supportive; do not manufacture a crisis response.",
 ];
 
 /**
@@ -119,6 +125,27 @@ const DELIVERY_FAILURES = [
   // The repair is an address, not a consent — a different team from the one
   // the line above sends you to.
   "no reachable address for any consented recipient",
+  // The fourth reason, from #458: the recipient query itself failed, so consent
+  // was never read and "nobody may be told" cannot be concluded. Exempt for the
+  // same reason as its three siblings; it reached this list late only because
+  // of the semicolon rule #534 narrowed.
+  "recipient lookup failed; consent was not checked",
+];
+
+/**
+ * Values pinned across both writers, not copy.
+ *
+ * `entries.relation_shift_summary` holds the catalogue's Japanese in every
+ * ordinary case (`relationShiftSummary` → `t.extraction.shift`). This one
+ * string is the exception, and it is not a translation that was forgotten:
+ * `sentra/backend/app/services/supabase_writer.py:246` emits the identical
+ * bytes for the identical condition, so the two implementations agree on one
+ * value for "there is no comparable previous snapshot". Translating one side
+ * would split that agreement. The machine-readable discriminator is
+ * `diff_basis: "legacy_id_scheme_boundary"`, which is what any reader keys on.
+ */
+const CROSS_WRITER_COLUMN_VALUES = [
+  "previous snapshot predates label-derived node identity; not comparable",
 ];
 
 /**
@@ -208,6 +235,7 @@ export const ALLOWLIST = [
   ...MODEL_INSTRUCTIONS,
   ...WRITE_FAILURES,
   ...DELIVERY_FAILURES,
+  ...CROSS_WRITER_COLUMN_VALUES,
   ...SCHEDULED_JOB_FAILURES,
   ...DEVELOPER_ERRORS,
   ...CAUGHT_BEFORE_A_RESPONSE,

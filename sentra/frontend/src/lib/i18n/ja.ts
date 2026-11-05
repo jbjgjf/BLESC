@@ -937,6 +937,15 @@ export const ja = {
     } as Record<string, string>,
     view: (title: string) => `表示: ${title}`,
     counts: (nodes: number, links: number) => `内容 ${nodes}件 · 関係 ${links}件`,
+    /**
+     * 図の上に常に出す注記（#534）。
+     *
+     * 「この図の限界」の節にある長い説明とは別に、図を見ている最中に目に入る
+     * 位置へ短く置く。丸や線の位置に意味を読み取られないための断り書きなので、
+     * 「くり返し」表示の説明文にある「確からしさを表すものではありません」と
+     * 重ならない言い方にしている。
+     */
+    layoutNotice: "丸や線の配置は見やすさのためのもので、診断ではありません。",
     clearFocus: "全体に戻す",
     emptyCanvas: "表示できる内容がありません。絞り込みを外すか、日記を書くと表示されます。",
     inspectorTitle: "選んだ内容の詳細",

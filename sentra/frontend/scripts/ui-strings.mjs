@@ -48,7 +48,35 @@ const JAPANESE = /[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]/;
 /** Two or more consecutive Latin letters — enough to be a word, not a unit. */
 const LATIN_WORD = /[A-Za-z]{2,}/g;
 /** Punctuation that only appears in code, never in a sentence on screen. */
-const CODE_FRAGMENT = /;|=>|&&|\?\?|===|!==|\)\s*:|^\s*:\s|^\s*return\s*\(/;
+const CODE_FRAGMENT = /=>|&&|\?\?|===|!==|\)\s*:|^\s*:\s|^\s*return\s*\(/;
+
+/**
+ * A semicolon on its own is not one of those (#534).
+ *
+ * It used to head the list above, which read every `;` as proof of code. But a
+ * semicolon is ordinary English punctuation, so the rule exempted a whole shape
+ * of copy from the language check — and 「Layout is visual; it is not
+ * diagnostic.」 sat on /graph, in a `<span>` a student reads, with this suite
+ * green and no allowlist entry to argue with.
+ *
+ * Dropping the rule is not the repair either: the JSX sweep reads the gap
+ * between a `}` and the next `<`, which on a component that closes a
+ * `useCallback` before its `return (` is a run of statements. Thirty-one of
+ * those were reported the moment `;` stopped counting, against the one real
+ * leak.
+ *
+ * What separates them is not the semicolon but what sits beside it. A statement
+ * carries an assignment, a bracket, or the line break it ends on; a sentence
+ * carries none of those. Parentheses are deliberately not in this list —
+ * 「〜（補足）; …」 is a sentence — and nothing needs them: every fragment the
+ * sweep picked up spans a newline or an `=`.
+ */
+const CODE_NEIGHBOUR = /[={}[\]]|\n/;
+
+function readsAsCode(text) {
+  if (CODE_FRAGMENT.test(text)) return true;
+  return text.includes(";") && CODE_NEIGHBOUR.test(text);
+}
 
 /**
  * Shapes that are always an identifier rather than copy: paths, MIME types,
@@ -166,10 +194,19 @@ function blankExpressions(source) {
 
   // Generic type arguments look exactly like a tag pair with text inside, so
   // `useState<Entry | null>(null)` would otherwise report ` | null` as copy.
-  // A generic's `<` follows an identifier; a JSX tag's never does.
+  // A generic's `<` follows an identifier; an *opening* JSX tag's never does.
+  //
+  // A closing one does, which is why `/` is excluded (#534). `<span>Not
+  // diagnostic</span>` on one line put an identifier character immediately
+  // before `</span>`, this pass blanked the closer, and the sweep below then
+  // had no `<` to end the text run on — so the whole element was invisible to
+  // the language check. It only showed up for Latin text with no trailing
+  // punctuation: `診断ではありません</span>` and `Not diagnostic.</span>` both
+  // end in a character the lookbehind does not accept, which is why the hole
+  // stayed open. No generic argument begins with `/`.
   for (let previous = ""; previous !== out; ) {
     previous = out;
-    out = out.replace(/(?<=[A-Za-z0-9_$])<[^<>]*>/g, blank);
+    out = out.replace(/(?<=[A-Za-z0-9_$])<(?!\/)[^<>]*>/g, blank);
   }
 
   return out;
@@ -184,7 +221,7 @@ const HTML_ENTITY = /&[a-z]+;|&#\d+;/gi;
 
 /** True when the text reads as copy rather than as an identifier. */
 function looksLikeCopy(text, kind) {
-  if (CODE_FRAGMENT.test(text.replace(HTML_ENTITY, " "))) return false;
+  if (readsAsCode(text.replace(HTML_ENTITY, " "))) return false;
   // An id built from a template — `demo-entry-${n}` — is the same shape as one
   // written out, so the shapes are tried against the interpolation-free form as
   // well. Prose is unaffected: "こんにちは、${name}さん" matches none of them.
