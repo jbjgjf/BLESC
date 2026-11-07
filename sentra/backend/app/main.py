@@ -2,6 +2,7 @@ import hashlib
 import io
 import logging
 import os
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -96,7 +97,43 @@ _ENV_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(_ENV_DIR / ".env.local")
 load_dotenv(_ENV_DIR / ".env")
 
-app = FastAPI(title="Sentra API")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Create the tables and seed them, once, when the process starts (#460).
+
+    This replaces `@app.on_event("startup")`, which FastAPI deprecated in favour
+    of lifespan handlers. The move is the deprecation and nothing else: the two
+    calls below run in the order they always did, and nothing new runs.
+
+    ## Why there is no shutdown half
+
+    There was never an `on_event("shutdown")` here, and this does not add one.
+    Everything after the `yield` would be a *new* promise about the order things
+    are closed in, and this service has nothing that needs closing — the SQLModel
+    engine in `database.py` holds a connection pool that the interpreter drops on
+    exit, and the OpenAI clients are created per request. So the `yield` is bare
+    on purpose; see `clock.py` for the same reasoning applied to `utcnow()`.
+
+    ## Why the four endpoint tests still call `create_all` themselves
+
+    `test_temporal_graph_endpoint`, `test_ontology_evolution_endpoint`,
+    `test_dynamics_endpoint` and `test_endpoint_authorization` build their
+    `TestClient(app)` at module level, which does not drive a lifespan, so they
+    prepare the schema with `SQLModel.metadata.create_all(engine)` in a fixture.
+    That stays. Those four need tables, not seed rows, and `create_all` is the
+    narrower of the two paths — `create_db_and_tables()` also runs
+    `_apply_migrations()` and would pull the demo seed in behind it. Switching
+    them to the startup path would widen four tests to make the count of schema
+    paths read as one, which is a worse trade than leaving the difference here
+    in writing.
+    """
+    create_db_and_tables()
+    seed_data()
+    yield
+
+
+app = FastAPI(title="Sentra API", lifespan=lifespan)
 
 # The world-model research API (#140, contract C6). Registered as a router
 # rather than inline: it is owned by the research engine, it fails closed
@@ -220,12 +257,6 @@ class HfResearchBenchmarkRequest(BaseModel):
     methods: Optional[List[str]] = None
     k: int = 2
     include_dataset_rows: bool = False
-
-
-@app.on_event("startup")
-def on_startup():
-    create_db_and_tables()
-    seed_data()
 
 
 @app.get("/api/health")
