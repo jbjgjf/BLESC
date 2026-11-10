@@ -35,7 +35,7 @@ import { buildAuditTrails, type ModelRunRecord } from "@/lib/audit-trail";
 import { t } from "@/lib/i18n";
 import { latestRowPerParticipant } from "@/lib/cohortLatestRows";
 import { readDemoFlag } from "@/lib/demo";
-import { acknowledgedAlertKeys, readAlertEscalations } from "@/lib/cohortAlertReads";
+import { ALERT_READ_INCOMPLETE, acknowledgedAlertKeys, readAlertEscalations } from "@/lib/cohortAlertReads";
 import * as demo from "@/lib/blesc/demoApi";
 import { resolveApiBaseUrl } from "@/lib/apiBaseUrl";
 
@@ -1286,6 +1286,8 @@ export class ApiClient {
     // these keys instead of whichever 500 rows came back (#364).
     const unacknowledged = this.alertsFromRoster(roster, new Set<string>());
     const ackResult = await acknowledgedAlertKeys(supabase, unacknowledged.map((alert) => alert.alert_key));
+    // Incomplete (#540) throws too, like the roster's COHORT_READ_INCOMPLETE:
+    // a guess at which alerts are acknowledged would hide open ones.
     if (ackResult.error) throwSupabaseError(t.apiError.loadAlertAcknowledgements, ackResult.error);
     const derived = unacknowledged.map((alert) => ({ ...alert, acknowledged: ackResult.acked.has(alert.alert_key) }));
 
@@ -1295,7 +1297,14 @@ export class ApiClient {
       supabase,
       "id, participant_id, risk_level, surface, detected_at, status, delivered_at, acknowledged_at",
     );
-    if (escalationResult.error) {
+    if (escalationResult.error?.message === ALERT_READ_INCOMPLETE) {
+      // Partly read (#540): the set kept moving while it was paged, or there
+      // were more pages than the read allows. Every row that did arrive is a
+      // real unacknowledged escalation, so they are shown with the derived
+      // alerts rather than dropped — hiding them would make the list look
+      // emptier than it is, which is the failure this branch exists to avoid.
+      console.warn("[alerts] escalations read incompletely; some may be missing until the next load");
+    } else if (escalationResult.error) {
       // A read failure must not blank the alert list: the derived alerts are
       // still true, and an empty dashboard is the most dangerous thing this
       // screen can show.
