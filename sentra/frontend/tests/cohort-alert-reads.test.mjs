@@ -53,6 +53,12 @@ function store(tables, { afterRead } = {}) {
             });
           }
           const count = query.count ? rows.length : null;
+          // PostgREST: with a count requested, an offset past the end is 416 / PGRST103.
+          if (count !== null && query.range && query.range[0] > count) {
+            afterRead?.(query, requests.filter((r) => r.table === table).length);
+            const error = { code: "PGRST103", message: "Requested range not satisfiable" };
+            return Promise.resolve({ data: null, error, count: null }).then(resolve);
+          }
           if (query.range) rows = rows.slice(query.range[0], query.range[1] + 1);
           if (query.limit !== null) rows = rows.slice(0, query.limit);
           // Copies, so a write after the read does not reach back into it.
@@ -196,6 +202,36 @@ describe("which escalations reach the alert list", () => {
     assert.equal(new Set(open).size, 599, "no duplicates");
     assert.ok(open.includes("esc-00099"), "the row at the page boundary is still listed");
     assert.ok(!open.includes("esc-00300"));
+  });
+
+  it("re-reads when an acknowledgement makes the next offset run past the end (PGRST103)", async () => {
+    // 501 rows: page 2 is needed. Two acknowledgements after page 1 leave 499,
+    // so offset 500 is out of range and PostgREST answers 416.
+    const rows = Array.from({ length: 501 }, (_, i) => escalation(i, false));
+    let acknowledgedOnce = false;
+    const client = store(
+      { safety_escalations: rows },
+      {
+        afterRead(query) {
+          if (!acknowledgedOnce && query.range?.[0] === 0 && query.filters.length === 1) {
+            acknowledgedOnce = true;
+            rows[250].acknowledged_at = "2026-10-02T00:00:00.000Z";
+            rows[251].acknowledged_at = "2026-10-02T00:00:00.000Z";
+          }
+        },
+      },
+    );
+    const result = await readAlertEscalations(client, "id");
+    assert.equal(result.error, null, "treated as a moving read and re-read, not as a failure");
+    assert.equal(unacknowledgedIds(result).length, 499);
+  });
+
+  it("does not ask for a page beyond a set of exactly one page", async () => {
+    const rows = Array.from({ length: 500 }, (_, i) => escalation(i, false));
+    const client = store({ safety_escalations: rows });
+    const result = await readAlertEscalations(client, "id");
+    assert.equal(result.error, null);
+    assert.equal(client.requests.filter((query) => query.range).length, 1);
   });
 
   it("reports a set that keeps moving as incomplete, with the rows it did read and no duplicates", async () => {

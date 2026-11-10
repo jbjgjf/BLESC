@@ -142,6 +142,11 @@ function rowId(row: unknown): string | number | null {
   return typeof id === "string" || typeof id === "number" ? id : null;
 }
 
+/** PostgREST's "Requested range not satisfiable" (HTTP 416). */
+function isRangeNotSatisfiable(error: ReadError): boolean {
+  return (error as { code?: unknown }).code === "PGRST103";
+}
+
 async function readUnacknowledgedOnce<Row>(
   client: Reader,
   columns: string,
@@ -163,7 +168,16 @@ async function readUnacknowledgedOnce<Row>(
       .order("detected_at", { ascending: false })
       .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
-    if (result.error) return { rows: [], error: result.error };
+    if (result.error) {
+      // With a count requested, PostgREST answers an offset past the end with
+      // 416 / PGRST103. Past the first page that means the set shrank under
+      // us (an acknowledgement), which is a moving read, not a failed one.
+      if (page > 0 && isRangeNotSatisfiable(result.error)) {
+        moved = true;
+        break;
+      }
+      return { rows: [], error: result.error };
+    }
 
     if (typeof result.count === "number") {
       if (expected === null) expected = result.count;
@@ -181,7 +195,9 @@ async function readUnacknowledgedOnce<Row>(
       }
       rows.push(row);
     }
-    if (batch.length < PAGE) break;
+    // Stop once the count is met, so a set of exactly PAGE rows does not ask
+    // for an empty page beyond its end.
+    if (batch.length < PAGE || (expected !== null && seen.size >= expected)) break;
   }
 
   // A server cap below PAGE ends the loop early; the count says so.
