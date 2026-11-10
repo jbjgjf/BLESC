@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 
 import {
   ACKNOWLEDGED_ESCALATION_LIMIT,
+  ALERT_READ_INCOMPLETE,
+  MAX_PAGES,
   acknowledgedAlertKeys,
   readAlertEscalations,
 } from "../src/lib/cohortAlertReads.ts";
@@ -16,7 +18,7 @@ import {
  */
 const MAX_ROWS = 1000;
 
-function store(tables) {
+function store(tables, { afterRead } = {}) {
   let flip = false;
   const requests = [];
   const value = (row, column) =>
@@ -25,10 +27,10 @@ function store(tables) {
   return {
     requests,
     from(table) {
-      const query = { table, filters: [], orders: [], range: null, limit: null };
+      const query = { table, filters: [], orders: [], range: null, limit: null, count: false };
       requests.push(query);
       const chain = {
-        select: () => chain,
+        select: (_columns, options) => ((query.count = options?.count === "exact"), chain),
         eq: (column, expected) => (query.filters.push((row) => value(row, column) === expected), chain),
         in: (column, list) => (query.filters.push((row) => list.includes(value(row, column))), chain),
         is: (column, expected) => (query.filters.push((row) => (value(row, column) ?? null) === expected), chain),
@@ -50,9 +52,19 @@ function store(tables) {
               return 0;
             });
           }
+          const count = query.count ? rows.length : null;
+          // PostgREST: with a count requested, an offset past the end is 416 / PGRST103.
+          if (count !== null && query.range && query.range[0] > count) {
+            afterRead?.(query, requests.filter((r) => r.table === table).length);
+            const error = { code: "PGRST103", message: "Requested range not satisfiable" };
+            return Promise.resolve({ data: null, error, count: null }).then(resolve);
+          }
           if (query.range) rows = rows.slice(query.range[0], query.range[1] + 1);
           if (query.limit !== null) rows = rows.slice(0, query.limit);
-          return Promise.resolve({ data: rows.slice(0, MAX_ROWS), error: null }).then(resolve);
+          // Copies, so a write after the read does not reach back into it.
+          const data = rows.slice(0, MAX_ROWS).map((row) => ({ ...row }));
+          afterRead?.(query, requests.filter((r) => r.table === table).length);
+          return Promise.resolve({ data, error: null, count }).then(resolve);
         },
       };
       return chain;
@@ -160,5 +172,142 @@ describe("which escalations reach the alert list", () => {
     assert.equal(result.rows.length, ACKNOWLEDGED_ESCALATION_LIMIT);
     assert.ok(result.rows.some((row) => row.id === "esc-00349"));
     assert.ok(!result.rows.some((row) => row.id === "esc-00000"));
+  });
+
+  const unacknowledgedIds = (result) => result.rows.filter((row) => row.acknowledged_at === null).map((row) => row.id);
+
+  it("does not drop an unacknowledged row when another is acknowledged between pages (#540)", async () => {
+    // 600 unacknowledged; newest first, so esc-00599 … esc-00100 are page 1.
+    const rows = Array.from({ length: 600 }, (_, i) => escalation(i, false));
+    let acknowledgedOnce = false;
+    const client = store(
+      { safety_escalations: rows },
+      {
+        afterRead(query) {
+          // Right after the first page comes back, an educator acknowledges
+          // one row on it. Without a check, offset 500 is now esc-00098 and
+          // esc-00099 is never returned.
+          if (!acknowledgedOnce && query.range?.[0] === 0 && query.filters.length === 1) {
+            acknowledgedOnce = true;
+            rows.find((row) => row.id === "esc-00300").acknowledged_at = "2026-10-02T00:00:00.000Z";
+          }
+        },
+      },
+    );
+
+    const result = await readAlertEscalations(client, "id");
+    assert.equal(result.error, null, "the re-read is complete");
+    const open = unacknowledgedIds(result);
+    assert.equal(open.length, 599);
+    assert.equal(new Set(open).size, 599, "no duplicates");
+    assert.ok(open.includes("esc-00099"), "the row at the page boundary is still listed");
+    assert.ok(!open.includes("esc-00300"));
+  });
+
+  it("re-reads when an acknowledgement makes the next offset run past the end (PGRST103)", async () => {
+    // 501 rows: page 2 is needed. Two acknowledgements after page 1 leave 499,
+    // so offset 500 is out of range and PostgREST answers 416.
+    const rows = Array.from({ length: 501 }, (_, i) => escalation(i, false));
+    let acknowledgedOnce = false;
+    const client = store(
+      { safety_escalations: rows },
+      {
+        afterRead(query) {
+          if (!acknowledgedOnce && query.range?.[0] === 0 && query.filters.length === 1) {
+            acknowledgedOnce = true;
+            rows[250].acknowledged_at = "2026-10-02T00:00:00.000Z";
+            rows[251].acknowledged_at = "2026-10-02T00:00:00.000Z";
+          }
+        },
+      },
+    );
+    const result = await readAlertEscalations(client, "id");
+    assert.equal(result.error, null, "treated as a moving read and re-read, not as a failure");
+    assert.equal(unacknowledgedIds(result).length, 499);
+  });
+
+  it("does not ask for a page beyond a set of exactly one page", async () => {
+    const rows = Array.from({ length: 500 }, (_, i) => escalation(i, false));
+    const client = store({ safety_escalations: rows });
+    const result = await readAlertEscalations(client, "id");
+    assert.equal(result.error, null);
+    assert.equal(client.requests.filter((query) => query.range).length, 1);
+  });
+
+  it("reports a set that keeps moving as incomplete, with the rows it did read and no duplicates", async () => {
+    const rows = Array.from({ length: 1100 }, (_, i) => escalation(i, false));
+    let next = 1100;
+    const client = store(
+      { safety_escalations: rows },
+      {
+        afterRead(query) {
+          // A new escalation lands after every first page: every read repeats a row.
+          if (query.range?.[0] === 0 && query.filters.length === 1) rows.push(escalation(next++, false));
+        },
+      },
+    );
+
+    const result = await readAlertEscalations(client, "id");
+    assert.deepEqual(result.error, { message: ALERT_READ_INCOMPLETE });
+    const open = unacknowledgedIds(result);
+    assert.equal(new Set(open).size, open.length, "no duplicates");
+    assert.ok(open.length >= 1100);
+  });
+
+  it("stops at MAX_PAGES and says the answer is incomplete", async () => {
+    // A store that never runs out: every page is full.
+    let requests = 0;
+    const endless = {
+      from() {
+        const c = {
+          select: () => c, is: () => c, not: () => c, order: () => c, limit: () => c,
+          range: (from) => {
+            requests += 1;
+            const data = Array.from({ length: 500 }, (_, i) => ({ id: `e-${from + i}`, acknowledged_at: null }));
+            return Promise.resolve({ data, error: null, count: null });
+          },
+          then: (resolve) => Promise.resolve({ data: [], error: null }).then(resolve),
+        };
+        return c;
+      },
+    };
+    const result = await readAlertEscalations(endless, "id");
+    assert.deepEqual(result.error, { message: ALERT_READ_INCOMPLETE });
+    assert.equal(requests, MAX_PAGES, "the cap is not retried");
+    assert.equal(result.rows.length, MAX_PAGES * 500);
+  });
+
+  it("returns the same acknowledged rows when detected_at ties", async () => {
+    const tied = (i) => ({ id: `esc-${String(i).padStart(5, "0")}`, detected_at: "2026-09-01T00:00:00.000Z", acknowledged_at: "2026-10-01T00:00:00.000Z" });
+    const rows = Array.from({ length: 300 }, (_, i) => tied(i));
+    const client = store({ safety_escalations: rows });
+    await readAlertEscalations(client, "id");
+    const closedQuery = client.requests.find((query) => query.limit === ACKNOWLEDGED_ESCALATION_LIMIT);
+    assert.deepEqual(
+      closedQuery.orders.map((order) => order.column),
+      ["detected_at", "id"],
+    );
+  });
+});
+
+describe("reads that do not end", () => {
+  it("caps the acknowledgement pages for one key chunk", async () => {
+    let requests = 0;
+    const endless = {
+      from() {
+        const c = {
+          select: () => c, eq: () => c, in: () => c, order: () => c,
+          range: () => {
+            requests += 1;
+            // Full pages of acknowledgements for some other key, forever.
+            return Promise.resolve({ data: Array.from({ length: 500 }, () => ({ metadata: { alert_key: "other" } })), error: null });
+          },
+        };
+        return c;
+      },
+    };
+    const { error } = await acknowledgedAlertKeys(endless, ["safety_crisis:p-1:latest"]);
+    assert.deepEqual(error, { message: ALERT_READ_INCOMPLETE });
+    assert.equal(requests, MAX_PAGES);
   });
 });
