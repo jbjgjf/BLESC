@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 import { RUN_ID, serverEnv } from "./e2e/env";
+import { OUTPUT_DIR, e2eReporters } from "./e2e/reporters";
 
 // Published before the workers are forked so they resolve the same run id, and
 // therefore the same seeded accounts, study slug and invite codes.
@@ -19,6 +20,10 @@ process.env.E2E_RUN_ID = RUN_ID;
  * **One worker.** The tests share one database and one seeded study, and the
  * withdrawal case mutates a row the others read. Parallel workers would make
  * failures depend on ordering.
+ *
+ * **The same reporters on CI as locally.** A run that fails on a runner is the
+ * one whose report is worth keeping, and it is the run that used to produce
+ * none. See `e2e/reporters.ts` (#545).
  */
 const PORT = 3100;
 
@@ -30,7 +35,11 @@ export default defineConfig({
   workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
-  reporter: process.env.CI ? "list" : [["list"], ["html", { open: "never" }]],
+  // `e2e/reporters.ts`, not an expression here: the choice was wrong on CI and
+  // this file cannot be loaded without a running Supabase stack, so it could
+  // not be tested where it was (#545).
+  reporter: e2eReporters(),
+  outputDir: OUTPUT_DIR,
   timeout: 30_000,
   expect: { timeout: 10_000 },
 

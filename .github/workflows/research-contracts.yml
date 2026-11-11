@@ -296,13 +296,36 @@ jobs:
       - name: Run the enrollment-gate E2E suite
         run: npm run test:e2e
 
+      # Two artifacts, because the suite writes what is worth reading into two
+      # places (#545). `playwright-report` is the `html` reporter's output;
+      # `test-results` is `outputDir`, where `trace: "retain-on-failure"` and
+      # `screenshot: "only-on-failure"` put the trace, the screenshot and
+      # `error-context.md` for the case that failed. Neither arrived before:
+      # the reporter was `list` on CI, so the report directory was never
+      # written at all, and `test-results` was uploaded by nothing.
+      #
+      # The paths are relative to the workspace root, not to the job's
+      # `working-directory`, which `upload-artifact` does not read. They are
+      # pinned against the names the config uses by
+      # sentra/frontend/tests/e2e-reporting.test.mjs.
+      #
+      # `warn`, not `ignore`: an upload that finds nothing is the failure this
+      # step exists to report, and `ignore` is what let it pass in silence.
       - name: Upload the Playwright report
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: sentra/frontend/playwright-report
-          if-no-files-found: ignore
+          if-no-files-found: warn
+
+      - name: Upload the Playwright traces and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-test-results
+          path: sentra/frontend/test-results
+          if-no-files-found: warn
 
   dry-run-sql:
     name: Pilot dry-run SQL
