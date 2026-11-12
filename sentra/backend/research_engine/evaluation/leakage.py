@@ -29,24 +29,49 @@ from .ledger import PredictionLedger
 def available_at_within_cutoff(
     forecasts: Sequence[ForecastBundle], event_times: Mapping[str, Any]
 ) -> LeakageCheck:
-    """Every event a forecast cites was available at or before its cutoff."""
+    """Every event a forecast cites was available at or before its cutoff.
+
+    `event_times` is built by the caller from the observation bundle, so an id
+    that is missing from it is an event this check cannot place in time. That is
+    not a pass (#548). It is the shape of the leak the check exists to catch — a
+    forecast citing something outside the data it was handed — and treating the
+    lookup miss as "nothing to report" put it in the report as evidence instead:
+    the row was skipped by the comparison and still counted in `checked_items`,
+    so a run that verified one event out of two said it had verified two.
+
+    Missing ids therefore fail the check and are named, and `checked_items`
+    counts only the events actually compared against a cutoff.
+    """
 
     checked = 0
     offenders: List[str] = []
+    unplaceable: List[str] = []
     for forecast in forecasts:
         for event_id in forecast.source_event_ids:
             available_at = event_times.get(event_id)
+            if available_at is None:
+                unplaceable.append(f"{forecast.forecast_id}:{event_id}")
+                continue
             checked += 1
-            if available_at is not None and available_at > forecast.cutoff_at:
+            if available_at > forecast.cutoff_at:
                 offenders.append(f"{forecast.forecast_id}:{event_id}")
+
+    problems: List[str] = []
+    if offenders:
+        problems.append(f"cutoffより後のeventが混入している: {offenders[:5]}")
+    if unplaceable:
+        problems.append(
+            f"観測バンドルに無いeventを{len(unplaceable)}件引用しており、"
+            f"cutoffと比較できなかった: {unplaceable[:5]}"
+        )
 
     return LeakageCheck(
         name="available_at_le_cutoff",
-        passed=not offenders,
+        passed=not problems,
         detail_ja=(
             f"{checked}件の入力eventがすべてcutoff以前だった。"
-            if not offenders
-            else f"cutoffより後のeventが混入している: {offenders[:5]}"
+            if not problems
+            else "。".join(problems)
         ),
         checked_items=checked,
     )

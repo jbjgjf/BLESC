@@ -116,6 +116,55 @@ def test_the_future_row_check_actually_runs_the_negative_case():
     assert check.checked_items == 1
 
 
+def test_the_cutoff_check_goes_red_when_a_forecast_cites_an_event_outside_the_bundle():
+    """An event the bundle cannot place in time is the leak, not a blank (#548).
+
+    `event_times` is keyed by the observation bundle, so an id missing from it is
+    a forecast reaching outside the data it was handed. The lookup miss used to
+    be skipped by the comparison and still counted in `checked_items`, which put
+    an unverified row in the report as evidence.
+    """
+
+    from research_engine.data import fit_normalizer, make_sequences
+    from research_engine.dynamics import PersistenceForecaster, build_context
+
+    dataset = generate(GeneratorConfig(scenario="S1", seed=11, n_participants=9, n_days=20))
+    bundle = load_observations(dataset.bundle)
+    split = participant_split(bundle, dataset.truth.split_groups, seed=11)
+    normalizer = fit_normalizer(
+        bundle.observations,
+        feature_schema_id=bundle.manifest.feature_schema_id,
+        feature_names=bundle.manifest.feature_names,
+    )
+    sequences = make_sequences(bundle, normalizer, split.assignment)
+    context = build_context(
+        run_id="run-cutoff",
+        dataset_id=bundle.manifest.dataset_id,
+        split_id=split.split_id,
+        sequence=sequences[0],
+        normalizer=normalizer,
+        cutoff_at=sequences[0].available_times[5],
+        horizons=(1, 2),
+    )
+    forecast = PersistenceForecaster().forecast(context)
+    # Keyed exactly as `pipeline.py` keys it: from the observation bundle alone.
+    event_times = {row.event_id: row.available_at for row in bundle.observations}
+
+    clean = leakage_checks.available_at_within_cutoff([forecast], event_times)
+    assert clean.passed is True
+    assert clean.checked_items == len(forecast.source_event_ids)
+
+    outside = dataclasses.replace(
+        forecast,
+        source_event_ids=tuple(forecast.source_event_ids) + ("not-in-this-bundle",),
+    )
+    check = leakage_checks.available_at_within_cutoff([outside], event_times)
+    assert check.passed is False
+    assert "not-in-this-bundle" in check.detail_ja
+    # The uncomparable row is not counted as one the check looked at.
+    assert check.checked_items == len(forecast.source_event_ids)
+
+
 def test_editing_a_sealed_forecast_is_detected(tmp_path):
     """The seal exists so that "the prediction did not change" is checkable."""
 
