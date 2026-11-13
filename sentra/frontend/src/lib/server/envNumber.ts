@@ -43,8 +43,17 @@
  * a ceiling, and for both of those zero means "off" in a way nobody writes a
  * zero to ask for — a `0` in one of these variables is a truncated value.
  */
-export function envPositiveInt(name: string, fallback: number): number {
-  const raw = process.env[name];
+export function envPositiveInt(
+  name: string,
+  fallback: number,
+  /**
+   * Where to read `name` from. `process.env` in every call site; a plain object
+   * in the tests, and in `modelDeadline.ts`, whose own entry points take an
+   * environment so a test can drive them without mutating the process's.
+   */
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = env[name];
   if (raw === undefined || raw.trim() === "") return fallback;
 
   const candidate = raw.trim();

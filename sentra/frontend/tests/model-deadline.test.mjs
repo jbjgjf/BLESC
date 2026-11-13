@@ -21,11 +21,11 @@ import {
   ENTRY_EMBEDDING_CALLS,
   ENTRY_ROUTE_MAX_DURATION_MS,
   ENTRY_WRITE_RESERVE_MS,
+  EXTRACTION_TIMEOUT_DEFAULT_MS,
   EXTRACTION_TIMEOUT_MAX_MS,
   EMBEDDING_TIMEOUT_MAX_MS,
   TRANSCRIPTION_TIMEOUT_MAX_MS,
   entryModelTimeouts,
-  timeoutFromEnv,
   transcriptionTimeoutMs,
   withDeadline,
 } from "../src/lib/server/modelDeadline.ts";
@@ -158,9 +158,52 @@ describe("the budget leaves time to write the entry", () => {
     assert.equal(embeddingMs, EMBEDDING_TIMEOUT_MAX_MS);
   });
 
-  it("ignores a value that is not a positive number of milliseconds", () => {
-    for (const value of ["", "abc", "-5", "0", "NaN"]) {
-      assert.equal(timeoutFromEnv(value, 7_000, 1_000, 9_000), 7_000, `accepted ${JSON.stringify(value)}`);
+  /*
+   * #553. These three variables used to be read with a bare `Number(value)`,
+   * which is the one rule `envNumber.ts` exists to stop there being two of.
+   * The notations below are the ones that separate the two readings: `Number`
+   * turns them into plausible small numbers, the clamp raises those to `minMs`,
+   * and a mistyped variable becomes a one-second deadline that nothing reports.
+   */
+  it("ignores a value that is not a plain positive integer, rather than reading it as a number", () => {
+    for (const value of ["", "   ", "abc", "-5", "0", "NaN", "25s", "20_000", "3.5", "+20000", "1e3", "0x20"]) {
+      const { extractionMs } = entryModelTimeouts({ OPENAI_EXTRACTION_TIMEOUT_MS: value });
+      assert.equal(
+        extractionMs,
+        EXTRACTION_TIMEOUT_DEFAULT_MS,
+        `accepted ${JSON.stringify(value)} as a deadline`,
+      );
+    }
+  });
+
+  it("says so when it ignores a value, and when it clamps one", () => {
+    const warnings = [];
+    const original = console.warn;
+    console.warn = (message) => warnings.push(String(message));
+    try {
+      entryModelTimeouts({ OPENAI_EXTRACTION_TIMEOUT_MS: "0x20" });
+      entryModelTimeouts({ OPENAI_EXTRACTION_TIMEOUT_MS: "120000" });
+      entryModelTimeouts({});
+    } finally {
+      console.warn = original;
+    }
+    assert.equal(warnings.length, 2, `expected one warning per misread or clamped value, got ${warnings.length}`);
+    assert.match(warnings[0], /OPENAI_EXTRACTION_TIMEOUT_MS is not a positive integer/);
+    assert.match(warnings[1], /OPENAI_EXTRACTION_TIMEOUT_MS is outside the 1000-28000 ms/);
+    // The value somebody set is never echoed, as in envNumber.ts.
+    for (const warning of warnings) assert.doesNotMatch(warning, /0x20|120000/);
+  });
+
+  it("reads the three deadlines through the one rule, not a second copy of it", () => {
+    const source = read("../src/lib/server/modelDeadline.ts");
+    assert.match(source, /import \{ envPositiveInt \} from "\.\/envNumber\.ts";/);
+    assert.doesNotMatch(code(source), /Number\(\s*value\s*\)|Number\(\s*env\./);
+    for (const name of [
+      "OPENAI_EXTRACTION_TIMEOUT_MS",
+      "OPENAI_EMBEDDING_TIMEOUT_MS",
+      "OPENAI_TRANSCRIPTION_TIMEOUT_MS",
+    ]) {
+      assert.ok(source.includes(`"${name}"`), `${name} is no longer read by name`);
     }
   });
 

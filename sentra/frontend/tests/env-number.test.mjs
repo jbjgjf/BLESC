@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
@@ -138,6 +138,16 @@ describe("the call sites that read a number from the environment", () => {
     ["../src/app/api/voice/realtime-session/route.ts", "OPENAI_REALTIME_TIMEOUT_MS"],
     ["../src/app/api/audio/transcriptions/route.ts", "OPENAI_TRANSCRIPTION_MAX_BYTES"],
     ["../src/lib/server/rateLimit.ts", null],
+    // The three model deadlines. They had their own reader until #553, which
+    // is the "two places, two versions" this helper was lifted out to prevent:
+    // it used `Number(value)`, so `"0x20"` became 32 ms and the clamp raised it
+    // to the one-second floor instead of refusing it.
+    //
+    // No variable name here: the three names reach the helper through one
+    // private function in that file, which also applies the budget clamp. That
+    // the names are still read, and still read through it, is asserted in
+    // `model-deadline.test.mjs` — where the budget they belong to is.
+    ["../src/lib/server/modelDeadline.ts", null],
   ];
 
   for (const [file, variable] of SITES) {
@@ -162,6 +172,37 @@ describe("the call sites that read a number from the environment", () => {
       );
     });
   }
+});
+
+/**
+ * The list above only holds while someone remembers to add to it. #553 was a
+ * reader that had been there since #264 and was never on it, so this asks the
+ * question of the whole tree instead: anything turning an environment value
+ * into a number goes through `envNumber.ts`.
+ */
+describe("no second copy of the rule anywhere under src", () => {
+  const SRC = resolve(HERE, "../src");
+  const HELPER = join(SRC, "lib", "server", "envNumber.ts");
+  const strip = (text) => text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+
+  const sources = readdirSync(SRC, { recursive: true })
+    .map((entry) => join(SRC, entry))
+    .filter((path) => /\.(ts|tsx|mts)$/.test(path) && path !== HELPER);
+
+  it("sees the tree it is sweeping", () => {
+    assert.ok(sources.length > 100, `only ${sources.length} source files found; is the path right?`);
+  });
+
+  it("finds no bare numeric read of process.env", () => {
+    const offenders = sources.filter((path) =>
+      /(?:Number|parseInt|parseFloat)\(\s*(?:process\.env|env)\b/.test(strip(readFileSync(path, "utf8"))),
+    );
+    assert.deepEqual(
+      offenders.map((path) => relative(SRC, path)).sort(),
+      [],
+      "read it through envPositiveInt in src/lib/server/envNumber.ts instead",
+    );
+  });
 });
 
 describe("the rate limit rules, which already validated and now share the helper", () => {

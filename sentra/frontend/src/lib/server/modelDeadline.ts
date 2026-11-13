@@ -13,6 +13,8 @@
  * Relative imports only, so the node test runner can load this file.
  */
 
+import { envPositiveInt } from "./envNumber.ts";
+
 /** Thrown when a call ran out of time, so callers can say "timeout" rather than "failed". */
 export class DeadlineExceeded extends Error {
   readonly timeoutMs: number;
@@ -51,11 +53,42 @@ export async function withDeadline<T>(timeoutMs: number, call: (signal: AbortSig
   }
 }
 
-/** A millisecond setting from the environment, kept inside `[min, max]`. */
-export function timeoutFromEnv(value: string | undefined, fallbackMs: number, minMs: number, maxMs: number): number {
-  const parsed = Number(value);
-  if (!value || !Number.isFinite(parsed) || parsed <= 0) return fallbackMs;
-  return Math.min(Math.max(Math.round(parsed), minMs), maxMs);
+/**
+ * A millisecond setting from the environment, kept inside `[min, max]`.
+ *
+ * Two separate jobs, and they used to be one (#553). Reading the value is
+ * `envPositiveInt` — the one copy of that rule (#269) — and this adds the
+ * clamp, which is not validation: the caps below are part of the 60 s budget
+ * this module exists to divide up, so an override may shorten a limit and may
+ * lengthen it only as far as the budget allows.
+ *
+ * What the single `Number(value)` here used to do is why they are separate now.
+ * `Number` accepts notations a timeout is never written in: `"0x20"` became
+ * 32, `"1e3"` became 1000, `"3.5"` rounded to 4 — each then raised to `minMs`,
+ * so a mistyped variable set the extraction deadline to one second. Every
+ * extraction then timed out, the route saved the entry with the deterministic
+ * fallback and answered 200, and nothing said the setting had been misread.
+ *
+ * The clamp says so too, for the same reason `envPositiveInt` warns: a value
+ * somebody set and this module quietly moved is a value they will keep
+ * believing in. The value itself is not echoed, matching `envNumber.ts`.
+ */
+function clampedTimeoutMs(
+  name: string,
+  fallbackMs: number,
+  minMs: number,
+  maxMs: number,
+  env: Record<string, string | undefined>,
+): number {
+  const configured = envPositiveInt(name, fallbackMs, env);
+  const clamped = Math.min(Math.max(configured, minMs), maxMs);
+  if (clamped !== configured) {
+    console.warn(
+      `[env] ${name} is outside the ${minMs}-${maxMs} ms this route's budget allows, ` +
+        `so ${clamped} ms is being used instead.`,
+    );
+  }
+  return clamped;
 }
 
 /*
@@ -85,13 +118,20 @@ export function entryModelTimeouts(env: Record<string, string | undefined> = pro
   embeddingMs: number;
 } {
   return {
-    extractionMs: timeoutFromEnv(
-      env.OPENAI_EXTRACTION_TIMEOUT_MS,
+    extractionMs: clampedTimeoutMs(
+      "OPENAI_EXTRACTION_TIMEOUT_MS",
       EXTRACTION_TIMEOUT_DEFAULT_MS,
       1_000,
       EXTRACTION_TIMEOUT_MAX_MS,
+      env,
     ),
-    embeddingMs: timeoutFromEnv(env.OPENAI_EMBEDDING_TIMEOUT_MS, EMBEDDING_TIMEOUT_DEFAULT_MS, 500, EMBEDDING_TIMEOUT_MAX_MS),
+    embeddingMs: clampedTimeoutMs(
+      "OPENAI_EMBEDDING_TIMEOUT_MS",
+      EMBEDDING_TIMEOUT_DEFAULT_MS,
+      500,
+      EMBEDDING_TIMEOUT_MAX_MS,
+      env,
+    ),
   };
 }
 
@@ -104,10 +144,11 @@ export const TRANSCRIPTION_TIMEOUT_DEFAULT_MS = 45_000;
 export const TRANSCRIPTION_TIMEOUT_MAX_MS = 50_000;
 
 export function transcriptionTimeoutMs(env: Record<string, string | undefined> = process.env): number {
-  return timeoutFromEnv(
-    env.OPENAI_TRANSCRIPTION_TIMEOUT_MS,
+  return clampedTimeoutMs(
+    "OPENAI_TRANSCRIPTION_TIMEOUT_MS",
     TRANSCRIPTION_TIMEOUT_DEFAULT_MS,
     1_000,
     TRANSCRIPTION_TIMEOUT_MAX_MS,
+    env,
   );
 }
