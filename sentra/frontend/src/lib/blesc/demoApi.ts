@@ -45,6 +45,8 @@ import type {
   StudentAccessRecord,
 } from "@/api/models";
 import { RAMP_UP_DAYS } from "../baseline.ts";
+import { localDayKey } from "../journalStats.ts";
+import { STUDY_TIME_ZONE } from "../pilotOps.ts";
 import { assessSafety } from "../safety-assessment.ts";
 import { t } from "../i18n/index.ts";
 import { CLASS_ROSTER, CURRENT_STUDENT, MY_ENTRIES } from "./fixtures.ts";
@@ -704,4 +706,34 @@ export function demoChatReply(message: string): ChatResponse {
     status: "demo_fixture",
     error_message: null,
   };
+}
+
+/**
+ * Submission instants for the educator's "毎日の提出" check in the demo.
+ *
+ * The fixtures are dated around a fixed demo day, but the check is drawn
+ * relative to the real "today". So each student's gap is carried over: a
+ * student whose last fixture entry is two days before the demo day shows as
+ * having written every day up to two days before today, and nothing since.
+ * Noon JST (03:00 UTC) keeps each instant well inside its JST day.
+ */
+export function demoSubmissionInstants(
+  participantIds: string[],
+  now: Date,
+): Array<{ participant_id: string; created_at: string }> {
+  const roster = new Map(demoCohortRoster().map((row) => [row.participant_id, row]));
+  const demoDay = Date.parse(`${TODAY_DEMO}T00:00:00Z`);
+  const rows: Array<{ participant_id: string; created_at: string }> = [];
+  for (const id of participantIds) {
+    const last = roster.get(id)?.last_active_day;
+    if (!last) continue;
+    const gap = Math.max(0, Math.round((demoDay - Date.parse(`${last.slice(0, 10)}T00:00:00Z`)) / 86_400_000));
+    const today = localDayKey(now, STUDY_TIME_ZONE);
+    for (let offset = gap; offset < 10; offset += 1) {
+      const instant = new Date(`${today}T03:00:00.000Z`);
+      instant.setUTCDate(instant.getUTCDate() - offset);
+      rows.push({ participant_id: id, created_at: instant.toISOString() });
+    }
+  }
+  return rows;
 }

@@ -34,6 +34,13 @@ import { generateCounselorSummary, type CounselorTimelineEvent } from "@/lib/cou
 import { buildAuditTrails, type ModelRunRecord } from "@/lib/audit-trail";
 import { t } from "@/lib/i18n";
 import { latestRowPerParticipant } from "@/lib/cohortLatestRows";
+import {
+  studyDayWindow,
+  summarizeSubmissions,
+  windowStartInstant,
+  type DailySubmissionSummary,
+  type SubmissionInstant,
+} from "@/lib/dailySubmissions";
 import { readDemoFlag } from "@/lib/demo";
 import { acknowledgedAlertKeys, readAlertEscalations } from "@/lib/cohortAlertReads";
 import * as demo from "@/lib/blesc/demoApi";
@@ -1254,6 +1261,37 @@ export class ApiClient {
         baseline_type: typeof provenance?.baseline_type === "string" ? provenance.baseline_type : null,
       };
     });
+  }
+
+  /**
+   * Which of the overseen students submitted on each of the last few study
+   * days (JST), for the "毎日の提出" check on the roster.
+   *
+   * Read from the safety-assessment rows in `model_runs` — written for every
+   * saved entry, collection-only mode included, and already readable by an
+   * educator who oversees the student. Only `participant_id` and `created_at`
+   * are selected: the fact and the time of a submission, never its content.
+   * `entries` stays unreachable for educators (no policy exists).
+   */
+  static async getCohortDailySubmissions(participantIds: string[], now: Date = new Date()): Promise<DailySubmissionSummary> {
+    if (readDemoFlag()) return summarizeSubmissions(participantIds, demo.demoSubmissionInstants(participantIds, now), now);
+    if (!participantIds.length) return summarizeSubmissions([], [], now);
+    const window = studyDayWindow(now);
+    const SUBMISSION_READ_LIMIT = 1000;
+    const result = await supabase
+      .from("model_runs")
+      .select("participant_id, created_at")
+      .eq("artifact_type", "safety_assessment")
+      .in("participant_id", participantIds)
+      .gte("created_at", windowStartInstant(window))
+      .order("created_at", { ascending: false })
+      .limit(SUBMISSION_READ_LIMIT);
+    if (result.error) throwSupabaseError(t.apiError.loadCohortSubmissions, result.error);
+    const rows = (result.data ?? []) as SubmissionInstant[];
+    // A full page may be a truncated one. A short list here reads as "did not
+    // submit", so it is refused rather than shown (#275).
+    if (rows.length >= SUBMISSION_READ_LIMIT) throw new Error(t.apiError.loadCohortSubmissions);
+    return summarizeSubmissions(participantIds, rows, now);
   }
 
   /**

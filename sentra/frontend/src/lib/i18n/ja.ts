@@ -83,6 +83,13 @@ export const ja = {
       lastEntry: (date: string) => `最後の記録 ${date}`,
       noEntries: "まだ記録がありません",
       loadFailed: "名簿を読み込めませんでした。",
+      submissionsTitle: "毎日の提出",
+      submissionsToday: (submitted: number, total: number) => `今日の提出 ${submitted} / ${total}人`,
+      submissionsNote:
+        "日本時間の日付で数えています。分かるのは提出の有無だけで、書かれた内容は表示されません。",
+      submitted: "提出あり",
+      notSubmitted: "提出なし",
+      submissionsLoadFailed: "毎日の提出状況を読み込めませんでした。",
     },
     student: {
       notShared: "この生徒からは共有されていません（担当の登録と本人の同意が必要です）。",
@@ -1080,6 +1087,7 @@ export const ja = {
     loadCohortRoster: "名簿を読み込めませんでした",
     loadCohortInsights: "クラスの記録を読み込めませんでした",
     loadCohortSafety: "安全に関する記録を読み込めませんでした",
+    loadCohortSubmissions: "毎日の提出状況を読み込めませんでした",
     loadAlertAcknowledgements: "確認済みのアラートを読み込めませんでした",
     loadStudentSignals: "生徒の記録を読み込めませんでした",
     loadStudentSafety: "生徒の安全に関する記録を読み込めませんでした",
