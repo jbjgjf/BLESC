@@ -19,6 +19,10 @@
     "pdf-lib": "^1.17.1",
     "playwright": "^1.63.0"
   },
+  "overridesReason": "zod: GHSA-mrhx-c7xc-m3w5 (high) — memory exhaustion while validating oversized constrained collections — is fixed in 4.6.6. It reaches this tree through openai and @openai/agents, which are production dependencies here, so it is not something an acceptance entry can hold (#498). Both declare a range that 4.6.7 satisfies; the override removes the advisory rather than recording it.",
+  "overrides": {
+    "zod": "^4.6.7"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@types/node": "^26",

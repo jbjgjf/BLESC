@@ -73,8 +73,10 @@ jobs:
   # `npm audit` before, so a critical advisory in `next` sat in the lockfile
   # where nobody would see it. High and critical fail the job unless accepted,
   # with the reason, in scripts/ci/npm-audit-accepted.json — `npm audit fix
-  # --force` is never the answer (for braces it is a two-major downgrade of
-  # eslint-config-next). `npm audit` reads the lockfile, so no install.
+  # --force` is never the answer (for the braces advisory this file used to
+  # accept, npm's offer was a two-major downgrade of eslint-config-next; the
+  # chain is gone as of #498 and nothing is accepted now). `npm audit` reads
+  # the lockfile, so no install.
   dependency-audit:
     name: npm audit (${{ matrix.project }})
     runs-on: ubuntu-latest
