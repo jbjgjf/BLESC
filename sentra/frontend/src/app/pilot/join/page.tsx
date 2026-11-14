@@ -71,28 +71,31 @@ export default function PilotJoinPage() {
   const [assent, setAssent] = useState(false);
   const [optional, setOptional] = useState<Record<string, boolean>>({});
 
-  const refresh = useCallback(async () => {
-    if (!user) return;
-    const rows = await ApiClient.pilotEnrollments();
-    const live = rows.find((row) => row.state !== "withdrawn" && row.state !== "completed") ?? rows[0] ?? null;
-    setEnrollment(live);
+  // effect から同期に setState しない（react-hooks/set-state-in-effect）。
+  // setState は継続コールバックの中だけで行う。
+  const refresh = useCallback(() => {
+    if (!user) return Promise.resolve();
+    return ApiClient.pilotEnrollments().then(async (rows) => {
+      const live = rows.find((row) => row.state !== "withdrawn" && row.state !== "completed") ?? rows[0] ?? null;
+      setEnrollment(live);
 
-    const status = live && live.is_minor ? await ApiClient.guardianStatus(live.id) : null;
-    setGuardian(status);
-    // The optional grants live in React state while the participant is ticking
-    // them, and nowhere else until the request is recorded. After a reload they
-    // came back empty, and the next request would have asked the guardian to
-    // approve nothing — silently converting every choice into a refusal. The
-    // outstanding request is the record of what was asked, so it seeds them.
-    if (status?.requested_grants) {
-      const restored = status.requested_grants;
-      setOptional({
-        raw_text_retention: restored.raw_text_retention === true,
-        anonymized_export: restored.anonymized_export === true,
-        model_training_use: restored.model_training_use === true,
-      });
-    }
-    setLoaded(true);
+      const status = live && live.is_minor ? await ApiClient.guardianStatus(live.id) : null;
+      setGuardian(status);
+      // The optional grants live in React state while the participant is ticking
+      // them, and nowhere else until the request is recorded. After a reload they
+      // came back empty, and the next request would have asked the guardian to
+      // approve nothing — silently converting every choice into a refusal. The
+      // outstanding request is the record of what was asked, so it seeds them.
+      if (status?.requested_grants) {
+        const restored = status.requested_grants;
+        setOptional({
+          raw_text_retention: restored.raw_text_retention === true,
+          anonymized_export: restored.anonymized_export === true,
+          model_training_use: restored.model_training_use === true,
+        });
+      }
+      setLoaded(true);
+    });
   }, [user]);
 
   useEffect(() => {

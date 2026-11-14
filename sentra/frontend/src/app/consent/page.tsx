@@ -85,22 +85,25 @@ export default function ConsentPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (demo) return;
-    const [current, enrollments] = await Promise.all([
+  // effect から同期に setState しない（react-hooks/set-state-in-effect）。
+  // setState は継続コールバックの中だけで行う。
+  const load = useCallback(() => {
+    if (demo) return Promise.resolve();
+    return Promise.all([
       ApiClient.getConsent(userId),
       ApiClient.pilotEnrollments(),
-    ]);
-    const enrollment = enrollments[0];
-    setIsMinor(enrollment ? enrollment.is_minor : true);
-    setStored(current);
-    setChecked({
-      research_analysis: current.research_analysis,
-      raw_text_retention: current.raw_text_retention,
-      anonymized_export: current.anonymized_export,
-      model_training_use: current.model_training_use,
+    ]).then(([current, enrollments]) => {
+      const enrollment = enrollments[0];
+      setIsMinor(enrollment ? enrollment.is_minor : true);
+      setStored(current);
+      setChecked({
+        research_analysis: current.research_analysis,
+        raw_text_retention: current.raw_text_retention,
+        anonymized_export: current.anonymized_export,
+        model_training_use: current.model_training_use,
+      });
+      setAssent(current.minor_assent);
     });
-    setAssent(current.minor_assent);
   }, [demo, userId]);
 
   useEffect(() => {

@@ -128,17 +128,16 @@ export default function JournalPage() {
   /**
    * 提出ごとに1つ振る id。再試行しても同じ値を送るので、サーバー側で
    * 同じ提出だと分かり、二重に保存されない（#132）。
+   * ref の遅延初期化は render 中の ref アクセスになる（react-hooks/refs）ので、
+   * 一度だけ作る値は useState の初期化関数で持つ。再代入しないから state でよい。
    */
-  const submissionIdRef = useRef<string>("");
-  if (!submissionIdRef.current) submissionIdRef.current = newSessionId();
+  const [submissionId] = useState(() => newSessionId());
 
   /**
    * 入力の計測（#135）。内容そのものは持たない — 時刻と文字数だけ。
-   * ref に置くのは、計測のたびに再描画させないため。
+   * インスタンスは不変で、計測はその中に溜まるだけなので再描画は起きない。
    */
-  const telemetryRef = useRef<EntryTelemetryCollector | null>(null);
-  if (!telemetryRef.current) telemetryRef.current = new EntryTelemetryCollector();
-  const telemetry = telemetryRef.current;
+  const [telemetry] = useState(() => new EntryTelemetryCollector());
 
   const followUpRef = useRef<HTMLDivElement>(null);
   const moodError = showErrors && mood === null;
@@ -304,7 +303,7 @@ export default function JournalPage() {
       const result = await ApiClient.createEntry(userId, journalText, "daily", {
         journal_text: journalText,
         recall_text: recallText.trim(),
-        client_submission_id: submissionIdRef.current,
+        client_submission_id: submissionId,
         // 収集期間中だけ送る。期間外は項目そのものを出していないので、
         // 送るべき回答が存在しない（#165）。
         self_report: collecting ? selfReport : undefined,

@@ -21,9 +21,13 @@ export default function SupportSummaryPage() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [orgs, setOrgs] = useState<OversightRequest[]>([]);
-  const [counselors, setCounselors] = useState<OrgCounselor[]>([]);
+  // どの org の一覧かを値と一緒に持ち、表示時に照合する。org が変わった・
+  // 空になった瞬間の「古い一覧」は描画側の導出で消えるので、effect から
+  // 同期に空へ戻す setState が要らない（react-hooks/set-state-in-effect）。
+  const [counselorsFor, setCounselorsFor] = useState<{ orgId: string; list: OrgCounselor[] }>({ orgId: "", list: [] });
   const [shareOrgId, setShareOrgId] = useState("");
   const [shareCounselorId, setShareCounselorId] = useState("");
+  const counselors = counselorsFor.orgId === shareOrgId ? counselorsFor.list : [];
   const [isSharing, setIsSharing] = useState(false);
   const [shared, setShared] = useState(false);
 
@@ -41,11 +45,11 @@ export default function SupportSummaryPage() {
   }, [userId]);
 
   useEffect(() => {
-    if (!shareOrgId) { setCounselors([]); return; }
+    if (!shareOrgId) return;
     let cancelled = false;
     ApiClient.listOrgCounselors(shareOrgId)
-      .then((next) => { if (!cancelled) setCounselors(next); })
-      .catch(() => { if (!cancelled) setCounselors([]); });
+      .then((next) => { if (!cancelled) setCounselorsFor({ orgId: shareOrgId, list: next }); })
+      .catch(() => { if (!cancelled) setCounselorsFor({ orgId: shareOrgId, list: [] }); });
     return () => { cancelled = true; };
   }, [shareOrgId]);
 

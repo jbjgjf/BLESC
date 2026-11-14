@@ -13,18 +13,19 @@ export default function GraphPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadSnapshots = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      setSnapshots(await ApiClient.getGraphSnapshots(userId));
-    } catch (err) {
-      setSnapshots([]);
-      setError(err instanceof Error ? err.message : "グラフの読み込みに失敗しました。");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [userId]);
+  // effect から同期に setState しない（react-hooks/set-state-in-effect）。
+  // isLoading は初期値 true のまま、setState は継続コールバックの中だけで行う。
+  const loadSnapshots = useCallback(
+    () =>
+      ApiClient.getGraphSnapshots(userId)
+        .then((rows) => setSnapshots(rows))
+        .catch((err) => {
+          setSnapshots([]);
+          setError(err instanceof Error ? err.message : "グラフの読み込みに失敗しました。");
+        })
+        .finally(() => setIsLoading(false)),
+    [userId],
+  );
 
   useEffect(() => {
     void loadSnapshots();

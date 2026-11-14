@@ -27,18 +27,19 @@ export default function TimelinePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadTimeline = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      setData(await ApiClient.getTimeline(userId));
-    } catch (err) {
-      setData([]);
-      setError(err instanceof Error ? err.message : t.timeline.loadFailed);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [userId]);
+  // effect から同期に setState しない（react-hooks/set-state-in-effect）。
+  // isLoading は初期値 true のまま、setState は継続コールバックの中だけで行う。
+  const loadTimeline = useCallback(
+    () =>
+      ApiClient.getTimeline(userId)
+        .then((rows) => setData(rows))
+        .catch((err) => {
+          setData([]);
+          setError(err instanceof Error ? err.message : t.timeline.loadFailed);
+        })
+        .finally(() => setIsLoading(false)),
+    [userId],
+  );
 
   useEffect(() => {
     void loadTimeline();
