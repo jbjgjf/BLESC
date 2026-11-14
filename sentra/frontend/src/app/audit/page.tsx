@@ -171,21 +171,17 @@ export default function AuditPage() {
   const [trails, setTrails] = useState<ReflectionAuditTrail[] | null>(null);
   const [filter, setFilter] = useState("");
   const [appliedFilter, setAppliedFilter] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // effect から同期に setState しない（react-hooks/set-state-in-effect）。
+  // 読み込み中への遷移は、初回は isLoading の初期値、再読込は呼び出し側が行う。
   const load = useCallback(
-    async (reflectionId?: string) => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        setTrails(await ApiClient.getAuditTrails(userId, reflectionId || undefined));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : t.audit.loadFailed);
-      } finally {
-        setIsLoading(false);
-      }
-    },
+    (reflectionId?: string) =>
+      ApiClient.getAuditTrails(userId, reflectionId || undefined)
+        .then((rows) => setTrails(rows))
+        .catch((err) => setError(err instanceof Error ? err.message : t.audit.loadFailed))
+        .finally(() => setIsLoading(false)),
     [userId],
   );
 
@@ -197,6 +193,8 @@ export default function AuditPage() {
     event.preventDefault();
     const trimmed = filter.trim();
     setAppliedFilter(trimmed);
+    setIsLoading(true);
+    setError(null);
     void load(trimmed);
   };
 

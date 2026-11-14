@@ -33,23 +33,25 @@ export default function Insights() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadInsights = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const currentAnomaly = await ApiClient.getAnomaly(userId);
-      setAnomaly(currentAnomaly);
-      if (currentAnomaly.explanation_id) {
-        setExplanation(await ApiClient.getExplanation(currentAnomaly.explanation_id));
-      }
-    } catch (err) {
-      setAnomaly(null);
-      setExplanation(null);
-      setError(err instanceof Error ? err.message : t.insights.loadFailed);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [userId]);
+  // effect から同期に setState しない（react-hooks/set-state-in-effect）。
+  // isLoading は初期値 true のまま、setState は継続コールバックの中だけで行う。
+  const loadInsights = useCallback(
+    () =>
+      ApiClient.getAnomaly(userId)
+        .then(async (currentAnomaly) => {
+          setAnomaly(currentAnomaly);
+          if (currentAnomaly.explanation_id) {
+            setExplanation(await ApiClient.getExplanation(currentAnomaly.explanation_id));
+          }
+        })
+        .catch((err) => {
+          setAnomaly(null);
+          setExplanation(null);
+          setError(err instanceof Error ? err.message : t.insights.loadFailed);
+        })
+        .finally(() => setIsLoading(false)),
+    [userId],
+  );
 
   useEffect(() => {
     void loadInsights();

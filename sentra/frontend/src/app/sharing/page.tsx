@@ -34,24 +34,24 @@ export default function SharingPage() {
   const [busyOrgId, setBusyOrgId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const [nextRequests, nextAccessLog, nextShares] = await Promise.all([
+  // effect から同期に setState しない（react-hooks/set-state-in-effect）。
+  // 読み込み中への遷移は、初回は isLoading の初期値、再読込は呼び出し側が行う。
+  const load = useCallback(
+    () =>
+      Promise.all([
         ApiClient.listOversightRequests(userId),
         ApiClient.listEducatorAccess(userId),
         ApiClient.listMySummaryShares(userId).catch(() => []),
-      ]);
-      setRequests(nextRequests);
-      setAccessLog(nextAccessLog);
-      setShares(nextShares);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t.sharing.loadFailed);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [userId]);
+      ])
+        .then(([nextRequests, nextAccessLog, nextShares]) => {
+          setRequests(nextRequests);
+          setAccessLog(nextAccessLog);
+          setShares(nextShares);
+        })
+        .catch((err) => setError(err instanceof Error ? err.message : t.sharing.loadFailed))
+        .finally(() => setIsLoading(false)),
+    [userId],
+  );
 
   useEffect(() => {
     void load();
@@ -62,6 +62,7 @@ export default function SharingPage() {
     setError(null);
     try {
       await ApiClient.revokeSummaryShare(shareId);
+      setIsLoading(true);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : t.sharing.revokeFailed);
@@ -76,6 +77,7 @@ export default function SharingPage() {
     try {
       if (grant) await ApiClient.grantOversightConsent(userId, orgId);
       else await ApiClient.revokeOversightConsent(userId, orgId);
+      setIsLoading(true);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : t.sharing.updateFailed);

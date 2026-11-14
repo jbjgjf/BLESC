@@ -107,26 +107,30 @@ export default function CrisisTriagePage() {
   // 上書きさせない（失敗が一覧を消すようになったので、順序が大事になった）。
   const latestLoad = useRef(0);
 
-  const refresh = useCallback(async () => {
+  // effect から同期に setState しない（react-hooks/set-state-in-effect）。
+  // setState は継続コールバックの中だけで行い、エラー表示の消去は
+  // 再読込を起こす側（ボタン・decide）が自分で行う。
+  const refresh = useCallback(() => {
     const ticket = ++latestLoad.current;
-    setProblem(null);
-    try {
-      const result = await ApiClient.fetch<QueueResponse>(
-        `/pilot/triage${includeDecided ? "?include_decided=1" : ""}`,
-      );
-      if (ticket !== latestLoad.current) return;
-      setData(result);
-      setLoadFailed(false);
-    } catch (err) {
-      if (ticket !== latestLoad.current) return;
-      // 前回の一覧を残さない（#260）。判断を記録した直後の再読み込みが
-      // 失敗したとき、古い一覧には判断済みの行が「未確認」のまま残っていて、
-      // それを見て次の判断をすることになる。読めなかったときに出すのは
-      // 「読めなかった」だけにする。
-      setData(null);
-      setLoadFailed(true);
-      setProblem(err instanceof Error ? err.message : "読み込めませんでした。");
-    }
+    return ApiClient.fetch<QueueResponse>(
+      `/pilot/triage${includeDecided ? "?include_decided=1" : ""}`,
+    )
+      .then((result) => {
+        if (ticket !== latestLoad.current) return;
+        setData(result);
+        setLoadFailed(false);
+        setProblem(null);
+      })
+      .catch((err) => {
+        if (ticket !== latestLoad.current) return;
+        // 前回の一覧を残さない（#260）。判断を記録した直後の再読み込みが
+        // 失敗したとき、古い一覧には判断済みの行が「未確認」のまま残っていて、
+        // それを見て次の判断をすることになる。読めなかったときに出すのは
+        // 「読めなかった」だけにする。
+        setData(null);
+        setLoadFailed(true);
+        setProblem(err instanceof Error ? err.message : "読み込めませんでした。");
+      });
   }, [includeDecided]);
 
   useEffect(() => {
@@ -280,7 +284,10 @@ export default function CrisisTriagePage() {
                 type="button"
                 className="bl-btn bl-btn--secondary"
                 disabled={busy}
-                onClick={() => void refresh()}
+                onClick={() => {
+                  setProblem(null);
+                  void refresh();
+                }}
               >
                 もう一度読み込む
               </button>

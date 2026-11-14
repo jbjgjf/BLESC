@@ -66,11 +66,16 @@ export function VoiceMode({ onClose }: { onClose: (turns: VoiceTurn[]) => void }
   const assistantTextRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const transcriptsRef = useRef<TranscriptItem[]>([]);
-  transcriptsRef.current = transcripts;
   /** The student's last utterance, held until its reply settles. */
   const pendingUserTurnRef = useRef<string | null>(null);
   /** True while the next response is the floor's own injected support text. */
   const injectedRef = useRef(false);
+
+  // onClose が最新の transcripts を読めるよう ref に写す。render 中の
+  // ref への書き込みは不可（react-hooks/refs）なので、commit 後に行う。
+  useEffect(() => {
+    transcriptsRef.current = transcripts;
+  }, [transcripts]);
 
   const cleanup = useCallback(() => {
     dcRef.current?.close();

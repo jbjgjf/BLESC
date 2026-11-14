@@ -212,36 +212,43 @@ export default function Home() {
     };
   };
 
-  const loadEntries = useCallback(async () => {
-    try {
-      const data = await ApiClient.getEntries(userId);
-      console.info("[entries] loaded", { count: data.length });
-      setEntries(data);
-    } catch (err) {
-      console.warn("[entries] load failed", err);
-      setEntries([]);
-    }
-  }, [userId]);
+  // effect から同期に setState しない（react-hooks/set-state-in-effect）。
+  // setState は継続コールバックの中だけで行う。
+  const loadEntries = useCallback(
+    () =>
+      ApiClient.getEntries(userId)
+        .then((data) => {
+          console.info("[entries] loaded", { count: data.length });
+          setEntries(data);
+        })
+        .catch((err) => {
+          console.warn("[entries] load failed", err);
+          setEntries([]);
+        }),
+    [userId],
+  );
 
-  const loadGraphSnapshots = useCallback(async () => {
-    try {
-      const data = await ApiClient.getGraphSnapshots(userId);
-      setGraphSnapshots(data);
-    } catch (err) {
-      console.warn("[graph-snapshots] load failed", err);
-      setGraphSnapshots([]);
-    }
-  }, [userId]);
+  const loadGraphSnapshots = useCallback(
+    () =>
+      ApiClient.getGraphSnapshots(userId)
+        .then((data) => setGraphSnapshots(data))
+        .catch((err) => {
+          console.warn("[graph-snapshots] load failed", err);
+          setGraphSnapshots([]);
+        }),
+    [userId],
+  );
 
-  const loadConversationRecall = useCallback(async () => {
-    try {
-      const data = await ApiClient.getConversationRecallWithFallback(userId);
-      setConversationRecall(data);
-    } catch (err) {
-      console.warn("[conversation_recall_30] load failed", err);
-      setConversationRecall(null);
-    }
-  }, [userId]);
+  const loadConversationRecall = useCallback(
+    () =>
+      ApiClient.getConversationRecallWithFallback(userId)
+        .then((data) => setConversationRecall(data))
+        .catch((err) => {
+          console.warn("[conversation_recall_30] load failed", err);
+          setConversationRecall(null);
+        }),
+    [userId],
+  );
 
   useEffect(() => { loadEntries(); loadGraphSnapshots(); loadConversationRecall(); }, [loadEntries, loadGraphSnapshots, loadConversationRecall]);
 
