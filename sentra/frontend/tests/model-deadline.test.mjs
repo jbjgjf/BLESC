@@ -25,7 +25,6 @@ import {
   EMBEDDING_TIMEOUT_MAX_MS,
   TRANSCRIPTION_TIMEOUT_MAX_MS,
   entryModelTimeouts,
-  timeoutFromEnv,
   transcriptionTimeoutMs,
   withDeadline,
 } from "../src/lib/server/modelDeadline.ts";
@@ -158,10 +157,64 @@ describe("the budget leaves time to write the entry", () => {
     assert.equal(embeddingMs, EMBEDDING_TIMEOUT_MAX_MS);
   });
 
-  it("ignores a value that is not a positive number of milliseconds", () => {
-    for (const value of ["", "abc", "-5", "0", "NaN"]) {
-      assert.equal(timeoutFromEnv(value, 7_000, 1_000, 9_000), 7_000, `accepted ${JSON.stringify(value)}`);
+  // The parse rule itself is tabled in env-number.test.mjs. What is pinned here
+  // is that all three timeouts go through it (#553): `timeoutFromEnv` used to
+  // read these with `Number()`, so "0x20", "1e3" and "3.5" became a 1 s
+  // deadline without a word, and every extraction fell back.
+  const withWarnings = (fn) => {
+    const warnings = [];
+    const original = console.warn;
+    console.warn = (...args) => warnings.push(args.join(" "));
+    try {
+      return { value: fn(), warnings };
+    } finally {
+      console.warn = original;
     }
+  };
+
+  const READERS = [
+    ["OPENAI_EXTRACTION_TIMEOUT_MS", (env) => entryModelTimeouts(env).extractionMs, 25_000],
+    ["OPENAI_EMBEDDING_TIMEOUT_MS", (env) => entryModelTimeouts(env).embeddingMs, 4_000],
+    ["OPENAI_TRANSCRIPTION_TIMEOUT_MS", (env) => transcriptionTimeoutMs(env), 45_000],
+  ];
+
+  for (const [name, read, fallback] of READERS) {
+    it(`reads ${name} with the shared envPositiveInt rule, and says so when it falls back`, () => {
+      for (const value of ["25s", "20_000", "0x20", "1e3", "3.5", "+20000", "abc", "-5", "0", "NaN"]) {
+        const { value: got, warnings } = withWarnings(() => read({ [name]: value }));
+        assert.equal(got, fallback, `${name}=${JSON.stringify(value)} was not ignored`);
+        assert.ok(
+          warnings.some((line) => line.includes(name)),
+          `${name}=${JSON.stringify(value)} fell back without a warning`,
+        );
+      }
+    });
+
+    it(`does not warn about ${name} when it is unset`, () => {
+      const { value: got, warnings } = withWarnings(() => read({}));
+      assert.equal(got, fallback);
+      assert.deepEqual(warnings, []);
+    });
+  }
+
+  it("says so when a readable value is moved by the clamp", () => {
+    const high = withWarnings(() => transcriptionTimeoutMs({ OPENAI_TRANSCRIPTION_TIMEOUT_MS: "999999" }));
+    assert.equal(high.value, TRANSCRIPTION_TIMEOUT_MAX_MS);
+    assert.ok(high.warnings.some((line) => line.includes("OPENAI_TRANSCRIPTION_TIMEOUT_MS")));
+
+    const low = withWarnings(() => entryModelTimeouts({ OPENAI_EXTRACTION_TIMEOUT_MS: "32" }));
+    assert.equal(low.value.extractionMs, 1_000);
+    assert.ok(low.warnings.some((line) => line.includes("OPENAI_EXTRACTION_TIMEOUT_MS")));
+
+    const inside = withWarnings(() => entryModelTimeouts({ OPENAI_EXTRACTION_TIMEOUT_MS: "10000" }));
+    assert.equal(inside.value.extractionMs, 10_000);
+    assert.deepEqual(inside.warnings, []);
+  });
+
+  it("keeps no second parser for these variables", () => {
+    const deadline = code(read("../src/lib/server/modelDeadline.ts"));
+    assert.doesNotMatch(deadline, /Number\(/, "modelDeadline.ts parses an env value itself again");
+    assert.match(deadline, /envPositiveInt\(/);
   });
 
   it("keeps the transcription deadline inside its route's maxDuration", () => {

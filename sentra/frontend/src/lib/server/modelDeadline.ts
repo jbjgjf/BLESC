@@ -13,6 +13,8 @@
  * Relative imports only, so the node test runner can load this file.
  */
 
+import { envPositiveInt } from "./envNumber.ts";
+
 /** Thrown when a call ran out of time, so callers can say "timeout" rather than "failed". */
 export class DeadlineExceeded extends Error {
   readonly timeoutMs: number;
@@ -51,11 +53,33 @@ export async function withDeadline<T>(timeoutMs: number, call: (signal: AbortSig
   }
 }
 
-/** A millisecond setting from the environment, kept inside `[min, max]`. */
-export function timeoutFromEnv(value: string | undefined, fallbackMs: number, minMs: number, maxMs: number): number {
-  const parsed = Number(value);
-  if (!value || !Number.isFinite(parsed) || parsed <= 0) return fallbackMs;
-  return Math.min(Math.max(Math.round(parsed), minMs), maxMs);
+/**
+ * A millisecond setting from the environment, kept inside `[min, max]`.
+ *
+ * Reading the value is `envPositiveInt`'s job, not this function's (#553): a
+ * second parser here accepted `"0x20"`, `"1e3"` and `"3.5"` through `Number()`
+ * and turned them, silently, into a 1 s deadline. The clamp stays here because
+ * it is a different job — the caps are the route budget below, not validation.
+ *
+ * A value that was read but moved by the clamp is reported as well. "Your
+ * setting was used, but not as written" is a different fact from "your setting
+ * was ignored", and neither may pass without a line in the log.
+ */
+function clampedTimeoutFromEnv(
+  env: Record<string, string | undefined>,
+  name: string,
+  fallbackMs: number,
+  minMs: number,
+  maxMs: number,
+): number {
+  const read = envPositiveInt(name, fallbackMs, env);
+  const clamped = Math.min(Math.max(read, minMs), maxMs);
+  if (clamped !== read) {
+    console.warn(
+      `[env] ${name} is outside ${minMs}..${maxMs} ms, so ${clamped} is being used instead of the configured value.`,
+    );
+  }
+  return clamped;
 }
 
 /*
@@ -85,13 +109,20 @@ export function entryModelTimeouts(env: Record<string, string | undefined> = pro
   embeddingMs: number;
 } {
   return {
-    extractionMs: timeoutFromEnv(
-      env.OPENAI_EXTRACTION_TIMEOUT_MS,
+    extractionMs: clampedTimeoutFromEnv(
+      env,
+      "OPENAI_EXTRACTION_TIMEOUT_MS",
       EXTRACTION_TIMEOUT_DEFAULT_MS,
       1_000,
       EXTRACTION_TIMEOUT_MAX_MS,
     ),
-    embeddingMs: timeoutFromEnv(env.OPENAI_EMBEDDING_TIMEOUT_MS, EMBEDDING_TIMEOUT_DEFAULT_MS, 500, EMBEDDING_TIMEOUT_MAX_MS),
+    embeddingMs: clampedTimeoutFromEnv(
+      env,
+      "OPENAI_EMBEDDING_TIMEOUT_MS",
+      EMBEDDING_TIMEOUT_DEFAULT_MS,
+      500,
+      EMBEDDING_TIMEOUT_MAX_MS,
+    ),
   };
 }
 
@@ -104,8 +135,9 @@ export const TRANSCRIPTION_TIMEOUT_DEFAULT_MS = 45_000;
 export const TRANSCRIPTION_TIMEOUT_MAX_MS = 50_000;
 
 export function transcriptionTimeoutMs(env: Record<string, string | undefined> = process.env): number {
-  return timeoutFromEnv(
-    env.OPENAI_TRANSCRIPTION_TIMEOUT_MS,
+  return clampedTimeoutFromEnv(
+    env,
+    "OPENAI_TRANSCRIPTION_TIMEOUT_MS",
     TRANSCRIPTION_TIMEOUT_DEFAULT_MS,
     1_000,
     TRANSCRIPTION_TIMEOUT_MAX_MS,
