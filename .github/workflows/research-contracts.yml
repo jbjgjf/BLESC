@@ -296,13 +296,26 @@ jobs:
       - name: Run the enrollment-gate E2E suite
         run: npm run test:e2e
 
+      # Both directories, and `warn` rather than `ignore` (#545): CI once ran
+      # the `list` reporter only, so `playwright-report/` never existed and
+      # this step uploaded nothing without saying so. The traces, screenshots
+      # and `error-context.md` that `trace: "retain-on-failure"` keeps are in
+      # `test-results/`, and are what makes a CI-only failure reproducible.
       - name: Upload the Playwright report
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: sentra/frontend/playwright-report
-          if-no-files-found: ignore
+          if-no-files-found: warn
+
+      - name: Upload the Playwright traces and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-test-results
+          path: sentra/frontend/test-results
+          if-no-files-found: warn
 
   dry-run-sql:
     name: Pilot dry-run SQL
