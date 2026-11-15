@@ -86,6 +86,39 @@ def test_every_leakage_check_ran_and_passed(run):
     assert not run.report.failed_leakage_checks
 
 
+def test_the_cutoff_check_goes_red_when_a_cited_event_is_not_in_the_bundle():
+    """An event the check could not compare is not a passed comparison (#548)."""
+
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+
+    cutoff = datetime(2026, 1, 10, tzinfo=timezone.utc)
+    forecast = SimpleNamespace(
+        forecast_id="f1", cutoff_at=cutoff, source_event_ids=["known-ok", "ghost-event"]
+    )
+    event_times = {"known-ok": cutoff - timedelta(days=1)}
+
+    check = leakage_checks.available_at_within_cutoff([forecast], event_times)
+    assert check.passed is False
+    assert check.checked_items == 1
+    assert "f1:ghost-event" in check.detail_ja
+    assert "1件" in check.detail_ja
+    assert "すべてcutoff以前" not in check.detail_ja
+
+
+def test_the_cutoff_check_still_passes_when_every_cited_event_is_known():
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+
+    cutoff = datetime(2026, 1, 10, tzinfo=timezone.utc)
+    forecast = SimpleNamespace(forecast_id="f1", cutoff_at=cutoff, source_event_ids=["a", "b"])
+    event_times = {"a": cutoff - timedelta(days=1), "b": cutoff}
+
+    check = leakage_checks.available_at_within_cutoff([forecast], event_times)
+    assert check.passed is True
+    assert check.checked_items == 2
+
+
 def test_the_normalizer_check_goes_red_when_it_is_fitted_on_everything():
     """The check has to be able to fail, or its green is worthless."""
 

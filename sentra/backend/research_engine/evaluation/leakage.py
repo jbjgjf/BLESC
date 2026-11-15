@@ -29,24 +29,43 @@ from .ledger import PredictionLedger
 def available_at_within_cutoff(
     forecasts: Sequence[ForecastBundle], event_times: Mapping[str, Any]
 ) -> LeakageCheck:
-    """Every event a forecast cites was available at or before its cutoff."""
+    """Every event a forecast cites was available at or before its cutoff.
+
+    An event the forecast cites that is not in `event_times` could not be
+    compared with the cutoff, so it is neither counted as checked nor allowed
+    to pass (#548). A forecast citing something outside the observation bundle
+    is the case this check most needs to catch, not one to wave through.
+    """
 
     checked = 0
     offenders: List[str] = []
+    unverifiable: List[str] = []
     for forecast in forecasts:
         for event_id in forecast.source_event_ids:
             available_at = event_times.get(event_id)
+            if available_at is None:
+                unverifiable.append(f"{forecast.forecast_id}:{event_id}")
+                continue
             checked += 1
-            if available_at is not None and available_at > forecast.cutoff_at:
+            if available_at > forecast.cutoff_at:
                 offenders.append(f"{forecast.forecast_id}:{event_id}")
+
+    problems: List[str] = []
+    if offenders:
+        problems.append(f"cutoffより後のeventが混入している: {offenders[:5]}")
+    if unverifiable:
+        problems.append(
+            f"観測バンドルに無いeventが{len(unverifiable)}件引用されており、"
+            f"cutoffと比較できなかった: {unverifiable[:5]}"
+        )
 
     return LeakageCheck(
         name="available_at_le_cutoff",
-        passed=not offenders,
+        passed=not problems,
         detail_ja=(
             f"{checked}件の入力eventがすべてcutoff以前だった。"
-            if not offenders
-            else f"cutoffより後のeventが混入している: {offenders[:5]}"
+            if not problems
+            else " / ".join(problems)
         ),
         checked_items=checked,
     )
