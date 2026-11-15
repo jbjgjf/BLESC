@@ -19,6 +19,14 @@ process.env.E2E_RUN_ID = RUN_ID;
  * **One worker.** The tests share one database and one seeded study, and the
  * withdrawal case mutates a row the others read. Parallel workers would make
  * failures depend on ordering.
+ *
+ * **The HTML report runs in CI too (#545).** CI used to get `list` only, and
+ * only the `html` reporter writes `playwright-report/` — so the workflow's
+ * "upload the report on failure" step uploaded nothing, silently. `html` with
+ * `open: "never"` is kept in both places (not `blob`): a single CI job has no
+ * shards to merge, and an HTML report can be opened straight from the
+ * artifact. The traces and screenshots that `use` below retains on failure
+ * land in `test-results/`, which the workflow uploads as a second artifact.
  */
 const PORT = 3100;
 
@@ -30,7 +38,7 @@ export default defineConfig({
   workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
-  reporter: process.env.CI ? "list" : [["list"], ["html", { open: "never" }]],
+  reporter: [["list"], ["html", { open: "never" }]],
   timeout: 30_000,
   expect: { timeout: 10_000 },
 
