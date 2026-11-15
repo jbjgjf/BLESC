@@ -107,6 +107,10 @@ jobs:
           node-version: "24"
       - name: Test the safety-dispatch report
         run: node --test scripts/ci/safety-dispatch-report.test.mjs
+      # This repository is public; no Supabase project ref but the evaluation
+      # project's may be committed (#479).
+      - name: Check for committed Supabase project refs
+        run: node --test scripts/ci/supabase-project-refs.test.mjs
 
   backend-research:
     name: Backend research contracts
@@ -170,7 +174,10 @@ jobs:
       run:
         working-directory: sentra/frontend
     env:
-      NEXT_PUBLIC_SUPABASE_URL: https://kvcrkveaxlrijhzyayeg.supabase.co
+      # `.invalid` cannot resolve (RFC 2606), the same rule as the fallback in
+      # src/lib/supabase/client.ts: an accidental request from the build fails
+      # as a network error instead of reaching a real project (#479).
+      NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.invalid
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
     steps:
       - name: Checkout

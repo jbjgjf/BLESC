@@ -26,7 +26,10 @@ describe("synthetic account contract", () => {
     // the end of `loadEnv`, this environment answered "no OpenAI key" and said
     // nothing about being pointed at production.
     delete process.env.BLESC_EVAL_RUNNER_OPENAI_API_KEY;
-    process.env.EVAL_SUPABASE_URL = "https://kvcrkveaxlrijhzyayeg.supabase.co";
+    // Not the real production ref: the guard is an allowlist, so any project
+    // outside it proves the refusal, and the real ref must not be committed
+    // to this public repository (#479).
+    process.env.EVAL_SUPABASE_URL = "https://production-project-ref.supabase.co";
     try {
       assert.throws(() => loadEnv(), /Refusing to run evaluation/i);
     } finally {
