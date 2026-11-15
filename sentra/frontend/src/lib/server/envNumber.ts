@@ -42,9 +42,17 @@
  * Zero is refused rather than honoured. Every call site here reads a timeout or
  * a ceiling, and for both of those zero means "off" in a way nobody writes a
  * zero to ask for — a `0` in one of these variables is a truncated value.
+ *
+ * `env` defaults to `process.env`. It is a parameter so that callers which take
+ * their environment as an argument (`entryModelTimeouts(env)`, so the tests can
+ * drive them) go through this rule too, instead of keeping a second copy (#553).
  */
-export function envPositiveInt(name: string, fallback: number): number {
-  const raw = process.env[name];
+export function envPositiveInt(
+  name: string,
+  fallback: number,
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = env[name];
   if (raw === undefined || raw.trim() === "") return fallback;
 
   const candidate = raw.trim();
