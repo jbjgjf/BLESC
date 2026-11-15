@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { counselorSummaryToText, generateCounselorSummary } from "../src/lib/counselor-summary.ts";
+import { counselorSummaryToText, formatSafetyFlag, generateCounselorSummary } from "../src/lib/counselor-summary.ts";
 
 const event = (index, overrides = {}) => ({
   event_id: `event-${index}`,
@@ -48,5 +48,46 @@ describe("generateCounselorSummary", () => {
     assert.match(text, /music/);
     assert.doesNotMatch(text, /you have|diagnosed with|clinical diagnosis/);
     assert.match(text, /診断や臨床的な評価ではありません/);
+  });
+});
+
+// The copied / downloaded text is the document a student hands over (#471). It
+// used to print `- crisis: self_harm_or_suicide_risk`; the screens translated.
+describe("counselorSummaryToText safety section", () => {
+  const crisis = event(1, {
+    timestamp: "2026-07-02T09:00:00.000Z",
+    safety_level: "crisis",
+    safety_reasons: ["self_harm_or_suicide_risk", "inability_to_stay_safe"],
+  });
+
+  it("words the level and reasons in Japanese, with the date", () => {
+    const text = counselorSummaryToText(generateCounselorSummary([event(0), crisis]));
+    assert.doesNotMatch(text, /crisis/);
+    assert.doesNotMatch(text, /self_harm_or_suicide_risk/);
+    assert.doesNotMatch(text, /inability_to_stay_safe/);
+    assert.match(text, /- 2026\/7\/2 · すぐに確認 · 自傷・自殺に関する直接的な表現、安全を保てないという表現/);
+  });
+
+  it("gives the period in ja-JP regardless of the runtime locale", () => {
+    const text = counselorSummaryToText(generateCounselorSummary([event(0), event(4)]));
+    assert.match(text, /2026\/7\/1 – 2026\/7\/5/);
+  });
+
+  it("falls back to the raw code when there is no translation, without dropping the line", () => {
+    const line = formatSafetyFlag({ level: "unheard_of", reasons: ["new_reason_code"], timestamp: "2026-07-02T09:00:00.000Z" });
+    assert.equal(line, "2026/7/2 · unheard_of · new_reason_code");
+  });
+
+  it("says a flag was recorded when it has no reasons", () => {
+    assert.equal(formatSafetyFlag({ level: "elevated", reasons: [], timestamp: "2026-07-02T09:00:00.000Z" }), "2026/7/2 · 確認が必要 · 記録あり");
+  });
+
+  it("is the one wording both screens use", async () => {
+    const { readFileSync } = await import("node:fs");
+    for (const page of ["../src/app/support-summary/page.tsx", "../src/app/oversight/page.tsx"]) {
+      const source = readFileSync(new URL(page, import.meta.url), "utf8");
+      assert.match(source, /formatSafetyFlag\(flag\)/, `${page} formats safety flags itself again`);
+      assert.doesNotMatch(source, /t\.safety\.reason\[reason\]/, `${page} formats safety flags itself again`);
+    }
   });
 });

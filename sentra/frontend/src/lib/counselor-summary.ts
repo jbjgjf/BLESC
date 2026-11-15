@@ -1,5 +1,7 @@
 import type { CounselorSupportSummary, CounselorSummarySection } from "@/api/models";
 
+import { t } from "./i18n/index.ts";
+
 export interface CounselorTimelineEvent {
   event_id: string;
   timestamp: string;
@@ -76,13 +78,35 @@ export function generateCounselorSummary(events: CounselorTimelineEvent[], now =
   };
 }
 
+type SafetyFlag = CounselorSupportSummary["safety_flags"][number];
+
+/** A date as the summary shows it, on screen and in the copied text alike. */
+export function formatSummaryDate(timestamp: string) {
+  return new Date(timestamp).toLocaleDateString("ja-JP");
+}
+
+/**
+ * One safety flag as a line of Japanese: date · level · reasons (#471).
+ *
+ * The one place this is worded, so the student's screen, the counsellor's
+ * screen and the text that is copied or downloaded cannot drift apart. The
+ * text version used to print the raw codes (`crisis: self_harm_or_suicide_risk`)
+ * on the very document a student hands to a counsellor. A code with no
+ * translation falls back to itself rather than dropping the line.
+ */
+export function formatSafetyFlag(flag: Pick<SafetyFlag, "level" | "reasons" | "timestamp">) {
+  const level = t.safety.level[flag.level] ?? flag.level;
+  const reasons = flag.reasons.map((reason) => t.safety.reason[reason] ?? reason).join("、") || t.safety.flagRecorded;
+  return `${formatSummaryDate(flag.timestamp)} · ${level} · ${reasons}`;
+}
+
 export function counselorSummaryToText(summary: CounselorSupportSummary) {
   const range = summary.date_range.from && summary.date_range.to
-    ? `${new Date(summary.date_range.from).toLocaleDateString()} – ${new Date(summary.date_range.to).toLocaleDateString()}`
+    ? `${formatSummaryDate(summary.date_range.from)} – ${formatSummaryDate(summary.date_range.to)}`
     : "記録の期間が取得できません";
   const lines = [`支援用のまとめ`, `${range} ・ ${summary.reflection_count}件の記録`, ""];
   for (const item of summary.sections) lines.push(item.title, ...(item.items.length ? item.items.map((value) => `- ${value}`) : ["- 該当する記録はありません。"]), "");
-  if (summary.safety_flags.length) lines.push("安全に関する記録", ...summary.safety_flags.map((flag) => `- ${flag.level}: ${flag.reasons.join("、") || "記録あり"}`), "");
+  if (summary.safety_flags.length) lines.push("安全に関する記録", ...summary.safety_flags.map((flag) => `- ${formatSafetyFlag(flag)}`), "");
   lines.push("この資料について", summary.limitations);
   return lines.join("\n");
 }
