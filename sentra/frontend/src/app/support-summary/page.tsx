@@ -6,7 +6,7 @@ import { CheckCircle2, Copy, Download, Loader2, Send, ShieldAlert } from "lucide
 import { ApiClient } from "@/api/client";
 import type { CounselorSupportSummary, OrgCounselor, OversightRequest } from "@/api/models";
 import { useAuth } from "@/lib/auth";
-import { counselorSummaryToText } from "@/lib/counselor-summary";
+import { counselorSummaryToText, formatSafetyFlag } from "@/lib/counselor-summary";
 import { t } from "@/lib/i18n";
 
 const panel: React.CSSProperties = {
@@ -161,9 +161,7 @@ export default function SupportSummaryPage() {
               <div className="mb-2 flex items-center gap-2 font-semibold" style={{ color: "var(--sienna)" }}><ShieldAlert className="h-5 w-5" />{t.supportSummary.safetyFlags}</div>
               {summary.safety_flags.map((flag) => (
                 <p key={`${flag.event_id}-${flag.timestamp}`} className="text-sm" style={{ color: "var(--ink-mid)" }}>
-                  {new Date(flag.timestamp).toLocaleDateString("ja-JP")} · {t.safety.level[flag.level] ?? flag.level}
-                  {" · "}
-                  {flag.reasons.map((reason) => t.safety.reason[reason] ?? reason).join("、") || t.safety.flagRecorded}
+                  {formatSafetyFlag(flag)}
                 </p>
               ))}
             </div>

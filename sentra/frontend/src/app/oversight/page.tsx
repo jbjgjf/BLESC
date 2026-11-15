@@ -9,6 +9,7 @@ import { t } from "@/lib/i18n";
 import type { CounselorSummarySection, EducatorStudentStatus, SharedSupportSummary } from "@/api/models";
 import { AttentionChip, BaselineContextLine, NonDiagnosticNotice, ObservationLine, panel } from "@/components/educator/StatusChips";
 import { useAuth } from "@/lib/auth";
+import { formatSafetyFlag } from "@/lib/counselor-summary";
 
 const SECTION_ORDER: CounselorSummarySection["key"][] = [
   "recent_themes",
@@ -139,9 +140,7 @@ export default function OversightPage() {
                   </div>
                   {selected.summary_json.safety_flags.map((flag) => (
                     <p key={`${flag.event_id}-${flag.timestamp}`} className="text-sm" style={{ color: "var(--ink-mid)" }}>
-                      {new Date(flag.timestamp).toLocaleDateString("ja-JP")} · {t.safety.level[flag.level] ?? flag.level}
-                      {" · "}
-                      {flag.reasons.map((reason) => t.safety.reason[reason] ?? reason).join("、") || t.safety.flagRecorded}
+                      {formatSafetyFlag(flag)}
                     </p>
                   ))}
                 </div>
