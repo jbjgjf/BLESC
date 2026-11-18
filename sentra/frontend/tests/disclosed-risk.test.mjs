@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { DISCLOSED_RISK_ROWS, recentDisclosedRisk } from "../src/lib/server/disclosedRisk.ts";
+import { recentDisclosedRisk } from "../src/lib/server/disclosedRisk.ts";
+
+/**
+ * The size of the window the module used to read (`limit(20)`). Filling past it
+ * is how #373 and #529 lost a crisis, so the regression cases still do.
+ */
+const DISCLOSED_RISK_ROWS = 20;
 
 /**
  * A fake `model_runs` table that answers the PostgREST builder the way the
@@ -105,9 +111,14 @@ function auditRow(minutesAgo, config, overrides = {}) {
   };
 }
 
+/** One turn per minute on `surface` for the last `count` minutes, all at `level`. */
+function turns(surface, count, level = "none") {
+  return Array.from({ length: count }, (_, i) => auditRow(i + 1, { risk_level: level, surface }));
+}
+
 /** One chat turn per minute for the last `count` minutes, all at `level`. */
 function chatTurns(count, level = "none") {
-  return Array.from({ length: count }, (_, i) => auditRow(i + 1, { risk_level: level, surface: "chat" }));
+  return turns("chat", count, level);
 }
 
 describe("recentDisclosedRisk (#373)", () => {
@@ -186,5 +197,51 @@ describe("recentDisclosedRisk (#373)", () => {
       console.error = original;
     }
     assert.equal(logged.length, 1);
+  });
+});
+
+describe("recentDisclosedRisk (#529): a third surface filling the window", () => {
+  it("carries a journal crisis into chat after many voice turns", async () => {
+    for (const count of [DISCLOSED_RISK_ROWS - 1, DISCLOSED_RISK_ROWS, DISCLOSED_RISK_ROWS * 2]) {
+      const rows = [...turns("voice", count), auditRow(6 * 60, { risk_level: "crisis", surface: "journal" })];
+      assert.equal(
+        await recentDisclosedRisk(fakeTable(rows), PARTICIPANT, "chat"),
+        "crisis",
+        `${count} voice turns hid the journal crisis`,
+      );
+    }
+  });
+
+  it("carries a journal elevated into voice after many chat turns", async () => {
+    const rows = [
+      ...turns("chat", DISCLOSED_RISK_ROWS * 2),
+      auditRow(6 * 60, { risk_level: "elevated", surface: "journal" }),
+    ];
+    assert.equal(await recentDisclosedRisk(fakeTable(rows), PARTICIPANT, "voice"), "elevated");
+  });
+
+  it("carries the highest level, not the latest one", async () => {
+    const rows = [
+      auditRow(5, { risk_level: "elevated", surface: "voice" }),
+      ...turns("voice", DISCLOSED_RISK_ROWS * 2, "low"),
+      auditRow(20 * 60, { risk_level: "crisis", surface: "journal" }),
+    ];
+    assert.equal(await recentDisclosedRisk(fakeTable(rows), PARTICIPANT, "chat"), "crisis");
+  });
+
+  it("still carries a low level when nothing higher was disclosed", async () => {
+    const rows = [...turns("voice", DISCLOSED_RISK_ROWS * 2), auditRow(60, { risk_level: "low", surface: "journal" })];
+    assert.equal(await recentDisclosedRisk(fakeTable(rows), PARTICIPANT, "chat"), "low");
+  });
+
+  it("asks for each level in the query and reads one row per level", async () => {
+    const client = fakeTable([]);
+    await recentDisclosedRisk(client, PARTICIPANT, "chat");
+    const levels = client.calls
+      .filter(([name, column]) => name === "eq" && column === "retrieval_config_json->>risk_level")
+      .map(([, , value]) => value);
+    assert.deepEqual([...levels].sort(), ["crisis", "elevated", "low"]);
+    const limits = client.calls.filter(([name]) => name === "limit").map(([, count]) => count);
+    assert.deepEqual(limits, [1, 1, 1]);
   });
 });
