@@ -28,11 +28,8 @@ from ..analytics.graph_index import (
 )
 from ..analytics.memory_objects import (
     MEMORY_OBJECT_VERSION,
-    NEGATIVE_TONE_TERMS,
     PriorMemoryObject,
-    PROTECTIVE_TONE_TERMS,
     RecallMessage,
-    TOPIC_STOPWORDS,
     build_summary as build_memory_summary,
     build_topic_label,
     cosine_similarity as memory_cosine_similarity,
@@ -41,10 +38,12 @@ from ..analytics.memory_objects import (
     emotional_tone,
     find_duplicate,
     jaccard as memory_jaccard,
+    message_tone,
     score_confidence as score_memory_confidence,
     score_importance,
     score_recurrence,
     segment_window,
+    tokenize,
     topic_tokens as memory_topic_tokens,
 )
 from ..analytics.pattern_mining import (
@@ -128,10 +127,11 @@ RAW_TEXT_EXPORT_KEYS = {
     "transcript",
 }
 IDENTIFIER_EXPORT_KEYS = {"user_id", "participant_code", "owner_user_id", "participant_id"}
-# TOPIC_STOPWORDS / NEGATIVE_TONE_TERMS / PROTECTIVE_TONE_TERMS now live in
-# analytics/memory_objects.py (single source of truth, imported above) so the
-# conversation-memory-object scoring and the legacy tone/topic helpers below
-# can't drift apart.
+# TOPIC_STOPWORDS / NEGATIVE_TONE_TERMS / PROTECTIVE_TONE_TERMS live in
+# analytics/memory_objects.py (single source of truth) and are no longer named
+# here: the "legacy tone/topic helpers below" that used to read them are now
+# aliases of the memory-object helpers themselves (#476), so there is one
+# implementation rather than two reading one vocabulary.
 RECALL_RECURRENCE_LOOKBACK = int(os.getenv("SENTRA_RECALL_RECURRENCE_LOOKBACK", "200"))
 
 
@@ -175,13 +175,13 @@ def _normalize_snippet(value: Any, limit: int = 160) -> str:
     return text[:limit]
 
 
-def _tokenize(value: Any) -> Set[str]:
-    normalized = _normalize_text(value)
-    return {
-        part
-        for part in normalized.replace("_", " ").replace("-", " ").split()
-        if len(part) >= 3 or re.search(r"[ぁ-んァ-ン一-龥]", part)
-    }
+#: The third copy of this splitter is gone (#476): `_tokenize`, `_topic_tokens`
+#: and `_message_tone` were whitespace-based clones of the helpers in
+#: `analytics/memory_objects.py`, which now go through `analytics/tokenize.py`.
+#: Retrieval below compares these tokens against node labels and categories, so
+#: the clone also meant a Japanese query matched a Japanese label only when the
+#: two were written identically.
+_tokenize = tokenize
 
 
 def _node_id(node: Dict[str, Any]) -> str:
@@ -1401,19 +1401,12 @@ def _conversation_message_window(
     return list(reversed(rows))
 
 
-def _topic_tokens(text: str) -> List[str]:
-    return [
-        token for token in _tokenize(text)
-        if len(token) >= 3 and token not in TOPIC_STOPWORDS and not token.isdigit()
-    ]
-
-
-def _message_tone(text: str) -> Dict[str, int]:
-    tokens = set(_tokenize(text))
-    return {
-        "negative": len(tokens.intersection(NEGATIVE_TONE_TERMS)),
-        "protective": len(tokens.intersection(PROTECTIVE_TONE_TERMS)),
-    }
+#: `_topic_tokens` carried a `len(token) >= 3` floor on top of the splitting.
+#: Japanese content words are mostly two characters — 不安, 孤独, 友達, 相談,
+#: 安心 — so even once segmented the floor alone would have excluded most of
+#: the vocabulary it was counting against. Both helpers are now the shared ones.
+_topic_tokens = memory_topic_tokens
+_message_tone = message_tone
 
 
 def _conversation_summary_from_messages(messages: List[ChatMessage]) -> Dict[str, Any]:
@@ -1425,7 +1418,11 @@ def _conversation_summary_from_messages(messages: List[ChatMessage]) -> Dict[str
     for index, message in enumerate(messages):
         text = message.content_redacted or ""
         role_counts[message.role] += 1
-        topic_counter.update(_topic_tokens(text))
+        # Counted once per message: `recurring_topics` below is "came up in at
+        # least two messages", not "written twice". `_topic_tokens` keeps
+        # repeats (#476) because `build_topic_label` needs them, so the set()
+        # that used to be implicit in the splitter is now explicit here.
+        topic_counter.update(set(_topic_tokens(text)))
         tone = _message_tone(text)
         tone_by_message.append(
             {

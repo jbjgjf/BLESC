@@ -9,6 +9,7 @@ from app.analytics.memory_objects import (
     IMPORTANCE_WEIGHTS,
     PriorMemoryObject,
     RecallMessage,
+    build_topic_label,
     decay_factor,
     detect_contradictions,
     effective_importance,
@@ -16,11 +17,15 @@ from app.analytics.memory_objects import (
     find_duplicate,
     has_crisis_language,
     jaccard,
+    message_tone,
     score_confidence,
     score_importance,
     score_recurrence,
     segment_window,
+    tokenize,
+    topic_tokens,
 )
+from app.analytics.tokenize import japanese_analysis_available
 
 
 def _msg(id_: int, role: str, text: str, day: int = 1) -> RecallMessage:
@@ -205,3 +210,108 @@ def test_jaccard_handles_empty_sets():
     assert jaccard(set(), {"a"}) == 0.0
     assert jaccard({"a"}, set()) == 0.0
     assert jaccard({"a", "b"}, {"b", "c"}) == 1 / 3
+
+
+# ── Japanese (#476) ───────────────────────────────────────────────────────────
+# Every test above this line is in English, which is how a pilot for Japanese
+# high-school students shipped a scorer whose heaviest component was always 0
+# for its participants: the module split on whitespace, so a Japanese sentence
+# was one token and intersected no vocabulary. These tests pin the Japanese
+# behaviour so the next tokenisation change has to notice it.
+#
+# They require fugashi + unidic-lite. Without a dictionary the module reports
+# `japanese_analysis_available=False` and degrades to the old behaviour by
+# design, so the tests skip rather than fail — a skip here and a false in the
+# score breakdown say the same thing, and neither is silent.
+requires_japanese = pytest.mark.skipif(
+    not japanese_analysis_available(),
+    reason="fugashi/unidic-lite not installed: Japanese degrades to whitespace splitting",
+)
+
+
+@requires_japanese
+def test_emotional_tone_reads_japanese_polarity():
+    assert emotional_tone("今日は孤独で悲しい気持ちになった")["dominant"] == "negative"
+    assert emotional_tone("友達に相談したら安心した")["dominant"] == "protective"
+    assert emotional_tone("今日は学校で授業を受けた")["dominant"] == "neutral"
+
+
+@requires_japanese
+@pytest.mark.parametrize(
+    "text",
+    ["最近不安でつらい", "ずっと疲れててしんどい", "夜は怖いし眠れない"],
+)
+def test_message_tone_counts_japanese_terms_however_they_are_inflected(text):
+    # 疲れ is listed as a surface whose lemma is 疲れる, つらい as one whose
+    # lemma is 辛い. Matching only one column would return 0 for one of these.
+    assert message_tone(text)["negative"] > 0
+
+
+@requires_japanese
+def test_score_importance_tone_intensity_is_not_zero_for_japanese():
+    segment = [
+        _msg(1, "user", "最近ずっと不安でつらいし、夜も眠れない"),
+        _msg(2, "assistant", "それはしんどいですね"),
+    ]
+    _score, breakdown = score_importance(segment)
+    assert breakdown["components"]["tone_intensity"] > 0.0
+    assert breakdown["japanese_analysis_available"] is True
+
+
+@requires_japanese
+def test_score_importance_specificity_does_not_saturate_on_one_japanese_sentence():
+    # A single sentence used to be a single token, which made specificity
+    # len({that token}) / len({that token}) == 1.0 for every Japanese segment.
+    segment = [_msg(1, "user", "テスト勉強のことが心配で、ずっと不安なまま眠れない日が続いてる")]
+    _score, breakdown = score_importance(segment)
+    assert breakdown["components"]["specificity"] < 1.0
+
+
+@requires_japanese
+def test_score_recurrence_matches_two_japanese_objects_about_the_same_thing():
+    # Not the same sentence. Under whitespace splitting the topic tokens were
+    # the two sentences themselves, so the Jaccard was 0 and 28 days of the
+    # same worry never counted as recurring.
+    new_tokens = set(topic_tokens("テスト勉強が心配で不安になる"))
+    prior = PriorMemoryObject(
+        id=1,
+        topic_tokens=set(topic_tokens("またテストのことが心配になってきた、勉強が不安")),
+        embedding=[],
+        created_at=datetime(2026, 6, 1),
+    )
+    score, count, matched_ids = score_recurrence(new_tokens, [], [prior])
+    assert count == 1
+    assert matched_ids == [1]
+    assert score > 0.0
+
+
+@requires_japanese
+def test_build_topic_label_returns_words_not_the_sentence():
+    segment = [_msg(1, "user", "テスト勉強のことが心配で、テストが近いのが不安")]
+    label = build_topic_label(segment)
+    terms = [term.strip() for term in label.split(",")]
+    assert segment[0].text not in label
+    assert len(terms) == 3
+    # Rendered as written, not as dictionary entries: UniDic's lemma for テスト
+    # is テスト-test, which is not a word anyone typed.
+    assert all("-" not in term for term in terms)
+    assert "テスト" in terms
+
+
+@requires_japanese
+def test_segment_window_splits_japanese_on_a_topic_shift():
+    messages = [
+        _msg(1, "user", "テスト勉強が終わらなくて不安"),
+        _msg(2, "assistant", "それは大変ですね"),
+        _msg(3, "user", "全然関係ないけど、最近の睡眠がひどい"),
+        _msg(4, "assistant", "睡眠は大事ですよ"),
+    ]
+    segments = segment_window(messages)
+    assert [[m.id for m in segment] for segment in segments] == [[1, 2], [3, 4]]
+
+
+def test_english_tokenisation_is_unchanged_by_the_japanese_fix():
+    # The old splitter dropped ASCII fragments shorter than three characters.
+    # #476 added Japanese; it did not rewrite English.
+    assert tokenize("I feel anxious about my exam") == {"feel", "anxious", "about", "exam"}
+    assert set(topic_tokens("I feel anxious about my exam")) == {"feel", "anxious", "exam"}
