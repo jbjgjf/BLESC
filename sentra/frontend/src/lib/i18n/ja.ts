@@ -937,6 +937,7 @@ export const ja = {
     } as Record<string, string>,
     view: (title: string) => `表示: ${title}`,
     counts: (nodes: number, links: number) => `内容 ${nodes}件 · 関係 ${links}件`,
+    layoutNote: "丸の位置は見やすく並べただけで、位置そのものに意味はありません。",
     clearFocus: "全体に戻す",
     emptyCanvas: "表示できる内容がありません。絞り込みを外すか、日記を書くと表示されます。",
     inspectorTitle: "選んだ内容の詳細",

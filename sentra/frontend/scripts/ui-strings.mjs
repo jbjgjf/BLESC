@@ -47,8 +47,15 @@ const DATA_CALLS = ["from", "select", "eq", "neq", "gte", "lte", "gt", "lt", "in
 const JAPANESE = /[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]/;
 /** Two or more consecutive Latin letters — enough to be a word, not a unit. */
 const LATIN_WORD = /[A-Za-z]{2,}/g;
-/** Punctuation that only appears in code, never in a sentence on screen. */
-const CODE_FRAGMENT = /;|=>|&&|\?\?|===|!==|\)\s*:|^\s*:\s|^\s*return\s*\(/;
+/**
+ * Punctuation that only appears in code, never in a sentence on screen.
+ *
+ * A semicolon counts only as a statement terminator — one that ends a line or
+ * the text. Inside a line it is ordinary English punctuation: matching every
+ * `;` used to wave through whole sentences of copy such as
+ * "Layout is visual; it is not diagnostic." (#534).
+ */
+const CODE_FRAGMENT = /;[ \t]*(?:\n|$)|=>|&&|\?\?|===|!==|\)\s*:|^\s*:\s|^\s*return\s*\(/;
 
 /**
  * Shapes that are always an identifier rather than copy: paths, MIME types,
@@ -58,6 +65,7 @@ const CODE_FRAGMENT = /;|=>|&&|\?\?|===|!==|\)\s*:|^\s*:\s|^\s*return\s*\(/;
 const IDENTIFIER_SHAPES = [
   /^[a-z0-9]+([-_.][a-z0-9]+)+$/i, // dot.path, snake_case, kebab-case
   /^[\w.-]+\/[\w./*-]+$/, // paths and MIME types
+  /^[\w.-]+\/[\w.+-]+(;\s*[\w-]+=[\w.-]+)+$/, // a MIME type with parameters: "text/html; charset=utf-8"
   /^\//, // an absolute path: a route or an endpoint, never a sentence
   /^--/, // CSS custom properties
   /^[a-z]+\([^)]*\)$/i, // var(--x), rgb(...), translateY(...)
