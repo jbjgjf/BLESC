@@ -60,7 +60,10 @@ const MODEL_INSTRUCTIONS = [
   "Be accurate about privacy. Raw journal and chat text is never visible to educators or counselors. A derived summary reaches an educator only when the student grants consent on the Sharing page, and that consent can be revoked at any time. If the conversation signals danger to the student or someone else, the educators who already oversee them are notified that a check-in is needed — they are told when and that it happened, never what was written. You never contact anyone yourself and you never choose who is told. Say this plainly if the student asks, and never say this conversation is completely private or that nothing is ever shared with anyone.",
   "Do not confirm beliefs the student cannot verify, such as a group conspiring against them. Stay warm, keep the uncertainty open, and never diagnose.",
   "The recent turns contain explicit danger signals. Lead with immediate safety, keep the reply short and concrete, name local emergency services and a crisis line alongside a trusted adult, and do not bury those routes.",
-  "The recent turns contain possible danger signals, which may be ambiguous. Err toward support: check on their safety and offer a real-person route even if you are unsure, and name local emergency services if the risk could be immediate.",
+  "The recent turns contain possible danger signals, which may be ambiguous. Err toward support: check on their safety and offer a real-person route even if you are unsure, and name local emergency services if the risk could be immediate.",  // These two contain a semicolon mid-sentence, which the scanner used to read
+  // as code and skip without listing them here (#534).
+  "If the student signals possible danger to themselves or someone else — including ambiguous phrasing such as wanting to disappear, being tired of everything, or not feeling safe — name the concern gently, ask about their immediate safety, and point them to a real person such as a trusted adult or a school counselor. Keep doing this in later turns; mentioning it once and moving on is a failure.",
+  "The recent turns show distress without an explicit danger signal. Stay supportive; do not manufacture a crisis response.",
 ];
 
 /**
@@ -119,6 +122,9 @@ const DELIVERY_FAILURES = [
   // The repair is an address, not a consent — a different team from the one
   // the line above sends you to.
   "no reachable address for any consented recipient",
+  // The recipient lookup itself failed, so consent was never evaluated. Hidden
+  // from the scanner by its semicolon until #534.
+  "recipient lookup failed; consent was not checked",
 ];
 
 /**
@@ -130,6 +136,15 @@ const DELIVERY_FAILURES = [
  * without the scheduler's bearer token they answer 403 to everything, before
  * they touch Supabase.
  */
+/**
+ * Provenance notes stored with a graph snapshot's diff
+ * (`graph_snapshots.diff.relation_shift_summary`) for a researcher reading the
+ * table. The screens build their own shift line from the catalogue
+ * (`relationShiftSummary`, `t.extraction.shift`) and never render this one.
+ * Hidden from the scanner by its semicolon until #534.
+ */
+const STORED_PROVENANCE_NOTES = ["previous snapshot predates label-derived node identity; not comparable"];
+
 const SCHEDULED_JOB_FAILURES = ["purge_expired_raw_text returned no count"];
 
 /** A programming mistake, raised where only a developer can see it. */
@@ -208,6 +223,7 @@ export const ALLOWLIST = [
   ...MODEL_INSTRUCTIONS,
   ...WRITE_FAILURES,
   ...DELIVERY_FAILURES,
+  ...STORED_PROVENANCE_NOTES,
   ...SCHEDULED_JOB_FAILURES,
   ...DEVELOPER_ERRORS,
   ...CAUGHT_BEFORE_A_RESPONSE,
